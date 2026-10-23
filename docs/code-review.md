@@ -1,5 +1,18 @@
 # 提交前代码审查记录
 
+## P3 Q3a 提交前审核
+
+日期：2026-10-24。范围：b5b8bab 之后全部未提交的 Ela 构建、页面服务、外壳、Context.identity、测试、示例和文档，包括新增文件。sources/research 未改动。
+
+- 正确性：PageHandle.close 原先只请求 effect 异步关闭，cleanup 排队期间仍可 navigate 和点击页面。现在 owner 关闭请求同步标记 revoked，输入及导航立即拒绝，retiring 快照也立即体现撤销；实际 QWidget 删除和 effect 完成仍沿原异步屏障。错误线程关闭不改变门禁。lifetime/input_gate 回归在修复前均失败。
+- 输入边界：QShortcutEvent 的接收者是 QShortcut，旧过滤器仅识别 QWidget，会漏过停用页面的快捷键。现在沿 QObject parent 找到 QWidget 后判断页面归属。新增 shortcut_gate 验证 Active 能触发、停止后但删除前被阻断。中文输入法 QInputMethodEvent 也会绕过 KeyPress；input_gate 新增真实输入法提交验证，修复前确认修改了已关闭页面。过滤器补齐 InputMethod、MouseMove 和触摸后续事件，保留任意程序信号/外部 queued callback 仍需专用契约的边界。
+- 导航：原先只连接 itemClicked，方向键改变选中行却不切换页面。改用 currentItemChanged，让键盘、鼠标与句柄使用同一导航门禁；新增 keyboard_navigation 检查方向键切页及关闭当前页后回安全页。
+- 规范与质量：补全 utility/vector 直接依赖、移除未使用头；事件类型判断改为 switch；navigate 按值保留页面控制块，避免 Qt 调用重入时仅借用句柄成员；窗口关闭错误保留原 effect 的 causes；修正工厂释放与记录移除的注释。核对 Qt parent 所有权、工厂失败/关闭重入、同名贡献隔离、服务恢复、线程/epoch、窗口退出顺序、第三方固定 hash/许可、可选构建和脚本环境恢复。
+
+修复前四项失败证据见 `build/review-q3-before.log`；输入法独立失败见 `build/review-q3-input-method-before.log`。修复后 Ela/MSVC Debug、Release 各 151/151；无 Qt GCC Debug、Release 各 115/115；两份新公共头 GCC C++17 独立包含、git diff --check 通过。日志为 `build/review-q3-ela-msvc-<mode>.log`、`build/review-q3-core-gcc-<mode>.log`。
+
+MSVC ASan 专项 11/11 UI 场景通过，第一方和固定 Ela 库均插桩，Qt 预编译库未插桩；日志 `build/review-q3-asan.log`。开发阶段已经复现并规避的上游原生导航 UAF 见 [ADR-0006](adr/0006-ela-page-contributions.md)，本轮未修改第三方源码。未发现其他阻止提交的问题；命令/通知/管理页、原生 Windows 人工交互、connection/worker/watcher 及插件 ABI/卸载仍需后续验收。
+
 ## P3 Q2 提交前审核
 
 日期：2026-10-24。范围：ce43cc6 之后全部未提交的 QObjectResource、QtClock、SDK、资源测试、构建登记与文档，包括新增文件。sources/research 未改动。

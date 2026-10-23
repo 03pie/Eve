@@ -46,12 +46,21 @@ private:
     std::weak_ptr<detail::CleanupAccess> access_;
 };
 
+/** @brief 当前代业务能力的归属信息，仅用于资源命名与诊断。 */
+struct ContextIdentity {
+    InstanceId instance;
+    Epoch epoch;
+};
+namespace ui { class UiPagesService; }
+
 /** @brief 使用受限上下文执行清理，返回真实释放完成任务。 */
 using InstanceCleanup = std::function<Task<void>(CleanupContext)>;
 
 /** @brief 弱引用实例的业务上下文；仅允许在 owner 线程注册资源。 */
 class Context {
 public:
+    /** @brief 在业务仍有效时读取实例与代次；不会授予新的业务或清理能力。 */
+    Result<ContextIdentity> identity() const;
     /** @brief 创建本代拥有的子实例，继承域视图；子实例独立等待依赖，父代退役会终结它。 */
     Result<Instance> inject(const Runtime& runtime, std::string config = {}) const;
     /** @brief 派生只覆盖指定服务的 realm 视图，不修改父上下文，旧 epoch 不得派生能力。 */
@@ -80,8 +89,9 @@ public:
         return Result<ServiceRef<T>>::success(ServiceRef<T>(std::weak_ptr<detail::CommittedLease>(lease.value())));
     }
 private:
+    friend class ui::UiPagesService;
     template<class T> friend class EventBus;
-    /** @brief 为事件适配器提供同 scheduler、本代业务门禁，不授予实例所有权。 */
+    /** @brief 为事件/UI 适配器提供同 scheduler、本代业务门禁，不授予实例所有权。 */
     Result<std::function<Result<void>()>> eventGuard(const std::shared_ptr<IScheduler>& scheduler) const;
     /** @brief 校验本代能力后登记并保存托管输出。 */
     Result<BindingId> provideErased(ServiceKey key, std::shared_ptr<void> object, std::type_index type) const;

@@ -2,7 +2,7 @@
 
 基于 Cordis 思路设计的 C++17 插件内核，目标桌面环境为 Qt 5.15.2 + ElaWidgetTools。
 
-当前已完成 **W0–W7 首阶段内置内核与联合验收**：包含服务恢复、子实例、联合环诊断、类型化 EventBus、正常关闭及失败残留示例。P3 已完成 Qt 5.15.2 工具链、QtScheduler 和 Timer/QObject 资源屏障，下一步接入 Ela UI 服务；Qt UI 和原生插件装载尚未实现。
+当前已完成 **W0–W7 首阶段内置内核与联合验收**：包含服务恢复、子实例、联合环诊断、类型化 EventBus、正常关闭及失败残留示例。P3 已完成 Qt 5.15.2 工具链、QtScheduler、Timer/QObject 资源屏障及 Q3a Ela 页面贡献；下一步补齐命令、通知与管理页，原生插件装载尚未实现。
 
 ## 从这里开始
 
@@ -13,9 +13,9 @@
 ./tools/dev.ps1 -Action verify -Preset core-gcc-debug
 ```
 
-`verify` 依次配置、编译、运行 CTest。CMake 不在 PATH 时脚本会寻找常见 Qt Tools 安装位置；也可以设置进程内的 `CORDIS_CMAKE_BIN` 指向 CMake 的 bin 目录。不修改系统 PATH，不下载依赖。
+`verify` 依次配置、编译、运行 CTest。CMake 不在 PATH 时脚本会寻找常见 Qt Tools 安装位置；也可以设置进程内的 `CORDIS_CMAKE_BIN` 指向 CMake 的 bin 目录。脚本不修改系统 PATH。核心及 Qt 预设不下载 Ela；`ela-msvc-*` 预设首次配置会下载固定版本归档，缓存于 build/deps。
 
-本机已有的 MinGW GCC 用于验证无 Qt 的 C++17 基础工程。这不代表已验证目标 MSVC/Qt 5.15.2/Ela 组合。详见 [开发环境](docs/development.md)。
+本机 MinGW GCC 用于验证无 Qt 的 C++17 内核，MSVC/Qt 5.15.2/Ela 组合另行构建验证。环境入口见 [开发环境](docs/development.md)，Ela 构建与交互示例命令见 [P3 桌面适配](docs/p3-development.md#q3a-ela-页面贡献)。
 
 ## 当前内容
 
@@ -24,7 +24,9 @@
 | `sdk/include/cordis` | 源码 SDK 基础类型，不是稳定二进制 ABI |
 | `src/core` | 不依赖 Qt/Ela 的内核库起点 |
 | `src/qt` | 可选 Cordis::Qt，包含 QtScheduler、QtClock 与 QObjectResource |
+| `src/ui` | 可选 Cordis::Ui，包含 ElaShell 与按实例/epoch 托管的页面贡献 |
 | `examples/builtin` | 异步 Task、Effect、EventBus 与插件联合生命周期示例 |
+| `examples/qt` | Ela 窗口、内置插件页面及异步退出示例 |
 | `tests` | SDK 契约、内核与真实 Qt 循环测试，以及验收规范 |
 | `tools/dev.ps1` | 环境检查、配置、构建、测试入口 |
 | `docs` | 决策、接口契约、首阶段工作单和准备记录 |
@@ -40,7 +42,7 @@
 - [W4 交付与验证](docs/w4-development.md)：服务依赖、输出契约、realm 视图及异步调用，四配置各 86/86 检查。
 - [W5 交付与验证](docs/w5-development.md)：子实例、父代清理屏障及联合环诊断，四配置各 96/96 检查。
 - [W6 交付与验证](docs/w6-development.md)：事件协议、作用域、异步屏障及控制台示例，四配置各 110/110 检查。
-- [P3 桌面适配](docs/p3-development.md)：Qt 工具链、调度与 Timer/QObject 完整清理，提交前 Debug/Release 各 140/140。
+- [P3 桌面适配](docs/p3-development.md)：Qt 工具链、资源屏障与 Ela 页面贡献，提交前 Ela/MSVC Debug/Release 各 151/151。
 - [W7 联合验收](docs/w7-verification.md)：服务/事件/子树完整闭环、失败残留和 A01–A10 证据，四配置各 113/113 检查。
 - [软件设计说明书](Cordis插件平台-软件设计说明书.md)：详细设计与验收依据。
 - [开发指南](Cordis-Cpp17-Qt5152-开发指南.md)、[研究证据](research-evidence.md)：研究基线。

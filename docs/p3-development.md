@@ -1,6 +1,6 @@
 # P3 桌面适配开发记录
 
-日期：2026-10-24。状态：进行中；Q0 工具链、Q1 QtScheduler、Q2 Timer/QObject 已完成；connection/worker/watcher、Ela UI 与 Loader 尚未实现。
+日期：2026-10-24。状态：进行中；Q0–Q2 及 Q3a Ela 页面贡献已完成；命令/通知/管理页、connection/worker/watcher 与 Loader 继续推进。
 
 ## 已安装与验证
 
@@ -16,7 +16,7 @@ py -3.10 -m venv build/qt-tools
 
 本轮使用 VS2022 Professional 的 MSVC 19.44 x64/v143，Debug /MDd、Release /MD；Qt 库来自 msvc2019_64 包。该组合已实际编译、链接、加载和运行探测。微软的二进制兼容约束允许支持版本的较新工具链链接较旧库，但仍要求合适的运行库和链接版本，/GL 等另有限制，不能推广成任意 Qt/插件组合都已验证。[微软兼容性说明](https://learn.microsoft.com/en-us/cpp/porting/binary-compat-2015-2017)
 
-v142 未安装；当前选定并验证的是上述 v143 组合，未把它记为 v142 验收。Qt/Ela GUI 整体仍待实现和验证。
+v142 未安装；当前选定并验证的是上述 v143 组合，未把它记为 v142 验收。Ela 页面贡献已通过下述 Q3a 检查，完整 UI 及原生桌面人工交互仍待验收。
 
 ## 项目配置与运行
 
@@ -152,6 +152,58 @@ ctest --test-dir build/review-q2-asan -L resources --output-on-failure
 
 Qt 预编译库未插桩；本检查不构成全程序内存安全、泄漏、任意等待环或模块卸载证明。
 
+## Q3a Ela 页面贡献
+
+新增 Cordis::Ui、UiPagesService、PageHandle 与宿主 ElaShell；页面贡献通过 ui.pages/v1、Context.effect 和现有服务依赖连接。id/分类按 InstanceId/Epoch 隔离，工厂只创建一次，重复 id 不执行工厂。旧 Context/旧 PageHandle、错误线程与跨 scheduler 请求都拒绝。停止实例自动撤销页面，服务提供者重新发布后消费者以新 epoch 重建页面。
+
+Ela 固定提交、归档 hash 与受控构建入口见 [ADR-0006](adr/0006-ela-page-contributions.md)。首次 Ela 配置下载约 108 MiB 的固定归档，缓存于 build/deps；不依赖 research 目录参与产品构建。Qt 与核心预设不下载/构建 Ela，未改动全局 PATH、上游顶层配置或只读参考代码。生成的 bin 目录包含对应 Debug/Release Ela DLL 与 MIT 许可证。
+
+实际集成曾复现原生 Ela navigation 延迟滚动使用已释放模型节点；ASan 已定位。当前采用 ElaWindow 内的宿主导航和页面堆栈，不使用其原生动态导航。页面清理经过 Q2 完整对象树删除，贡献记录保留到 effect 关闭；输入门禁阻止停用后、异步删除前的用户按钮操作。该选择与未覆盖资源边界详见 ADR。
+
+在前述 MSVC x64 环境中运行：
+
+```powershell
+$env:CORDIS_QT5152_ROOT = 'E:/Qt/5.15.2/msvc2019_64'
+cmake --preset ela-msvc-debug '-DCORDIS_MSVC_SHOWINCLUDES_PREFIX=注意: 包含文件:'
+cmake --preset ela-msvc-release '-DCORDIS_MSVC_SHOWINCLUDES_PREFIX=注意: 包含文件:'
+./tools/dev.ps1 -Action verify -Preset ela-msvc-debug
+./tools/dev.ps1 -Action verify -Preset ela-msvc-release
+$env:PATH = "$env:CORDIS_QT5152_ROOT/bin;$env:PATH"
+./build/ela-msvc-debug/bin/cordis_ela_demo.exe
+```
+
+交互示例显示真实 Ela 窗框及内置插件页面，关闭窗口通过 Kernel、页面、外壳及 scheduler 的完整异步关闭链。`--smoke` 自动导航并通过 QWidget::close 退出；CTest 使用 offscreen，预览保存在 `build/ela-msvc-<mode>/bin/ela-smoke.png`。Windows offscreen 预览显式读取系统 msyh.ttc 字体，不打包或修改该字体。
+
+| 新增测试 | 覆盖 |
+|---|---|
+| p3.ui_pages_lifetime | 当前/非当前页、分类子页、重复 id、工厂保留与完整删除 |
+| p3.ui_pages_namespaces | 同名实例/分类隔离、停止一个实例不影响另一个当前页 |
+| p3.ui_pages_recovery | ui.pages 提供者退出、消费者 Pending、新绑定恢复到新 epoch |
+| p3.ui_pages_factories | 工厂抛错与空返回的 effect 回滚 |
+| p3.ui_pages_reentrant | 工厂中重入 shell.close，未返回的 effect 仍进入关闭屏障 |
+| p3.ui_pages_guards | 错误线程、Context.identity 与跨 scheduler 门禁 |
+| p3.ui_pages_shutdown | 手动关闭外壳等待页面，禁止重新贡献或导航 |
+| p3.ui_pages_input_gate | 停用后、页面尚未删除时拒绝真实鼠标输入 |
+| p3.ela_demo | 实际窗口创建、页面导航、截图和原生关闭事件链 |
+
+| Q3a 验证 | 结果 |
+|---|---|
+| Q3a 初次 Ela/MSVC Debug、Release | 各 149/149，含原 140 项及 9 项 UI 场景 |
+| 提交前 Ela/MSVC Debug、Release | 各 151/151，新增键盘导航及快捷键门禁两项 |
+| 提交前无 Qt GCC Debug、Release | 各 115/115，核心保持独立 |
+| 提交前 MSVC ASan 专项 | 11/11 UI 场景，第一方与固定 Ela 库均插桩；Qt 预编译库未插桩 |
+| 新公共头独立包含 | pages.hpp/ela_shell.hpp 仅 SDK include，GCC C++17 通过 |
+
+日志：`build/p3-q3-ela-msvc-debug.log`、`build/p3-q3-ela-msvc-release.log`、`build/p3-q3-core-gcc-debug.log`、`build/p3-q3-asan-fixed.log`。原生导航失败证据单独保留为 `build/p3-q3-native-navigation-asan-failure.log`。ASan 构建沿用 Q2 的独立 flags，将预设改为 ela-msvc-release、目录改为 build/p3-q3-asan，构建 cordis_ui_pages_tests/cordis_ela_demo 后执行 `ctest --test-dir build/p3-q3-asan -L ela --output-on-failure`。
+
+Q3a 不代表命令/通知服务、插件管理页、任意 queued connection、原生 Windows 人工交互或物理卸载验收完成。
+
+### Q3a 提交前审查
+
+修复单独关闭页面后、异步清理开始前仍可导航/操作的问题：关闭请求同步撤销业务门禁，错误线程请求不改变状态。快捷键事件沿 QObject parent 判断归属，中文输入法提交单独过滤；新增/增强回归均在修复前确认失败。导航改用选中行变化信号，方向键与鼠标共用门禁，关闭当前页后回到永久安全页。整理直接头依赖、重入保留、错误 causes 及注释，详见 [审核记录](code-review.md#p3-q3a-提交前审核)。
+
+本轮日志：`build/review-q3-ela-msvc-<mode>.log`、`build/review-q3-core-gcc-<mode>.log`、`build/review-q3-asan.log`；失败证据为 `build/review-q3-before.log` 和 `build/review-q3-input-method-before.log`。ASan 沿用上述独立构建与 flags，未把预编译 Qt 或原生桌面交互记作已验证。
+
 ## 后续工作
 
-Q3 接入 Ela UI 服务；Q4 推进 Loader/Store、配置计划与持久化。connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解是 P3 的开发顺序，不表示完成了原设计中任何尚未运行的 L/Q/U 场景。
+Q3b 补齐命令、通知与管理页并验证原生桌面交互；Q4 推进 Loader/Store、配置计划与持久化。connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解是 P3 的开发顺序，不表示完成了原设计中任何尚未运行的 L/Q/U 场景。

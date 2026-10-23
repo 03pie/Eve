@@ -12,13 +12,13 @@
 要使用的 CMake 预设。
 
 .PARAMETER QtRoot
-Qt 5.15.2 kit 根目录；仅 Qt 预设使用，默认读取 CORDIS_QT5152_ROOT。
+Qt 5.15.2 kit 根目录；Qt/Ela 预设使用，默认读取 CORDIS_QT5152_ROOT。
 #>
 [CmdletBinding()]
 param(
     [ValidateSet('doctor', 'configure', 'build', 'test', 'verify')]
     [string]$Action = 'verify',
-    [ValidateSet('core-gcc-debug', 'core-gcc-release', 'core-msvc-debug', 'core-msvc-release', 'qt-msvc-debug', 'qt-msvc-release')]
+    [ValidateSet('core-gcc-debug', 'core-gcc-release', 'core-msvc-debug', 'core-msvc-release', 'qt-msvc-debug', 'qt-msvc-release', 'ela-msvc-debug', 'ela-msvc-release')]
     [string]$Preset = 'core-gcc-debug',
     [string]$QtRoot = $env:CORDIS_QT5152_ROOT
 )
@@ -77,7 +77,7 @@ try {
     $taskCtest = Join-Path (Split-Path -Parent $taskCmake) $taskCtestName
     if (-not (Test-Path -LiteralPath $taskCtest -PathType Leaf)) { throw 'CTest must be installed beside CMake.' }
 
-    if ($Preset.StartsWith('qt-')) {
+    if ($Preset.StartsWith('qt-') -or $Preset.StartsWith('ela-')) {
         if (-not $QtRoot) { throw 'Set -QtRoot or CORDIS_QT5152_ROOT to the Qt 5.15.2 MSVC x64 kit.' }
         $taskQtRoot = (Resolve-Path -LiteralPath $QtRoot).Path
         $taskQmake = Join-Path $taskQtRoot 'bin/qmake.exe'

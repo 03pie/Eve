@@ -425,6 +425,15 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
 } // namespace cordis::detail
 
 namespace cordis {
+/** @brief 资源命名先验证 owner/epoch/门禁，避免用旧 Context 创建新贡献。 */
+Result<ContextIdentity> Context::identity() const
+{
+    auto self = control_.lock();
+    if (!self) return Result<ContextIdentity>::failure(makeError(ErrorCode::StaleContext, "instance expired"));
+    auto allowed = self->business(epoch_);
+    if (!allowed.hasValue()) return Result<ContextIdentity>::failure(allowed.error());
+    return Result<ContextIdentity>::success({self->id, epoch_});
+}
 /** @brief 事件记录只捕获弱实例与代次，分发时重新检查退役及清理权限。 */
 Result<std::function<Result<void>()>> Context::eventGuard(const std::shared_ptr<IScheduler>& scheduler) const
 {
@@ -433,7 +442,7 @@ Result<std::function<Result<void>()>> Context::eventGuard(const std::shared_ptr<
     if (!self) return Output::failure(makeError(ErrorCode::StaleContext, "instance expired"));
     auto allowed = self->business(epoch_);
     if (!allowed.hasValue()) return Output::failure(allowed.error());
-    if (self->scheduler != scheduler) return Output::failure(makeError(ErrorCode::InvalidArgument, "event bus requires same scheduler"));
+    if (self->scheduler != scheduler) return Output::failure(makeError(ErrorCode::InvalidArgument, "resource adapter requires same scheduler"));
     return Output::success([weak = control_, captured = epoch_] {
         auto owner = weak.lock();
         return owner ? owner->business(captured) : Result<void>::failure(makeError(ErrorCode::StaleContext, "event owner expired"));

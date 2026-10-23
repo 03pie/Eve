@@ -57,6 +57,20 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL"
       }
+    },
+    {
+      "name": "ela-msvc-debug",
+      "inherits": "qt-msvc-debug",
+      "displayName": "Ela shell / Qt 5.15.2 / MSVC / Debug",
+      "cacheVariables": { "CORDIS_BUILD_ELA_UI": "ON" }
+    },
+    {
+      "name": "ela-msvc-release",
+      "inherits": "ela-msvc-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL"
+      }
     }
   ],
   "buildPresets": [
@@ -65,7 +79,9 @@
     { "name": "core-msvc-debug", "configurePreset": "core-msvc-debug" },
     { "name": "core-msvc-release", "configurePreset": "core-msvc-release" },
     { "name": "qt-msvc-debug", "configurePreset": "qt-msvc-debug" },
-    { "name": "qt-msvc-release", "configurePreset": "qt-msvc-release" }
+    { "name": "qt-msvc-release", "configurePreset": "qt-msvc-release" },
+    { "name": "ela-msvc-debug", "configurePreset": "ela-msvc-debug" },
+    { "name": "ela-msvc-release", "configurePreset": "ela-msvc-release" }
   ],
   "testPresets": [
     { "name": "core-gcc-debug", "configurePreset": "core-gcc-debug", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
@@ -73,6 +89,8 @@
     { "name": "core-msvc-debug", "configurePreset": "core-msvc-debug", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
     { "name": "core-msvc-release", "configurePreset": "core-msvc-release", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
     { "name": "qt-msvc-debug", "configurePreset": "qt-msvc-debug", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
-    { "name": "qt-msvc-release", "configurePreset": "qt-msvc-release", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } }
+    { "name": "qt-msvc-release", "configurePreset": "qt-msvc-release", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
+    { "name": "ela-msvc-debug", "configurePreset": "ela-msvc-debug", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
+    { "name": "ela-msvc-release", "configurePreset": "ela-msvc-release", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } }
   ]
 }
