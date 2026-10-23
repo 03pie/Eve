@@ -7,6 +7,8 @@
 #include <optional>
 
 namespace cordis {
+class Runtime;
+class Instance;
 namespace detail { struct InstanceControl; }
 namespace detail { struct CleanupAccess; }
 
@@ -49,6 +51,8 @@ using InstanceCleanup = std::function<Task<void>(CleanupContext)>;
 /** @brief 弱引用实例的业务上下文；仅允许在 owner 线程注册资源。 */
 class Context {
 public:
+    /** @brief 创建本代拥有的子实例，继承域视图；子实例独立等待依赖，父代退役会终结它。 */
+    Result<Instance> inject(const Runtime& runtime, std::string config = {}) const;
     /** @brief 派生只覆盖指定服务的 realm 视图，不修改父上下文，旧 epoch 不得派生能力。 */
     Result<Context> isolate(std::string name, RealmId realm) const;
     /** @brief 在本代登记托管 Staged 输出，激活完成后才对其他实例发布。 */
@@ -141,6 +145,7 @@ struct InstanceSnapshot {
     RuntimeId runtime;
     std::size_t committedLeases;
     std::optional<ErrorInfo> failure;
+    std::size_t children;
 };
 
 /** @brief 一次配置操作的稳定结果；epoch 为实际启动代，未启动时为零。 */
@@ -188,6 +193,7 @@ public:
     /** @brief 在 owner 线程读取状态及尚未释放的资源。 */
     Result<InstanceSnapshot> snapshot() const;
 private:
+    friend class Context;
     /** @brief 接受配置替换或重试，区分配置修订与操作标识。 */
     Result<OperationHandle> change(std::string config, ConfigRevision expectedRevision, bool revise) const;
     /** @brief 持有实例共享控制块，句柄析构不执行异步停止。 */

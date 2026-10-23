@@ -1,6 +1,6 @@
 # 首阶段接口契约
 
-本文件冻结接口行为和实现顺序。W1–W4 已有源码 SDK，见 `sdk/include/cordis`；父子实例、可选依赖和 Event 仍为后续契约。
+本文件冻结接口行为和实现顺序。W1–W5 已有源码 SDK，见 `sdk/include/cordis`；Event 仍为后续契约。
 
 ## 1. Result 与错误
 
@@ -105,6 +105,12 @@ RealmMap 为不可变名称覆盖视图，可由 isolate(name, realm) 派生并�
 ServiceRef::invoke 使用 `Task<void>(T&)` 异步回调，在进入回调前固定 provider/consumer CallLease，直到源任务真实完成且 owner 处理结果后才释放计数。回调抛错转换为 CallbackFailed，源任务失败保留原错误；回调及后续服务对象访问遵守 owner 线程策略。完成投递若被阻断，返回任务保持 pending、对象和计数保留，BindingSnapshot.deliveryBlocked 为 true。withService 仍只接受同步 void 回调，CleanupContext 只开放有效窗口内的同步旧绑定访问。
 
 InstanceSnapshot.failure 提供本轮错误，包括后续更新中的输出校验失败；新一轮尝试开始时清除。ready() 的首次结果不改写，后续成功/失败通过对应操作 target 与实例快照判断。缺依赖自动 Pending/恢复；类型、minor 或能力不兼容为明确失败，需要显式 retry 或 update 再尝试。
+
+W5 实现 `Context::inject(const Runtime&, string config = {}) -> Result<Instance>`，子实例继承调用 Context 的域视图和托管注册表，独立等待声明依赖，不扩大父实例重启范围。父更新/停止先请求全部子实例停止，同时退役输出，等待子与消费者静止后再清理自身。子清理失败保留父资源，错误汇入父报告；旧 Context、关闭 scheduler、错误线程或父退役期间拒绝 inject。InstanceSnapshot.children 统计本代持有的直接子记录，父确认静止才清空。
+
+W5 将子→父所有权边加入消费者→提供者的实际图，拒绝父消费后代输出等联合环；激活前还预检解析后的强依赖与必供输出声明。候选提供者缺失或多义时不臆测连边，实际绑定优先。发现环时 DependencyCycle 的 causes/message 提供逐边完整路径；尚未启动的实例不递增 epoch、不执行 activate。图范围和非合作任务边界见 [W5 交付记录](w5-development.md)。
+
+已稳定返回 PendingMissingDependency 的实例，后来预检因环或版本不兼容而 Failed 时，会创建新的自动收敛操作发布 Failed；旧操作仍返回历史 Pending，配置修订不递增。当前失败通过 operation/awaitTarget 与 snapshot.failure 一致观察。
 
 ## 6. Event
 

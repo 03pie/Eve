@@ -10,6 +10,11 @@
 #include <stdexcept>
 
 namespace cordis::detail {
+/** @brief 实例期望依赖与必供输出的精确域键，不持有插件回调或实例。 */
+struct InstanceDeclaration {
+    std::vector<ServiceKey> dependencies;
+    std::vector<ServiceKey> outputs;
+};
 /** @brief 注册表持有绑定，资源未释放时固定整个索引的所有权。 */
 struct ServiceRegistryControl {
     std::shared_ptr<IScheduler> scheduler;
@@ -17,6 +22,8 @@ struct ServiceRegistryControl {
     std::set<RealmId> realms{RealmId{1}};
     std::shared_ptr<ServiceRegistryControl> pin;
     std::vector<std::weak_ptr<ScheduledJob>> watchers;
+    std::map<InstanceId, InstanceId> parents;
+    std::map<InstanceId, InstanceDeclaration> declarations;
 };
 /** @brief 绑定的单写状态与在途同步/异步调用计数。 */
 struct BindingControl {
@@ -71,23 +78,74 @@ void notifyRegistry(const std::shared_ptr<ServiceRegistryControl>& registry)
     }
 }
 
-/** @brief 对消费者到提供者的实际租约图做可达性检查，拒绝新增强依赖环。 */
-bool reaches(const ServiceRegistryControl& registry, InstanceId from, InstanceId target)
+/** @brief 优先使用已有绑定；缺绑定时仅为唯一必供声明建立候选提供者边。 */
+InstanceId declaredProvider(const ServiceRegistryControl& registry, const ServiceKey& key)
+{
+    if (auto binding = registry.bindings.find(key); binding != registry.bindings.end()) return binding->second->provider;
+    InstanceId provider;
+    for (const auto& declaration : registry.declarations) {
+        for (const auto& output : declaration.second.outputs) if (!(output < key) && !(key < output)) {
+            if (provider.valid()) return {};
+            provider = declaration.first;
+        }
+    }
+    return provider;
+}
+
+/** @brief 搜索消费者到提供者及子到父的联合图，按需加入声明边并返回逐边路径。 */
+bool reaches(const ServiceRegistryControl& registry, InstanceId from, InstanceId target, std::vector<ErrorInfo>& path, bool declared = false)
 {
     std::set<InstanceId> visited;
     std::vector<InstanceId> pending{from};
+    std::map<InstanceId, std::pair<InstanceId, ErrorInfo>> previous;
+    auto add = [&](InstanceId current, InstanceId next, std::string label) {
+        if (next == from || previous.count(next)) return;
+        auto edge = makeError(ErrorCode::DependencyCycle, "instance " + std::to_string(current.value()) + " --" + label + "--> instance " + std::to_string(next.value()));
+        edge.instance = current;
+        previous.emplace(next, std::make_pair(current, std::move(edge)));
+        pending.push_back(next);
+    };
     while (!pending.empty()) {
         auto current = pending.back(); pending.pop_back();
-        if (current == target) return true;
+        if (current == target) {
+            while (current != from) {
+                const auto& edge = previous.at(current);
+                path.push_back(edge.second);
+                current = edge.first;
+            }
+            std::reverse(path.begin(), path.end());
+            return true;
+        }
         if (!visited.insert(current).second) continue;
+        if (auto parent = registry.parents.find(current); parent != registry.parents.end()) add(current, parent->second, "parent");
+        if (declared) if (auto node = registry.declarations.find(current); node != registry.declarations.end()) {
+            for (const auto& key : node->second.dependencies) {
+                const auto provider = declaredProvider(registry, key);
+                if (provider.valid()) add(current, provider, "declared service " + key.name + "/v" + std::to_string(key.interfaceMajor) + " realm=" + std::to_string(key.realm.value()));
+            }
+        }
         for (const auto& entry : registry.bindings) {
             if (!entry.second->provider.valid()) continue;
             for (const auto& weak : entry.second->consumers) if (auto lease = weak.lock()) {
-                if (lease->active && lease->instance == current) pending.push_back(entry.second->provider);
+                if (lease->active && lease->instance == current) add(current, entry.second->provider,
+                    "service " + entry.first.name + "/v" + std::to_string(entry.first.interfaceMajor) + " realm=" + std::to_string(entry.first.realm.value()));
             }
         }
     }
     return false;
+}
+
+/** @brief 将新增依赖边与已找到的返回路径组成可读、可遍历的完整环。 */
+ErrorInfo cycleError(InstanceId instance, const ServiceKey& key, InstanceId provider, const std::vector<ErrorInfo>& path)
+{
+    auto edge = makeError(ErrorCode::DependencyCycle, "instance " + std::to_string(instance.value()) + " --service " + key.name + "/v" + std::to_string(key.interfaceMajor) + " realm=" + std::to_string(key.realm.value()) + "--> instance " + std::to_string(provider.value()));
+    edge.instance = instance;
+    auto error = makeError(ErrorCode::DependencyCycle, "service/ownership dependency cycle");
+    error.instance = instance;
+    error.causes.push_back(std::move(edge));
+    error.causes.insert(error.causes.end(), path.begin(), path.end());
+    for (const auto& cause : error.causes) error.message += "\n" + cause.message;
+    return error;
 }
 
 /** @brief 租约复用仅按精确键与接口类型匹配。 */
@@ -257,6 +315,34 @@ Task<void> invokeService(const std::weak_ptr<BindingControl>& weak, const std::w
 } // namespace cordis::detail
 
 namespace cordis {
+/** @brief 子实例尚未执行激活时登记所有权，不触发插件代码。 */
+void ServiceRegistry::attachParent(InstanceId child, InstanceId parent) const { control_->parents.emplace(child, parent); }
+/** @brief 确认静止后删除所有权边，不由句柄析构推断终结。 */
+void ServiceRegistry::forgetInstance(InstanceId instance) const
+{
+    control_->parents.erase(instance);
+    control_->declarations.erase(instance);
+    detail::notifyRegistry(control_);
+}
+/** @brief 挂载登记只发排队通知，Pending 实例会重新预检新候选形成的环。 */
+void ServiceRegistry::declareInstance(InstanceId instance, std::vector<ServiceKey> dependencies, std::vector<ServiceKey> outputs) const
+{
+    control_->declarations.emplace(instance, detail::InstanceDeclaration{std::move(dependencies), std::move(outputs)});
+    detail::notifyRegistry(control_);
+}
+/** @brief 只拒绝确实返回当前实例的环，路径中的域与边类型保留在错误中。 */
+Result<void> ServiceRegistry::checkDeclarations(InstanceId instance) const
+{
+    const auto node = control_->declarations.find(instance);
+    if (node == control_->declarations.end()) return Result<void>::success();
+    for (const auto& key : node->second.dependencies) {
+        const auto provider = detail::declaredProvider(*control_, key);
+        std::vector<ErrorInfo> path;
+        if (provider.valid() && detail::reaches(*control_, provider, instance, path, true))
+            return Result<void>::failure(detail::cycleError(instance, key, provider, path));
+    }
+    return Result<void>::success();
+}
 /** @brief 调度器身份在索引创建后不可变，允许挂载前安全检查。 */
 bool ServiceRegistry::usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const { return control_->scheduler == scheduler; }
 /** @brief 域归属由 owner 线程的索引创建记录确定。 */
@@ -271,8 +357,10 @@ Result<std::shared_ptr<detail::CommittedLease>> ServiceRegistry::commitErased(co
     auto found = findErased(key, type);
     if (!found.hasValue()) return Output::failure(found.error());
     auto binding = found.value();
-    if (binding->provider.valid() && detail::reaches(*control_, binding->provider, instance))
-        return Output::failure(makeError(ErrorCode::DependencyCycle, "committed service dependency cycle"));
+    std::vector<ErrorInfo> path;
+    if (binding->provider.valid() && detail::reaches(*control_, binding->provider, instance, path)) {
+        return Output::failure(detail::cycleError(instance, key, binding->provider, path));
+    }
     if (binding->committed == std::numeric_limits<std::size_t>::max()) return Output::failure(makeError(ErrorCode::InvalidArgument, "committed count exhausted"));
     auto lease = std::make_shared<detail::CommittedLease>();
     lease->binding = binding;

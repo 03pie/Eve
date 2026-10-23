@@ -18,6 +18,14 @@ foreach(case IN ITEMS
     set_tests_properties(w1.${case} PROPERTIES LABELS "w1;core" TIMEOUT 15)
 endforeach()
 
+add_executable(cordis_children_tests unit/children.cpp)
+target_link_libraries(cordis_children_tests PRIVATE Cordis::Core)
+cordis_target_defaults(cordis_children_tests)
+foreach(case IN ITEMS optional ordered cycle update_realms failure guards reentrant_stop declared_cycle declaration_boundaries pending_failure)
+    add_test(NAME w5.children_${case} COMMAND cordis_children_tests ${case})
+    set_tests_properties(w5.children_${case} PROPERTIES LABELS "w5;core" TIMEOUT 15)
+endforeach()
+
 if(TARGET cordis_effect_demo)
     add_test(NAME w2.effect_demo COMMAND cordis_effect_demo)
     set_tests_properties(w2.effect_demo PROPERTIES LABELS "w2;example" TIMEOUT 15)

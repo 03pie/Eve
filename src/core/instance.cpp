@@ -70,6 +70,9 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     std::shared_ptr<ScheduledJob> subscription;
     std::optional<ErrorInfo> provisionError;
     std::optional<ErrorInfo> failure;
+    std::vector<std::shared_ptr<InstanceControl>> children;
+    std::optional<CleanupReport> retirementFailure;
+    std::vector<ErrorInfo> childErrors;
 
     /** @brief 为自动恢复或被覆盖的 Pending 结果建立独立操作，不改变配置修订。 */
     void newOperation()
@@ -138,6 +141,7 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     Result<void> business(Epoch captured) const
     {
         if (!scheduler->isCurrentThread()) return Result<void>::failure(makeError(ErrorCode::WrongThread, "context requires owner thread"));
+        if (!scheduler->isOpen()) return Result<void>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
         if (epoch != captured) return Result<void>::failure(makeError(ErrorCode::StaleContext, "old epoch"));
         if (stopping || retiring || dirty) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "epoch closing"));
         for (const auto& effect : scope.snapshot().value().effects)
@@ -182,12 +186,14 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
         outputs.clear();
         for (const auto& lease : committed) releaseCommitted(lease);
         committed.clear();
+        children.clear();
         retiring = false;
         if (stopping) {
             state = InstanceState::Disposed;
             target.resolve(StableReport{StableOutcome::Disposed, revision, targetEpoch});
             activate.reset();
             subscription.reset();
+            if (services) services->forgetInstance(id);
             pin.reset();
             stopped.resolve(report);
         } else if (dirty) {
@@ -199,24 +205,30 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
         }
     }
 
-    /** @brief 消费者保留全部退出后才启动提供者自己的 effect 清理。 */
+    /** @brief 子实例或本代清理未静止时保留资源，并向当前目标及后到 stop 报告。 */
+    void failRetire(const CleanupReport& report)
+    {
+        auto error = makeError(ErrorCode::CleanupFailed, "epoch or child cleanup did not quiesce");
+        error.causes = report.errors;
+        failure.emplace(std::move(error));
+        retirementFailure.emplace(report);
+        target.resolve(StableReport{StableOutcome::Failed, revision, targetEpoch});
+        if (stopping) stopped.resolve(report);
+    }
+
+    /** @brief 消费者和子实例全部退出后才启动提供者自己的 effect 清理。 */
     void beginCleanup()
     {
         auto self = shared_from_this();
         watch(scope.close().thenOn(scheduler, [self](const Result<CleanupReport>& result) {
             if (!result.hasValue()) { self->blocked.store(true); return; }
+            auto report = result.value();
+            report.errors.insert(report.errors.begin(), self->childErrors.begin(), self->childErrors.end());
             if (!result.value().quiescent) {
-                auto error = makeError(ErrorCode::CleanupFailed, "epoch cleanup did not quiesce");
-                error.causes = result.value().errors;
-                self->failure.emplace(std::move(error));
-                if (self->stopping) {
-                    self->target.resolve(StableReport{StableOutcome::Failed, self->revision, self->targetEpoch});
-                    self->stopped.resolve(result.value());
-                }
-                else self->target.resolve(StableReport{StableOutcome::Failed, self->revision, self->targetEpoch});
+                self->failRetire(report);
                 return;
             }
-            self->watch(drainCommitted(self->committed).thenOn(self->scheduler, [self, report = result.value()](const Result<void>& drained) {
+            self->watch(drainCommitted(self->committed).thenOn(self->scheduler, [self, report](const Result<void>& drained) {
                 if (drained.hasValue()) self->finishRetire(report);
                 else self->blocked.store(true);
             }));
@@ -232,10 +244,12 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
             it->second.reject(makeError(ErrorCode::OperationCancelled, "epoch retired before activation"));
         state = InstanceState::Unloading;
         scope.requestCancel();
+        std::vector<Task<CleanupReport>> childTasks;
+        for (const auto& child : children) childTasks.push_back(child->stop());
         for (const auto& output : outputs) output.retire();
-        if (outputs.empty()) { beginCleanup(); return; }
         auto pending = std::make_shared<std::size_t>(outputs.size());
         Promise<void> unused;
+        if (outputs.empty()) unused.resolve();
         for (const auto& output : outputs) {
             TaskAccess::observe(output.whenUnused(), [pending, unused](Task<void>::Snapshot result) {
                 if (!result->hasValue()) { unused.reject(result->error()); return; }
@@ -243,9 +257,27 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
             });
         }
         auto self = shared_from_this();
-        watch(unused.task().thenOn(scheduler, [self](const Result<void>& result) {
-            if (result.hasValue()) self->beginCleanup();
-            else self->blocked.store(true);
+        Promise<CleanupReport> childrenDone;
+        auto childPending = std::make_shared<std::size_t>(childTasks.size());
+        auto childReport = std::make_shared<CleanupReport>(CleanupReport{true, {}});
+        if (childTasks.empty()) childrenDone.resolve(*childReport);
+        for (const auto& task : childTasks) {
+            TaskAccess::observe(task, [childPending, childReport, childrenDone](Task<CleanupReport>::Snapshot result) {
+                if (result->hasValue()) {
+                    childReport->quiescent = childReport->quiescent && result->value().quiescent;
+                    childReport->errors.insert(childReport->errors.end(), result->value().errors.begin(), result->value().errors.end());
+                } else { childReport->quiescent = false; childReport->errors.push_back(result->error()); }
+                if (--*childPending == 0) childrenDone.resolve(*childReport);
+            });
+        }
+        watch(childrenDone.task().thenOn(scheduler, [self, unused](const Result<CleanupReport>& result) {
+            if (!result.hasValue()) { self->blocked.store(true); return; }
+            if (!result.value().quiescent) { self->failRetire(result.value()); return; }
+            self->childErrors = result.value().errors;
+            self->watch(unused.task().thenOn(self->scheduler, [self](const Result<void>& available) {
+                if (available.hasValue()) self->beginCleanup();
+                else self->blocked.store(true);
+            }));
         }));
     }
 
@@ -255,6 +287,11 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
         if (!stopping) {
             stopping = true;
             ready.reject(makeError(ErrorCode::OperationCancelled, "instance stopped during activation"));
+            if (retirementFailure) {
+                auto self = shared_from_this();
+                watch(completedTask().thenOn(scheduler, [self](const Result<void>&) { self->stopped.resolve(*self->retirementFailure); }));
+                return stopped.task();
+            }
             if (retiring) {
                 // 已完成但未静止的清理也必须能被后到 stop 观察。
                 auto self = shared_from_this();
@@ -270,18 +307,35 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
         return stopped.task();
     }
 
+    /** @brief 预检失败形成新的收敛操作，已返回的 Pending 结果保持历史语义。 */
+    void failPreflight(const ErrorInfo& error)
+    {
+        if (auto previous = target.task().tryResult())
+            if (previous->hasValue() && previous->value().outcome == StableOutcome::PendingMissingDependency) newOperation();
+        failed = true;
+        dirty = false;
+        state = InstanceState::Failed;
+        failure.emplace(error);
+        ready.reject(error);
+        target.resolve(StableReport{StableOutcome::Failed, revision, 0});
+    }
+
     /** @brief 在队列中登记激活屏障，setup 同步重入 stop 也受其保护。 */
     void start()
     {
         if (stopping || retiring || !dirty) return;
         failure.reset();
+        childErrors.clear();
         if (!dependencies.empty() && !services) {
-            failed = true; dirty = false; state = InstanceState::Failed;
-            auto error = makeError(ErrorCode::InvalidArgument, "declared dependencies require managed registry");
-            failure.emplace(error);
-            ready.reject(error);
-            target.resolve(StableReport{StableOutcome::Failed, revision, 0});
+            failPreflight(makeError(ErrorCode::InvalidArgument, "declared dependencies require managed registry"));
             return;
+        }
+        if (services) {
+            auto graph = services->checkDeclarations(id);
+            if (!graph.hasValue()) {
+                failPreflight(graph.error());
+                return;
+            }
         }
         for (const auto& dependency : dependencies) {
             auto binding = services->findErased(realms.resolve(dependency.key), dependency.type, dependency.minimumMinor, dependency.capabilities);
@@ -290,10 +344,7 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
                     state = InstanceState::Pending;
                     target.resolve(StableReport{StableOutcome::PendingMissingDependency, revision, 0});
                 } else {
-                    dirty = false; failed = true; state = InstanceState::Failed;
-                    failure.emplace(binding.error());
-                    ready.reject(binding.error());
-                    target.resolve(StableReport{StableOutcome::Failed, revision, 0});
+                    failPreflight(binding.error());
                 }
                 return;
             }
@@ -374,6 +425,22 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
 } // namespace cordis::detail
 
 namespace cordis {
+/** @brief 子实例沿用父视图与索引，排队激活前即纳入父代所有权。 */
+Result<Instance> Context::inject(const Runtime& runtime, std::string config) const
+{
+    auto self = control_.lock();
+    if (!self) return Result<Instance>::failure(makeError(ErrorCode::StaleContext, "instance expired"));
+    auto allowed = self->business(epoch_);
+    if (!allowed.hasValue()) return Result<Instance>::failure(allowed.error());
+    try {
+        auto child = Instance::mount(runtime, self->scheduler, std::move(config), self->services, realms_);
+        if (self->services) self->services->attachParent(child.control_->id, self->id);
+        self->children.push_back(child.control_);
+        return Result<Instance>::success(std::move(child));
+    } catch (const std::invalid_argument& error) {
+        return Result<Instance>::failure(makeError(ErrorCode::InvalidArgument, error.what()));
+    }
+}
 /** @brief 保留父视图的其余覆盖项，只有当前代业务有效时允许派生。 */
 Result<Context> Context::isolate(std::string name, RealmId realm) const
 {
@@ -504,6 +571,10 @@ Instance Instance::mount(const Runtime& runtime, std::shared_ptr<IScheduler> sch
             [weak] { if (auto self = weak.lock()) self->enqueue(); },
             [weak] { if (auto self = weak.lock()) self->blocked.store(true); }
         });
+        std::vector<ServiceKey> required, outputs;
+        for (const auto& dependency : control->dependencies) required.push_back(control->realms.resolve(dependency.key));
+        for (const auto& output : control->declarations) if (output.required) outputs.push_back(control->realms.resolve(output.key));
+        control->services->declareInstance(control->id, std::move(required), std::move(outputs));
     }
     control->enqueue();
     return Instance(std::move(control));
@@ -528,7 +599,7 @@ Result<InstanceSnapshot> Instance::snapshot() const
 {
     auto resources = control_->scope.snapshot();
     if (!resources.hasValue()) return Result<InstanceSnapshot>::failure(resources.error());
-    return Result<InstanceSnapshot>::success({control_->state, control_->blocked.load(), resources.value(), control_->epoch, control_->revision, control_->id, control_->runtime, control_->committed.size(), control_->failure});
+    return Result<InstanceSnapshot>::success({control_->state, control_->blocked.load(), resources.value(), control_->epoch, control_->revision, control_->id, control_->runtime, control_->committed.size(), control_->failure, control_->children.size()});
 }
 
 /** @brief 检查弱上下文后登记业务资源。 */
@@ -550,6 +621,7 @@ Result<OperationHandle> Instance::change(std::string config, ConfigRevision expe
     if (!c.scheduler->isCurrentThread()) return Result<OperationHandle>::failure(makeError(ErrorCode::WrongThread, "update requires owner thread"));
     if (c.stopping) return Result<OperationHandle>::failure(makeError(ErrorCode::InstanceDisposed, "instance terminated"));
     if (!c.scheduler->isOpen()) return Result<OperationHandle>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
+    if (c.retirementFailure) return Result<OperationHandle>::failure(makeError(ErrorCode::CleanupFailed, "old resources or children not released"));
     // 等待下游退出期间只能观察已启动的清理，不能用查询提前启动 close。
     if (c.retiring && c.scope.snapshot().value().closing) {
         auto report = c.scope.close().tryResult();

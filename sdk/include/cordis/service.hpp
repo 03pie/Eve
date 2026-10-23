@@ -183,6 +183,14 @@ private:
     friend class Context;
     friend struct detail::InstanceControl;
     friend class Instance;
+    /** @brief 登记子实例到父实例的所有权边，供联合等待环检查。 */
+    void attachParent(InstanceId child, InstanceId parent) const;
+    /** @brief 实例确认终结后撤销其所有权记录。 */
+    void forgetInstance(InstanceId instance) const;
+    /** @brief 登记已按域视图解析的强依赖与必供输出，用于激活前环诊断。 */
+    void declareInstance(InstanceId instance, std::vector<ServiceKey> dependencies, std::vector<ServiceKey> outputs) const;
+    /** @brief 对确定提供者的声明边和所有权边预检，缺失或歧义提供者不臆测连边。 */
+    Result<void> checkDeclarations(InstanceId instance) const;
     /** @brief 检查托管实例与索引是否归属同一调度器。 */
     bool usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const;
     /** @brief 检查隔离域是否属于本注册表，不创建新域。 */
