@@ -1,0 +1,5 @@
+add_executable(cordis_sdk_contract unit/sdk_contract.cpp unit/header_isolation.cpp)
+target_link_libraries(cordis_sdk_contract PRIVATE Cordis::Core)
+cordis_target_defaults(cordis_sdk_contract)
+add_test(NAME foundation.sdk_contract COMMAND cordis_sdk_contract)
+set_tests_properties(foundation.sdk_contract PROPERTIES LABELS "foundation;sdk")

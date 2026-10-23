@@ -1,0 +1,15 @@
+# Synced, read-only references and separately cloned research repositories.
+/sources/
+/research/
+
+# Local builds and editor state.
+/build/
+/out/
+/install/
+/CMakeUserPresets.json
+/.vs/
+/.vscode/
+*.user
+*.suo
+*.log
+compile_commands.json
