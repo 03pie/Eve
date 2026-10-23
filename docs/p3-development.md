@@ -1,6 +1,6 @@
 # P3 桌面适配开发记录
 
-日期：2026-10-24。状态：进行中；Q0 工具链、Q1 QtScheduler 已完成，资源适配、Ela UI 与 Loader 尚未实现。
+日期：2026-10-24。状态：进行中；Q0 工具链、Q1 QtScheduler、Q2 Timer/QObject 已完成；connection/worker/watcher、Ela UI 与 Loader 尚未实现。
 
 ## 已安装与验证
 
@@ -85,6 +85,73 @@ lifetime 的 Qt 子对象持有控制块，最后一个 scheduler 句柄可在 w
 
 提交前审查同时修复 FakeScheduler 的同类持锁移动，以及任务捕获析构提前解除 pump 门禁的问题；新增 w1.scheduler_callable_reentry 和 w1.scheduler_destructor_guard（正常/异常路径）。Qt post/close 增加本地控制块保留，防止用户回调释放所有者后控制块提前销毁。复现证据与审查范围见 [审核记录](code-review.md)。
 
+## Q2 Timer/QObject
+
+新增 `cordis/qt/object.hpp` 的 QObjectResource 和 `cordis/qt/clock.hpp` 的 QtClock，归入现有 Cordis::Qt 目标。实现只依赖 QtCore；资源测试额外链接 Widgets 并使用 offscreen QApplication，无可视化桌面交互验收。无 Qt 内核构建保持独立。
+
+QObjectResource 在 owner 接管 parent 为空的 `unique_ptr<QObject>&`，成功后清空调用方指针，失败保留原所有权。close 返回完整析构屏障：deleteLater 等 Qt 批准删除时机，独立守卫接管 DeferredDelete 并执行完整 delete，返回后才完成 Task。destroyed 只记 observed；子对象析构与嵌套 processEvents 期间不得提前完成。外部销毁或守卫提前消失报告 CleanupFailed；接管后禁止外部删除、迁移、重设 parent 或拦截延迟删除。
+
+QtClock 实现 IClock，接受 0..INT_MAX 毫秒单次任务；零延迟也排队。native timeout 只投递宿主记录，业务回调由 QtScheduler 执行。Token 可跨线程取消，但取消不代表载荷已经释放。close 同步关门/停表/丢弃，异步等待原生 QObject 树和当前回调捕获析构完成；snapshot 区分 pending、running、执行/丢弃/取消数量、回调错误及 nativeDestroyed。已到期排队项可在 close 时释放业务闭包，残留通知仅持宿主记录。完整契约见 [ADR-0005](adr/0005-qt-resource-barriers.md)。
+
+以下注册方式让资源屏障进入已有 Context/Effect 清理链，关闭前保持 Qt 循环与 scheduler 运行：
+
+```cpp
+std::unique_ptr<QObject> owned = std::make_unique<QObject>();
+auto object = std::make_shared<cordis::qt::QObjectResource>(owned, scheduler);
+auto clock = std::make_shared<cordis::qt::QtClock>(scheduler);
+context.onCleanup([object](cordis::CleanupContext) { return object->close(); });
+context.onCleanup([clock](cordis::CleanupContext) { return clock->close(); });
+```
+
+示意省略已有上下文的错误处理；真实闭环与检查见 `p3.qt_resources_kernel_shutdown`。正常退出先等待 Kernel.close（含上述资源清理），再关闭 scheduler，最后 Qt quit；丢弃 facade 或退出兜底不替代这一顺序。
+
+`tests/qt/resources.cpp` 提交前审查后共 14 个独立 CTest，前缀为 p3.qt_resources_：
+
+| 后缀 | 覆盖行为 |
+|---|---|
+| object_barrier | destroyed/完整析构分离，子对象析构重入仍持屏障 |
+| object_guards | parent 冲突、错误线程、失败保留所有权、重复关闭 |
+| object_external | 非受控外部删除得到 CleanupFailed |
+| widget_barrier | QWidget 与子对象实际销毁确认 |
+| clock_fire | 真实单次计时、零延迟排队、owner 回调、observeFor、范围校验 |
+| clock_cancel | worker 取消、载荷保留至回收、owner 析构及 native 关闭 |
+| clock_close | run/discarded 异常隔离、丢弃重入、幂等和拒绝新计时 |
+| clock_inflight | native 先删除也须等待当前 run 和捕获析构 |
+| clock_scheduler_closed | 提前关闭 scheduler 后的到期丢弃与 native 删除 |
+| clock_queued | 已到期排队项取消/关闭，释放业务载荷并安全处理残留通知 |
+| kernel_shutdown | Context 资源清理接入，Kernel 只在完整屏障后静止 |
+| dropped_handle | worker 释放 facade 后资源由 Qt owner 管理，退出丢弃残留计时 |
+| close_releases_handles | 丢弃回调/子对象析构释放最后一个 facade 后，整批通知与完整删除屏障仍完成 |
+| application_quit | aboutToQuit 与 exec 收尾后的实际资源核对 |
+
+| Q2 验证 | 结果 |
+|---|---|
+| Q2 初次 Qt/MSVC Debug、Release | 各 139/139：此前 126 项及新增 13 项资源场景 |
+| 提交前 Qt/MSVC Debug、Release | 各 140/140，资源场景增至 14 项 |
+| 提交前无 Qt GCC Debug、Release | 各 115/115，Qt 适配目标未进入构建 |
+| MSVC AddressSanitizer 专项 | 14/14 资源场景，第一方 core/qt 与测试插桩，Qt 预编译库未插桩 |
+| 两份新公共头独立包含 | 仅 SDK include，GCC C++17 语法检查通过 |
+
+日志为 `build/p3-q2-qt-msvc-debug.log`、`build/p3-q2-qt-msvc-release.log`、`build/p3-q2-core-gcc-debug.log`。未执行 connection 排空、worker join、watcher、Ela 交互、ABI 或物理卸载验收。
+
+### Q2 提交前审查
+
+修正 discarded 回调内断言被预期异常掩盖的问题，将观察值移到回调外检查；waitTask 使用共享通知标志，避免测试超时后排队通知访问已结束的栈。补充最后一个资源句柄在清理中释放的场景，整理公共所有权契约和标准头依赖。未发现阻止提交的功能性问题；详细范围见 [审核记录](code-review.md)。
+
+最新日志为 `build/review-q2-qt-msvc-<mode>.log`、`build/review-q2-core-gcc-<mode>.log` 和 `build/review-q2-asan.log`。ASan 使用独立构建目录，不修改共享预设；先进入本页前述 MSVC x64 环境，并将 Qt bin 加入当前进程 PATH：
+
+```powershell
+cmake --preset qt-msvc-release -B build/review-q2-asan `
+  '-DCORDIS_MSVC_SHOWINCLUDES_PREFIX=注意: 包含文件:' `
+  '-DCMAKE_BUILD_TYPE=RelWithDebInfo' `
+  '-DCMAKE_CXX_FLAGS=/DWIN32 /D_WINDOWS /GR /EHsc /fsanitize=address /Zi' `
+  '-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=/O1 /Zi /DNDEBUG'
+cmake --build build/review-q2-asan --target cordis_qt_resource_tests --parallel 2
+ctest --test-dir build/review-q2-asan -L resources --output-on-failure
+```
+
+Qt 预编译库未插桩；本检查不构成全程序内存安全、泄漏、任意等待环或模块卸载证明。
+
 ## 后续工作
 
-Q2 实现 Timer/QObject 资源屏障；Q3 接入 Ela UI 服务；Q4 推进 Loader/Store、配置计划与持久化。此分解是 P3 的开发顺序，不表示完成了原设计中任何尚未运行的 L/Q/U 场景。
+Q3 接入 Ela UI 服务；Q4 推进 Loader/Store、配置计划与持久化。connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解是 P3 的开发顺序，不表示完成了原设计中任何尚未运行的 L/Q/U 场景。

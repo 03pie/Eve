@@ -1,5 +1,17 @@
 # 提交前代码审查记录
 
+## P3 Q2 提交前审核
+
+日期：2026-10-24。范围：ce43cc6 之后全部未提交的 QObjectResource、QtClock、SDK、资源测试、构建登记与文档，包括新增文件。sources/research 未改动。
+
+- 测试正确性：clock_close 原先在预期抛错的 discarded 回调内使用 CHECK。断言失败同样被隔离并计入 callbackErrors，可能被预期异常数量掩盖。现在回调只记录“重入 close 仍 pending”和“新计时被拒绝”的观察值，回调外独立断言，保留有意抛错以验证异常隔离。没有把这项测试缺陷记作生产关闭逻辑 bug。
+- 回调所有权：waitTask 的通知标志改为共享值捕获，避免等待超时后栈已展开而排队通知仍访问局部变量。新增 p3.qt_resources_close_releases_handles，覆盖丢弃回调释放最后一个 QtClock facade 后继续完成整批通知，以及子对象析构释放最后一个 QObjectResource facade 后仍保持完整删除屏障。
+- 规范与质量：补全直接使用的 memory/utility 标准头，拆开计时账目初始化；公共构造契约明确只有前置条件错误抛 invalid_argument，其他构造失败仍不转移所有权，并与 ADR 一致列出外部 deleteLater/WA_DeleteOnClose 限制。核对 owner 入口、令牌原子取消、已到期队列载荷、析构重入、异常隔离、退出兜底、Kernel 清理集成与无 Qt 构建边界。
+
+Qt 5.15.2 msvc2019_64 + MSVC 19.44/v143 x64 Debug/Release 各 140/140；无 Qt GCC 13.1 Debug/Release 各 115/115。两份新公共头独立包含及 git diff --check 通过。完整日志：`build/review-q2-qt-msvc-<mode>.log`、`build/review-q2-core-gcc-<mode>.log`。
+
+另以 MSVC /fsanitize=address、RelWithDebInfo、/MD、/O1 和 /EHsc 单独构建第一方 core/qt 与资源测试，14/14 资源场景通过，日志 `build/review-q2-asan.log`，重现命令见 [P3 Q2 记录](p3-development.md#q2-提交前审查)。Qt 5.15.2 预编译库未插桩，该结果不构成全程序内存安全或泄漏证明；未运行 TSan、connection 排空、worker join、Ela UI、ABI 或物理卸载验证。未发现其他阻止提交的问题。
+
 ## P3 Q0/Q1 提交前审核
 
 日期：2026-10-24。范围：2e6efa2 之后全部未提交的 Qt 工具链配置、QtScheduler、SDK、测试与文档；并核对 FakeScheduler 的同类队列操作。sources/research 未改动。

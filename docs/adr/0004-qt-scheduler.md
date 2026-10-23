@@ -1,6 +1,6 @@
 # ADR-0004：Qt 调度与退出边界
 
-日期：2026-10-24。状态：Q1 调度契约已实现并通过真实 Qt 循环验证；QObject/Timer 资源屏障留待 Q2。
+日期：2026-10-24。状态：Q1 调度契约已实现并通过真实 Qt 循环验证；Q2 QObject/Timer 屏障见 [ADR-0005](0005-qt-resource-barriers.md)。
 
 ## 依据
 
