@@ -25,15 +25,18 @@ public:
     /** @brief 禁止替换存活内核的资源账目。 */
     Kernel& operator=(const Kernel&) = delete;
     /** @brief 按名称登记插件；重复名称、关闭或错误线程返回错误。 */
-    Result<Runtime> registerPlugin(std::string name, Runtime::Activate activate);
+    Result<Runtime> registerPlugin(std::string name, Runtime::Activate activate, std::vector<ServiceRequirement> dependencies = {}, std::vector<ServiceOutput> outputs = {});
+    /** @brief 获取共享索引的宿主句柄，用于隔离域配置和诊断。 */
+    ServiceRegistry services() const { return *services_; }
     /** @brief 挂载本内核登记的 Runtime，异步激活由实例调度。 */
-    Result<Instance> mount(const Runtime& runtime, std::string config = {});
+    Result<Instance> mount(const Runtime& runtime, std::string config = {}, RealmMap realms = {});
     /** @brief 请求停止全部实例，共享关闭报告；非静止实例继续保留。 */
     Task<CleanupReport> close();
     /** @brief owner 线程读取诊断并回收已经 Disposed 的实例记录。 */
     Result<KernelSnapshot> snapshot();
 private:
     std::shared_ptr<IScheduler> scheduler_;
+    std::shared_ptr<ServiceRegistry> services_;
     std::map<std::string, Runtime> runtimes_;
     std::map<InstanceId, Instance> instances_;
     bool closing_ = false;

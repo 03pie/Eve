@@ -1,6 +1,6 @@
 # W3 开发记录
 
-日期：2026-10-23。状态：进行中；已完成实例生命周期、配置更新、epoch 收敛、失败重试，以及 Kernel 注册、标识与查询接口。独立 CleanupContext 仍待实现。
+日期：2026-10-23。状态：W3 无服务内核范围已完成；包含实例生命周期、配置更新、epoch 收敛、失败重试、Kernel、操作查询与独立清理上下文。下一工作包 W4 服务依赖。
 
 ## 已实现
 
@@ -8,6 +8,8 @@
 
 - Runtime 保存共享的内置插件定义，Instance::mount 创建独立 EffectScope，并排队激活。
 - Context 只保存弱实例引用；owner 线程可登记业务 effect；停止后拒绝新资源，实例销毁后返回 StaleContext。
+- Context::onCleanup 返回独立 EffectToken，登记 `Task<void>(CleanupContext)` 清理函数。CleanupContext 只提供旧代 instance/runtime/epoch/revision/config 快照，不可转换为 Context，也没有 effect 或 onCleanup 入口。每次注册属于独立清理组，组间不保证全局逆序；需要组内逆序时继续使用 EffectSetupContext::addCleanup。
+- 清理访问窗口自回调进入起，保持到返回的源 Task 真实完成；同步成功、失败、异常及工作线程完成均撤销访问。保存的上下文随后返回 StaleContext；有效期内查询要求 owner 线程。它只弱持有访问控制块，不延长实例资源生命周期。清理期间捕获的旧业务 Context 同样不能向该实例登记新资源。
 - Instance::ready 观察首次有效激活，结果一旦完成不重置；后续配置操作使用 OperationHandle::target。stop 幂等终结实例，等待激活和全部业务 effect 的 setup/cleanup 屏障。停止期间迟到成功不会发布 Active。
 - 激活异常通过 Effect 屏障转换为错误，关闭当前代作用域以回滚业务资源，静止后停留 Failed，允许显式 retry；不自动重复失败激活。
 - update(config, expectedRevision) 接受字符串配置（尚无 schema），校验修订后更新目标。未完成操作以 Superseded 终结；旧代资源继续由清理屏障保留，只有静止后才启动最新目标。失败清理阻止换代。
@@ -24,10 +26,12 @@
 
 ## 实测
 
-GCC 13.1 和 MSVC 19.44 x64 的 Debug/Release 四配置均完成配置、构建与 CTest，各 61/61 通过，含 W1/W2 回归。MSVC 使用 W2 记录中的进程内 TEMP/TMP 设置。日志为 `build/w3-<preset>.log`。公共头 instance.hpp、kernel.hpp 分别以单独翻译单元通过 GCC C++17 警告即错误语法检查。
+GCC 13.1 和 MSVC 19.44 x64 的 Debug/Release 四配置均完成配置、构建与 CTest，各 64/64 通过，含 W1/W2 回归。MSVC 使用 W2 记录中的进程内 TEMP/TMP 设置及审核记录中的依赖前缀覆盖。最新日志为 `build/cleanup-<preset>.log`。公共头 instance.hpp、kernel.hpp 已分别通过 GCC C++17 独立包含检查；新增 CleanupContext 后 instance.hpp 再次检查通过。
 
 `w3.single_activation` 保留原测试名，现包含十组真实行为：启动前停止；启动中重入停止与晚到资源；多实例隔离与激活异常回滚；非 owner 调用及投递丢弃；连续更新只启动最新配置、等待两类屏障和旧 Context 失活；失败后保配置修订重试；清理失败阻止换代；内核归属与操作/代次查询；内核所有权与统一关闭屏障；移动后 Runtime 与调度器关闭后的命令拒绝。共用一个 CTest 入口，所以检查数仍为 61。测试使用 gate 和线程 join，不依赖真实 sleep；尚未运行消毒器。提交前审核修复及 MSVC 依赖检测复现见 [审核记录](code-review.md)。
 
+另新增三个独立 CTest 入口：`w3.cleanup_epoch_window` 验证旧代快照、线程边界、异步完成即失效和换代屏障；`w3.cleanup_failures` 验证异常/失败撤销能力且继续其他清理；`w3.cleanup_token_boundary` 验证独立 token 异步清理期间的业务注册拒绝和重复关闭。包含编译期断言确认 CleanupContext 不提供 effect 且不能转换成 Context，因此总计增至 64 项。测试使用 gate，不依赖真实 sleep。
+
 ## 剩余范围
 
-独立 CleanupContext、realm、父子所有权和服务失效恢复尚未实现；清理回调目前仅使用已捕获资源，不能调用 Context 创建新业务。A05 的停止屏障及 A08 的连续更新已有覆盖；A09 尚无 realm 隔离。服务与事件仍未实现。stop 报告覆盖当前代，历史已完成操作由各自 target 保存，不提供跨代错误总账。下一步补齐清理能力边界后再推进 W4 服务依赖，W3 暂不标完成。
+realm、committed binding、CleanupLease、父子所有权及服务失效恢复属于 W4/W5，尚未实现；当前 CleanupContext 仅提供受限旧代信息，不能用它访问尚不存在的服务。A05 的停止屏障、A08 的连续更新以及 A09 的多实例资源独立部分已有覆盖；A09 的 realm 服务隔离待 W4。服务与事件仍未实现。stop 报告覆盖当前代，历史已完成操作由各自 target 保存，不提供跨代错误总账；历史结果尚未裁剪。清理失败/投递阻断保守保留资源，不支持强制回收；未运行 ASan/TSan 或 Qt/DLL 验证。

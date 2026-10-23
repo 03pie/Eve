@@ -1,6 +1,6 @@
 # 首阶段接口契约
 
-本文件冻结接口行为和实现顺序。W1/W2 以及 W3 的实例与 Kernel 增量已有源码 SDK，见 `sdk/include/cordis`；服务和 Event 仍为后续工作包契约。
+本文件冻结接口行为和实现顺序。W1–W4 已有源码 SDK，见 `sdk/include/cordis`；父子实例、可选依赖和 Event 仍为后续契约。
 
 ## 1. Result 与错误
 
@@ -70,7 +70,7 @@ owner/token 析构不承担异步关闭。必须在 scheduler 关闭前显式 cl
 
 ## 4. Kernel / Instance / Context
 
-W3 增量已有 `instance.hpp` 的生命周期、update/retry、operation/awaitTarget/awaitActive 和 Context::effect/config，以及 `kernel.hpp` 的 registerPlugin/mount/close/snapshot，范围与验证见 [W3 开发记录](w3-development.md)。每代资源静止后才启动最新配置；失败静止后允许 retry，stop 才终结实例。Runtime/Instance/Operation 标识进程内唯一；retry 不改变配置修订。awaitActive 仅查询已启动代次，未来代次报 InvalidArgument，历史成功不授予当前业务权限。以下接口形状中的挂载 options、服务相关能力与独立 CleanupContext 仍为目标契约。
+W3 已有 `instance.hpp` 的生命周期、update/retry、operation/awaitTarget/awaitActive、Context::effect/config/onCleanup 与 CleanupContext，以及 `kernel.hpp` 的 registerPlugin/mount/close/snapshot，范围与验证见 [W3 开发记录](w3-development.md)。每代资源静止后才启动最新配置；失败静止后允许 retry，stop 才终结实例。Runtime/Instance/Operation 标识进程内唯一；retry 不改变配置修订。awaitActive 仅查询已启动代次，未来代次报 InvalidArgument，历史成功不授予当前业务权限。下列接口为概念形状，服务与域视图的实际签名见第 5 节及 SDK；通用挂载 options 仍为目标契约。
 
 ```text
 registerPlugin(definition) -> Result<RuntimeHandle>
@@ -86,11 +86,25 @@ handle.retry() -> Result<OperationHandle>
 
 Context 内部保存弱实例、capturedEpoch、realm 和能力，不持有实例强引用。激活 Context 和 CleanupContext 分离；cleanup 可读已提交旧绑定，但不能启动新业务。旧 Task 结果不得向新 epoch 发布输出。
 
+W3 实现 `Context::onCleanup(function<Task<void>(CleanupContext)>, label)`，返回独立清理组的 EffectToken。CleanupContext::snapshot 仅在 owner 线程和该次清理异步任务有效期内读取旧代不可变信息；任务真实完成或回调抛错即失效，后续查询报 StaleContext。没有业务注册接口，不能转换为 Context。清理中的同实例业务注册仍受 EffectScope/epoch 门禁限制。组间不保证逆序。W4 增量提供了下节所述旧绑定受限清理调用，不能仅凭此快照能力获取任意服务。
+
 ## 5. 服务与最小闭环
 
 服务 key 为 name + interfaceMajor + realm。provide 创建 BindingId，输出在 setup 完成前为 Staged。强依赖不足时实例保持 Pending。消费者保存 committed binding；提供者退出先 Retiring，拒绝新业务，再等消费者清理后销毁资源。
 
 首阶段只提供内置同工具链类型化调用，不跨 DLL。不通过自由获取的裸指针绕过 epoch/调用门禁。跨 ABI 的函数表和序列化协议留到 P4。
+
+W4 的 `service.hpp` 提供 ServiceRegistry::stage/find/createRealm/snapshot、ProviderHandle::publish/retire/release 与 ServiceRef<T>::withService。Staged 不可查，Retiring 保留键并拒绝新调用；同步调用或 committed 租约存在时禁止 release。withService 回调必须返回 void，不导出对象所有权，禁止保存传入对象引用或用它启动异步操作；异步调用使用下述 invoke。范围、线程及所有权约定见 [W4 开发记录](w4-development.md)。
+
+后续增量已实现 Context::consume，将精确绑定固定到本实例代次账目；其 ServiceRef 同时受消费者业务能力和提供者状态门禁限制。CleanupContext::withService 只访问本实例本代已提交的旧绑定，允许 Retiring，但受清理调用窗口限制。实例在 effect 清理与在途 committed 调用均静止后才释放本代租约，清理失败继续保留，提供者 release 也检查 committed 保留。低层 registry.find 不授予实例权限；托管实例的自动收敛接口见下段。
+
+W4 已接入自动收敛：Kernel::registerPlugin 接受 ServiceRequirement::of<T>(key, minimumMinor, capabilities) 强依赖和 ServiceOutput::of<T>(key, required, metadata) 输出声明。缺依赖时 Pending、不执行 activate；类型/minor/能力不匹配明确失败；服务就绪后激活前固定租约。Context::provide 仅在 Loading 登记声明过的 Staged 输出，发布前核对所有必供项，缺项、未声明输出、冲突或失败均回滚，空输出表禁止 provide。提供者退役先取消和传播业务失效，再等待输出消费者归零，最后清理自身并释放输出与上游租约；消费者保配置恢复新 epoch。实际租约回边已拒绝，声明与父子联合图留待 W5。
+
+RealmMap 为不可变名称覆盖视图，可由 isolate(name, realm) 派生并通过 Kernel::mount 的第三个参数传入；预检依赖、输出声明、provide 与 consume 都按视图解析。Context::isolate 派生同代 Context，不修改父句柄，未覆盖项继承；覆盖优先于传入键 realm，查找不得回退其他域。外域视图及映射后重复输出键在挂载前拒绝。
+
+ServiceRef::invoke 使用 `Task<void>(T&)` 异步回调，在进入回调前固定 provider/consumer CallLease，直到源任务真实完成且 owner 处理结果后才释放计数。回调抛错转换为 CallbackFailed，源任务失败保留原错误；回调及后续服务对象访问遵守 owner 线程策略。完成投递若被阻断，返回任务保持 pending、对象和计数保留，BindingSnapshot.deliveryBlocked 为 true。withService 仍只接受同步 void 回调，CleanupContext 只开放有效窗口内的同步旧绑定访问。
+
+InstanceSnapshot.failure 提供本轮错误，包括后续更新中的输出校验失败；新一轮尝试开始时清除。ready() 的首次结果不改写，后续成功/失败通过对应操作 target 与实例快照判断。缺依赖自动 Pending/恢复；类型、minor 或能力不兼容为明确失败，需要显式 retry 或 update 再尝试。
 
 ## 6. Event
 

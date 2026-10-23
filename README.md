@@ -2,7 +2,7 @@
 
 基于 Cordis 思路设计的 C++17 插件内核，目标桌面环境为 Qt 5.15.2 + ElaWidgetTools。
 
-当前处于**内核开发阶段，W1/W2 已完成，W3 进行中**：已有异步基础、EffectScope、实例配置与 epoch 收敛、retry、Kernel 注册和操作/代次查询；独立 CleanupContext、服务依赖、Qt UI 和原生插件装载尚未实现。
+当前处于**内核开发阶段，W1–W4 已完成（首阶段工作单范围）**：已有输出契约校验、依赖 Pending/恢复、传递清理、realm 派生视图及同步/异步服务调用租约；下一步 W5 可选依赖与父子实例。Event、Qt UI 和原生插件装载尚未实现。
 
 ## 从这里开始
 
@@ -35,7 +35,8 @@
 - [开发进度](docs/progress.md)：当前状态、工作包、验证台账及下一任务。
 - [W1 交付与验证](docs/w1-verification.md)：异步基础能力和四配置测试结果。
 - [W2 交付与验证](docs/w2-verification.md)：Effect 清理屏障、超时观察及四配置各 60/60 检查。
-- [W3 开发记录](docs/w3-development.md)：单次激活、停止屏障及剩余工作，四配置各 61/61 检查。
+- [W3 开发记录](docs/w3-development.md)：实例与清理上下文交付，四配置各 64/64 检查及后续边界。
+- [W4 交付与验证](docs/w4-development.md)：服务依赖、输出契约、realm 视图及异步调用，四配置各 86/86 检查。
 - [软件设计说明书](Cordis插件平台-软件设计说明书.md)：详细设计与验收依据。
 - [开发指南](Cordis-Cpp17-Qt5152-开发指南.md)、[研究证据](research-evidence.md)：研究基线。
 - [基础决策](docs/adr/0001-foundation.md)：本轮冻结的约束。

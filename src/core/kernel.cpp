@@ -10,31 +10,36 @@ Kernel::Kernel(std::shared_ptr<IScheduler> scheduler) : scheduler_(std::move(sch
 {
     if (!scheduler_ || !scheduler_->isOpen() || !scheduler_->isCurrentThread())
         throw std::invalid_argument("Kernel requires open owner-thread scheduler");
+    services_ = std::make_shared<ServiceRegistry>(scheduler_);
 }
 
 /** @brief 在调用插件前完成名称登记；注册本身不执行激活。 */
-Result<Runtime> Kernel::registerPlugin(std::string name, Runtime::Activate activate)
+Result<Runtime> Kernel::registerPlugin(std::string name, Runtime::Activate activate, std::vector<ServiceRequirement> dependencies, std::vector<ServiceOutput> outputs)
 {
     if (!scheduler_->isCurrentThread()) return Result<Runtime>::failure(makeError(ErrorCode::WrongThread, "register requires owner thread"));
     if (closing_) return Result<Runtime>::failure(makeError(ErrorCode::ContextClosing, "kernel closing"));
     if (!scheduler_->isOpen()) return Result<Runtime>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
     if (name.empty() || !activate || runtimes_.find(name) != runtimes_.end())
         return Result<Runtime>::failure(makeError(ErrorCode::InvalidArgument, "invalid or duplicate plugin"));
-    Runtime runtime(std::move(activate));
-    runtimes_.emplace(std::move(name), runtime);
-    return Result<Runtime>::success(std::move(runtime));
+    try {
+        Runtime runtime(std::move(activate), std::move(dependencies), std::move(outputs));
+        runtimes_.emplace(std::move(name), runtime);
+        return Result<Runtime>::success(std::move(runtime));
+    } catch (const std::invalid_argument& error) { return Result<Runtime>::failure(makeError(ErrorCode::InvalidArgument, error.what())); }
 }
 
 /** @brief 拒绝其他内核的运行时，并在激活前保存实例句柄。 */
-Result<Instance> Kernel::mount(const Runtime& runtime, std::string config)
+Result<Instance> Kernel::mount(const Runtime& runtime, std::string config, RealmMap realms)
 {
     if (!scheduler_->isCurrentThread()) return Result<Instance>::failure(makeError(ErrorCode::WrongThread, "mount requires owner thread"));
     if (closing_) return Result<Instance>::failure(makeError(ErrorCode::ContextClosing, "kernel closing"));
     if (!scheduler_->isOpen()) return Result<Instance>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
     for (const auto& entry : runtimes_) if (entry.second.id() == runtime.id()) {
-        auto instance = Instance::mount(runtime, scheduler_, std::move(config));
-        instances_.emplace(instance.snapshot().value().instance, instance);
-        return Result<Instance>::success(std::move(instance));
+        try {
+            auto instance = Instance::mount(runtime, scheduler_, std::move(config), services_, std::move(realms));
+            instances_.emplace(instance.snapshot().value().instance, instance);
+            return Result<Instance>::success(std::move(instance));
+        } catch (const std::invalid_argument& error) { return Result<Instance>::failure(makeError(ErrorCode::InvalidArgument, error.what())); }
     }
     return Result<Instance>::failure(makeError(ErrorCode::InvalidArgument, "runtime not registered here"));
 }

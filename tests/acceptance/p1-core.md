@@ -1,6 +1,8 @@
 # 第一阶段内核验收场景
 
-以下是第一阶段的 Given/When/Then 规范。A04/A06 及 A05 的 Effect 层已有自动化证据，见 [W2 验证记录](../../docs/w2-verification.md)；A05 的实例停止与 epoch、其余场景仍待实施。实现时将对应行为转为 CTest 管理的真实单测，沿用设计说明书编号。
+以下是第一阶段的 Given/When/Then 规范。A04/A06 见 [W2 验证记录](../../docs/w2-verification.md)；A05、A08 及 A09 的多实例资源独立部分见 [W3 验证记录](../../docs/w3-development.md)。服务场景的增量覆盖见下段；各场景状态不等同于全部阶段通过。
+
+W4 新增证据：A01–A03 的声明依赖闭环、A07 的传递清理部分，以及 A09 的 Context realm 派生视图和服务隔离，见 [W4 验证记录](../../docs/w4-development.md)、`w4.dependency_*` 和 `w4.contract_realms`。A07 父子所有权仍待 W5；A10 事件仍待实施。
 
 ## A01：缺依赖与恢复（D01）
 

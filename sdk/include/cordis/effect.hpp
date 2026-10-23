@@ -124,6 +124,8 @@ private:
  */
 class EffectScope {
 public:
+    /** @brief 广播协作取消但不开始资源清理，供消费者先于提供者清理使用。 */
+    Result<void> requestCancel() const;
     /**
      * @brief 使用指定的开放调度器创建作用域。
      * @param scheduler 必须处于开放状态，且当前线程必须是其所属线程。

@@ -205,6 +205,13 @@ void EffectControl::finish()
 } // namespace cordis::detail
 
 namespace cordis {
+/** @brief 仅广播取消；资源清理由之后的 close 屏障推进。 */
+Result<void> EffectScope::requestCancel() const
+{
+    if (!control_->scheduler->isCurrentThread()) return Result<void>::failure(makeError(ErrorCode::WrongThread, "cancel requires owner thread"));
+    for (const auto& entry : control_->effects) entry.second->cancellation.requestCancel();
+    return Result<void>::success();
+}
 /**
  * @brief 接管子 effect，并把关闭子 effect 注册为当前 effect 的清理步骤。
  * @param child 要接管的子 effect。
