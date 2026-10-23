@@ -634,6 +634,99 @@ void observationDeadlineRace()
     }
 }
 
+/** @brief 超时只结束观察，setup 与 cleanup 屏障仍持有资源直至真正释放。 */
+void effectTimeoutBarriers()
+{
+    Fixture f;
+    FakeClock clock;
+    Promise<void> setupGate;
+    Promise<void> cleanupGate;
+    std::optional<EffectSetupContext> late;
+    std::vector<int> order;
+    auto resource = std::make_shared<int>(9);
+    std::weak_ptr<int> weak = resource;
+    auto effect = f.scope.effect([&](EffectSetupContext setup) {
+        late.emplace(setup);
+        CHECK(setup.addCleanup([&] { order.push_back(1); return completedTask(); }).hasValue());
+        return setupGate.task();
+    }).value();
+    auto closed = f.scope.close();
+    auto first = observeFor(closed, clock, 5ms);
+    f.drain();
+    CHECK(clock.advance(5ms).hasValue());
+    CHECK(first.tryResult()->value().state == ObservationState::TimedOut);
+    CHECK(!closed.isReady() && effect.snapshot().value().setupPending);
+    CHECK(late->addCleanup([resource, &order, cleanupGate] {
+        order.push_back(*resource);
+        return cleanupGate.task();
+    }).hasValue());
+    resource.reset();
+    setupGate.resolve();
+    f.drain();
+    CHECK(effect.ready().tryResult()->error().code == ErrorCode::OperationCancelled);
+    auto second = observeFor(closed, clock, 5ms);
+    CHECK(clock.advance(5ms).hasValue());
+    CHECK(second.tryResult()->value().state == ObservationState::TimedOut);
+    CHECK(!closed.isReady() && !weak.expired());
+    CHECK(effect.snapshot().value().state == EffectState::Closing);
+    CHECK(effect.snapshot().value().cleanupPending);
+    CHECK(f.scope.snapshot().value().effects.size() == 1);
+    CHECK((order == std::vector<int>{9}));
+    cleanupGate.resolve();
+    f.drain();
+    CHECK(weak.expired() && closed.tryResult()->value().quiescent);
+    CHECK((order == std::vector<int>{9, 1}));
+    CHECK(f.scope.snapshot().value().effects.empty());
+    CHECK(first.tryResult()->value().state == ObservationState::TimedOut);
+    CHECK(second.tryResult()->value().state == ObservationState::TimedOut);
+}
+
+/** @brief 子组清理失败会传播给父组，同时其余清理继续执行。 */
+void effectAdoptedFailure()
+{
+    Fixture f;
+    int cleaned = 0;
+    auto child = f.scope.effect([](EffectSetupContext setup) {
+        auto added = setup.addCleanup([] {
+            return failedTask(makeError(ErrorCode::CleanupFailed, "child release failed"));
+        });
+        return added.hasValue() ? completedTask() : failedTask(added.error());
+    }).value();
+    auto parent = f.scope.effect([&](EffectSetupContext setup) {
+        CHECK(setup.addCleanup([&] { ++cleaned; return completedTask(); }).hasValue());
+        CHECK(setup.adopt(child).hasValue());
+        return completedTask();
+    }).value();
+    f.drain();
+    auto closed = f.scope.close();
+    f.drain();
+    CHECK(cleaned == 1 && !closed.tryResult()->value().quiescent);
+    CHECK(closed.tryResult()->value().errors.size() == 2);
+    auto report = parent.close().tryResult();
+    CHECK(!report->value().quiescent && report->value().errors.size() == 1);
+    CHECK(report->value().errors[0].causes.size() == 1);
+    CHECK(report->value().errors[0].causes[0].message == "child release failed");
+    CHECK(parent.snapshot().value().retainedCleanups == 1);
+    CHECK(child.snapshot().value().retainedCleanups == 1);
+}
+
+/** @brief 达到步数预算也必须保留之前的回调错误，并允许继续推进。 */
+void clockBudgetPreservesErrors()
+{
+    FakeClock clock;
+    bool ran = false;
+    CHECK(clock.after(1ms, {[] { throw std::runtime_error("timer failed"); }, {}}).hasValue());
+    CHECK(clock.after(2ms, {[&] { ran = true; }, {}}).hasValue());
+    auto limited = clock.advance(10ms, 1);
+    CHECK(!limited.hasValue() && limited.error().code == ErrorCode::StepLimitExceeded);
+    CHECK(limited.error().causes.size() == 1);
+    CHECK(limited.error().causes[0].code == ErrorCode::CallbackFailed);
+    CHECK(limited.error().causes[0].message == "timer failed");
+    CHECK(!ran && clock.nowMilliseconds() == 1 && clock.pending() == 1);
+    CHECK(clock.advance(9ms).hasValue());
+    CHECK(ran && clock.pending() == 0 && clock.nowMilliseconds() == 10);
+}
+
 /**
  * @brief 根据测试名称运行单个 W2 单元测试。
  * @param argc 命令行参数数量。
@@ -658,7 +751,9 @@ int main(int argc, char** argv)
         {"blocked_cleanup_delivery", effectBlockedCleanupDelivery},
         {"cleanup_destructor_guard", effectCleanupDestructorGuard},
         {"clock_step_budget", clockStepBudget}, {"clock_thread_reentry", clockThreadAndReentry},
-        {"observation_delayed_failure", observationDelayedFailure}, {"observation_deadline_race", observationDeadlineRace}
+        {"observation_delayed_failure", observationDelayedFailure}, {"observation_deadline_race", observationDeadlineRace},
+        {"timeout_barriers", effectTimeoutBarriers}, {"adopted_failure", effectAdoptedFailure},
+        {"clock_budget_errors", clockBudgetPreservesErrors}
     };
     if (argc != 2) return EXIT_FAILURE;
     for (const auto& test : cases) {

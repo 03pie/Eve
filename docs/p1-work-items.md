@@ -1,6 +1,6 @@
 # 第一阶段工作单
 
-状态：W0/W1 已完成，下一工作包 W2；实例业务运行时尚未实现。此工作单按依赖顺序推进，不要求先完成整个平台。
+状态：W0/W1/W2 已完成，W3 进行中；实例生命周期已实现，剩余清理能力边界见开发进度。此工作单按依赖顺序推进，不要求先完成整个平台。
 
 各工作包的实时状态统一维护在 [开发进度](progress.md)。本文件保留任务范围和完成条件，避免多份状态表不同步。
 
@@ -19,7 +19,7 @@
 
 从 W1 开始：先完成 Result 和 FakeScheduler，再实现 Task/Promise。新增真实测试验证“已完成 Task 的 thenOn 也必须排队”“两个完成者竞争仅一方成功”“失败 continuation 可观测”“scheduler 拒绝不悬空”。不要在 Task 的基础语义未确定时同时推进 DLL 和 GUI。
 
-上述 W1 已通过验收，见 [验证记录](w1-verification.md)。下一步 W2：EffectScope 的 owner 登记、重入 close、异步 setup/cleanup 屏障和错误汇总，并在超时观察需要时补齐 FakeClock。
+上述 W1 已通过验收，见 [验证记录](w1-verification.md)。W2 的 EffectScope、异步屏障、错误汇总、FakeClock 和超时观察也已验收，见 [W2 记录](w2-verification.md)。下一步 W3：建立 Runtime/Instance、Context、epoch、停止和更新收敛。
 
 ## 每个工作包的交付要求
 

@@ -1,14 +1,14 @@
 # 开发进度
 
-最后更新：2026-10-23（北京时间）。当前工作区：`D:/WorkSpace/code/cpp/Eve`。
+最后更新：2026-10-23（北京时间）。当前工作区：`D:/01_C++/Eve`。
 
 本文件是项目进度的统一入口，记录实际状态；设计细节见说明书，任务完成条件见工作单，测试依据见验收规范和验证报告。代码行数、文档篇幅和测试数量不作为项目完成百分比。
 
 ## 当前状态
 
-**W2 进行中：实现 EffectScope、setup/cleanup 屏障、错误汇总以及不取消底层操作的超时观察。W1 已完成。**
+**W1/W2 已完成，W3 进行中：实例、配置与 epoch 收敛、retry、Kernel 注册、进程标识和操作/代次查询已实现；独立 CleanupContext 尚待补齐。**
 
-内核开发无环境阻塞。Qt 5.15.2 / Ela 桌面环境尚未就绪，只影响后续桌面集成。W1 结果见 [交付与验证记录](w1-verification.md)，不代表生命周期、依赖或插件行为已经通过验收。
+内核开发无环境阻塞。Qt 5.15.2 / Ela 桌面环境尚未就绪，只影响后续桌面集成。W1/W2 结果见 [W1 验证记录](w1-verification.md)和 [W2 验证记录](w2-verification.md)，实例、依赖及插件行为尚未通过验收。
 
 ## 状态规则
 
@@ -27,7 +27,7 @@
 | 阶段 | 状态 | 当前证据与剩余项 |
 |---|---|---|
 | P0 研究、设计与编码准备 | 已完成（内核起步范围） | 设计说明书、契约、工程及环境检查齐备；桌面工具链在对应阶段前补齐 |
-| P1 内置插件与基础内核 | 进行中 | W1 完成；Effect、Instance、Context、Event 待后续工作包 |
+| P1 内置插件与基础内核 | 进行中 | W1/W2 完成；Instance、Context、Event 待后续工作包 |
 | P2 响应式服务依赖 | 未开始 | Binding、realm、租约和依赖失效待实现 |
 | P3 Qt / Loader / Ela | 未开始 | 功能未实现；目标 Qt kit 条件见 B01 |
 | P4 原生插件模块 | 未开始 | ABI、ModuleManager 和驻留账目待实现 |
@@ -41,8 +41,8 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 |---|---|---|---|---|
 | W0 | 工程、基础类型和构建检查 | 已完成 | [准备记录](preparation-status.md)、[环境验证](environment-verification.md) | 保持构建可用 |
 | W1 | Result、调度、Task/Promise、取消 | 已完成 | [W1 验证记录](w1-verification.md) | 供 W2 使用，保持契约回归 |
-| W2 | EffectScope、清理屏障 | 进行中 | C01–C04、S03；[A04–A06](../tests/acceptance/p1-core.md) | 实现 owner 登记、重入 close、清理汇总与超时测试 |
-| W3 | 实例、Context、epoch | 未开始 | [A05、A08、A09](../tests/acceptance/p1-core.md) | 依赖 W1/W2 |
+| W2 | EffectScope、清理屏障 | 已完成 | [W2 验证记录](w2-verification.md)；A05 仅 Effect 层 | 供 W3 使用，保持屏障回归 |
+| W3 | 实例、Context、epoch | 进行中 | [W3 开发记录](w3-development.md)；含 Kernel 注册、标识、操作与代次查询 | 补齐独立 CleanupContext 与能力边界 |
 | W4 | Binding、realm、服务租约 | 未开始 | D01–D04；[A01–A03、A07](../tests/acceptance/p1-core.md) | 依赖 W3 |
 | W5 | 子实例及依赖环 | 未开始 | D05、S02；[A07](../tests/acceptance/p1-core.md) | 依赖 W4 |
 | W6 | EventBus 五类分发 | 未开始 | E01/E02；[A10](../tests/acceptance/p1-core.md) | 依赖 W1/W2/W3 |
@@ -58,7 +58,7 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 - [x] CancellationSource：取消请求与底层完成分离。
 - [x] 为上述真实行为添加单测，完成适用工具链验证及记录。
 
-这些条目已有真实实现与测试。下一步按 W2 建立 Effect 控制块及清理屏障，计时/超时观察在 W2 需要时补齐。
+这些条目已有真实实现与测试。W2 也已完成 Effect 控制块、清理屏障、FakeClock 与超时观察，见 [交付记录](w2-verification.md)。下一步 W3 建立实例状态收敛、Context 和 epoch；不并行推进服务及 DLL。
 
 ## 验证台账
 
@@ -69,7 +69,9 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | W1 Result、调度、Task、取消及异步示例 | 2026-10-23 | GCC/MSVC Debug/Release 各 26/26；3 个竞态用例各重复 20 次通过 | [W1 验证记录](w1-verification.md) |
 | 精确 Qt 5.15.2 前置检查 | 2026-10-23 | 不满足：未找到目标 kit | 同上，现有 Qt 6.11.0 被正确拒绝 |
 | 4 份参考仓库的固定版本与关键文件 | 2026-10-23 | 已核对 | [准备记录](preparation-status.md)、[研究证据](../research-evidence.md) |
-| 生命周期、Effect、服务、Event 业务验收 | — | 待实现、未运行 | [验收规范](../tests/acceptance/p1-core.md) |
+| W2 Effect、清理屏障、时钟与观察 | 2026-10-23 | GCC/MSVC Debug/Release 各 60/60（含 W1 回归）；4 个 W2 头文件独立包含通过 | [W2 验证记录](w2-verification.md) |
+| 服务、realm、Event 业务验收 | — | 待实现、未运行 | [验收规范](../tests/acceptance/p1-core.md) |
+| W3 实例、Context、配置、epoch 和 Kernel | 2026-10-23 | 四配置各 61/61；九组 W3 行为，含内核归属、统一关闭和查询；不含 realm | [W3 开发记录](w3-development.md) |
 | Qt/Ela GUI、ABI、物理卸载和替换 | — | 待实现、未验证 | [设计说明书](../Cordis插件平台-软件设计说明书.md) |
 
 “最近验证”是当时已检查的版本；后续代码变化不自动继承通过状态。新验证需注明覆盖范围、工具链和失败/跳过项。临时构建日志位于 build，持久结论保存在本台账及对应报告。
@@ -81,7 +83,7 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | B01 | 未发现 Qt 5.15.2 目标 kit | P3 桌面集成及后续 UI 模块 | 明确 kit 路径、通过精确版本检查、Qt/Ela 编译与运行通过 | 不阻塞无 Qt 内核工作 |
 | B02 | 当前 MSVC v143 尚未与目标 msvc2019_64 kit 联合验证 | 目标桌面及二进制插件兼容性 | 补齐目标工具集或完成所选组合专项验证 | 内核 v143 独立验证已通过 |
 
-暂无阻塞 W2 的已知条件。发生新阻塞时在此记录原因，避免将未开始的任务都标为阻塞。
+暂无阻塞 W3 无 Qt 内核开发的已知条件。本机 MSVC D8050 通过进程内 TEMP/TMP 绕过后验证通过，见 W2 记录；Qt 环境结论仍为历史检查，本轮未重新认证。发生新阻塞时在此记录原因，避免将未开始的任务都标为阻塞。
 
 ## 工作记录
 
@@ -93,6 +95,11 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | 2026-10-23 | 完成 GCC/MSVC 四配置环境验证 | 基础检查和示例通过 | B01/B02 | 尚未提交 |
 | 2026-10-23 | 建立统一进度台账 | 记录真实基线、任务、验证及阻塞 | 开始 W1 | 尚未提交 |
 | 2026-10-23 | 完成 W1，细化投递回执和生产者终结语义 | 四配置各 26/26 通过，竞态重复验证通过；ADR-0002 | W2；生产 Qt 与计时适配未实现 | 尚未提交 |
+| 2026-10-23 | 完成 W2 验收；修复时钟步数耗尽丢失回调错误，补充屏障超时与子组失败测试 | GCC/MSVC 四配置各 60/60；[W2 记录](w2-verification.md) | W3；Qt/生产计时适配待实施 | 未提交本轮改动 |
+| 2026-10-23 | W3 单次激活、弱 Context、停止屏障与实例隔离 | GCC/MSVC 四配置各 61/61；[W3 记录](w3-development.md) | Kernel、epoch、配置更新、retry | 未提交本轮改动 |
+| 2026-10-23 | W3 配置收敛、每代作用域、旧上下文门禁、失败重试 | 四配置各 61/61，七组 W3 场景；[W3 记录](w3-development.md) | Kernel、全局标识、完整查询、CleanupContext | 未提交本轮改动 |
+| 2026-10-23 | W3 Kernel 注册/归属/关闭、进程标识、查询，分离 retry 与配置修订 | 四配置各 61/61，九组 W3 场景；两个公共头独立包含通过 | CleanupContext；W4 服务依赖 | 未提交本轮改动 |
+| 2026-10-23 | 提交前审核：修复移动后 Runtime、关闭后命令修改账目及 MSVC 依赖前缀检测 | [审核记录](code-review.md)，四配置各 61/61，十组 W3 场景 | CleanupContext；W4 服务依赖 | 随本次提交归档 |
 
 ## 更新约定
 

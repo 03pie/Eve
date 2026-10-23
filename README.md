@@ -2,7 +2,7 @@
 
 基于 Cordis 思路设计的 C++17 插件内核，目标桌面环境为 Qt 5.15.2 + ElaWidgetTools。
 
-当前处于**内核开发阶段，W1 已完成**：Result、调度接口、FakeScheduler、Task/Promise 和协作取消已有实现及行为测试；实例运行时、服务依赖、Effect、Qt UI、原生插件装载尚未实现。
+当前处于**内核开发阶段，W1/W2 已完成，W3 进行中**：已有异步基础、EffectScope、实例配置与 epoch 收敛、retry、Kernel 注册和操作/代次查询；独立 CleanupContext、服务依赖、Qt UI 和原生插件装载尚未实现。
 
 ## 从这里开始
 
@@ -34,6 +34,8 @@
 
 - [开发进度](docs/progress.md)：当前状态、工作包、验证台账及下一任务。
 - [W1 交付与验证](docs/w1-verification.md)：异步基础能力和四配置测试结果。
+- [W2 交付与验证](docs/w2-verification.md)：Effect 清理屏障、超时观察及四配置各 60/60 检查。
+- [W3 开发记录](docs/w3-development.md)：单次激活、停止屏障及剩余工作，四配置各 61/61 检查。
 - [软件设计说明书](Cordis插件平台-软件设计说明书.md)：详细设计与验收依据。
 - [开发指南](Cordis-Cpp17-Qt5152-开发指南.md)、[研究证据](research-evidence.md)：研究基线。
 - [基础决策](docs/adr/0001-foundation.md)：本轮冻结的约束。
@@ -43,4 +45,4 @@
 - [准备完成记录](docs/preparation-status.md)：实际检查结果与剩余环境条件。
 - [开发环境验证报告](docs/environment-verification.md)：GCC/MSVC 四配置实测结果与 Qt 缺项。
 
-当前 Git 仓库已初始化；未生成初始提交。产品没有选定开源许可证，研究上游的 MIT 许可证不自动适用于本项目。
+产品没有选定开源许可证，研究上游的 MIT 许可证不自动适用于本项目。

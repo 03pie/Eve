@@ -1,6 +1,6 @@
 # 首阶段接口契约
 
-本文件冻结接口行为和实现顺序。W1 的 Result、调度、Task/Promise、取消，以及 W2 的 EffectScope、FakeClock 和超时观察已有源码 SDK，见 `sdk/include/cordis`；Instance、服务和 Event 仍为后续工作包契约。
+本文件冻结接口行为和实现顺序。W1/W2 以及 W3 的实例与 Kernel 增量已有源码 SDK，见 `sdk/include/cordis`；服务和 Event 仍为后续工作包契约。
 
 ## 1. Result 与错误
 
@@ -48,7 +48,7 @@ EffectToken.snapshot() -> EffectSnapshot
 
 ### W2 实际接口与边界
 
-`EffectScope(scheduler)` 是未来 Context 的资源归属底座；当前尚无 Instance/Context。构造要求打开的 owner-thread scheduler，否则抛 invalid_argument。`scope.effect(setup, label)` 返回 Result<EffectToken>；成功仅表示已接受登记，启动结果由 token.ready() 观察。setup 接收按值 EffectSetupContext，返回 Task<void>。
+`EffectScope(scheduler)` 是 Context 的资源归属底座。构造要求打开的 owner-thread scheduler，否则抛 invalid_argument。`scope.effect(setup, label)` 返回 Result<EffectToken>；成功仅表示已接受登记，启动结果由 token.ready() 观察。setup 接收按值 EffectSetupContext，返回 Task<void>。
 
 `addCleanup(function<Task<void>()>)` 在 setup 完成通知被内核处理前接受资源，包括 close 已请求但 setup 还在运行时。完成后拒绝，控制块销毁后旧上下文返回 StaleContext。所有可变操作和快照只在 owner 线程进行；跨线程 setup/cleanup Task 完成通过 scheduler 回来处理。
 
@@ -62,13 +62,15 @@ owner/token 析构不承担异步关闭。必须在 scheduler 关闭前显式 cl
 
 ### W2 时钟与观察
 
-`FakeClock` 不可复制，after/advance/close 及查询在创建线程使用；TimerToken.cancel 可跨线程。时间以单调毫秒计，拒绝负值、溢出和嵌套 advance；同 deadline 按登记顺序触发，零延迟也不内联。advance 有步数预算，耗尽时停在当前已处理时间；再次推进由调用方决定。timer 抛错被汇总，不饿死其余到期项。
+`FakeClock` 不可复制，after/advance/close 及查询在创建线程使用；TimerToken.cancel 可跨线程。时间以单调毫秒计，拒绝负值、溢出和嵌套 advance；同 deadline 按登记顺序触发，零延迟也不内联。advance 有步数预算，耗尽时停在当前已处理时间，StepLimitExceeded 的 causes 保留本次已发生的回调错误；再次推进由调用方决定。timer 抛错被汇总，不饿死其余到期项。
 
 `observeFor(source, clock, timeout)` 返回 `Task<Observation<T>>`。Completed 持 source 的共享结果快照，源失败也是 Completed，真实错误在 snapshot 中；TimedOut 不包含结果也不取消 source。真实完成和到期竞争只产生一次观察结果，完成时不等待业务 continuation 队列排空。观察时源已经完成则立即形成结果，不创建定时器。业务回调仍须 thenOn，observeFor 不会内联执行业务代码。
 
 取消的 FakeClock timer 载荷在下一次 advance 或 close 时释放，不承诺 cancel 即析构；source pending 时仍保留必要观察账目直至其完成。FakeClock 是测试工具，不是生产 timer、Qt 资源适配器或 DLL 卸载屏障。
 
 ## 4. Kernel / Instance / Context
+
+W3 增量已有 `instance.hpp` 的生命周期、update/retry、operation/awaitTarget/awaitActive 和 Context::effect/config，以及 `kernel.hpp` 的 registerPlugin/mount/close/snapshot，范围与验证见 [W3 开发记录](w3-development.md)。每代资源静止后才启动最新配置；失败静止后允许 retry，stop 才终结实例。Runtime/Instance/Operation 标识进程内唯一；retry 不改变配置修订。awaitActive 仅查询已启动代次，未来代次报 InvalidArgument，历史成功不授予当前业务权限。以下接口形状中的挂载 options、服务相关能力与独立 CleanupContext 仍为目标契约。
 
 ```text
 registerPlugin(definition) -> Result<RuntimeHandle>

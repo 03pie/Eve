@@ -70,7 +70,9 @@ Result<std::size_t> FakeClock::advance(std::chrono::milliseconds amount, std::si
         if (next == entries_.end() || next->deadline > target) break;
         if (steps == stepLimit) {
             advancing_ = false;
-            return Result<std::size_t>::failure(makeError(ErrorCode::StepLimitExceeded, "clock step limit exceeded"));
+            auto error = makeError(ErrorCode::StepLimitExceeded, "clock step limit exceeded");
+            error.causes = std::move(errors);
+            return Result<std::size_t>::failure(std::move(error));
         }
         Entry entry = std::move(*next);
         entries_.erase(next);

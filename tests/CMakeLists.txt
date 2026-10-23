@@ -37,7 +37,14 @@ foreach(case IN ITEMS
     delivery_blocked wrong_thread clock_ordering clock_limits observation_timeout
     observation_completion observation_clock_closed observation_immediate_failure
     async_registration_guard stale_context blocked_setup_delivery retains_failed_closure blocked_cleanup_delivery cleanup_destructor_guard
-    clock_step_budget clock_thread_reentry observation_delayed_failure observation_deadline_race)
+    clock_step_budget clock_thread_reentry observation_delayed_failure observation_deadline_race
+    timeout_barriers adopted_failure clock_budget_errors)
     add_test(NAME w2.${case} COMMAND cordis_w2_tests ${case})
     set_tests_properties(w2.${case} PROPERTIES LABELS "w2;core" TIMEOUT 15)
 endforeach()
+
+add_executable(cordis_w3_tests unit/w3.cpp)
+target_link_libraries(cordis_w3_tests PRIVATE Cordis::Core)
+cordis_target_defaults(cordis_w3_tests)
+add_test(NAME w3.single_activation COMMAND cordis_w3_tests)
+set_tests_properties(w3.single_activation PROPERTIES LABELS "w3;core" TIMEOUT 15)
