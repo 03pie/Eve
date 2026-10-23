@@ -205,6 +205,8 @@ void EffectControl::finish()
 } // namespace cordis::detail
 
 namespace cordis {
+/** @brief 调度器身份在作用域创建后保持不变。 */
+bool EffectScope::usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const { return control_->scheduler == scheduler; }
 /** @brief 仅广播取消；资源清理由之后的 close 屏障推进。 */
 Result<void> EffectScope::requestCancel() const
 {

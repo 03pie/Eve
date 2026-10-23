@@ -425,6 +425,20 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
 } // namespace cordis::detail
 
 namespace cordis {
+/** @brief 事件记录只捕获弱实例与代次，分发时重新检查退役及清理权限。 */
+Result<std::function<Result<void>()>> Context::eventGuard(const std::shared_ptr<IScheduler>& scheduler) const
+{
+    using Output = Result<std::function<Result<void>()>>;
+    auto self = control_.lock();
+    if (!self) return Output::failure(makeError(ErrorCode::StaleContext, "instance expired"));
+    auto allowed = self->business(epoch_);
+    if (!allowed.hasValue()) return Output::failure(allowed.error());
+    if (self->scheduler != scheduler) return Output::failure(makeError(ErrorCode::InvalidArgument, "event bus requires same scheduler"));
+    return Output::success([weak = control_, captured = epoch_] {
+        auto owner = weak.lock();
+        return owner ? owner->business(captured) : Result<void>::failure(makeError(ErrorCode::StaleContext, "event owner expired"));
+    });
+}
 /** @brief 子实例沿用父视图与索引，排队激活前即纳入父代所有权。 */
 Result<Instance> Context::inject(const Runtime& runtime, std::string config) const
 {

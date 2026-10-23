@@ -9,6 +9,7 @@
 namespace cordis {
 class Runtime;
 class Instance;
+template<class T> class EventBus;
 namespace detail { struct InstanceControl; }
 namespace detail { struct CleanupAccess; }
 
@@ -79,6 +80,9 @@ public:
         return Result<ServiceRef<T>>::success(ServiceRef<T>(std::weak_ptr<detail::CommittedLease>(lease.value())));
     }
 private:
+    template<class T> friend class EventBus;
+    /** @brief 为事件适配器提供同 scheduler、本代业务门禁，不授予实例所有权。 */
+    Result<std::function<Result<void>()>> eventGuard(const std::shared_ptr<IScheduler>& scheduler) const;
     /** @brief 校验本代能力后登记并保存托管输出。 */
     Result<BindingId> provideErased(ServiceKey key, std::shared_ptr<void> object, std::type_index type) const;
     /** @brief 解析本实例托管注册表，不向插件暴露发布/释放控制。 */

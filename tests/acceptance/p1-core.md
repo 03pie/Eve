@@ -2,7 +2,7 @@
 
 以下是第一阶段的 Given/When/Then 规范。A04/A06 见 [W2 验证记录](../../docs/w2-verification.md)；A05、A08 及 A09 的多实例资源独立部分见 [W3 验证记录](../../docs/w3-development.md)。服务场景的增量覆盖见下段；各场景状态不等同于全部阶段通过。
 
-W4 新增证据：A01–A03 的声明依赖闭环、A07 的传递清理部分，以及 A09 的 Context realm 派生视图和服务隔离，见 [W4 验证记录](../../docs/w4-development.md)、`w4.dependency_*` 和 `w4.contract_realms`。W5 补齐 A07 父子所有权、可选子能力与联合环诊断，见 [W5 验证记录](../../docs/w5-development.md)、`w5.children_*`。A10 事件仍待实施。
+W4 新增证据：A01–A03 的声明依赖闭环、A07 的传递清理部分，以及 A09 的 Context realm 派生视图和服务隔离，见 [W4 验证记录](../../docs/w4-development.md)、`w4.dependency_*` 和 `w4.contract_realms`。W5 补齐 A07 父子所有权、可选子能力与联合环诊断，见 [W5 验证记录](../../docs/w5-development.md)、`w5.children_*`。A10 首阶段事件证据见下节及 W6 记录。
 
 ## A01：缺依赖与恢复（D01）
 
@@ -45,6 +45,8 @@ Given epoch1 正在 setup；When 连续接受配置 2、3；Then 仅配置 3 可
 Given 同一 Runtime 两个实例和不同 realm；When 停止一个；Then 另一实例资源不减少，不读取其他 realm 服务，两个实例的效果树独立。
 
 ## A10：事件边界（E01/E02）
+
+首阶段自动化证据：`w6.events_once_filter`、`w6.events_snapshot`、`w6.events_snapshot_lifetime`、`w6.events_next` 与异步屏障测试，见 [W6 交付记录](../../docs/w6-development.md)。覆盖同工具链类型化总线；Qt/跨 ABI 分发未验。
 
 Given once listener 内重入 emit；Then 仅调用一次。Given 分发快照后注销 listener；Then 进入回调前 liveness 检查阻止调用；闭包实际释放前仍保持所属资源引用。
 

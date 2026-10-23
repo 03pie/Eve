@@ -12,6 +12,7 @@
 #include <vector>
 
 namespace cordis {
+template<class T> class EventBus;
 namespace detail { struct EffectControl; struct ScopeControl; }
 
 /**
@@ -151,6 +152,9 @@ public:
     [[nodiscard]] Result<ScopeSnapshot> snapshot() const;
 
 private:
+    template<class T> friend class EventBus;
+    /** @brief 事件资源必须使用同一 scheduler，避免跨线程修改分发屏障。 */
+    bool usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const;
     std::shared_ptr<detail::ScopeControl> control_;
 };
 } // namespace cordis

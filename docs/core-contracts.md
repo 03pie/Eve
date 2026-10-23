@@ -1,6 +1,6 @@
 # 首阶段接口契约
 
-本文件冻结接口行为和实现顺序。W1–W5 已有源码 SDK，见 `sdk/include/cordis`；Event 仍为后续契约。
+本文件冻结接口行为和实现顺序。W1–W6 已有源码 SDK，见 `sdk/include/cordis`；各包验证范围见交付记录。
 
 ## 1. Result 与错误
 
@@ -116,4 +116,8 @@ W5 将子→父所有权边加入消费者→提供者的实际图，拒绝父�
 
 emit/bail/waterfall 是同步协议；serial/parallel 使用 Task。终止使用 Continue/Stop(value) 显式类型。once 在进入回调前注销；快照调用前检查 liveness；Next 限当前调用栈且至多一次。内部观察者错误逐个隔离，不中断清理。
 
-完整参数与返回类型在 W6 实现时形成源码 SDK，必须保留上述语义，禁止以 Qt signal/slot 直接替代这些契约。
+W6 的 `event.hpp` 实现 EventBus<T>，每个 EventKey（名称、显式 realm）固定一种 EventMode，T 固定同工具链参数与停止值类型。on/onAsync/onWaterfall 要求同 scheduler 的 Context 或 EffectScope，返回 EffectToken；监听器始终归属资源作用域。Context 监听器调用前重查 epoch 与业务能力。prepend 改变调用位置，parallel 报告按 listener id 排序。过滤器执行前后重查权限，once 在回调之前失活。
+
+异步分发入口也排队，参数由分发控制块持有。parallel 返回 EventReport<T>，各项 Result 汇集全部监听器错误；serial 首错终止。快照中的已注销项跳过，但其闭包保留仍阻止 effect 报告静止，直到该快照释放。启动或完成投递受阻时保守保留任务与资源，通过 EventBusSnapshot 诊断。observe 使用独立 Observer 协议隔离错误；尚未自动接线内核通知。
+
+EventNext 共享一次性同步窗口，回调退出或抛错后失效，不保留下游快照。空分发返回 Continue 或空报告。当前仅类型化独立总线，没有全局跨类型 schema、post、跨 ABI ValueTuple 或 Qt 适配；图外的用户回调自等待关闭任务也不能自动排除。详见 [W6 交付记录](w6-development.md)。
