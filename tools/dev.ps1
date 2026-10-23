@@ -10,13 +10,17 @@
 
 .PARAMETER Preset
 要使用的 CMake 预设。
+
+.PARAMETER QtRoot
+Qt 5.15.2 kit 根目录；仅 Qt 预设使用，默认读取 CORDIS_QT5152_ROOT。
 #>
 [CmdletBinding()]
 param(
     [ValidateSet('doctor', 'configure', 'build', 'test', 'verify')]
     [string]$Action = 'verify',
-    [ValidateSet('core-gcc-debug', 'core-gcc-release', 'core-msvc-debug', 'core-msvc-release')]
-    [string]$Preset = 'core-gcc-debug'
+    [ValidateSet('core-gcc-debug', 'core-gcc-release', 'core-msvc-debug', 'core-msvc-release', 'qt-msvc-debug', 'qt-msvc-release')]
+    [string]$Preset = 'core-gcc-debug',
+    [string]$QtRoot = $env:CORDIS_QT5152_ROOT
 )
 
 $ErrorActionPreference = 'Stop'
@@ -64,12 +68,26 @@ function Invoke-Checked([string]$Executable, [string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw "Command failed with exit code $LASTEXITCODE : $Executable" }
 }
 
+$taskOriginalPath = $env:PATH
+$taskOriginalQtRoot = $env:CORDIS_QT5152_ROOT
 Push-Location -LiteralPath $taskRoot
 try {
     $taskCmake = Find-CMake
     $taskCtestName = if ($IsLinux -or $IsMacOS) { 'ctest' } else { 'ctest.exe' }
     $taskCtest = Join-Path (Split-Path -Parent $taskCmake) $taskCtestName
     if (-not (Test-Path -LiteralPath $taskCtest -PathType Leaf)) { throw 'CTest must be installed beside CMake.' }
+
+    if ($Preset.StartsWith('qt-')) {
+        if (-not $QtRoot) { throw 'Set -QtRoot or CORDIS_QT5152_ROOT to the Qt 5.15.2 MSVC x64 kit.' }
+        $taskQtRoot = (Resolve-Path -LiteralPath $QtRoot).Path
+        $taskQmake = Join-Path $taskQtRoot 'bin/qmake.exe'
+        if (-not (Test-Path -LiteralPath $taskQmake -PathType Leaf)) { throw 'QtRoot must contain bin/qmake.exe.' }
+        $taskQtVersion = & $taskQmake -query QT_VERSION
+        if ($LASTEXITCODE -ne 0 -or $taskQtVersion.Trim() -ne '5.15.2') { throw 'Qt preset requires exactly Qt 5.15.2.' }
+        if (-not (Test-Path -LiteralPath (Join-Path $taskQtRoot 'lib/Qt5Core.lib') -PathType Leaf)) { throw 'Qt preset requires an MSVC kit.' }
+        $env:CORDIS_QT5152_ROOT = $taskQtRoot
+        $env:PATH = (Join-Path $taskQtRoot 'bin') + [System.IO.Path]::PathSeparator + $env:PATH
+    }
 
     if ($Action -eq 'doctor') {
         Invoke-Checked $taskCmake @('--version')
@@ -90,4 +108,8 @@ try {
         Invoke-Checked $taskCtest @('--preset', $Preset)
     }
 }
-finally { Pop-Location }
+finally {
+    $env:PATH = $taskOriginalPath
+    $env:CORDIS_QT5152_ROOT = $taskOriginalQtRoot
+    Pop-Location
+}

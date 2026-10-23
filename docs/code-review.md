@@ -1,5 +1,18 @@
 # 提交前代码审查记录
 
+## P3 Q0/Q1 提交前审核
+
+日期：2026-10-24。范围：2e6efa2 之后全部未提交的 Qt 工具链配置、QtScheduler、SDK、测试与文档；并核对 FakeScheduler 的同类队列操作。sources/research 未改动。
+
+- 正确性：QtScheduler 和 FakeScheduler 原先在队列锁内移动 ScheduledJob。MSVC std::function 的小对象存储会调用用户可调用对象的移动构造及移动后析构；若这些函数查询 isOpen，则重入同一把锁。现在在锁外创建 unique_ptr<ScheduledJob>，队列内只移动指针，执行和丢弃路径也不在锁内销毁用户对象。新增 p3.qt_scheduler_callable_reentry 与 w1.scheduler_callable_reentry，在修复前 MSVC Debug 两项均真实失败，见 `build/review-p3-before.log`；修复后均通过。
+- 重入边界：FakeScheduler::runOne 在任务捕获析构前清除了 pumping，捕获的析构函数可提前运行后续任务。现在由后析构的 PumpGuard 恢复门禁，覆盖成功及异常返回。新增 w1.scheduler_destructor_guard；修复前 GCC Release 明确违反“后项仍排队”断言，见 `build/review-p3-guard-before.log`，修复后两个分支均通过。
+- 所有权：QtScheduler 的 post/close 在进入用户代码前持有本地控制块，避免移动/丢弃回调释放 facade 与 Qt lifetime 后继续访问已释放控制块。新增 p3.qt_scheduler_close_releases_owner，验证丢弃回调释放全部所有者后抛错，仍完成后续通知；该场景为生命周期防护，未声称完成消毒器验证。
+- 规范和质量：新增文件、类型及具名函数使用中文 Doxygen；重入探针由 Qt/Core 测试共用，避免只依赖编译器恰好使用堆存储。核对 owner 限制、锁外析构、关闭/投递竞争、异常隔离、账目与队列一致性，以及 CMake 可选目标、QT_NO_KEYWORDS 传播和开发脚本环境恢复。同步 ADR、接口契约和进度，保留初次验证与本轮审核的独立证据。
+
+验证：Qt 5.15.2 msvc2019_64 + MSVC 19.44/v143 x64 Debug/Release 各 126/126；无 Qt GCC 13.1 Debug/Release 各 115/115。日志为 `build/review-p3-qt-msvc-<mode>.log`、`build/review-p3-core-gcc-<mode>.log`；QtScheduler/FakeScheduler 公共头仅使用 SDK include 的 GCC C++17 独立包含检查、git diff --check 通过。未发现其他阻止提交的问题。
+
+本轮仍限 Q0 工具链与 Q1 调度；Q2 Timer/QObject 资源屏障、Ela UI、原生 ABI 与 DLL 卸载未实现或验收，未运行 ASan/TSan。
+
 ## W7 提交前审核
 
 日期：2026-10-24。范围：25adfcc 之后全部未提交的联合示例、CTest 登记与验收/进度文档，包括新增文件。未改动核心 SDK 行为。

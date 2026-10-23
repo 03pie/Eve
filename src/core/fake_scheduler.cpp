@@ -24,9 +24,11 @@ FakeScheduler::~FakeScheduler() { close(); }
 bool FakeScheduler::post(ScheduledJob job)
 {
     if (!job.run) return false;
+    // std::function 的移动也可能调用用户代码，先在锁外建立稳定的任务存储。
+    auto pending = std::make_unique<ScheduledJob>(std::move(job));
     std::lock_guard<std::mutex> lock(mutex_);
     if (!open_) return false;
-    queue_.push_back(std::move(job));
+    queue_.push_back(std::move(pending));
     return true;
 }
 
@@ -67,7 +69,13 @@ Result<bool> FakeScheduler::runOne()
 {
     if (!isCurrentThread()) return Result<bool>::failure(makeError(ErrorCode::WrongThread, "pump requires owner thread"));
     if (pumping_) return Result<bool>::failure(makeError(ErrorCode::InvalidArgument, "nested pump is forbidden"));
-    ScheduledJob job;
+    /** @brief 晚于任务捕获析构退出 pump，异常路径也维持相同的重入门禁。 */
+    struct PumpGuard {
+        bool& pumping;
+        /** @brief 恢复门禁；该对象先于任务声明，因而晚于任务析构。 */
+        ~PumpGuard() { pumping = false; }
+    } guard{pumping_};
+    std::unique_ptr<ScheduledJob> job;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (queue_.empty()) return Result<bool>::success(false);
@@ -76,15 +84,12 @@ Result<bool> FakeScheduler::runOne()
     }
     pumping_ = true;
     try {
-        job.run();
+        job->run();
     } catch (const std::exception& error) {
-        pumping_ = false;
         return Result<bool>::failure(makeError(ErrorCode::CallbackFailed, error.what()));
     } catch (...) {
-        pumping_ = false;
         return Result<bool>::failure(makeError(ErrorCode::CallbackFailed, "unknown callback exception"));
     }
-    pumping_ = false;
     return Result<bool>::success(true);
 }
 
@@ -112,7 +117,7 @@ Result<std::size_t> FakeScheduler::runUntilIdle(std::size_t stepLimit)
  */
 void FakeScheduler::close()
 {
-    std::deque<ScheduledJob> discarded;
+    std::deque<std::unique_ptr<ScheduledJob>> discarded;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         open_ = false;
@@ -120,8 +125,8 @@ void FakeScheduler::close()
     }
     // 任务析构和完成回调可能重入 post/close，因此必须在释放锁后通知。
     for (auto& job : discarded) {
-        if (job.discarded) {
-            try { job.discarded(); } catch (...) { /* Close must still discard peers. */ }
+        if (job->discarded) {
+            try { job->discarded(); } catch (...) { /* 丢弃通知抛错也必须继续处理其余任务。 */ }
         }
     }
 }

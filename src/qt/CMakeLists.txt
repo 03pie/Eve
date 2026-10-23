@@ -1,0 +1,5 @@
+add_library(cordis_qt STATIC scheduler.cpp)
+add_library(Cordis::Qt ALIAS cordis_qt)
+target_link_libraries(cordis_qt PUBLIC Cordis::Core Qt5::Core)
+target_compile_definitions(cordis_qt PUBLIC QT_NO_KEYWORDS)
+cordis_target_defaults(cordis_qt)

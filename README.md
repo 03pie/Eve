@@ -2,7 +2,7 @@
 
 基于 Cordis 思路设计的 C++17 插件内核，目标桌面环境为 Qt 5.15.2 + ElaWidgetTools。
 
-当前已完成 **W0–W7 首阶段内置内核与联合验收**：包含服务恢复、子实例、联合环诊断、类型化 EventBus、正常关闭及失败残留示例。下一步检查 P3 的 Qt 工具链并设计调度适配；Qt UI 和原生插件装载尚未实现。
+当前已完成 **W0–W7 首阶段内置内核与联合验收**：包含服务恢复、子实例、联合环诊断、类型化 EventBus、正常关闭及失败残留示例。P3 已完成 Qt 5.15.2 工具链与 QtScheduler，下一步实现 Timer/QObject 资源屏障；Qt UI 和原生插件装载尚未实现。
 
 ## 从这里开始
 
@@ -23,8 +23,9 @@
 |---|---|
 | `sdk/include/cordis` | 源码 SDK 基础类型，不是稳定二进制 ABI |
 | `src/core` | 不依赖 Qt/Ela 的内核库起点 |
-| `examples/builtin` | 构建信息及异步 Task 演示；插件生命周期示例待实现 |
-| `tests` | 现有 SDK 编译/链接契约检查及待实施验收规范 |
+| `src/qt` | 可选 Cordis::Qt 适配层，已实现 QtScheduler |
+| `examples/builtin` | 异步 Task、Effect、EventBus 与插件联合生命周期示例 |
+| `tests` | SDK 契约、内核与真实 Qt 循环测试，以及验收规范 |
 | `tools/dev.ps1` | 环境检查、配置、构建、测试入口 |
 | `docs` | 决策、接口契约、首阶段工作单和准备记录 |
 | `sources` | 同步参考资料，只读；不纳入产品构建或 Git |
@@ -39,6 +40,7 @@
 - [W4 交付与验证](docs/w4-development.md)：服务依赖、输出契约、realm 视图及异步调用，四配置各 86/86 检查。
 - [W5 交付与验证](docs/w5-development.md)：子实例、父代清理屏障及联合环诊断，四配置各 96/96 检查。
 - [W6 交付与验证](docs/w6-development.md)：事件协议、作用域、异步屏障及控制台示例，四配置各 110/110 检查。
+- [P3 桌面适配](docs/p3-development.md)：Qt 5.15.2 工具链、QtScheduler 与真实事件循环验证，提交前 Debug/Release 各 126/126。
 - [W7 联合验收](docs/w7-verification.md)：服务/事件/子树完整闭环、失败残留和 A01–A10 证据，四配置各 113/113 检查。
 - [软件设计说明书](Cordis插件平台-软件设计说明书.md)：详细设计与验收依据。
 - [开发指南](Cordis-Cpp17-Qt5152-开发指南.md)、[研究证据](research-evidence.md)：研究基线。

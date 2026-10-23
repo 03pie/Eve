@@ -13,13 +13,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(CORDIS_BUILD_EXAMPLES "Build the foundation diagnostic example" ON)
 option(CORDIS_WARNINGS_AS_ERRORS "Treat project warnings as errors" ON)
-option(CORDIS_REQUIRE_QT5152 "Check the future Qt adapter toolchain (no GUI target yet)" OFF)
+option(CORDIS_REQUIRE_QT5152 "Build Qt adapter and verify Qt 5.15.2 Core/Widgets/Test toolchain" OFF)
 
 include(CTest)
 
 if(CORDIS_REQUIRE_QT5152)
     find_package(Qt5 5.15.2 EXACT REQUIRED COMPONENTS Core Widgets Test)
-    message(STATUS "Qt 5.15.2 prerequisites found; Qt adapter is not implemented yet")
+    message(STATUS "Qt 5.15.2 found; enabling Cordis::Qt adapter and Qt tests")
 endif()
 
 function(cordis_target_defaults target)
@@ -38,6 +38,9 @@ function(cordis_target_defaults target)
 endfunction()
 
 add_subdirectory(src/core)
+if(CORDIS_REQUIRE_QT5152)
+    add_subdirectory(src/qt)
+endif()
 if(CORDIS_BUILD_EXAMPLES)
     add_subdirectory(examples/builtin)
 endif()

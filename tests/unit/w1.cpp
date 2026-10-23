@@ -5,6 +5,7 @@
 #include <cordis/cancellation.hpp>
 #include <cordis/task.hpp>
 #include <cordis/testing/fake_scheduler.hpp>
+#include "../support/reentrant_callable.hpp"
 #include <atomic>
 #include <cstdlib>
 #include <functional>
@@ -487,6 +488,44 @@ void schedulerCloseReentrant()
     CHECK(discarded == 2 && scheduler.pending() == 0);
 }
 
+/** @brief 用户可调用对象的移动和析构可查询调度器，执行/丢弃/拒绝均不死锁。 */
+void schedulerCallableReentry()
+{
+    FakeScheduler scheduler;
+    int ran = 0, discarded = 0;
+    CHECK(scheduler.post({cordis::test::ReentrantCallable(scheduler, ran), cordis::test::ReentrantCallable(scheduler, discarded)}));
+    CHECK(scheduler.runOne().value());
+    CHECK(ran == 1 && discarded == 0);
+    CHECK(scheduler.post({cordis::test::ReentrantCallable(scheduler, ran), cordis::test::ReentrantCallable(scheduler, discarded)}));
+    scheduler.close();
+    CHECK(ran == 1 && discarded == 1 && scheduler.pending() == 0);
+    CHECK(!scheduler.post({cordis::test::ReentrantCallable(scheduler, ran), cordis::test::ReentrantCallable(scheduler, discarded)}));
+    CHECK(ran == 1 && discarded == 1);
+}
+
+/** @brief 任务捕获的析构仍属于 pump 窗口，不允许在外层返回前进入后续任务。 */
+void schedulerDestructorGuard()
+{
+    for (const bool fail : {false, true}) {
+        FakeScheduler scheduler;
+        bool nestedRejected = false;
+        int ran = 0;
+        auto payload = std::shared_ptr<int>(new int(0), [&](int* value) {
+            delete value;
+            auto nested = scheduler.runOne();
+            nestedRejected = !nested.hasValue() && nested.error().code == ErrorCode::InvalidArgument;
+        });
+        CHECK(scheduler.post({[payload, fail] { if (fail) throw std::runtime_error("run failed"); }, {}}));
+        payload.reset();
+        CHECK(scheduler.post({[&] { ++ran; }, {}}));
+        auto result = scheduler.runOne();
+        if (fail) CHECK(!result.hasValue() && result.error().code == ErrorCode::CallbackFailed);
+        else CHECK(result.hasValue() && result.value());
+        CHECK(nestedRejected && ran == 0 && scheduler.pending() == 1);
+        CHECK(scheduler.runOne().value() && ran == 1);
+    }
+}
+
 /**
  * @brief 根据测试名称运行单个 W1 单元测试。
  * @param argc 命令行参数数量。
@@ -507,7 +546,8 @@ int main(int argc, char** argv)
         {"task_broken_promise", taskBrokenPromise}, {"task_receipt_chain", taskReceiptChain},
         {"task_invalid_observer", taskInvalidObserver}, {"cancellation_independent", cancellationIndependent},
         {"task_producer_copies", taskProducerCopies}, {"task_throwing_scheduler", taskThrowingScheduler},
-        {"scheduler_close_race", schedulerCloseRace}, {"scheduler_close_reentrant", schedulerCloseReentrant}
+        {"scheduler_close_race", schedulerCloseRace}, {"scheduler_close_reentrant", schedulerCloseReentrant},
+        {"scheduler_callable_reentry", schedulerCallableReentry}, {"scheduler_destructor_guard", schedulerDestructorGuard}
     };
     if (argc != 2) return EXIT_FAILURE;
     for (const auto& test : cases) {

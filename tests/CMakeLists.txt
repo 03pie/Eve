@@ -4,6 +4,22 @@ cordis_target_defaults(cordis_sdk_contract)
 add_test(NAME foundation.sdk_contract COMMAND cordis_sdk_contract)
 set_tests_properties(foundation.sdk_contract PROPERTIES LABELS "foundation;sdk")
 
+if(CORDIS_REQUIRE_QT5152)
+    add_executable(cordis_qt_scheduler_tests qt/scheduler.cpp)
+    target_link_libraries(cordis_qt_scheduler_tests PRIVATE Cordis::Qt)
+    cordis_target_defaults(cordis_qt_scheduler_tests)
+    foreach(case IN ITEMS fifo tasks discard lifetime_race dropped_handle exceptions kernel_shutdown application_quit callable_reentry close_releases_owner)
+        add_test(NAME p3.qt_scheduler_${case} COMMAND cordis_qt_scheduler_tests ${case})
+        set_tests_properties(p3.qt_scheduler_${case} PROPERTIES LABELS "p3;qt;scheduler" TIMEOUT 15)
+    endforeach()
+    add_executable(cordis_qt_environment_probe qt/environment.cpp)
+    target_link_libraries(cordis_qt_environment_probe PRIVATE Cordis::Core Qt5::Core Qt5::Widgets Qt5::Test)
+    target_compile_definitions(cordis_qt_environment_probe PRIVATE QT_NO_KEYWORDS)
+    cordis_target_defaults(cordis_qt_environment_probe)
+    add_test(NAME p3.qt_environment COMMAND cordis_qt_environment_probe)
+    set_tests_properties(p3.qt_environment PROPERTIES LABELS "p3;qt" TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
 if(TARGET cordis_platform_demo)
     foreach(case IN ITEMS shutdown recovery failure)
         add_test(NAME w7.platform_${case} COMMAND cordis_platform_demo ${case})
@@ -33,7 +49,7 @@ foreach(case IN ITEMS
     task_registration_race task_closed_registration task_discard_queued task_closed_completion
     task_destroyed_scheduler task_callback_failure task_broken_promise task_receipt_chain
     task_invalid_observer cancellation_independent task_producer_copies task_throwing_scheduler
-    scheduler_close_race scheduler_close_reentrant)
+    scheduler_close_race scheduler_close_reentrant scheduler_callable_reentry scheduler_destructor_guard)
     add_test(NAME w1.${case} COMMAND cordis_w1_tests ${case})
     set_tests_properties(w1.${case} PROPERTIES LABELS "w1;core" TIMEOUT 15)
 endforeach()

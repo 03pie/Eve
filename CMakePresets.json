@@ -40,18 +40,39 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL"
       }
+    },
+    {
+      "name": "qt-msvc-debug",
+      "inherits": "core-msvc-debug",
+      "displayName": "Qt 5.15.2 / MSVC / Debug",
+      "cacheVariables": {
+        "CORDIS_REQUIRE_QT5152": "ON",
+        "CMAKE_PREFIX_PATH": "$env{CORDIS_QT5152_ROOT}"
+      }
+    },
+    {
+      "name": "qt-msvc-release",
+      "inherits": "qt-msvc-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL"
+      }
     }
   ],
   "buildPresets": [
     { "name": "core-gcc-debug", "configurePreset": "core-gcc-debug" },
     { "name": "core-gcc-release", "configurePreset": "core-gcc-release" },
     { "name": "core-msvc-debug", "configurePreset": "core-msvc-debug" },
-    { "name": "core-msvc-release", "configurePreset": "core-msvc-release" }
+    { "name": "core-msvc-release", "configurePreset": "core-msvc-release" },
+    { "name": "qt-msvc-debug", "configurePreset": "qt-msvc-debug" },
+    { "name": "qt-msvc-release", "configurePreset": "qt-msvc-release" }
   ],
   "testPresets": [
     { "name": "core-gcc-debug", "configurePreset": "core-gcc-debug", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
     { "name": "core-gcc-release", "configurePreset": "core-gcc-release", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
     { "name": "core-msvc-debug", "configurePreset": "core-msvc-debug", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
-    { "name": "core-msvc-release", "configurePreset": "core-msvc-release", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } }
+    { "name": "core-msvc-release", "configurePreset": "core-msvc-release", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
+    { "name": "qt-msvc-debug", "configurePreset": "qt-msvc-debug", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
+    { "name": "qt-msvc-release", "configurePreset": "qt-msvc-release", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } }
   ]
 }

@@ -7,6 +7,7 @@
 #include <cordis/scheduler.hpp>
 #include <cstddef>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <thread>
 
@@ -53,6 +54,6 @@ private:
     mutable std::mutex mutex_;
     bool open_ = true;
     bool pumping_ = false;
-    std::deque<ScheduledJob> queue_;
+    std::deque<std::unique_ptr<ScheduledJob>> queue_;
 };
 } // namespace cordis::testing

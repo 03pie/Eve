@@ -6,9 +6,9 @@
 
 ## 当前状态
 
-**W0–W7 首阶段工作单已完成：A01–A10 的内置内核证据已汇总，服务/子实例/事件联合闭环及失败残留均有自动化验证。下一步 P3 前置检查与 Qt 调度适配设计。**
+**W0–W7 首阶段工作单已完成。P3 Q0 工具链、Q1 QtScheduler 已完成：提交前审查后 Qt Debug/Release 各 126/126 通过；下一步 Q2 Timer/QObject 资源屏障。**
 
-内核开发无环境阻塞。Qt 5.15.2 / Ela 桌面环境尚未就绪，只影响后续桌面集成。已有验证见 W1–W7 记录；Qt/原生插件及跨 ABI 事件行为尚未通过验收。
+Qt 5.15.2 Core/Widgets/Test 已就绪，路径与当前 MSVC 组合见 [P3 记录](p3-development.md)。QtScheduler 已通过真实事件循环验收；Qt 资源屏障、Ela UI、原生插件及跨 ABI 事件行为尚未通过验收。
 
 ## 状态规则
 
@@ -29,7 +29,7 @@
 | P0 研究、设计与编码准备 | 已完成（内核起步范围） | 设计说明书、契约、工程及环境检查齐备；桌面工具链在对应阶段前补齐 |
 | P1 内置插件与基础内核 | 已完成（首阶段内置范围） | W1–W3/W6/W7 与 A01–A10 内核证据；生产适配、全局事件 schema/post 另验 |
 | P2 响应式服务依赖 | 已完成（首阶段内置范围） | W4/W5/W7 联合闭环通过；跨 ABI、物理卸载及替换不在本轮 |
-| P3 Qt / Loader / Ela | 未开始 | 功能未实现；目标 Qt kit 条件见 B01 |
+| P3 Qt / Loader / Ela | 进行中 | Q0 安装与环境探测、Q1 QtScheduler 完成；Q2 资源适配、Ela UI 与 Loader 待实现 |
 | P4 原生插件模块 | 未开始 | ABI、ModuleManager 和驻留账目待实现 |
 | P5 受控替换 | 未开始 | 新旧代替换、恢复和卸载专项验证待实现 |
 
@@ -58,7 +58,7 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 - [x] CancellationSource：取消请求与底层完成分离。
 - [x] 为上述真实行为添加单测，完成适用工具链验证及记录。
 
-这些条目已有真实实现与测试。W2 也已完成 Effect 控制块、清理屏障、FakeClock 与超时观察，见 [交付记录](w2-verification.md)。W3–W7 的实例、服务、子树、联合图、事件与联合示例也已验收；下一步先复核 Qt kit 与调度适配契约，仍不推进 DLL。
+这些条目已有真实实现与测试。W2 也已完成 Effect 控制块、清理屏障、FakeClock 与超时观察，见 [交付记录](w2-verification.md)。W3–W7 的实例、服务、子树、联合图、事件与联合示例也已验收；P3 已完成 Qt kit 与调度适配，下一步实现资源屏障。
 
 ## 验证台账
 
@@ -75,6 +75,9 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | W4 服务、描述契约、域视图与调用租约 | 2026-10-23 | GCC/MSVC Debug/Release 各 86/86；含 W1–W3 回归及 22 项 W4 测试 | [W4 验证记录](w4-development.md) |
 | W5 可选子实例、父子清理与联合环诊断 | 2026-10-24 | GCC/MSVC Debug/Release 各 96/96；共 10 项 W5 测试及 3 个公共头独立包含检查 | [W5 验证记录](w5-development.md) |
 | W7 联合闭环及首阶段验收汇总 | 2026-10-24 | GCC/MSVC Debug/Release 各 113/113；新增恢复、事件在途关闭及失败残留三项联合场景 | [W7 联合验收](w7-verification.md) |
+| P3 Q0 Qt 5.15.2 工具链与事件循环原语 | 2026-10-24 | Qt/MSVC Debug/Release 各 114/114；无 Qt GCC Debug 113/113；Qt6 拒绝与环境恢复通过 | [P3 记录](p3-development.md) |
+| P3 Q1 QtScheduler、关闭仲裁及 Kernel 异步停止 | 2026-10-24 | Qt/MSVC Debug/Release 各 122/122；8 项真实循环调度场景；无 Qt GCC Debug 113/113 | [P3 Q1 记录](p3-development.md#q1-qtscheduler)、[ADR-0004](adr/0004-qt-scheduler.md) |
+| P3 Q0/Q1 提交前审查、调度器移动与析构重入 | 2026-10-24 | Qt/MSVC Debug/Release 各 126/126；无 Qt GCC Debug/Release 各 115/115；两个头独立包含通过 | [审核记录](code-review.md)、[P3 Q1 记录](p3-development.md#q1-qtscheduler) |
 | Qt/Ela GUI、ABI、物理卸载和替换 | — | 待实现、未验证 | [设计说明书](../Cordis插件平台-软件设计说明书.md) |
 
 “最近验证”是当时已检查的版本；后续代码变化不自动继承通过状态。新验证需注明覆盖范围、工具链和失败/跳过项。临时构建日志位于 build，持久结论保存在本台账及对应报告。
@@ -83,10 +86,10 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 
 | 编号 | 条件 | 影响 | 解除条件 | 当前处理 |
 |---|---|---|---|---|
-| B01 | 未发现 Qt 5.15.2 目标 kit | P3 桌面集成及后续 UI 模块 | 明确 kit 路径、通过精确版本检查、Qt/Ela 编译与运行通过 | 不阻塞无 Qt 内核工作 |
-| B02 | 当前 MSVC v143 尚未与目标 msvc2019_64 kit 联合验证 | 目标桌面及二进制插件兼容性 | 补齐目标工具集或完成所选组合专项验证 | 内核 v143 独立验证已通过 |
+| B01 | Ela/桌面整体尚未验证；缺 Qt kit 的旧条件已解除 | P3 后续 UI 集成 | Ela 编译及真实桌面交互通过 | 已安装 E:/Qt/5.15.2/msvc2019_64，Widgets/Test 与 offscreen 探测通过 |
+| B02 | 原 v142 组合未安装或验证 | 若坚持精确 v142 或进入插件 ABI，需另验 | 补齐原工具集或冻结经专项验证的选定组合 | 当前 Qt5 msvc2019_64 + MSVC19.44/v143 已通过 Debug/Release 探测；不构成 DLL ABI 验收 |
 
-首阶段无 Qt 内核工作已收口，P3 前需重新核实 B01/B02。本机 MSVC D8050 通过进程内 TEMP/TMP 绕过后验证通过，见 W2 记录；Qt 环境结论仍为历史检查，本轮未重新认证。发生新阻塞时在此记录原因，避免将未开始的任务都标为阻塞。
+首阶段无 Qt 内核工作已收口，Qt kit 与 QtScheduler 已验证。D8050 的 TEMP/TMP 与中文 showIncludes 覆盖仍按既有记录使用。当前进入 Q2 资源适配；Ela UI 与 DLL 环境结论需在各自阶段验证。
 
 ## 工作记录
 
@@ -115,6 +118,9 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | 2026-10-24 | W6 提交前审查：修复用户负载复制异常导致分发悬挂，整理规范与异常安全 | 四配置结果见台账；新增复制异常回归；[审核记录](code-review.md) | W7 联合示例与验收汇总 | 随本次提交归档 |
 | 2026-10-24 | 完成 W7：服务/子树/事件联合示例、恢复、正常关闭、失败残留及 A01–A10 证据映射 | 四配置各 113/113；三项联合场景；[联合验收](w7-verification.md) | P3 Qt kit 前置检查与调度适配设计 | 本轮未提交 |
 | 2026-10-24 | W7 提交前审查：补强恢复后的事件实际写入和关闭资源断言，防护诊断读取 | 四配置各 113/113；24 个证据测试名已核对；[审核记录](code-review.md) | P3 前置检查 | 随本次提交归档 |
+| 2026-10-24 | P3 Q0：按授权安装 Qt5.15.2 qtbase、接入 Qt 预设/运行探测、记录调度关闭契约 | Qt Debug/Release 各 114/114，GCC Debug 113/113；Qt6 拒绝及环境恢复通过；[P3 记录](p3-development.md) | Q1 QtScheduler 实现与真实循环验收 | 随本次提交归档 |
+| 2026-10-24 | P3 Q1：Cordis::Qt 与 QtScheduler、宿主 FIFO、lifetime 持有队列、执行/丢弃仲裁、异常诊断及退出兜底 | Qt Debug/Release 各 122/122，GCC Debug 113/113；8 项真实事件循环测试；[P3 Q1 记录](p3-development.md#q1-qtscheduler) | Q2 Timer/QObject 资源屏障 | 随本次提交归档 |
+| 2026-10-24 | P3 提交前审查：修复两个调度器持锁移动用户代码、FakeScheduler 析构重入，保留 Qt 关闭控制块并补回归 | Qt Debug/Release 各 126/126，GCC Debug/Release 各 115/115；修复前失败证据见 [审核记录](code-review.md) | Q2 Timer/QObject 资源屏障 | 随本次提交归档 |
 
 ## 更新约定
 

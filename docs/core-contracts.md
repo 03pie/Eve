@@ -23,7 +23,7 @@ W1 实现：错误访问抛 `BadResultAccess`；左值访问返回引用，右�
 
 Task 可复制共享状态，Promise 为受控生产者句柄；continuation 接收不可变结果视图，支持多个观察者，不重复 move 同一个结果。需要独占转移的产物由显式拥有权句柄表示。T=void 单独特化。关闭 scheduler 后注册 continuation 必须得到明确的投递拒绝状态，不能无声丢失。
 
-FakeScheduler 提供 `runOne()`、`runUntilIdle(stepLimit)` 和队列大小；遇循环超过上限返回 StepLimitExceeded。允许任意线程 post/close，但只允许创建线程 pump；拒绝嵌套 pump。close 丢弃尚未取出的队列任务并逐项执行宿主 discarded 通知，已取出的在途任务允许完成；不持锁调用回调或析构捕获。FakeClock 已在 W2 引入，测试使用显式时钟/gate/线程 join，不依靠真实 sleep。
+FakeScheduler 提供 `runOne()`、`runUntilIdle(stepLimit)` 和队列大小；遇循环超过上限返回 StepLimitExceeded。允许任意线程 post/close，但只允许创建线程 pump；拒绝嵌套 pump，门禁覆盖任务捕获析构及异常返回。close 丢弃尚未取出的队列任务并逐项执行宿主 discarded 通知，已取出的在途任务允许完成；不持锁调用回调、移动用户可调用对象或析构捕获。FakeClock 已在 W2 引入，测试使用显式时钟/gate/线程 join，不依靠真实 sleep。
 
 `thenOn()` 的回执报告回调已执行或失败：成功/失败回调均通过同一个 Result 参数分支；回调抛错则回执为 CallbackFailed，不修改源任务。source 失败被成功观察时回执仍成功。scheduler 已关闭/销毁、post 抛错或已入队任务被丢弃时回执为 SchedulerClosed。若源任务还没完成，观察者尚未入队，此时关闭 scheduler 不取消源任务；源任务完成或最后 Promise 释放后，回执才报告投递失败。调用者必须保留并检查回执，不能靠业务回调获知“回调没有执行”。
 
