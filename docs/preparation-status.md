@@ -47,6 +47,6 @@
 
 最新实测结果及可复现命令见 [开发环境验证报告](environment-verification.md)。
 
-直接执行 [W1](p1-work-items.md)：Result、FakeScheduler、Task/Promise 与取消语义。内核编码没有 Qt 环境阻塞；进入 P3 桌面集成前，再落实 Qt 5.15.2 / MSVC / Ela 目标组合。
+准备后的 W1 已实施，最新工作状态见 [开发进度](progress.md)。内核编码没有 Qt 环境阻塞；进入 P3 桌面集成前，再落实 Qt 5.15.2 / MSVC / Ela 目标组合。
 
 接口及目录已经准备好，不需要继续扩写总体研究文档。完整二进制 ABI 布局、Qt 资源适配器和插件热替换按后续阶段实施。

@@ -1,3 +1,16 @@
+<#
+.SYNOPSIS
+运行 Cordis 项目的配置、构建、测试或完整验证流程。
+
+.DESCRIPTION
+通过项目 CMake 预设执行所选开发操作，并在外部命令失败时报告错误。
+
+.PARAMETER Action
+要执行的操作：doctor、configure、build、test 或 verify。
+
+.PARAMETER Preset
+要使用的 CMake 预设。
+#>
 [CmdletBinding()]
 param(
     [ValidateSet('doctor', 'configure', 'build', 'test', 'verify')]
@@ -9,6 +22,16 @@ param(
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
 
+<#
+.SYNOPSIS
+查找可用的 CMake 可执行文件。
+
+.OUTPUTS
+System.String。返回 CMake 可执行文件的完整路径。
+
+.NOTES
+未找到 CMake 时抛出带有配置提示的错误。
+#>
 function Find-CMake {
     $taskFound = Get-Command cmake -ErrorAction SilentlyContinue
     if ($taskFound) { return $taskFound.Source }
@@ -23,6 +46,19 @@ function Find-CMake {
     throw 'CMake was not found. Add CMake to PATH or set CORDIS_CMAKE_BIN to its bin directory.'
 }
 
+<#
+.SYNOPSIS
+运行外部程序并检查退出码。
+
+.PARAMETER Executable
+要运行的可执行文件路径。
+
+.PARAMETER Arguments
+传递给可执行文件的参数。
+
+.NOTES
+外部程序返回非零退出码时抛出错误。
+#>
 function Invoke-Checked([string]$Executable, [string[]]$Arguments) {
     & $Executable @Arguments
     if ($LASTEXITCODE -ne 0) { throw "Command failed with exit code $LASTEXITCODE : $Executable" }

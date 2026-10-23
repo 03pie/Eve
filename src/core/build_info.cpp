@@ -1,6 +1,14 @@
+/**
+ * @file build_info.cpp
+ * @brief 生成当前编译器和目标平台的构建信息。
+ */
 #include <cordis/build_info.hpp>
 
 namespace cordis {
+/**
+ * @brief 返回编译时确定的版本、编译器和指针宽度。
+ * @return 当前构建信息。
+ */
 BuildInfo buildInfo() noexcept
 {
 #if defined(__clang__)

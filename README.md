@@ -2,7 +2,7 @@
 
 基于 Cordis 思路设计的 C++17 插件内核，目标桌面环境为 Qt 5.15.2 + ElaWidgetTools。
 
-当前处于**编码准备阶段**：构建工程、基础身份/状态/错误类型、SDK 编译检查和开发任务已经建立；实例运行时、服务依赖、Effect、Qt UI、原生插件装载尚未实现。
+当前处于**内核开发阶段，W1 已完成**：Result、调度接口、FakeScheduler、Task/Promise 和协作取消已有实现及行为测试；实例运行时、服务依赖、Effect、Qt UI、原生插件装载尚未实现。
 
 ## 从这里开始
 
@@ -23,7 +23,7 @@
 |---|---|
 | `sdk/include/cordis` | 源码 SDK 基础类型，不是稳定二进制 ABI |
 | `src/core` | 不依赖 Qt/Ela 的内核库起点 |
-| `examples/builtin` | 当前只输出构建信息；插件示例在 P1 实现 |
+| `examples/builtin` | 构建信息及异步 Task 演示；插件生命周期示例待实现 |
 | `tests` | 现有 SDK 编译/链接契约检查及待实施验收规范 |
 | `tools/dev.ps1` | 环境检查、配置、构建、测试入口 |
 | `docs` | 决策、接口契约、首阶段工作单和准备记录 |
@@ -32,6 +32,8 @@
 
 ## 设计及实施入口
 
+- [开发进度](docs/progress.md)：当前状态、工作包、验证台账及下一任务。
+- [W1 交付与验证](docs/w1-verification.md)：异步基础能力和四配置测试结果。
 - [软件设计说明书](Cordis插件平台-软件设计说明书.md)：详细设计与验收依据。
 - [开发指南](Cordis-Cpp17-Qt5152-开发指南.md)、[研究证据](research-evidence.md)：研究基线。
 - [基础决策](docs/adr/0001-foundation.md)：本轮冻结的约束。

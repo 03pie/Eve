@@ -1,3 +1,11 @@
 add_executable(cordis_foundation main.cpp)
 target_link_libraries(cordis_foundation PRIVATE Cordis::Core)
 cordis_target_defaults(cordis_foundation)
+
+add_executable(cordis_task_demo task_demo.cpp)
+target_link_libraries(cordis_task_demo PRIVATE Cordis::Core)
+cordis_target_defaults(cordis_task_demo)
+
+add_executable(cordis_effect_demo effect_demo.cpp)
+target_link_libraries(cordis_effect_demo PRIVATE Cordis::Core)
+cordis_target_defaults(cordis_effect_demo)

@@ -1,6 +1,6 @@
 # 首阶段接口契约
 
-本文件冻结接口行为和实现顺序，不是可编译 SDK 头文件。已存在的公共类型见 `sdk/include/cordis`；下列接口随对应工作包实现后才加入公共头文件。
+本文件冻结接口行为和实现顺序。W1 的 Result、调度、Task/Promise、取消，以及 W2 的 EffectScope、FakeClock 和超时观察已有源码 SDK，见 `sdk/include/cordis`；Instance、服务和 Event 仍为后续工作包契约。
 
 ## 1. Result 与错误
 
@@ -8,20 +8,28 @@
 
 第一阶段最小 API：`success(value)`、`failure(error)`、`hasValue()`、受检查的 `value()` / `error()`。错误访问行为由实现显式规定并测试，禁止返回悬空引用。复制能力跟随 T，不能要求所有服务对象可复制。错误枚举当前未分配稳定线码，不用于 C ABI 或持久化。
 
+W1 实现：错误访问抛 `BadResultAccess`；左值访问返回引用，右值访问按值返回，避免临时 Result 的内部引用逃逸。Result 可复制构造（取决于 T）和移动构造，禁止重新赋值，保持唯一有效分支。Task 对外保存 `shared_ptr<const Result<T>>`，多个观察者共享结果，不重复移动 payload；const 视图不是对指针所指对象的深度不可变保证。
+
 ## 2. IScheduler、Task、Promise、取消
 
 | 接口 | 最小行为 |
 |---|---|
-| IScheduler::post | 接受宿主闭包，返回是否入队；不内联执行 |
+| IScheduler::post | 接受 ScheduledJob（run/discarded），返回是否入队；不内联执行 |
 | IScheduler::isCurrentThread | 检查单写线程 |
-| Task<T>::thenOn | 在指定 scheduler 异步调用成功或失败 continuation |
+| Task<T>::thenOn | 在指定共享 scheduler 上异步调用 `callback(const Result<T>&)`，返回 `Task<void>` 投递回执 |
 | Promise<T>::resolve/reject | 可跨线程完成；原子仲裁只接受第一次 |
 | CancellationSource::requestCancel | 请求取消，不伪造 Task 完成 |
-| Task 观察超时 | 返回超时报告，底层 setup/cleanup 仍须真实完成 |
+| observeFor / FakeClock（W2） | 超时观察返回 Completed/TimedOut，底层 Task 不变；时钟关闭或参数错误通过观察 Task 报错 |
 
 Task 可复制共享状态，Promise 为受控生产者句柄；continuation 接收不可变结果视图，支持多个观察者，不重复 move 同一个结果。需要独占转移的产物由显式拥有权句柄表示。T=void 单独特化。关闭 scheduler 后注册 continuation 必须得到明确的投递拒绝状态，不能无声丢失。
 
-FakeScheduler 提供 `runOne()`、`runUntilIdle(stepLimit)` 和队列大小；遇循环超过上限返回测试失败。FakeClock 显式 advance，所有生命周期测试使用 gate，不依靠真实 sleep。
+FakeScheduler 提供 `runOne()`、`runUntilIdle(stepLimit)` 和队列大小；遇循环超过上限返回 StepLimitExceeded。允许任意线程 post/close，但只允许创建线程 pump；拒绝嵌套 pump。close 丢弃尚未取出的队列任务并逐项执行宿主 discarded 通知，已取出的在途任务允许完成；不持锁调用回调或析构捕获。FakeClock 已在 W2 引入，测试使用显式时钟/gate/线程 join，不依靠真实 sleep。
+
+`thenOn()` 的回执报告回调已执行或失败：成功/失败回调均通过同一个 Result 参数分支；回调抛错则回执为 CallbackFailed，不修改源任务。source 失败被成功观察时回执仍成功。scheduler 已关闭/销毁、post 抛错或已入队任务被丢弃时回执为 SchedulerClosed。若源任务还没完成，观察者尚未入队，此时关闭 scheduler 不取消源任务；源任务完成或最后 Promise 释放后，回执才报告投递失败。调用者必须保留并检查回执，不能靠业务回调获知“回调没有执行”。
+
+Promise 可以复制为同一生产者的共享控制句柄；最后一个 Promise 未完成便释放时，源任务以 BrokenPromise 失败。`tryResult()` 返回拥有生命周期的不可变结果快照，pending 返回空指针。Task/Promise 支持跨线程注册、完成；同一实例的移动/赋值不得与访问并发，移动后句柄只用于销毁或重新赋值。CancellationToken 只支持查询，不在请求取消时内联调用用户处理器。
+
+调度器/完成协议对正常运行内存资源成立；没有承诺 OOM 下可继续执行。闭包需要符合不抛异常析构约束，插件边界的模块引用和专用线程析构将在后续适配中实现。
 
 ## 3. Effect
 
@@ -37,6 +45,28 @@ EffectToken.snapshot() -> EffectSnapshot
 必须先将控制块登记到 owner，再调用 setup。控制块涵盖 setup、已获得资源和 cleanup 屏障。setup 期间 close 后，后到资源仍需登记并清理。清理组内逆序，失败后继续其余项。所有 close 观察同一完成结果；token 析构不关闭。
 
 `Failed` 作为错误信息保存，资源仍未清理完成时 EffectState 保持 Closing，不能用失败状态掩盖资源存活。清理函数不得创建新 effect、等待自己的 close，或阻塞 scheduler。
+
+### W2 实际接口与边界
+
+`EffectScope(scheduler)` 是未来 Context 的资源归属底座；当前尚无 Instance/Context。构造要求打开的 owner-thread scheduler，否则抛 invalid_argument。`scope.effect(setup, label)` 返回 Result<EffectToken>；成功仅表示已接受登记，启动结果由 token.ready() 观察。setup 接收按值 EffectSetupContext，返回 Task<void>。
+
+`addCleanup(function<Task<void>()>)` 在 setup 完成通知被内核处理前接受资源，包括 close 已请求但 setup 还在运行时。完成后拒绝，控制块销毁后旧上下文返回 StaleContext。所有可变操作和快照只在 owner 线程进行；跨线程 setup/cleanup Task 完成通过 scheduler 回来处理。
+
+`scope.close()` 先对所有 effect 标 Closing 并请求取消，再通过队列清理，组间可以同时等待，组内逆序。`token.close()` 只关闭该组，副本共享同一个 CleanupReport 结果。setup 中请求 owner close 安全；关闭期间 setup 后到的 cleanup 仍被收集。setup 已过期时 token.ready() 报 OperationCancelled，不能发布新的 Active 结果。
+
+`context.adopt(childToken)` 将子组 close 加入父组 cleanup 队列，等待子组真正释放；要求相同 scheduler，并检查显式收养图环。组间没有全局 LIFO 顺序。任意用户 Task 构造的等待环仍不能全面检测，遇到时保持等待并通过超时观察诊断；实例/服务等待图留到 W3/W5。
+
+close 的结果为 `Task<CleanupReport>`：`quiescent` 表示是否确认资源释放，errors 是 setup/cleanup 错误汇总。setup 失败但回滚全部成功时可 quiescent=true 且 errors 非空；任一 cleanup 失败则保留失败闭包、控制块和 scope 所有权 pin，状态保持 Closing，结果 quiescent=false。清理尚未结束、调度投递被丢弃时 close 继续 pending，快照以 setupPending、cleanupPending、deliveryBlocked、retainedCleanups 解释原因。
+
+owner/token 析构不承担异步关闭。必须在 scheduler 关闭前显式 close 并检查 quiescent；丢弃未关闭 owner、清理失败或投递中断时会保守保留资源记录，当前没有强制释放/自动重试入口。scope 有任何 cleanup 正在等待时，暂时拒绝新建 effect；这是 W2 的保守策略，W3 的 Context mode 若细化该行为须单独评审。
+
+### W2 时钟与观察
+
+`FakeClock` 不可复制，after/advance/close 及查询在创建线程使用；TimerToken.cancel 可跨线程。时间以单调毫秒计，拒绝负值、溢出和嵌套 advance；同 deadline 按登记顺序触发，零延迟也不内联。advance 有步数预算，耗尽时停在当前已处理时间；再次推进由调用方决定。timer 抛错被汇总，不饿死其余到期项。
+
+`observeFor(source, clock, timeout)` 返回 `Task<Observation<T>>`。Completed 持 source 的共享结果快照，源失败也是 Completed，真实错误在 snapshot 中；TimedOut 不包含结果也不取消 source。真实完成和到期竞争只产生一次观察结果，完成时不等待业务 continuation 队列排空。观察时源已经完成则立即形成结果，不创建定时器。业务回调仍须 thenOn，observeFor 不会内联执行业务代码。
+
+取消的 FakeClock timer 载荷在下一次 advance 或 close 时释放，不承诺 cancel 即析构；source pending 时仍保留必要观察账目直至其完成。FakeClock 是测试工具，不是生产 timer、Qt 资源适配器或 DLL 卸载屏障。
 
 ## 4. Kernel / Instance / Context
 
