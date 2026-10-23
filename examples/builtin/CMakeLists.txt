@@ -13,3 +13,7 @@ cordis_target_defaults(cordis_effect_demo)
 add_executable(cordis_event_demo event_demo.cpp)
 target_link_libraries(cordis_event_demo PRIVATE Cordis::Core)
 cordis_target_defaults(cordis_event_demo)
+
+add_executable(cordis_platform_demo platform_demo.cpp)
+target_link_libraries(cordis_platform_demo PRIVATE Cordis::Core)
+cordis_target_defaults(cordis_platform_demo)

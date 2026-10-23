@@ -4,6 +4,13 @@ cordis_target_defaults(cordis_sdk_contract)
 add_test(NAME foundation.sdk_contract COMMAND cordis_sdk_contract)
 set_tests_properties(foundation.sdk_contract PROPERTIES LABELS "foundation;sdk")
 
+if(TARGET cordis_platform_demo)
+    foreach(case IN ITEMS shutdown recovery failure)
+        add_test(NAME w7.platform_${case} COMMAND cordis_platform_demo ${case})
+        set_tests_properties(w7.platform_${case} PROPERTIES LABELS "w7;acceptance;example" TIMEOUT 15)
+    endforeach()
+endif()
+
 add_executable(cordis_event_tests unit/events.cpp)
 target_link_libraries(cordis_event_tests PRIVATE Cordis::Core)
 cordis_target_defaults(cordis_event_tests)

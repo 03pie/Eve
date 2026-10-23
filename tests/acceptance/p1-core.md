@@ -1,5 +1,7 @@
 # 第一阶段内核验收场景
 
+W7 已将 A01–A10 的自动化证据及联合闭环汇总到 [首阶段联合验收](../../docs/w7-verification.md)。以下规范的验收范围为同工具链、无 Qt 内置内核；不包含 ABI、GUI 或物理卸载。
+
 以下是第一阶段的 Given/When/Then 规范。A04/A06 见 [W2 验证记录](../../docs/w2-verification.md)；A05、A08 及 A09 的多实例资源独立部分见 [W3 验证记录](../../docs/w3-development.md)。服务场景的增量覆盖见下段；各场景状态不等同于全部阶段通过。
 
 W4 新增证据：A01–A03 的声明依赖闭环、A07 的传递清理部分，以及 A09 的 Context realm 派生视图和服务隔离，见 [W4 验证记录](../../docs/w4-development.md)、`w4.dependency_*` 和 `w4.contract_realms`。W5 补齐 A07 父子所有权、可选子能力与联合环诊断，见 [W5 验证记录](../../docs/w5-development.md)、`w5.children_*`。A10 首阶段事件证据见下节及 W6 记录。
