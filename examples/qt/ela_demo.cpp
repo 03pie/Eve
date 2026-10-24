@@ -25,12 +25,15 @@ using namespace cordis::ui;
 /** @brief 演示状态由 main 与正在执行的 continuation 持有，运行时定义仅借用弱引用。 */
 struct Application : std::enable_shared_from_this<Application> {
     std::shared_ptr<qt::QtScheduler> scheduler = std::make_shared<qt::QtScheduler>();
-    Kernel kernel{scheduler};
+    std::shared_ptr<Kernel> kernel = std::make_shared<Kernel>(scheduler);
     ElaShell shell{scheduler};
     std::optional<Instance> provider;
     std::optional<Instance> notes;
     std::optional<PageHandle> page;
     std::optional<CommandHandle> command;
+    std::optional<Instance> waiting;
+    std::optional<Instance> failed;
+    int failureAttempts = 0;
     bool stopping = false;
     bool finished = false;
     /** @brief 错误保持非零退出，不伪造 Kernel 已静止。 */
@@ -41,7 +44,7 @@ struct Application : std::enable_shared_from_this<Application> {
         if (stopping) return;
         stopping = true;
         auto self = shared_from_this();
-        kernel.close().thenOn(scheduler, [self](const Result<CleanupReport>& report) {
+        kernel->close().thenOn(scheduler, [self](const Result<CleanupReport>& report) {
             if (!report.hasValue() || !report.value().quiescent) { self->fail("kernel retained resources"); return; }
             self->shell.close().thenOn(self->scheduler, [self](const Result<void>& result) {
                 if (!result.hasValue() || !self->shell.pages()->snapshot().value().empty() || !self->shell.commands()->snapshot().value().empty()) { self->fail("shell cleanup failed"); return; }
@@ -56,16 +59,19 @@ struct Application : std::enable_shared_from_this<Application> {
     void start(bool smoke)
     {
         std::weak_ptr<Application> weak = shared_from_this();
+        shell.management()->attach(kernel).value();
         auto service = shell.pages();
         auto commands = shell.commands();
         auto notices = shell.notifications();
-        auto ui = kernel.registerPlugin("ui", [service, commands, notices](Context context) {
+        auto diagnostics = shell.diagnostics();
+        auto ui = kernel->registerPlugin("ui", [service, commands, notices, diagnostics](Context context) {
             context.provide({"ui.pages"}, service).value();
             context.provide({"ui.commands"}, commands).value();
             context.provide({"ui.notifications"}, notices).value();
+            context.provide({"diagnostics"}, diagnostics).value();
             return completedTask();
-        }, {}, {ServiceOutput::of<UiPagesService>({"ui.pages"}), ServiceOutput::of<CommandService>({"ui.commands"}), ServiceOutput::of<NotificationService>({"ui.notifications"})}).value();
-        auto consumer = kernel.registerPlugin("notes", [weak](Context context) {
+        }, {}, {ServiceOutput::of<UiPagesService>({"ui.pages"}), ServiceOutput::of<CommandService>({"ui.commands"}), ServiceOutput::of<NotificationService>({"ui.notifications"}), ServiceOutput::of<DiagnosticsService>({"diagnostics"})}).value();
+        auto consumer = kernel->registerPlugin("notes", [weak](Context context) {
             auto self = weak.lock();
             if (!self) return failedTask(makeError(ErrorCode::StaleContext, "demo expired"));
             auto service = context.consume<UiPagesService>({"ui.pages"}).value();
@@ -102,15 +108,31 @@ struct Application : std::enable_shared_from_this<Application> {
             if (!registered.hasValue()) return failedTask(registered.error());
             return self->command->ready();
         }, {ServiceRequirement::of<UiPagesService>({"ui.pages"}), ServiceRequirement::of<CommandService>({"ui.commands"}), ServiceRequirement::of<NotificationService>({"ui.notifications"})}).value();
-        notes.emplace(kernel.mount(consumer).value());
-        provider.emplace(kernel.mount(ui).value());
+        auto missing = kernel->registerPlugin("缺少存储依赖", [](Context) { return completedTask(); }, {ServiceRequirement::of<int>({"demo.storage"})}).value();
+        auto unstable = kernel->registerPlugin("失败重试示例", [weak](Context) {
+            auto self = weak.lock();
+            if (!self) return failedTask(makeError(ErrorCode::StaleContext, "demo expired"));
+            if (++self->failureAttempts == 1) {
+                auto error = makeError(ErrorCode::ActivationFailed, "首次启动失败，可在管理页重试");
+                error.phase = "demo.activate";
+                return failedTask(std::move(error));
+            }
+            return completedTask();
+        }).value();
+        notes.emplace(kernel->mount(consumer).value());
+        provider.emplace(kernel->mount(ui).value());
+        waiting.emplace(kernel->mount(missing).value());
+        failed.emplace(kernel->mount(unstable).value());
         shell.onCloseRequested([weak] { if (auto self = weak.lock()) self->stop(); }).value();
         shell.show().value();
         auto self = shared_from_this();
         notes->ready().thenOn(scheduler, [self, smoke](const Result<void>& result) {
             if (!result.hasValue() || !self->page->navigate().hasValue()) { self->fail("page activation failed"); return; }
+            if (!smoke) { self->shell.management()->refresh().value(); self->shell.showManagement().value(); }
             if (smoke) self->command->execute().thenOn(self->scheduler, [self](const Result<void>& invoked) {
                 if (!invoked.hasValue() || self->shell.notifications()->snapshot().value().empty()) { self->fail("command notification failed"); return; }
+                self->shell.management()->refresh().value();
+                self->shell.showManagement().value();
                 QTimer::singleShot(50, QCoreApplication::instance(), [self] { self->captureAndClose(); });
             });
         });
@@ -118,6 +140,10 @@ struct Application : std::enable_shared_from_this<Application> {
     /** @brief 截图包含命令及通知，再通过真实 QWidget::close 触发异步退出。 */
     void captureAndClose()
     {
+        auto data = shell.diagnostics()->snapshot();
+        if (!data.hasValue() || data.value().instances.size() != 4 || waiting->snapshot().value().state != InstanceState::Pending || failed->snapshot().value().state != InstanceState::Failed) {
+            fail("management diagnostics missing pending/failed examples"); return;
+        }
         for (auto window : QApplication::topLevelWidgets()) if (window->windowTitle() == QString::fromUtf8("Cordis 插件平台")) {
             if (!window->grab().save(QCoreApplication::applicationDirPath() + "/ela-smoke.png")) { fail("preview capture failed"); return; }
             window->close(); return;

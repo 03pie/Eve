@@ -625,6 +625,24 @@ Result<InstanceSnapshot> Instance::snapshot() const
     return Result<InstanceSnapshot>::success({control_->state, control_->blocked.load(), resources.value(), control_->epoch, control_->revision, control_->id, control_->runtime, control_->committed.size(), control_->failure, control_->children.size()});
 }
 
+/** @brief 复用激活预检的精确查找，诊断不调用服务或改变 committed 保留。 */
+Result<std::vector<DependencySnapshot>> Instance::dependencies() const
+{
+    if (!control_->scheduler->isCurrentThread())
+        return Result<std::vector<DependencySnapshot>>::failure(makeError(ErrorCode::WrongThread, "dependency snapshot requires owner thread"));
+    std::vector<DependencySnapshot> result;
+    for (const auto& dependency : control_->dependencies) {
+        DependencySnapshot item{control_->realms.resolve(dependency.key), dependency.minimumMinor, dependency.capabilities, {}};
+        if (!control_->services) item.error = makeError(ErrorCode::DependencyMissing, "instance has no managed registry");
+        else {
+            auto found = control_->services->findErased(item.key, dependency.type, dependency.minimumMinor, dependency.capabilities);
+            if (!found.hasValue()) item.error = found.error();
+        }
+        result.push_back(std::move(item));
+    }
+    return Result<std::vector<DependencySnapshot>>::success(std::move(result));
+}
+
 /** @brief 检查弱上下文后登记业务资源。 */
 Result<EffectToken> Context::effect(EffectSetup setup, std::string label) const
 {

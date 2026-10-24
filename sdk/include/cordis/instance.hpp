@@ -164,6 +164,14 @@ struct InstanceSnapshot {
     std::size_t children;
 };
 
+/** @brief 声明强依赖的当前解析状态；key 已应用实例 realm，error 为空表示可发现。 */
+struct DependencySnapshot {
+    ServiceKey key;
+    std::uint32_t minimumMinor;
+    std::vector<std::string> capabilities;
+    std::optional<ErrorInfo> error;
+};
+
 /** @brief 一次配置操作的稳定结果；epoch 为实际启动代，未启动时为零。 */
 struct StableReport {
     StableOutcome outcome;
@@ -208,6 +216,8 @@ public:
     Task<CleanupReport> stop() const;
     /** @brief 在 owner 线程读取状态及尚未释放的资源。 */
     Result<InstanceSnapshot> snapshot() const;
+    /** @brief owner 只读检查依赖的精确域、类型、minor 和 capability；不提交新租约。 */
+    Result<std::vector<DependencySnapshot>> dependencies() const;
 private:
     friend class Context;
     /** @brief 接受配置替换或重试，区分配置修订与操作标识。 */

@@ -7,12 +7,18 @@
 #include <atomic>
 
 namespace cordis {
+/** @brief 插件名称映射只含宿主值，不包含激活回调或 Runtime 能力。 */
+struct RuntimeNameSnapshot {
+    RuntimeId id;
+    std::string name;
+};
 /** @brief 内核登记的实例诊断集合；Disposed 实例在读取时回收。 */
 struct KernelSnapshot {
     bool closing;
     bool deliveryBlocked;
     std::size_t runtimes;
     std::vector<InstanceSnapshot> instances;
+    std::vector<RuntimeNameSnapshot> names;
 };
 
 /** @brief 强持有已挂载实例；宿主须在 scheduler 关闭前显式 close。 */
@@ -34,6 +40,10 @@ public:
     Task<CleanupReport> close();
     /** @brief owner 线程读取诊断并回收已经 Disposed 的实例记录。 */
     Result<KernelSnapshot> snapshot();
+    /** @brief 宿主按本内核持有的顶层实例编号查找；未知/已回收编号不返回其他实例。 */
+    Result<Instance> findInstance(InstanceId id) const;
+    /** @brief 查询不可变的调度器归属，供宿主适配层拒绝跨 scheduler 绑定。 */
+    bool usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const;
 private:
     std::shared_ptr<IScheduler> scheduler_;
     std::shared_ptr<ServiceRegistry> services_;

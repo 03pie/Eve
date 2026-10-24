@@ -86,7 +86,8 @@ Task<CleanupReport> Kernel::close()
 Result<KernelSnapshot> Kernel::snapshot()
 {
     if (!scheduler_->isCurrentThread()) return Result<KernelSnapshot>::failure(makeError(ErrorCode::WrongThread, "snapshot requires owner thread"));
-    KernelSnapshot snapshot{closing_, blocked_->load(), runtimes_.size(), {}};
+    KernelSnapshot snapshot{closing_, blocked_->load(), runtimes_.size(), {}, {}};
+    for (const auto& entry : runtimes_) snapshot.names.push_back({entry.second.id(), entry.first});
     for (auto it = instances_.begin(); it != instances_.end();) {
         auto instance = it->second.snapshot().value();
         if (instance.state == InstanceState::Disposed) it = instances_.erase(it);
@@ -94,4 +95,15 @@ Result<KernelSnapshot> Kernel::snapshot()
     }
     return Result<KernelSnapshot>::success(std::move(snapshot));
 }
+/** @brief 返回已有句柄，不启动新实例，也不允许跨内核按编号猜测归属。 */
+Result<Instance> Kernel::findInstance(InstanceId id) const
+{
+    if (!scheduler_->isCurrentThread()) return Result<Instance>::failure(makeError(ErrorCode::WrongThread, "find instance requires owner thread"));
+    auto found = instances_.find(id);
+    if (!id.valid() || found == instances_.end())
+        return Result<Instance>::failure(makeError(ErrorCode::InstanceDisposed, "instance not owned by kernel or already collected"));
+    return Result<Instance>::success(found->second);
+}
+/** @brief 调度器身份在构造后不变，不触碰 Qt 或插件对象。 */
+bool Kernel::usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const { return scheduler_ == scheduler; }
 } // namespace cordis

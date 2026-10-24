@@ -4,7 +4,9 @@
 #include <cordis/ui/ela_shell.hpp>
 #include <cordis/qt/object.hpp>
 #include "services_p.hpp"
+#include "management_p.hpp"
 #include <ElaApplication.h>
+#include <ElaActionCommander.h>
 #include <ElaWindow.h>
 #include <QApplication>
 #include <QCloseEvent>
@@ -77,12 +79,15 @@ private:
 struct ShellControl : std::enable_shared_from_this<ShellControl> {
     std::shared_ptr<qt::QtScheduler> scheduler;
     std::shared_ptr<ServicesControl> services;
+    std::shared_ptr<ManagementControl> management;
     QPointer<HostWindow> window;
     std::optional<qt::QObjectResource> windowResource;
     QPointer<QTreeWidget> navigation;
     QPointer<QStackedWidget> stack;
     QPointer<QWidget> safePage;
+    QPointer<QWidget> managementPage;
     QTreeWidgetItem* safeItem = nullptr;
+    QTreeWidgetItem* managementItem = nullptr;
     std::map<QTreeWidgetItem*, std::weak_ptr<PageControl>> rows;
     std::map<Key, std::shared_ptr<PageControl>> pages;
     std::map<Key, Group> groups;
@@ -94,8 +99,29 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
     bool failed = false;
     bool closeRequested = false;
     bool servicesClosed = false;
+    bool managementClosed = false;
+    std::size_t navigationAccesses = 0;
     std::size_t waiting = 0;
     Promise<void> closed;
+    /** @brief 管理页切换可能同步重入关闭，完整导航栈返回前不得销毁窗口。 */
+    struct NavigationAccess {
+        ShellControl& owner;
+        /** @brief 调用方须在导航期间保留外壳控制块。 */
+        explicit NavigationAccess(ShellControl& control) : owner(control) { ++owner.navigationAccesses; }
+        /** @brief 最后一个导航栈返回后重新检查窗口关闭条件。 */
+        ~NavigationAccess() { --owner.navigationAccesses; owner.checkClosed(); }
+    };
+    /** @brief 永久管理页的程序入口和导航信号共用关闭屏障，重入关门后不再改变选择。 */
+    Result<void> selectManagement()
+    {
+        if (!open || !window) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closing"));
+        NavigationAccess access(*this);
+        stack->setCurrentWidget(managementPage);
+        if (!open) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closed during management navigation"));
+        navigation->setCurrentItem(managementItem);
+        if (!open) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closed during management selection"));
+        return Result<void>::success();
+    }
     /** @brief 永久安全页不属于插件，其生命周期覆盖所有贡献。 */
     void selectSafe()
     {
@@ -124,7 +150,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
     /** @brief 页面及命令 effect 全部成功后才销毁窗口与安全页。 */
     void checkClosed()
     {
-        if (!closing || starting || failed || windowClosing || !servicesClosed || waiting != 0 || !pages.empty()) return;
+        if (!closing || starting || failed || windowClosing || !servicesClosed || !managementClosed || navigationAccesses != 0 || waiting != 0 || !pages.empty()) return;
         windowClosing = true;
         closeHandler = {};
         auto self = shared_from_this();
@@ -160,6 +186,11 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
         closing = true;
         starting = true;
         auto self = shared_from_this();
+        cordis::detail::TaskAccess::observe(closeManagement(management), [self](Task<void>::Snapshot result) {
+            if (result->hasValue()) self->managementClosed = true;
+            else { self->failed = true; self->closed.reject(result->error()); }
+            self->checkClosed();
+        });
         cordis::detail::TaskAccess::observe(closeUiServices(services), [self](Task<void>::Snapshot result) {
             if (result->hasValue()) self->servicesClosed = true;
             else { self->failed = true; self->closed.reject(result->error()); }
@@ -449,13 +480,29 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler)
     columns->addLayout(sidebar);
     columns->addLayout(content, 1);
     control_->services = detail::createUiServices(control_->scheduler, commandList, notification);
+    pages_ = std::shared_ptr<UiPagesService>(new UiPagesService(control_));
+    commands_ = std::shared_ptr<CommandService>(new CommandService(control_->services));
+    notifications_ = std::shared_ptr<NotificationService>(new NotificationService(control_->services));
+    control_->management = detail::createManagement(stack, control_->scheduler, pages_, commands_, notifications_);
+    control_->managementPage = detail::managementWidget(control_->management);
+    stack->addWidget(control_->managementPage);
+    control_->managementItem = new QTreeWidgetItem(navigation);
+    control_->managementItem->setText(0, QString::fromUtf8("插件管理"));
+    management_ = std::shared_ptr<ManagementController>(new ManagementController(control_->management));
+    diagnostics_ = std::shared_ptr<DiagnosticsService>(new DiagnosticsService(control_->management));
     window->addCentralWidget(body);
+    // 仅展示平台业务通知，不向用户弹出第三方内部堆栈命令的执行提示。
+    ElaActionCommander::getInstance()->setIsMessageDisplayEnable(false);
     window->setCurrentStackIndex(1);
     std::weak_ptr<detail::ShellControl> weak = control_;
     QObject::connect(navigation, &QTreeWidget::currentItemChanged, window.get(), [weak](QTreeWidgetItem* item, QTreeWidgetItem*) {
         if (auto state = weak.lock()) {
             auto found = state->rows.find(item);
-            if (found == state->rows.end()) { if (item == state->safeItem) state->selectSafe(); return; }
+            if (found == state->rows.end()) {
+                if (item == state->safeItem) state->selectSafe();
+                else if (item == state->managementItem) (void)state->selectManagement();
+                return;
+            }
             auto page = found->second.lock();
             if (!page || !state->navigate(page).hasValue()) state->selectSafe();
         }
@@ -465,9 +512,6 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler)
     QObject::connect(window.get(), &ElaWindow::closeButtonClicked, window.get(), [weak] { if (auto state = weak.lock()) state->requestClose(); });
     std::unique_ptr<QObject> owned(window.release());
     control_->windowResource.emplace(owned, control_->scheduler);
-    pages_ = std::shared_ptr<UiPagesService>(new UiPagesService(control_));
-    commands_ = std::shared_ptr<CommandService>(new CommandService(control_->services));
-    notifications_ = std::shared_ptr<NotificationService>(new NotificationService(control_->services));
 }
 /** @brief 只释放宿主句柄，Qt 对象继续由应用线程的守卫管理。 */
 ElaShell::~ElaShell() = default;
@@ -477,6 +521,17 @@ std::shared_ptr<UiPagesService> ElaShell::pages() const { return pages_; }
 std::shared_ptr<CommandService> ElaShell::commands() const { return commands_; }
 /** @brief 通知服务只接收值类型，宿主关闭后拒绝提交。 */
 std::shared_ptr<NotificationService> ElaShell::notifications() const { return notifications_; }
+/** @brief 普通插件不获得管理控制器，宿主自行决定何时绑定 Kernel。 */
+std::shared_ptr<ManagementController> ElaShell::management() const { return management_; }
+/** @brief 只读服务的快照不包含 Kernel、Instance 或 Qt 对象。 */
+std::shared_ptr<DiagnosticsService> ElaShell::diagnostics() const { return diagnostics_; }
+/** @brief 永久管理页不依赖任意插件贡献，缺服务或插件失败时仍可进入。 */
+Result<void> ElaShell::showManagement() const
+{
+    auto control = control_;
+    if (!control->scheduler->isCurrentThread()) return Result<void>::failure(makeError(ErrorCode::WrongThread, "management navigation requires owner thread"));
+    return control->selectManagement();
+}
 /** @brief 显示窗口之前验证外壳门禁，关闭后不会重新打开已释放窗口。 */
 Result<void> ElaShell::show() const
 {

@@ -5,6 +5,7 @@
 #include <cordis/ui/pages.hpp>
 #include <cordis/ui/commands.hpp>
 #include <cordis/ui/notifications.hpp>
+#include <cordis/ui/management.hpp>
 #include <cordis/qt/scheduler.hpp>
 #include <functional>
 #include <memory>
@@ -27,6 +28,12 @@ public:
     std::shared_ptr<CommandService> commands() const;
     /** @brief 获取可注册为 ui.notifications/v1 的纯值通知服务。 */
     std::shared_ptr<NotificationService> notifications() const;
+    /** @brief 获取仅宿主持有的管理入口；绑定 Kernel 后可刷新、停止和重试实例。 */
+    std::shared_ptr<ManagementController> management() const;
+    /** @brief 获取可注册为 diagnostics/v1 的只读值快照服务。 */
+    std::shared_ptr<DiagnosticsService> diagnostics() const;
+    /** @brief owner 显示永久管理页，部分插件缺依赖不会阻止进入。 */
+    Result<void> showManagement() const;
     /** @brief owner 显示实际 Ela 窗口。 */
     Result<void> show() const;
     /** @brief owner 设置异步退出入口；窗口关闭请求先交宿主，不直接 quit。 */
@@ -38,5 +45,7 @@ private:
     std::shared_ptr<UiPagesService> pages_;
     std::shared_ptr<CommandService> commands_;
     std::shared_ptr<NotificationService> notifications_;
+    std::shared_ptr<ManagementController> management_;
+    std::shared_ptr<DiagnosticsService> diagnostics_;
 };
 } // namespace cordis::ui

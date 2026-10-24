@@ -1,5 +1,17 @@
 # 提交前代码审查记录
 
+## P3 Q3b2 提交前审核
+
+日期：2026-10-24。范围：4f3b808 之后全部未提交的管理页、诊断 SDK、Kernel/Instance 查询、外壳集成、示例、构建、测试与文档，包括新增文件。sources/research 未改动。
+
+- P1，导航关闭重入：showManagement 切换堆栈会同步发出 Qt 信号；信号中关闭外壳并处理 DeferredDelete，可在切页调用返回前删除窗口，随后继续访问导航对象。navigation_reentry 在修复前实际 SegFault。现在程序入口与导航信号共用 selectManagement，以导航访问计数阻止窗口提前关闭；切页/选中信号返回后重查门禁，重入关闭返回 ContextClosing。回归验证信号栈内窗口仍存活、关闭未完成，调用返回后可完整删除。
+- P2，取消选择仍可操作：QTableWidget.clearSelection 会保留 currentRow；原实现把当前单元格当作已选行，停止按钮仍可用，下一次刷新还会恢复旧选择。deselect 在修复前实际失败。现在只从 selectionModel 的唯一已选行解析 InstanceId，清除选择立即禁用操作，刷新保持无选择，重新选中后才开放操作。
+- 规范与质量：管理页导航收敛到单一入口，补充 QItemSelectionModel 直接依赖及中文 Doxygen。核对 SDK 的值语义和无 Qt 头隔离、弱 Kernel 生命周期、同 scheduler/owner 门禁、依赖诊断不增加租约、请求去重/真实操作号/有界历史、纯文本展示、清理失败与投递阻断保留、UI 访问屏障和正常关闭顺序。未修改第三方代码。
+
+修复前证据为 `build/review-q3b2-before.log` 和 `build/review-q3b2-navigation-before.log`；修复后 Ela/MSVC Debug、Release 各 178/178，无 Qt GCC Debug、Release 各 117/117。management.hpp、ela_shell.hpp、kernel.hpp 的 GCC C++17 独立包含及 git diff --check 通过。完整日志为 `build/review-q3b2-ela-msvc-<mode>.log`、`build/review-q3b2-core-gcc-<mode>.log`。
+
+MSVC ASan 的 36/36 UI 场景通过，第一方与固定 Ela 库插桩，Qt 预编译库未插桩；日志 `build/review-q3b2-asan.log`。清理失败/投递阻断测试按设计保留未静止资源，该结果不构成泄漏或物理卸载证明。未发现其他阻止本次提交的问题；Loader/Store、配置/模块管理、完整子树、其他专用资源及原生 Windows 人工交互沿计划另验。
+
 ## P3 Q3b1 提交前审核
 
 日期：2026-10-24。范围：0d9a5ac 之后全部未提交的命令/通知 SDK、宿主后端、effect 集成、窗口展示、示例、测试和文档，包括新增文件。sources/research 未改动。

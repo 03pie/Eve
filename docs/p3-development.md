@@ -1,6 +1,6 @@
 # P3 桌面适配开发记录
 
-日期：2026-10-24。状态：进行中；Q0–Q2、Q3a 页面贡献及 Q3b1 命令/通知已完成；Q3b2 管理页、connection/worker/watcher 与 Loader 继续推进。
+日期：2026-10-24。状态：进行中；Q0–Q2、Q3a/Q3b1 贡献服务及 Q3b2 基础管理页已完成；原生桌面人工交互另验，下一步 Q4 Loader/Store，其他专用资源按集成补齐。
 
 ## 已安装与验证
 
@@ -248,6 +248,53 @@ Q3a 不代表命令/通知服务、插件管理页、任意 queued connection、
 
 本轮日志为 `build/review-q3b-ela-msvc-<mode>.log`、`build/review-q3b-core-gcc-<mode>.log`、`build/review-q3b-asan.log`；失败证据为 `build/review-q3b-before.log` 和 `build/review-q3b-row-before.log`。公开头独立包含与差异检查通过。
 
+## Q3b2 基础管理页
+
+新增 ManagementController 和 DiagnosticsService（diagnostics/v1）。外壳永久管理页不属于插件贡献，缺服务或插件失败不阻止进入。宿主通过 `shell.management()->attach(sharedKernel)` 绑定同 scheduler 内核；后端只弱持 Kernel，原宿主释放后读取返回错误，不延长内核生命周期或使用悬空引用。普通插件只获得只读诊断服务，快照内不含 Kernel、Instance、Qt 对象、Task 或回调。契约见 [ADR-0008](adr/0008-management-diagnostics.md)。
+
+管理页展示顶层实例的名称/状态/修订/代次、精确 realm/minor/capability 依赖原因、effect 清理/保留、服务与 UI 调用账目、通知及管理操作历史。KernelSnapshot 增加值名称映射，Kernel.findInstance 只查本内核顶层实例，Instance.dependencies 复用激活预检但不提交租约。当前子实例只显示数量，未展开完整子树。
+
+停止/重试在接受时锁定实例号并排队，进入前再检查内核和实例归属。停止等待真实 CleanupReport，清理失败保留错误及资源；重试观察新 OperationId 的 StableReport，保留配置修订，失败不能显示为激活成功。操作历史最多 100 条；实例从内核回收后结果仍可查看。停止是终结 InstanceId，配置启用/停用和重新挂载随 Loader/Store 接入。
+
+管理页使用 owner 的 250 ms 定时刷新及手动刷新；刷新不执行命令谓词或插件服务。关闭先关门、停刷新，再等待当前界面写入栈退出，避免 Qt 模型信号中嵌套事件循环提前删除窗口。已选实例消失后保持无选择，后续刷新也不自动选中另一实例，避免连续点击停止其他条目。第三方内部导航命令的提示通过其公开开关关闭，平台业务通知保留，未改动第三方源码。
+
+演示新增一个缺依赖实例和首次启动失败、可重试的实例；默认打开管理页，原笔记仍可从导航进入。`--smoke` 实际运行笔记命令、检查四个实例及 Pending/Failed 状态、截图再完成退出。预览为 build/ela-msvc-debug/bin/ela-smoke.png，已检查中文状态、按钮、依赖和四个详情标签。
+
+| 新增 CTest | 覆盖 |
+|---|---|
+| p3.diagnostics_lookup | 无 Qt 名称值快照、归属/线程/回收、查询不启动实例 |
+| p3.diagnostics_dependencies | 精确 realm/minor/capability、诊断不增加 committed 保留 |
+| p3.management_pending | 缺依赖不阻止管理页、错误原因与提供者发布后恢复 |
+| p3.management_diagnostics | 普通消费者读取 diagnostics/v1、纯文本值快照与 UI 账目 |
+| p3.management_retry | 真实按钮重试、防重复、新操作号/epoch、真实失败结果 |
+| p3.management_stop | worker 清理屏障、实例回收后操作记录、无选择时连续点击不停止其他实例 |
+| p3.management_deselect | 取消选择后当前单元格仍存在，按钮关闭且刷新不恢复旧选择 |
+| p3.management_guards | 错误线程、跨 scheduler/内核、未知实例、关闭期间拒绝 |
+| p3.management_queued_close | 关闭后跳过已排队重试，晚到结果不访问原生控件 |
+| p3.management_expired_kernel | Kernel 弱生命周期、清除界面、禁止重绑定旧控制器 |
+| p3.management_view_reentry | 模型插入信号里关闭和推进 Qt，当前刷新返回前窗口仍存活 |
+| p3.management_navigation_reentry | 切页信号中关闭并处理 Qt 延迟删除，导航返回前窗口仍存活 |
+| p3.management_cleanup_failure | 失败原因/causes、资源保留及禁止不安全重试 |
+| p3.management_blocked | 管理派发遭丢弃时 pending/原子诊断，不伪报完成 |
+
+| Q3b2 验证 | 结果 |
+|---|---|
+| 初次 Ela/MSVC Debug、Release | 各 176/176，原 164 项及新增 12 项 |
+| 提交前 Ela/MSVC Debug、Release | 各 178/178，补充取消选择和导航关闭重入 |
+| 无 Qt GCC Debug、Release | 各 117/117，新增两个 core 诊断场景 |
+| 提交前 MSVC ASan | 36/36 UI 场景，初次 34 项及新增 2 项；第一方与固定 Ela 插桩，预编译 Qt 未插桩 |
+| 公共头独立包含 | management.hpp、ela_shell.hpp、kernel.hpp 仅 SDK include，GCC C++17 通过 |
+
+日志为 `build/p3-q3b2-ela-msvc-<mode>.log`、`build/p3-q3b2-core-gcc-<mode>.log` 和 `build/p3-q3b2-asan.log`。ASan 沿用 build/p3-q3-asan 独立配置，构建 cordis_management_tests、cordis_ui_services_tests、cordis_ui_pages_tests、cordis_ela_demo 后以 `ctest --test-dir build/p3-q3-asan -L ela --output-on-failure` 检查 UI；该标签不覆盖两个 core 诊断场景。清理失败和投递阻断测试按设计保留未静止资源，不构成泄漏或任意等待环证明。
+
+本轮交付基础管理页，不等同于完整配置/保存/模块管理、系统安全模式或原生 Windows 人工交互验收。Q3 的桌面人工交互仍待验证，P3 整体保持进行中。本轮交付与审查随本次提交归档。
+
+### Q3b2 提交前审查
+
+复现并修复管理页切换信号中关闭、处理延迟删除导致的崩溃：程序入口与导航信号共用入口，窗口关闭等待完整导航栈返回，重入关门后停止改变选择。另修复取消选择后仍把 currentRow 当作已选行、保持按钮可用的问题，改用 selectionModel 解析实例号。两项回归在修复前分别 SegFault 和断言失败，修复后通过；规范和边界核对见 [审核记录](code-review.md#p3-q3b2-提交前审核)。
+
+审查日志为 `build/review-q3b2-ela-msvc-<mode>.log`、`build/review-q3b2-core-gcc-<mode>.log`、`build/review-q3b2-asan.log`；失败证据为 `build/review-q3b2-before.log` 和 `build/review-q3b2-navigation-before.log`。三个公共头独立包含及差异检查通过。ASan、无 Qt 隔离和原生桌面人工交互的验证边界保持上述约定。
+
 ## 后续工作
 
-Q3b2 推进管理页并验证原生桌面交互；已存在的 Kernel/实例/服务/UI 账目先形成可用诊断，配置候选差异、保存状态及模块引用随 Q4/P4 接入。Q4 推进 Loader/Store、配置计划与持久化。connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解是 P3 的开发顺序，不表示完成了原设计中任何尚未运行的 L/Q/U 场景。
+Q4 推进 Loader/Store、配置计划与持久化，管理页随之接入配置候选差异、条目启停与保存状态；模块引用/驻留/卸载详情随 P4 接入。原生 Windows 人工交互仍待专项验收。connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解是 P3 的开发顺序，不表示完成了原设计中任何尚未运行的 L/Q/U 场景。
