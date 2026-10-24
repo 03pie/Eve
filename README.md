@@ -2,7 +2,7 @@
 
 基于 Cordis 思路设计的 C++17 插件内核，目标桌面环境为 Qt 5.15.2 + ElaWidgetTools。
 
-当前已完成 **W0–W7 首阶段内置内核与联合验收**。P3 的 Qt/Ela 自动化基线、配置解析/校验/预览及目标接受/CAS、串行协调基础已实现。协调器尚未接入 Kernel 运行树驱动；原生桌面人工验收、真实配置执行、保存与完整模块管理仍待完成。
+当前已完成 **W0–W7 首阶段内置内核与联合验收**。P3 的 Qt/Ela 自动化基线、配置校验/预览、通用协调及文件事务已实现；Q4d2 提供目标/历史保存分离、单写队列、冲突处理和退出刷新。协调器尚未接入 Kernel 运行树驱动；原生桌面人工验收、真实配置执行、watcher、后台 I/O 和管理页保存入口仍待完成。
 
 ## 从这里开始
 
@@ -26,6 +26,8 @@
 | `src/loader` | 独立 Cordis::Loader，配置结构校验与目标差异预览，无运行或文件副作用 |
 | `Cordis::ConfigYaml` | 独立受限 YAML 解析及内置定义/schema 校验层，SDK 不暴露 LibYAML 类型 |
 | `Cordis::ConfigCoordinator` | CAS 目标接受、最新目标/串行动作及关闭协议，宿主运行驱动单独适配 |
+| `Cordis::ConfigFileQt` | 可选 Qt 配置文件事务，原文/hash 基线、冲突保留及临时文件提交 |
+| `Cordis::ConfigStore` / `Cordis::ConfigStoreQt` | 无 Qt 的保存状态/单写队列，以及可选真实 Qt 文件后端 |
 | `src/qt` | 可选 Cordis::Qt，包含 QtScheduler、QtClock 与 QObjectResource |
 | `src/ui` | 可选 Cordis::Ui，包含原生 Ela 导航、工作台、贡献服务和只读诊断 |
 | `third_party/ela` | 项目内维护的 Ela 组件库及资源，保留上游基线、本地修改和 MIT 许可 |
@@ -48,10 +50,12 @@
 - [W4 交付与验证](docs/w4-development.md)：服务依赖、输出契约、realm 视图及异步调用，四配置各 86/86 检查。
 - [W5 交付与验证](docs/w5-development.md)：子实例、父代清理屏障及联合环诊断，四配置各 96/96 检查。
 - [W6 交付与验证](docs/w6-development.md)：事件协议、作用域、异步屏障及控制台示例，四配置各 110/110 检查。
-- [P3 桌面适配](docs/p3-development.md)：Qt/Ela、配置校验/预览及协调基础，审查后 Ela/MSVC Debug/Release 各 215/215，无 Qt GCC 各 145/145。
+- [P3 桌面适配](docs/p3-development.md)：Qt/Ela、配置校验/预览、协调、文件事务与 Store；审查后 Ela/MSVC Debug/Release 各 243/243，无 Qt GCC 各 158/158。
 - [配置候选与预览](docs/adr/0011-configuration-preview.md)：结构校验范围、限额及预览与执行计划的边界。
 - [受限 YAML 与内置校验](docs/adr/0012-restricted-yaml-validation.md)：输入子集、schema/依赖联合、固定库及文件预览用法。
 - [目标接受与串行协调](docs/adr/0013-configuration-coordinator.md)：CAS、实际状态再规划、部分失败与关闭协议，Kernel 驱动待接入。
+- [配置文件事务](docs/adr/0014-configuration-file-transactions.md)：Qt 原始字节版本、协作锁、冲突来源及临时文件提交的范围。
+- [配置 Store](docs/adr/0015-configuration-store.md)：已接受目标/历史保存、dirty、单写队列、显式 rebase 与退出刷新。
 - [P3 桌面验收单](tests/acceptance/p3-ui.md)：明暗主题、缩放、组件一致性、交互及正常退出；待人工执行。
 - [W7 联合验收](docs/w7-verification.md)：服务/事件/子树完整闭环、失败残留和 A01–A10 证据，四配置各 113/113 检查。
 - [软件设计说明书](Cordis插件平台-软件设计说明书.md)：详细设计与验收依据。

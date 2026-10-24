@@ -460,9 +460,13 @@ ConfigStore 通过单写队列提交完整目标，使用 Qt 层的同目录临�
 
 ### 10.5 当前前置实现边界
 
-Q4a 已提供独立 Cordis::Loader：有界 typed Document 结构校验、规范 EntryPath、父禁用级联和纯目标差异预览，见 [ADR-0011](docs/adr/0011-configuration-preview.md)。DocumentCandidate 仅证明结构有效；PlanPreview 不是可直接执行的计划。Q4b 的独立 Cordis::ConfigYaml 接入受限单文档 UTF-8 YAML、规范文本往返和内置定义/schema 校验，发布仅含内置插件的 ValidatedCandidate，见 [ADR-0012](docs/adr/0012-restricted-yaml-validation.md)。外部模块路径/产物及真实运行适配、持久化仍待后续实施。
+Q4a 已提供独立 Cordis::Loader：有界 typed Document 结构校验、规范 EntryPath、父禁用级联和纯目标差异预览，见 [ADR-0011](docs/adr/0011-configuration-preview.md)。DocumentCandidate 仅证明结构有效；PlanPreview 不是可直接执行的计划。Q4b 的独立 Cordis::ConfigYaml 接入受限单文档 UTF-8 YAML、规范文本往返和内置定义/schema 校验，发布仅含内置插件的 ValidatedCandidate，见 [ADR-0012](docs/adr/0012-restricted-yaml-validation.md)。外部模块路径/产物及真实运行适配仍待后续实施。
 
-Q4c1 的 Cordis::ConfigCoordinator 已实现目标接受/CAS、串行检查点、最新目标替代、部分结果及关闭门禁，见 [ADR-0013](docs/adr/0013-configuration-coordinator.md)。真实规划/资源动作由宿主 IReconcileDriver 提供，当前尚无 Kernel 适配器；不能将受控驱动协议测试等同于真实插件计划执行。外部模块、真实运行树及持久化仍待后续实现。
+Q4c1 的 Cordis::ConfigCoordinator 已实现目标接受/CAS、串行检查点、最新目标替代、部分结果及关闭门禁，见 [ADR-0013](docs/adr/0013-configuration-coordinator.md)。真实规划/资源动作由宿主 IReconcileDriver 提供，当前尚无 Kernel 适配器；不能将受控驱动协议测试等同于真实插件计划执行。
+
+Q4d1 的可选 Cordis::ConfigFileQt 已提供有界文件原文/hash 读取、磁盘基线比较、协作锁及 QSaveFile 提交，见 [ADR-0014](docs/adr/0014-configuration-file-transactions.md)。此层不管理目标修订，也不提供非协作外部编辑器之间的文件系统 CAS；最后一次 hash 检查与重命名之间的竞争仍存在。
+
+Q4d2 的 Cordis::ConfigStore 已实现已接受目标/历史保存修订、dirty、单写队列、冲突保留/显式 rebase 与退出刷新，见 [ADR-0015](docs/adr/0015-configuration-store.md)。可选 QtConfigurationWriter 复用真实文件事务，当前 I/O 同步执行，回执排队；不宣称后台 I/O、watcher、全应用启动/退出装配或管理页保存入口已接入。外部模块和真实运行树继续待实现。
 
 ## 11. 原生模块与 ABI
 

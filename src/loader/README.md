@@ -8,4 +8,8 @@ Q4b 新增 Cordis::ConfigYaml，私有链接仓库内固定 LibYAML C 库；通�
 
 Q4c1 新增 Cordis::ConfigCoordinator：owner CAS 接受目标、至多一个在途动作、最新目标替代、部分失败/Pending 报告、投递失败门禁和异步关闭。驱动负责从实际状态规划；运行查询失败也不会隐藏 desired 快照。见 [ADR-0013](../../docs/adr/0013-configuration-coordinator.md)。
 
-尚无 Kernel 运行树驱动、真实依赖执行顺序、配置 UI、持久化或 watcher。当前协调测试的受控驱动不作为产品默认运行驱动；候选、目标、运行和保存状态继续分离。
+Q4d1 新增可选 Cordis::ConfigFileQt：有界读取原始文件、路径绑定 SHA256 基线、协作写锁及 QSaveFile 提交；冲突保留外部原文，不自动采用，失败保留旧文件。此层同步执行，不管理目标修订或写队列，见 [ADR-0014](../../docs/adr/0014-configuration-file-transactions.md)。
+
+Q4d2 新增无 Qt 的 Cordis::ConfigStore：跟踪已接受目标、独立历史保存修订与 dirty、有限 FIFO/同修订请求共享、失败停止/显式 rebase 及退出刷新。文件值类型移到 file.hpp；可选 Cordis::ConfigStoreQt 提供真实 QtConfigurationWriter，同步执行文件 I/O，回执由 Store 排队处理。见 [ADR-0015](../../docs/adr/0015-configuration-store.md)。
+
+尚无 Kernel 运行树驱动、真实依赖执行顺序、配置 UI、后台 I/O 或 watcher。当前协调测试的受控驱动不作为产品默认运行驱动；候选、目标、运行和保存状态继续分离。

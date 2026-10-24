@@ -1,6 +1,6 @@
 # P3 桌面适配开发记录
 
-日期：2026-10-24。状态：进行中；Q0–Q3c 自动化基线、Q4a/Q4b 配置校验和 Q4c1 目标接受/串行协调基础已实现；原生桌面人工验收待办，下一步 Kernel 驱动及 Store，其他专用资源按集成补齐。
+日期：2026-10-24。状态：进行中；Q0–Q3c 自动化基线、Q4a/Q4b 校验、Q4c1 协调、Q4d1 文件事务及 Q4d2 Store 状态/队列已实现；原生桌面人工验收待办，后续按前置条件接入 Kernel 驱动、watcher/后台 I/O 和管理页保存。
 
 ## 已安装与验证
 
@@ -445,6 +445,79 @@ Q4c 仍有 Kernel 适配和真实依赖/子树执行待完成，不据此登记�
 
 日志：build/review-q4-ela-msvc-<mode>.log、build/review-q4-core-gcc-<mode>.log、build/review-q4-asan.log。本次将 Q4a/Q4b/Q4c1 一并提交；Core/Qt/UI/Ela 及只读参考未改动，原生桌面人工项继续待验。ASan 不构成泄漏、真实 Kernel 协调或 DLL 卸载证明。
 
+## Q4d1 配置文件事务基础
+
+Q3c 人工验收未完成，Q4c2 运行树/管理页接入门禁保持不变。本轮先完成独立、可用真实文件验证的文件事务；没有把文件测试代填为桌面验收。可选 Cordis::ConfigFileQt 仅依赖 ConfigYaml 和 Qt5::Core，不改变 Core/Qt/UI/Ela 的实现，不在无 Qt 构建中启用。接口与边界见 [ADR-0014](adr/0014-configuration-file-transactions.md)。
+
+readConfigurationFile 有界读取原始字节及 SHA256，缺失和空文件分别建模；基线绑定规范绝对路径。文件预算默认 8 MiB，独立于文本解析预算；拒绝非普通文件、最终链接、无效或歧义路径。写入要求 ValidatedCandidate，持协作锁先比较原始 hash，临时文件写入后再比较一次，最后通过禁止直接覆盖回退的 QSaveFile 提交。冲突返回外部原文及 ConfigConflict，目标仍由调用方保留；目标字节已存在时返回 Unchanged，不重写配置文件。打开/写入/提交等 I/O 故障使用新增的 ConfigIo。
+
+文件事务是同步低层接口，不运行事件循环，不维护 desiredRevision/persistedRevision、dirty、写队列或 watcher，也不接入实例动作。协作写入之间按同路径锁串行化；非协作编辑器在最后检查与重命名之间的竞争仍存在，不能宣称任意文件系统 CAS。
+
+| CTest | 覆盖 |
+|---|---|
+| p3.config_file_read | 缺失/空文件、已知 SHA256、CRLF/NUL 原文、精确字节预算 |
+| p3.config_file_commit | 首次创建、更新、规范文本可重新验证、无变化及陈旧版本 |
+| p3.config_file_conflict | 外部仅改注释和无效 YAML，外部来源与输入目标均保留 |
+| p3.config_file_existence | 外部新建空文件、删除、冲突后明确使用新基线创建 |
+| p3.config_file_guards | 路径/基线/hash/预算/移动后目标，Windows 设备和保留名拒绝 |
+| p3.config_file_io | 缺失父目录、目录冒充配置、不遗留锁 |
+| p3.config_file_symlink | 最终符号链接/Windows 快捷方式拒绝，真实目标不被改写 |
+| p3.config_file_lock | 同路径锁占用立即失败，原文件保留，释放后可重试 |
+| p3.config_file_concurrent | 12 轮真实两线程竞争，每轮仅一个提交，另一方报告冲突 |
+| p3.config_file_without_application | 无 QCoreApplication/scheduler/GUI 时真实读写 |
+| p3.config_file_commit_failure | Windows 真实句柄禁止重命名，提交失败旧字节/hash 保持，释放后重试 |
+
+文件场景仅使用 QTemporaryDir；正常及失败路径均检查无锁/临时文件残留，不写用户配置。公开头在测试中首先包含，源码与测试保持 /W4 /WX；避开 Qt 5.15 QList<QString> 比较触发的 MSVC STL 弃用扩展，不降低编译告警标准。
+
+| Q4d1 验证 | 结果 |
+|---|---|
+| Ela/MSVC Debug、Release | 各 226/226；Windows 路径细化后 Debug 文件场景复验 11/11 |
+| 无 Qt GCC Debug、Release | 各 145/145；编译命令无 Qt/Ela/文件适配目标依赖 |
+| MSVC ASan | 39/39 Loader 场景，含本轮 11 项文件测试；第一方及 LibYAML C 库插桩，预编译 Qt 未插桩 |
+| 格式及文档 | git diff --check、新文件 UTF-8/LF/行尾检查和修改文档本地链接检查通过 |
+
+日志：build/p3-q4d1-ela-msvc-<mode>.log、build/p3-q4d1-core-gcc-<mode>.log、build/p3-q4d1-file-debug.log、build/p3-q4d1-asan.log。ASan 复用 build/p3-q3-asan，构建 cordis_config_file_tests 及既有 Loader 测试/示例，再运行 `ctest --test-dir build/p3-q3-asan -L loader --output-on-failure`；已核对新文件库和测试的编译命令含 /fsanitize=address。不静止/投递阻断的既有场景继续按契约保留资源，不构成泄漏、断电或物理卸载证明。
+
+Q4d1 与后续 Q4d2 一并审查提交；本节保留文件层当时的实现范围，Store 状态/队列见下节，watcher 和运行树接入仍待完成。
+
+## Q4d2 Store 状态、单写队列和退出刷新
+
+新增无 Qt 的 Cordis::ConfigStore 和可选 Cordis::ConfigStoreQt。公共文件值移到 file.hpp，qt_file.hpp 继续包含它；新 Store 依赖 ConfigYaml/Core，Core 不反向引用 Loader。QtConfigurationWriter 复用真实 Q4d1 文件事务，构造不做 I/O；当前提交在 owner 调用线程同步执行，回执由 Store 排队接收，没有新增 worker 或假后台写入。设计及错误语义见 [ADR-0015](adr/0015-configuration-store.md)。
+
+track 接收协调器已接受的共享不可变目标及修订，修订递增且同修订不可换对象。保存队列固定各次目标，在真正写入时使用上一份成功提交的磁盘基线；历史保存修订与当前目标分开更新，旧目标写完不会把新目标的 dirty 清除。同修订重复请求共享任务，默认最多 64 个在途/排队保存。失败停止后续项，保留目标与历史保存；磁盘冲突保留外部原文，只有空闲时经显式 rebase 决策才换基线。
+
+close 同步关门、排空已接受保存，并在队列空闲后刷新尚未请求保存的最新 dirty 目标；失败会终结关闭失败，不无限重试。投递故障只跨线程终结 Promise，不从 worker 修改保存状态；未知进度保留控制块。facade 释放不会取消已请求保存，正常排空后解除自保留。整应用启动/退出及管理页保存尚未接入，不能把组件级关闭测试记为完整桌面退出验收。
+
+| CTest | 覆盖 |
+|---|---|
+| p3.store_targets / serial | 目标修订、FIFO、重复请求共享、旧保存与新 dirty 分离、Unchanged |
+| p3.store_limits | 已满队列拒绝新请求，退出最终刷新复用空闲槽位 |
+| p3.store_failure / conflict | 失败停止/跳过、原基线重试、冲突原文与历史保存保留、显式 rebase |
+| p3.store_shutdown / close_failure | 排空与最新目标刷新，拒绝新业务，失败关闭不重试或继续写 |
+| p3.store_delivery / reentry | worker 投递故障、同步重入跟踪/保存/关闭，最多一次在途事务 |
+| p3.store_guards / lifetime | 协议结果、后端抛错、错误线程、忙时 rebase、scheduler 关闭及正常排空释放 |
+| p3.store_unchanged_protocol | 审查新增：Unchanged 不能改变基线，非法回执保留 dirty、停止后续项及失败关闭 |
+| p3.store_coordinator | 真实协调器的受控运行失败与目标已保存同时成立；不是 Kernel 驱动验收 |
+| p3.store_qt_persist / conflict / failure | 真实文件保存、Unchanged、非法外部 YAML、真实协作锁失败及重试 |
+| p3.store_qt_shutdown | 生产 QtScheduler 事件循环保持到最新目标落盘与回执完成 |
+
+| Q4d2 开发验证（审查前） | 结果 |
+|---|---|
+| Ela/MSVC Debug、Release | 各 242/242，含本轮新增 16 项场景 |
+| 无 Qt GCC Debug、Release | 各 157/157，含 12 项通用 Store 场景；编译命令无 Qt/Ela/文件适配依赖 |
+| MSVC ASan | 55/55 Loader 场景；新 Store/Qt 后端及两组测试的 4 个编译单元均核对插桩，预编译 Qt 未插桩 |
+| 代码与文档 | 第一方差异/新文件格式、公共头独立包含及本地文档链接检查 |
+
+日志：build/p3-q4d2-core-gcc-<mode>.log、build/p3-q4d2-ela-msvc-<mode>.log、build/p3-q4d2-asan.log。定向记录为 build/p3-q4d2-store-debug.log、build/p3-q4d2-store-msvc-debug.log。ASan 在 build/p3-q3-asan 构建 cordis_config_store_tests、cordis_config_store_qt_tests 及既有 Loader 目标，运行 `ctest --test-dir build/p3-q3-asan -L loader --output-on-failure`。阻断场景按契约保守保留控制块，不构成泄漏、后台 worker 或物理卸载证明。
+
+Q4d1/Q4d2 本次一并审查提交。真实 Kernel、watcher、后台 I/O、管理页保存入口与全应用退出装配继续待办，人工验收表未代填。
+
+### Q4d1/Q4d2 提交前审查
+
+发现通用 Store 接受与基线不一致的 Unchanged 回执，可能误推进保存修订并清除 dirty。新增 p3.store_unchanged_protocol，修复前真实失败，见 build/review-q4d-before.log；修复后要求完整版本及原文均与基线一致。非法回执停止后续保存、保留原历史与 dirty，关闭不能虚报成功。另统一文件大小查询错误分类、Qt 空目标错误阶段和直接包含依赖。详细范围见 [审查记录](code-review.md#p3-q4d1q4d2-提交前审核)。
+
+审查后 Ela/MSVC Debug、Release 各 243/243，无 Qt GCC Debug、Release 各 158/158；Loader ASan 56/56，其中 17 项 Store 场景。日志为 build/review-q4d-ela-msvc-<mode>.log、build/review-q4d-core-gcc-<mode>.log、build/review-q4d-asan.log。公开头首包含、无 Qt 依赖隔离、第一方暂存格式和本地文档链接检查通过。Qt 预编译库未插桩，原有人工验收及资源保留边界保持不变。
+
 ## 后续工作
 
-完成 Q3c 原生 Windows 桌面人工验收，推进 Q4c2 Kernel 运行树驱动及真实依赖/子树协调，再接 Q4d Store 冲突/原子保存；管理页随之接入候选差异、条目启停和保存状态。模块引用/驻留/卸载详情随 P4 接入；connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解不表示完成了原设计中任何尚未运行的 L/Q/U 场景。
+完成 Q3c 原生 Windows 桌面人工验收后接 Q4c2 Kernel 运行树驱动及真实依赖/子树协调；独立推进 Q4d3 watcher、重命名后恢复监听和自身写入 hash 消重，后台 I/O 随专用 worker 屏障接入。管理页随后接入候选差异、条目启停和保存状态。模块引用/驻留/卸载详情随 P4 接入；connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解不表示完成了原设计中任何尚未运行的 L/Q/U 场景。

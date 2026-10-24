@@ -1,5 +1,18 @@
 # 提交前代码审查记录
 
+## P3 Q4d1/Q4d2 提交前审核
+
+日期：2026-10-24。范围：7864de9 之后全部未提交的文件事务、Store、Qt 写后端、SDK 值类型/错误分类、构建、测试与文档，包括新增文件。sources/research 及 Core/Qt/UI/Ela 实现未改动。
+
+- P2，Unchanged 回执缺少基线一致性校验：通用 Store 只检查磁盘值形状及目标文本，会接受“缺失文件变为存在”或 hash/原文与基线不一致的 Unchanged，错误推进 persistedRevision 并清除 dirty。现在要求此类回执的路径、存在性、hash 和原文均与提交前基线一致；非法回执形成 Failed，保留保存历史和 dirty，后续项 Skipped，关闭不能虚报刷新成功。
+- 新增 p3.store_unchanged_protocol，覆盖缺失基线、hash 漂移、原文漂移、队列跳过及失败关闭。修复前实际失败于保存结果断言，见 build/review-q4d-before.log；修复后 13 项无 Qt Store 场景通过。缺陷位于通用 Store 对后端协议的校验边界，测试使用受控回执，不冒充真实磁盘写入证据。
+- 规范与质量：集中基线快照比较；文件大小只查询一次，查询失败归 ConfigIo、超限归 ConfigInvalid；补齐 Qt 写后端空目标错误的 loader.file.target 阶段和标准库直接依赖。核对 UTF-8/LF、中文 Doxygen、公共头独立包含、队列容量、同修订共享、修订单调性、错误原因链、历史任务稳定性、关闭刷新与保守保留。
+- 文件及依赖边界：核对原始字节/hash、缺失/空文件、路径绑定/链接拒绝、协作锁、二次基线比较、QSaveFile 禁止直接写回退及临时文件清理；真实文件/锁失败和 Windows 句柄导致的提交失败均保留旧文件。ConfigStore 保持无 Qt；ConfigStoreQt 复用文件事务，不新增第三方库或修改其源码。
+
+修复后 Ela/MSVC Debug、Release 各 243/243；无 Qt GCC Debug、Release 各 158/158；MSVC ASan 56/56 Loader 场景通过，含 17 项 Store 场景。日志为 build/review-q4d-ela-msvc-<mode>.log、build/review-q4d-core-gcc-<mode>.log、build/review-q4d-asan.log。新库和测试均按现有配置插桩，预编译 Qt 未插桩。第一方暂存差异及新文件格式检查通过，未发现其他阻止本次提交的问题。
+
+本次一并提交 Q4d1/Q4d2。Qt 写后端当前同步执行 I/O；后台 I/O、watcher、Kernel 运行树、管理页保存及全应用装配仍待后续实现。原生桌面人工验收未代填；非协作编辑窗口、网络/断电等文件边界沿用 ADR-0014，投递阻断保守保留资源，ASan 不构成泄漏或物理卸载证明。
+
 ## P3 Q4a/Q4b/Q4c1 提交前审核
 
 日期：2026-10-24。范围：4b6139b 之后全部未提交的配置结构/预览、受限 YAML、内置定义/schema、通用协调器、SDK、示例、固定 LibYAML、构建、测试及文档，包含新增文件。sources/research、Core/Qt/UI/Ela 实现均未改动。

@@ -43,7 +43,8 @@ enum class ErrorCode {
     CallbackFailed,
     StepLimitExceeded,
     BrokenPromise,
-    ClockClosed
+    ClockClosed,
+    ConfigIo
 };
 
 /**
