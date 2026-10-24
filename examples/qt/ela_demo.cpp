@@ -1,5 +1,5 @@
 /** @file ela_demo.cpp
- * @brief 展示 ui.pages/v1 的真实 Ela 页面贡献，关闭窗口前等待 Kernel 与外壳完整清理。
+ * @brief 展示页面、命令及纯值通知，关闭窗口前等待 Kernel 与外壳完整清理。
  */
 #include <cordis/ui/ela_shell.hpp>
 #include <cordis/kernel.hpp>
@@ -30,6 +30,7 @@ struct Application : std::enable_shared_from_this<Application> {
     std::optional<Instance> provider;
     std::optional<Instance> notes;
     std::optional<PageHandle> page;
+    std::optional<CommandHandle> command;
     bool stopping = false;
     bool finished = false;
     /** @brief 错误保持非零退出，不伪造 Kernel 已静止。 */
@@ -43,7 +44,7 @@ struct Application : std::enable_shared_from_this<Application> {
         kernel.close().thenOn(scheduler, [self](const Result<CleanupReport>& report) {
             if (!report.hasValue() || !report.value().quiescent) { self->fail("kernel retained resources"); return; }
             self->shell.close().thenOn(self->scheduler, [self](const Result<void>& result) {
-                if (!result.hasValue() || !self->shell.pages()->snapshot().value().empty()) { self->fail("shell cleanup failed"); return; }
+                if (!result.hasValue() || !self->shell.pages()->snapshot().value().empty() || !self->shell.commands()->snapshot().value().empty()) { self->fail("shell cleanup failed"); return; }
                 if (!self->scheduler->close().hasValue()) { self->fail("scheduler close failed"); return; }
                 self->finished = true;
                 std::cout << "Kernel, contributions and Ela window closed\n";
@@ -56,10 +57,14 @@ struct Application : std::enable_shared_from_this<Application> {
     {
         std::weak_ptr<Application> weak = shared_from_this();
         auto service = shell.pages();
-        auto ui = kernel.registerPlugin("ui", [service](Context context) {
-            auto provided = context.provide({"ui.pages"}, service);
-            return provided.hasValue() ? completedTask() : failedTask(provided.error());
-        }, {}, {ServiceOutput::of<UiPagesService>({"ui.pages"})}).value();
+        auto commands = shell.commands();
+        auto notices = shell.notifications();
+        auto ui = kernel.registerPlugin("ui", [service, commands, notices](Context context) {
+            context.provide({"ui.pages"}, service).value();
+            context.provide({"ui.commands"}, commands).value();
+            context.provide({"ui.notifications"}, notices).value();
+            return completedTask();
+        }, {}, {ServiceOutput::of<UiPagesService>({"ui.pages"}), ServiceOutput::of<CommandService>({"ui.commands"}), ServiceOutput::of<NotificationService>({"ui.notifications"})}).value();
         auto consumer = kernel.registerPlugin("notes", [weak](Context context) {
             auto self = weak.lock();
             if (!self) return failedTask(makeError(ErrorCode::StaleContext, "demo expired"));
@@ -82,8 +87,21 @@ struct Application : std::enable_shared_from_this<Application> {
                 self->page.emplace(added.value());
             });
             if (!call.hasValue()) return failedTask(call.error());
-            return self->page->ready();
-        }, {ServiceRequirement::of<UiPagesService>({"ui.pages"})}).value();
+            auto notices = context.consume<NotificationService>({"ui.notifications"}).value();
+            auto registered = context.consume<CommandService>({"ui.commands"}).value().withService([&](CommandService& commands) {
+                auto page = *self->page;
+                self->command = commands.add(context, {"notes.remind", "显示笔记提醒", [page, notices, context] {
+                    auto navigated = page.navigate();
+                    if (!navigated.hasValue()) return failedTask(navigated.error());
+                    auto posted = notices.withService([&](NotificationService& service) {
+                        service.post(context, {NotificationLevel::Info, "笔记提醒：页面已打开，可以开始记录。", {}}).value();
+                    });
+                    return posted.hasValue() ? completedTask() : failedTask(posted.error());
+                }, {}}).value();
+            });
+            if (!registered.hasValue()) return failedTask(registered.error());
+            return self->command->ready();
+        }, {ServiceRequirement::of<UiPagesService>({"ui.pages"}), ServiceRequirement::of<CommandService>({"ui.commands"}), ServiceRequirement::of<NotificationService>({"ui.notifications"})}).value();
         notes.emplace(kernel.mount(consumer).value());
         provider.emplace(kernel.mount(ui).value());
         shell.onCloseRequested([weak] { if (auto self = weak.lock()) self->stop(); }).value();
@@ -91,15 +109,20 @@ struct Application : std::enable_shared_from_this<Application> {
         auto self = shared_from_this();
         notes->ready().thenOn(scheduler, [self, smoke](const Result<void>& result) {
             if (!result.hasValue() || !self->page->navigate().hasValue()) { self->fail("page activation failed"); return; }
-            if (smoke) QTimer::singleShot(50, QCoreApplication::instance(), [self] {
-                // 通过真实 QWidget::close 触发宿主的异步退出入口。
-                for (auto window : QApplication::topLevelWidgets()) if (window->windowTitle() == QString::fromUtf8("Cordis 插件平台")) {
-                    if (!window->grab().save(QCoreApplication::applicationDirPath() + "/ela-smoke.png")) { self->fail("preview capture failed"); return; }
-                    window->close(); return;
-                }
-                self->fail("Ela window missing");
+            if (smoke) self->command->execute().thenOn(self->scheduler, [self](const Result<void>& invoked) {
+                if (!invoked.hasValue() || self->shell.notifications()->snapshot().value().empty()) { self->fail("command notification failed"); return; }
+                QTimer::singleShot(50, QCoreApplication::instance(), [self] { self->captureAndClose(); });
             });
         });
+    }
+    /** @brief 截图包含命令及通知，再通过真实 QWidget::close 触发异步退出。 */
+    void captureAndClose()
+    {
+        for (auto window : QApplication::topLevelWidgets()) if (window->windowTitle() == QString::fromUtf8("Cordis 插件平台")) {
+            if (!window->grab().save(QCoreApplication::applicationDirPath() + "/ela-smoke.png")) { fail("preview capture failed"); return; }
+            window->close(); return;
+        }
+        fail("Ela window missing");
     }
 };
 } // namespace

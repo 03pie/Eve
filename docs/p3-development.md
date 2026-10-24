@@ -1,6 +1,6 @@
 # P3 桌面适配开发记录
 
-日期：2026-10-24。状态：进行中；Q0–Q2 及 Q3a Ela 页面贡献已完成；命令/通知/管理页、connection/worker/watcher 与 Loader 继续推进。
+日期：2026-10-24。状态：进行中；Q0–Q2、Q3a 页面贡献及 Q3b1 命令/通知已完成；Q3b2 管理页、connection/worker/watcher 与 Loader 继续推进。
 
 ## 已安装与验证
 
@@ -204,6 +204,50 @@ Q3a 不代表命令/通知服务、插件管理页、任意 queued connection、
 
 本轮日志：`build/review-q3-ela-msvc-<mode>.log`、`build/review-q3-core-gcc-<mode>.log`、`build/review-q3-asan.log`；失败证据为 `build/review-q3-before.log` 和 `build/review-q3-input-method-before.log`。ASan 沿用上述独立构建与 flags，未把预编译 Qt 或原生桌面交互记作已验证。
 
+## Q3b1 命令与通知
+
+新增 commands.hpp 的 CommandService/CommandHandle 与 notifications.hpp 的 NotificationService，均由 ElaShell 创建，并通过现有 ui.commands/v1、ui.notifications/v1 输出/依赖声明接入。外壳增加宿主命令列表及最近通知状态区；示例贡献“显示笔记提醒”，执行后导航到笔记页并显示纯文本通知。默认交互运行支持双击/回车，--smoke 会实际执行命令、检查通知、截图并完成退出。
+
+命令 execute 始终排队，在进入谓词/回调前及谓词返回后检查 owner/epoch。手动关闭同步撤销门禁；排队未进入项跳过，已进入项等源 Task 完成且由 owner 处理后才退出。谓词求值也计入保留，防止嵌套 Qt 循环提前完成清理。贡献 effect 静止前必须释放所有回调捕获；初始投递拒绝返回错误，已接受调用推进遭阻断则保持 pending 并标记 deliveryBlocked。详情见 [ADR-0007](adr/0007-ui-commands-notifications.md)。
+
+通知校验当次 Context，但只保留复制的文本/级别/OperationId/归属值。历史最多 100 条，每条最多 4096 字节，未知级别、空文本或过长文本拒绝且不占序号；QLabel 固定 PlainText。实例停止后仍可查历史，历史本身不延长插件生命周期，也不声称已实现持久化或完整通知管理页。
+
+新增 tests/qt/ui_services.cpp，初次 11 项，提交前审查后共 13 个独立 CTest，前缀 p3.ui_services_：
+
+| 后缀 | 行为 |
+|---|---|
+| namespaces | 实例命名空间、重复 id、手动关闭即时关门及旧代拒绝 |
+| inflight | 两个异步 gate 分别完成、worker/owner 确认、闭包保留及停止等待最后一项 |
+| queued_cancel | 已接受未进入项撤销后不执行谓词/回调，保留最终释放 |
+| failures | 禁用、谓词/执行异常、计数收敛 |
+| predicate_reentry | 谓词内关闭及嵌套 Qt 循环，捕获在返回前不得释放 |
+| recovery | 提供者退役、消费者 Pending、重新发布后新 epoch，旧能力拒绝 |
+| notifications | 纯文本、有界历史、操作归属、非法输入、历史不阻止实例退出 |
+| guards | 错误线程、跨 scheduler、非法命令、错误线程关闭不改门禁 |
+| shutdown | 外壳同时等待命令和页面；关闭中禁止新贡献和通知 |
+| interaction | 真实键盘回车通过宿主列表执行，禁用/空消息错误都有通知 |
+| blocked | 源结果回程投递受阻后保守 pending/保留及原子诊断 |
+| registration_reentry | MSVC 回调移动中关闭宿主，重查门禁后拒绝且不新增 effect |
+| row_reentry | Qt 模型插入中重入关闭/循环，setup 返回前保留闭包及窗口 |
+
+| Q3b1 验证 | 结果 |
+|---|---|
+| 初次 Ela/MSVC Debug、Release | 各 162/162，原 151 项及新增 11 项 |
+| 提交前 Ela/MSVC Debug、Release | 各 164/164，补充注册和 Qt 插入重入 |
+| 提交前无 Qt GCC Debug、Release | 各 115/115，未引入 Qt/Ela 构建依赖 |
+| 提交前 MSVC ASan | 24/24 UI 场景，含页面、命令/通知和更新后的演示；第一方与 Ela 插桩，Qt 预编译库未插桩 |
+| 公开头独立包含 | commands.hpp、notifications.hpp、ela_shell.hpp 仅 SDK include，GCC C++17 通过 |
+
+日志为 build/p3-q3b-ela-msvc-debug.log、build/p3-q3b-ela-msvc-release.log、build/p3-q3b-core-gcc-debug.log 和 build/p3-q3b-asan.log。ASan 沿用 build/p3-q3-asan 的独立配置，构建 cordis_ui_services_tests、cordis_ui_pages_tests、cordis_ela_demo 后执行 `ctest --test-dir build/p3-q3-asan -L ela --output-on-failure`。命令 blocked 场景故意提前关闭 scheduler，保留无法证明静止的账目；通过不代表强制释放或泄漏检查通过。
+
+更新后的预览位于 build/ela-msvc-debug/bin/ela-smoke.png，已检查中文命令列表、笔记页和通知展示；CTest 仍为 offscreen，尚未完成原生 Windows 人工交互。完整插件管理页、Loader/Store、任意连接/worker/watcher、ABI/物理卸载尚未实现或验收。
+
+### Q3b1 提交前审查
+
+修复移动回调中关闭宿主后仍可注册的问题，接管后重查门禁，并保留 Context 值副本。列表项初始化纳入 effect setup，防止 Qt 插入信号重入时提前释放命令闭包。空错误消息提供宿主缺省文本，增强交互回归；异步调用测试改为两个 gate，验证停止等待最后一项。规范、所有权和边界核对见 [审核记录](code-review.md#p3-q3b1-提交前审核)。
+
+本轮日志为 `build/review-q3b-ela-msvc-<mode>.log`、`build/review-q3b-core-gcc-<mode>.log`、`build/review-q3b-asan.log`；失败证据为 `build/review-q3b-before.log` 和 `build/review-q3b-row-before.log`。公开头独立包含与差异检查通过。
+
 ## 后续工作
 
-Q3b 补齐命令、通知与管理页并验证原生桌面交互；Q4 推进 Loader/Store、配置计划与持久化。connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解是 P3 的开发顺序，不表示完成了原设计中任何尚未运行的 L/Q/U 场景。
+Q3b2 推进管理页并验证原生桌面交互；已存在的 Kernel/实例/服务/UI 账目先形成可用诊断，配置候选差异、保存状态及模块引用随 Q4/P4 接入。Q4 推进 Loader/Store、配置计划与持久化。connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解是 P3 的开发顺序，不表示完成了原设计中任何尚未运行的 L/Q/U 场景。

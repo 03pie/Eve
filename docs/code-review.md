@@ -1,5 +1,18 @@
 # 提交前代码审查记录
 
+## P3 Q3b1 提交前审核
+
+日期：2026-10-24。范围：0d9a5ac 之后全部未提交的命令/通知 SDK、宿主后端、effect 集成、窗口展示、示例、测试和文档，包括新增文件。sources/research 未改动。
+
+- 注册门禁：MSVC std::function 的小对象移动可执行用户代码。旧 add 在检查宿主状态后移动 CommandSpec；若移动中重入 shell.close，随后仍创建命令 effect/列表项，此时宿主服务的关闭结果可能已经完成。现在先保留 Context 值副本，接管回调后重查宿主及本代 guard，再修改索引和创建 effect。新增 registration_reentry，固定在第二次移动触发关闭，确认请求被拒绝、索引和 effect 数量不变。
+- 初始化屏障：列表项原先在 effect setup 返回后创建。Qt model 的 rowsInserted 信号中重入关闭并推进 owner 事件，清理会在列表构造返回前释放命令捕获。现在列表创建/登记全部纳入 effect setup，窗口及闭包必须等待初始化返回；token 返回后再补发宿主关闭请求。新增 row_reentry 验证嵌套循环期间捕获仍在、外壳未完成关闭，随后可完整排空。此问题通过生命周期断言复现，未声称已复现物理模块卸载或堆损坏。
+- 错误展示：命令失败携带空 message 时，宿主将空文本转给通知服务，被空文本校验拒绝，界面没有失败提示。现在使用“命令执行失败”作为缺省文本。增强 interaction，确认禁用错误和空错误消息都形成可见错误通知。
+- 质量和规范：补全 functional/memory/string 直接依赖；投递失败观察者只弱持 CommandControl 并写其原子标志，不再间接访问可在完成时移动清空的 CommandCall.record。增强 inflight，以两个独立 gate 逐个完成并发调用，确认第一个结束后停止仍 pending、最后一项结束后才释放捕获。核对中文 Doxygen、同 scheduler/epoch、错误线程关闭、谓词重入、排队撤销、worker 完成、关闭顺序、有界纯文本历史和无 Qt 构建隔离。
+
+修复前两项失败见 `build/review-q3b-before.log`，列表初始化失败见 `build/review-q3b-row-before.log`。修复后 Ela/MSVC Debug、Release 各 164/164；无 Qt GCC Debug、Release 各 115/115。三个公共头 GCC C++17 独立包含、git diff --check 通过。日志为 `build/review-q3b-ela-msvc-<mode>.log`、`build/review-q3b-core-gcc-<mode>.log`。
+
+MSVC ASan 专项 24/24 UI 场景通过，第一方与固定 Ela 库均插桩，Qt 预编译库未插桩；日志 `build/review-q3b-asan.log`。投递阻断场景按设计保留未静止资源，本检查不构成泄漏检查或任意等待环证明。未发现其他阻止本次提交的问题；管理页、原生 Windows 人工交互、Loader/Store、专用 connection/worker/watcher 及模块 ABI/物理卸载沿原计划另验。
+
 ## P3 Q3a 提交前审核
 
 日期：2026-10-24。范围：b5b8bab 之后全部未提交的 Ela 构建、页面服务、外壳、Context.identity、测试、示例和文档，包括新增文件。sources/research 未改动。

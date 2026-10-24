@@ -6,9 +6,9 @@
 
 ## 当前状态
 
-**W0–W7 首阶段工作单已完成。P3 Q0 工具链、Q1 QtScheduler、Q2 Timer/QObject、Q3a Ela 页面贡献已完成：提交前 Ela/MSVC Debug/Release 各 151/151 通过；Q3 整体进行中，下一步 Q3b 命令、通知与管理页。**
+**W0–W7 首阶段工作单已完成。P3 Q0 工具链、Q1 QtScheduler、Q2 Timer/QObject、Q3a 页面及 Q3b1 命令/通知已完成：提交前 Ela/MSVC Debug/Release 各 164/164 通过；Q3 整体进行中，下一步 Q3b2 管理页。**
 
-Qt 5.15.2 Core/Widgets/Test 已就绪，路径与当前 MSVC 组合见 [P3 记录](p3-development.md)。QtScheduler、Timer/QObject 及 Ela 页面生命周期已通过真实事件循环与 offscreen 测试；connection/worker/watcher、命令/通知服务、管理页、原生 Windows 人工交互、原生插件及跨 ABI 事件行为尚未通过验收。
+Qt 5.15.2 Core/Widgets/Test 已就绪，路径与当前 MSVC 组合见 [P3 记录](p3-development.md)。QtScheduler、Timer/QObject、Ela 页面及命令/通知已通过真实事件循环与 offscreen 测试；connection/worker/watcher、管理页、原生 Windows 人工交互、原生插件及跨 ABI 事件行为尚未通过验收。
 
 ## 状态规则
 
@@ -29,7 +29,7 @@ Qt 5.15.2 Core/Widgets/Test 已就绪，路径与当前 MSVC 组合见 [P3 记�
 | P0 研究、设计与编码准备 | 已完成（内核起步范围） | 设计说明书、契约、工程及环境检查齐备；桌面工具链在对应阶段前补齐 |
 | P1 内置插件与基础内核 | 已完成（首阶段内置范围） | W1–W3/W6/W7 与 A01–A10 内核证据；生产适配、全局事件 schema/post 另验 |
 | P2 响应式服务依赖 | 已完成（首阶段内置范围） | W4/W5/W7 联合闭环通过；跨 ABI、物理卸载及替换不在本轮 |
-| P3 Qt / Loader / Ela | 进行中 | Q0–Q3a 工具链、调度、资源屏障及页面贡献完成；Q3b 命令/通知/管理页、原生桌面交互、Q4 Loader 及其他资源适配待完成 |
+| P3 Qt / Loader / Ela | 进行中 | Q0–Q3b1 工具链、调度、资源屏障及页面/命令/通知完成；Q3b2 管理页、原生桌面交互、Q4 Loader 及其他资源适配待完成 |
 | P4 原生插件模块 | 未开始 | ABI、ModuleManager 和驻留账目待实现 |
 | P5 受控替换 | 未开始 | 新旧代替换、恢复和卸载专项验证待实现 |
 
@@ -58,7 +58,7 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 - [x] CancellationSource：取消请求与底层完成分离。
 - [x] 为上述真实行为添加单测，完成适用工具链验证及记录。
 
-这些条目已有真实实现与测试。W2 也已完成 Effect 控制块、清理屏障、FakeClock 与超时观察，见 [交付记录](w2-verification.md)。W3–W7 的实例、服务、子树、联合图、事件与联合示例也已验收；P3 已完成 Qt kit、调度、Timer/QObject 屏障与 Ela 页面贡献，下一步补齐命令、通知与管理页。
+这些条目已有真实实现与测试。W2 也已完成 Effect 控制块、清理屏障、FakeClock 与超时观察，见 [交付记录](w2-verification.md)。W3–W7 的实例、服务、子树、联合图、事件与联合示例也已验收；P3 已完成 Qt kit、调度、Timer/QObject 屏障及页面/命令/通知，下一步推进管理页。
 
 ## 验证台账
 
@@ -82,6 +82,8 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | P3 Q2 提交前审查与资源生命周期检查 | 2026-10-24 | Qt/MSVC Debug/Release 各 140/140；无 Qt GCC Debug/Release 各 115/115；14 项资源场景 ASan 通过 | [审核记录](code-review.md)、[Q2 审查记录](p3-development.md#q2-提交前审查) |
 | P3 Q3a Ela 页面贡献、服务恢复与窗口退出 | 2026-10-24 | Ela/MSVC Debug/Release 各 149/149；无 Qt GCC Debug 115/115；9 项 UI 场景 ASan 通过；两个新公共头独立包含通过 | [Q3a 记录](p3-development.md#q3a-ela-页面贡献)、[ADR-0006](adr/0006-ela-page-contributions.md) |
 | P3 Q3a 提交前审查、关闭/输入门禁及键盘导航 | 2026-10-24 | Ela/MSVC Debug/Release 各 151/151；无 Qt GCC Debug/Release 各 115/115；11 项 UI 场景 ASan 通过；两个公共头独立包含通过 | [审核记录](code-review.md#p3-q3a-提交前审核)、[Q3a 审查记录](p3-development.md#q3a-提交前审查) |
+| P3 Q3b1 命令屏障、服务恢复与纯值通知 | 2026-10-24 | Ela/MSVC Debug/Release 各 162/162；无 Qt GCC Debug 115/115；22 项 UI 场景 ASan 通过；三个公共头独立包含通过 | [Q3b1 记录](p3-development.md#q3b1-命令与通知)、[ADR-0007](adr/0007-ui-commands-notifications.md) |
+| P3 Q3b1 提交前审查、注册/Qt 初始化重入及错误展示 | 2026-10-24 | Ela/MSVC Debug/Release 各 164/164；无 Qt GCC Debug/Release 各 115/115；24 项 UI 场景 ASan 通过；三个公共头独立包含通过 | [审核记录](code-review.md#p3-q3b1-提交前审核)、[Q3b1 审查记录](p3-development.md#q3b1-提交前审查) |
 | 完整 UI、原生桌面人工交互、ABI、物理卸载和替换 | — | 待实现或验证 | [设计说明书](../Cordis插件平台-软件设计说明书.md) |
 
 “最近验证”是当时已检查的版本；后续代码变化不自动继承通过状态。新验证需注明覆盖范围、工具链和失败/跳过项。临时构建日志位于 build，持久结论保存在本台账及对应报告。
@@ -90,10 +92,10 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 
 | 编号 | 条件 | 影响 | 解除条件 | 当前处理 |
 |---|---|---|---|---|
-| B01 | 原生桌面人工交互尚未验证；缺 Qt kit 的旧条件已解除 | P3 桌面交互验收，当前不阻塞 Q3b 开发 | 完成原生 Windows 交互专项验收 | Qt kit 已安装；固定 Ela DLL、页面生命周期与 offscreen 示例通过，原生导航 UAF 已复现并通过宿主导航规避 |
+| B01 | 原生桌面人工交互尚未验证；缺 Qt kit 的旧条件已解除 | P3 桌面交互验收，当前不阻塞 Q3b2 开发 | 完成原生 Windows 交互专项验收 | Qt kit 已安装；固定 Ela DLL、页面/命令/通知与 offscreen 示例通过，原生导航 UAF 已复现并通过宿主导航规避 |
 | B02 | 原 v142 组合未安装或验证 | 若坚持精确 v142 或进入插件 ABI，需另验 | 补齐原工具集或冻结经专项验证的选定组合 | 当前 Qt5 msvc2019_64 + MSVC19.44/v143 已通过 Debug/Release 探测；不构成 DLL ABI 验收 |
 
-首阶段无 Qt 内核工作已收口，Qt kit、QtScheduler、Timer/QObject 与 Ela 页面贡献已验证。D8050 的 TEMP/TMP 与中文 showIncludes 覆盖仍按既有记录使用。下一步 Q3b 命令、通知与管理页；原生桌面交互及插件 DLL/ABI 需在各自阶段验证。Ela 全局对象按进程生命周期管理，当前不支持卸载其模块。
+首阶段无 Qt 内核工作已收口，Qt kit、QtScheduler、Timer/QObject 与页面/命令/通知已验证。D8050 的 TEMP/TMP 与中文 showIncludes 覆盖仍按既有记录使用。下一步 Q3b2 管理页；原生桌面交互及插件 DLL/ABI 需在各自阶段验证。Ela 全局对象按进程生命周期管理，当前不支持卸载其模块。
 
 ## 工作记录
 
@@ -129,6 +131,8 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | 2026-10-24 | P3 Q2 提交前审查：修正测试断言掩盖和通知捕获，补充清理中释放句柄场景，核对规范与资源边界 | Qt Debug/Release 各 140/140，GCC Debug/Release 各 115/115，14 项资源场景 MSVC ASan 通过；[审核记录](code-review.md) | Q3 Ela UI | 随本次提交归档 |
 | 2026-10-24 | P3 Q3a：固定 Ela 依赖、页面/分类命名空间、完整清理、服务恢复、输入门禁与窗口示例；复现原生导航 UAF 后采用宿主导航 | Ela Debug/Release 各 149/149，GCC Debug 115/115，9 项 UI 场景 MSVC ASan 通过；[Q3a 记录](p3-development.md#q3a-ela-页面贡献)、[ADR-0006](adr/0006-ela-page-contributions.md) | Q3b 命令/通知/管理页及原生桌面交互 | 随本次提交归档 |
 | 2026-10-24 | P3 Q3a 提交前审查：修复关闭请求后仍可操作、快捷键/输入法漏拦及键盘导航，整理规范和诊断 | Ela Debug/Release 各 151/151，GCC Debug/Release 各 115/115，11 项 UI 场景 MSVC ASan 通过；[审核记录](code-review.md#p3-q3a-提交前审核) | Q3b；原生桌面交互、其他专用资源及 ABI 另验 | 随本次提交归档 |
+| 2026-10-24 | P3 Q3b1：命令 effect、在途调用/谓词屏障、排队撤销与服务恢复；有界纯值通知、宿主命令列表及示例接入 | Ela Debug/Release 各 162/162，GCC Debug 115/115，22 项 UI 场景 MSVC ASan 通过；[Q3b1 记录](p3-development.md#q3b1-命令与通知)、[ADR-0007](adr/0007-ui-commands-notifications.md) | Q3b2 管理页，原生桌面人工交互，Q4 Loader/Store | 随本次提交归档 |
+| 2026-10-24 | P3 Q3b1 提交前审查：修复回调移动和 Qt 插入关闭重入、空错误提示；增强并发排空与规范检查 | Ela Debug/Release 各 164/164，GCC Debug/Release 各 115/115，24 项 UI 场景 MSVC ASan 通过；[审核记录](code-review.md#p3-q3b1-提交前审核) | Q3b2；其他专用资源、原生桌面及 ABI 另验 | 随本次提交归档 |
 
 ## 更新约定
 

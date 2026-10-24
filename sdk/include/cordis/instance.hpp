@@ -51,7 +51,7 @@ struct ContextIdentity {
     InstanceId instance;
     Epoch epoch;
 };
-namespace ui { class UiPagesService; }
+namespace ui { class UiPagesService; class CommandService; class NotificationService; }
 
 /** @brief 使用受限上下文执行清理，返回真实释放完成任务。 */
 using InstanceCleanup = std::function<Task<void>(CleanupContext)>;
@@ -90,6 +90,8 @@ public:
     }
 private:
     friend class ui::UiPagesService;
+    friend class ui::CommandService;
+    friend class ui::NotificationService;
     template<class T> friend class EventBus;
     /** @brief 为事件/UI 适配器提供同 scheduler、本代业务门禁，不授予实例所有权。 */
     Result<std::function<Result<void>()>> eventGuard(const std::shared_ptr<IScheduler>& scheduler) const;

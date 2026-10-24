@@ -1,8 +1,10 @@
 /** @file ela_shell.hpp
- * @brief 声明宿主侧 Ela 外壳操作，插件接口仅使用 pages.hpp。
+ * @brief 声明宿主侧 Ela 外壳操作，插件通过页面、命令和通知服务协作。
  */
 #pragma once
 #include <cordis/ui/pages.hpp>
+#include <cordis/ui/commands.hpp>
+#include <cordis/ui/notifications.hpp>
 #include <cordis/qt/scheduler.hpp>
 #include <functional>
 #include <memory>
@@ -21,14 +23,20 @@ public:
     ElaShell& operator=(const ElaShell&) = delete;
     /** @brief 获取可注册为 ui.pages/v1 的服务；服务本身不拥有窗口。 */
     std::shared_ptr<UiPagesService> pages() const;
+    /** @brief 获取可注册为 ui.commands/v1 的命令贡献服务。 */
+    std::shared_ptr<CommandService> commands() const;
+    /** @brief 获取可注册为 ui.notifications/v1 的纯值通知服务。 */
+    std::shared_ptr<NotificationService> notifications() const;
     /** @brief owner 显示实际 Ela 窗口。 */
     Result<void> show() const;
     /** @brief owner 设置异步退出入口；窗口关闭请求先交宿主，不直接 quit。 */
     Result<void> onCloseRequested(std::function<void()> callback) const;
-    /** @brief owner 关门、等待全部页面 effects 与窗口完整销毁，清理失败保留资源。 */
+    /** @brief owner 关门，等待页面/命令 effects 与窗口完整销毁，清理失败保留资源。 */
     Task<void> close() const;
 private:
     std::shared_ptr<detail::ShellControl> control_;
     std::shared_ptr<UiPagesService> pages_;
+    std::shared_ptr<CommandService> commands_;
+    std::shared_ptr<NotificationService> notifications_;
 };
 } // namespace cordis::ui

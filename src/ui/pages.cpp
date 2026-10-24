@@ -3,6 +3,7 @@
  */
 #include <cordis/ui/ela_shell.hpp>
 #include <cordis/qt/object.hpp>
+#include "services_p.hpp"
 #include <ElaApplication.h>
 #include <ElaWindow.h>
 #include <QApplication>
@@ -10,6 +11,7 @@
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QListWidget>
 #include <QPointer>
 #include <QStackedWidget>
 #include <QTreeWidget>
@@ -74,6 +76,7 @@ private:
 /** @brief 全部 UI 账目只由应用线程修改，关闭失败不能强制删除窗口。 */
 struct ShellControl : std::enable_shared_from_this<ShellControl> {
     std::shared_ptr<qt::QtScheduler> scheduler;
+    std::shared_ptr<ServicesControl> services;
     QPointer<HostWindow> window;
     std::optional<qt::QObjectResource> windowResource;
     QPointer<QTreeWidget> navigation;
@@ -90,6 +93,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
     bool windowClosing = false;
     bool failed = false;
     bool closeRequested = false;
+    bool servicesClosed = false;
     std::size_t waiting = 0;
     Promise<void> closed;
     /** @brief 永久安全页不属于插件，其生命周期覆盖所有贡献。 */
@@ -117,10 +121,10 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
         try { auto handler = closeHandler; handler(); }
         catch (...) { closeRequested = false; }
     }
-    /** @brief 页面 effect 全部成功后才销毁窗口与安全页。 */
+    /** @brief 页面及命令 effect 全部成功后才销毁窗口与安全页。 */
     void checkClosed()
     {
-        if (!closing || starting || failed || windowClosing || waiting != 0 || !pages.empty()) return;
+        if (!closing || starting || failed || windowClosing || !servicesClosed || waiting != 0 || !pages.empty()) return;
         windowClosing = true;
         closeHandler = {};
         auto self = shared_from_this();
@@ -155,6 +159,12 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
         open = false;
         closing = true;
         starting = true;
+        auto self = shared_from_this();
+        cordis::detail::TaskAccess::observe(closeUiServices(services), [self](Task<void>::Snapshot result) {
+            if (result->hasValue()) self->servicesClosed = true;
+            else { self->failed = true; self->closed.reject(result->error()); }
+            self->checkClosed();
+        });
         std::vector<std::shared_ptr<PageControl>> pending;
         for (const auto& item : pages) pending.push_back(item.second);
         for (const auto& page : pending) closePage(page);
@@ -423,8 +433,22 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler)
     control_->safeItem = new QTreeWidgetItem(navigation);
     control_->safeItem->setText(0, QString::fromUtf8("概览"));
     navigation->setCurrentItem(control_->safeItem);
-    columns->addWidget(navigation);
-    columns->addWidget(stack, 1);
+    auto sidebar = new QVBoxLayout;
+    sidebar->addWidget(navigation, 2);
+    sidebar->addWidget(new QLabel(QString::fromUtf8("插件命令"), body));
+    auto commandList = new QListWidget(body);
+    commandList->setObjectName("CordisCommandList");
+    commandList->setFixedWidth(220);
+    sidebar->addWidget(commandList, 1);
+    auto content = new QVBoxLayout;
+    content->addWidget(stack, 1);
+    auto notification = new QLabel(QString::fromUtf8("就绪"), body);
+    notification->setObjectName("CordisNotification");
+    notification->setWordWrap(true);
+    content->addWidget(notification);
+    columns->addLayout(sidebar);
+    columns->addLayout(content, 1);
+    control_->services = detail::createUiServices(control_->scheduler, commandList, notification);
     window->addCentralWidget(body);
     window->setCurrentStackIndex(1);
     std::weak_ptr<detail::ShellControl> weak = control_;
@@ -442,11 +466,17 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler)
     std::unique_ptr<QObject> owned(window.release());
     control_->windowResource.emplace(owned, control_->scheduler);
     pages_ = std::shared_ptr<UiPagesService>(new UiPagesService(control_));
+    commands_ = std::shared_ptr<CommandService>(new CommandService(control_->services));
+    notifications_ = std::shared_ptr<NotificationService>(new NotificationService(control_->services));
 }
 /** @brief 只释放宿主句柄，Qt 对象继续由应用线程的守卫管理。 */
 ElaShell::~ElaShell() = default;
 /** @brief 共享服务 facade 不暴露 Ela 对象，也不形成服务/窗口所有权环。 */
 std::shared_ptr<UiPagesService> ElaShell::pages() const { return pages_; }
+/** @brief 命令服务只借用宿主后端，不把第三方控件传给插件。 */
+std::shared_ptr<CommandService> ElaShell::commands() const { return commands_; }
+/** @brief 通知服务只接收值类型，宿主关闭后拒绝提交。 */
+std::shared_ptr<NotificationService> ElaShell::notifications() const { return notifications_; }
 /** @brief 显示窗口之前验证外壳门禁，关闭后不会重新打开已释放窗口。 */
 Result<void> ElaShell::show() const
 {
