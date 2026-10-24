@@ -1,0 +1,13 @@
+formatVersion: 1
+plugins:
+  - id: profile
+    plugin: demo.profile
+    config: work
+    children:
+      - id: detail
+        plugin: demo.empty
+  - id: paused
+    plugin: demo.empty
+    disabled: true
+  - id: obsolete
+    plugin: demo.empty

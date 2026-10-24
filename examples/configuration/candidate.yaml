@@ -1,0 +1,17 @@
+formatVersion: 1
+plugins:
+  - id: profile
+    plugin: demo.profile
+    config: personal
+    inject:
+      - name: store
+        minimumMinor: 3
+        capabilities: [write]
+    children:
+      - id: detail
+        plugin: demo.empty
+  - id: paused
+    plugin: demo.empty
+    disabled: false
+  - id: added
+    plugin: demo.empty

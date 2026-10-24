@@ -1,5 +1,18 @@
 # 提交前代码审查记录
 
+## P3 Q4a/Q4b/Q4c1 提交前审核
+
+日期：2026-10-24。范围：4b6139b 之后全部未提交的配置结构/预览、受限 YAML、内置定义/schema、通用协调器、SDK、示例、固定 LibYAML、构建、测试及文档，包含新增文件。sources/research、Core/Qt/UI/Ela 实现均未改动。
+
+- P1，规划返回后的执行门禁缺失：驱动 plan 可同步重入并关闭 scheduler，原实现返回后仍调用 apply，导致无法投递回执时继续启动资源。规划抛错路径还可能先发布正常的失败报告，掩盖投递故障。现在集中检查投递能力，在同步规划返回、发布规划失败及下一步执行前重新核对；调度器已关闭时冻结协调，向未完成任务发布 SchedulerClosed。完成旧工作项后也重新检查关闭入口。
+- 回归 p3.coordinator_planning_gate 在修复前真实失败（build/review-q4-before.log），确认关闭后仍产生驱动调用；修复后覆盖规划正常返回、抛错及重入协调器关闭，检查不启动动作、目标任务错误/取消结果及真实关闭证据。
+- 规范与质量：修正公共类型和 safeToContinue 的过期/不准确注释，复用投递检查，保持 owner 状态与跨线程 Promise 门禁分离。为新增 C/YAML 类型及 LibYAML 许可固定 LF，避免 Windows 检出改变上游字节。核对 YAML 类型/重复键/预算、候选移动失效、schema 捕获释放、有效依赖联合、CAS 重入、最新目标、部分成功、Pending 历史及保守资源保留；核对公开头独立包含、C/C++ 工具链与静态库边界。
+- 依赖来源：LibYAML 0.2.5 固定归档 SHA256 与 UPSTREAM.md 一致，10 个源码文件与本地原始解压目录逐一比对，均未修改；MIT 许可保留，构建不联网。导入原文已有空白不重排，第一方改动单独执行暂存格式检查。
+
+修复后 Ela/MSVC Debug、Release 各 215/215；无 Qt GCC Debug、Release 各 145/145；MSVC ASan 28/28 Loader 场景通过，第一方库和 LibYAML C 库均插桩。日志为 build/review-q4-ela-msvc-<mode>.log、build/review-q4-core-gcc-<mode>.log、build/review-q4-asan.log。未发现其他阻止本次提交的问题。
+
+本次完成 Q4a/Q4b/Q4c1，通用协议测试不代表 Kernel 运行树驱动或完整 L01–L04/S05 已验收。配置执行/保存、原生 Windows 人工交互、外部模块及 ABI 继续待办；非静止与投递阻断按契约保留资源，ASan 不证明泄漏或物理卸载安全。
+
 ## P3 Q3c 提交前审核
 
 日期：2026-10-24。范围：8f15edd 之后全部未提交的 Ela 组件迁移、项目内基础库、原生导航与工作台布局、宿主模型、演示、测试和文档，包括新增文件。核对固定上游库与本地修改，保留 MIT 许可和来源；sources/research、Core 和公开 SDK 未改动。

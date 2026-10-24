@@ -1,6 +1,6 @@
 # P3 桌面适配开发记录
 
-日期：2026-10-24。状态：进行中；Q0–Q3b2 功能基线和 Q3c Ela 基础库、原生导航和工作台已实现并通过自动化检查；下一步 Q3c 原生桌面人工验收，随后 Q4 Loader/Store，其他专用资源按集成补齐。
+日期：2026-10-24。状态：进行中；Q0–Q3c 自动化基线、Q4a/Q4b 配置校验和 Q4c1 目标接受/串行协调基础已实现；原生桌面人工验收待办，下一步 Kernel 驱动及 Store，其他专用资源按集成补齐。
 
 ## 已安装与验证
 
@@ -337,6 +337,114 @@ Q3b2 完成的是管理功能与生命周期基线，本轮补齐 Ela 组件和�
 
 审查后 Ela/MSVC Debug、Release 各 187/187，无 Qt GCC Debug、Release 各 117/117；MSVC ASan 的 45/45 UI 场景通过。日志为 build/review-q3c-ela-msvc-<mode>.log、build/review-q3c-core-gcc-<mode>.log 和 build/review-q3c-asan.log。人工桌面验收和 ASan 的验证边界保持上述约定。
 
+## Q4a 配置结构候选与差异预览
+
+本轮在 Q3c 人工验收待办期间，先完成与 UI/运行树无副作用耦合的 Loader 前置工作；未改写桌面验收结果。新增 Cordis::Loader 独立静态库、cordis/loader/configuration.hpp 和七项无 Qt 测试，不改变 Core/Qt/UI 实现。决策和精确语义见 [ADR-0011](adr/0011-configuration-preview.md)。
+
+validateDocument 校验格式版本、标识、模块引用、兄弟 id 唯一性、inject 和资源预算，以显式栈生成按 EntryPath 排序的值候选。父禁用通过 effectiveDisabled 级联，不覆盖子条目的配置开关。依赖按 name/major 排序、capability 去重。DocumentCandidate 的构造被封闭，复制值不共享输入的可变节点。
+
+previewChanges 区分 Add/Remove/Disable/Restart/Recreate/NoOp；普通 config 变化为 Restart，定义、manifest、realm、inject 变化为 Recreate，父重启要求启用后代重建。目标变化标记独立于运行意图，未使用模块和禁用条目的修改不被吞掉。输出按 EntryPath 稳定排序，保留调用方基线修订；不执行操作、不修改实例或修订，也不冒充实际运行差异。
+
+该候选还不是完整 ValidatedCandidate；YAML 解析、插件是否存在/schema、路径/产物校验、依赖收紧校验、执行队列、CAS、Superseded 和 Store 均未实现。没有为这些待办导出占位方法。
+
+| CTest | 覆盖 |
+|---|---|
+| p3.loader_structure | 版本、路径标识、模块引用、重复兄弟 id 及不同父节点同名 |
+| p3.loader_disabled | 父禁用级联、子自身开关、重新启用及候选值隔离 |
+| p3.loader_limits | 条目、深度、字节、模块、inject 和 capability 预算边界 |
+| p3.loader_normalization | 依赖排列及 capability 去重不造成重建，无效声明拒绝 |
+| p3.loader_actions | 六类动作区分、稳定顺序、基线修订及输入不变 |
+| p3.loader_subtree | 祖先重启带来的后代重建，排除相似名称前缀的其他根 |
+| p3.loader_definitions | manifest/realm/inject 变化，未使用模块的目标变化 |
+
+| Q4a 验证 | 结果 |
+|---|---|
+| Ela/MSVC Debug、Release | 各 194/194，含 7 项 Loader 新场景及既有回归 |
+| 无 Qt GCC Debug、Release | 各 124/124，Loader 目标无需 Core/Qt/Ela 链接 |
+| MSVC ASan | 7/7 Loader 场景，库和测试均插桩；本轮未重复执行既有 UI ASan |
+| 差异检查 | git diff --check 通过；新公共头在两个编译器中首先单独包含 |
+
+日志：build/p3-q4a-ela-msvc-<mode>.log、build/p3-q4a-core-gcc-<mode>.log、build/p3-q4a-asan.log。ASan 复用 build/p3-q3-asan 配置，构建 cordis_loader_tests 后运行 `ctest --test-dir build/p3-q3-asan -L loader --output-on-failure`。仅新增结构校验和纯预览；无文件读写或计划应用，不构成完整 L01–L04/S05 验收。Q4a 与后续 Q4b/Q4c1 一并审查归档，见下文。
+
+## Q4b 受限 YAML 与内置定义校验
+
+新增 Cordis::ConfigYaml、cordis/loader/yaml.hpp，解析层私有链接仓库内固定 LibYAML 0.2.5，基础 Cordis::Loader 和 Core 均不依赖它。根工程及预设启用匹配的 C/C++ 编译器，库实现和 MIT 许可保持原文；来源/hash、接口核对及限制见 [ADR-0012](adr/0012-restricted-yaml-validation.md) 和 third_party/libyaml/UPSTREAM.md。
+
+parseConfiguration 使用事件接口构建有界宿主树，不展开别名。单份 UTF-8 文档必须显式填写 formatVersion 和 plugins；拒绝 tag、anchor、alias、merge、重复键、非字符串键、多文档及未知结构字段。disabled 严格布尔，结构整数严格 uint32，条目限额继续复用 Q4a；错误带阶段、行列和可定位的 EntryPath。config 转为按键排序的 JSON 字符串，缺省 {}；normalizedYaml 可往返解析，不保留注释/排版。移动后的来源失效，不能误作为清空目标的新候选。
+
+validateCandidate 检查内置插件定义唯一性、schema、插件归属以及所有条目（含禁用项）的负载；完整定义预检先于 schema 调用。schema 返回错误保留原始原因，抛错转为配置错误。有效依赖按定义与用户声明联合，minor 取最大值、capability 取并集；结果不持有校验回调。外部 modules 声明目前一律拒绝，完整路径、产物与 ABI 验证随 P4 接入；不是把结构可解析当作模块可用。
+
+可运行的端到端示例（无文件写入和实例动作）：
+
+```powershell
+./build/core-gcc-debug/examples/builtin/cordis_configuration_demo.exe `
+    examples/configuration/base.yaml examples/configuration/candidate.yaml
+```
+
+已实际输出 added:Add、obsolete:Remove、paused:Add、profile:Recreate、profile/detail:Recreate；profile 同时改变配置及附加依赖，因此按重建显示。把候选替换为 examples/configuration/rejected.yaml，会带来源行列和 demo.profile 的枚举 schema 原因退出 1。负例 CTest 同时核对退出码与指定 schema 诊断，缺文件或其他错误不能冒充成功。
+
+新增八项 p3.config_yaml_* 单测：parsing、mappings、restricted、types、limits、roundtrip、schemas、dependencies，另有 p3.configuration_demo / p3.configuration_rejected 两项文件到预览集成检查。含不合法 UTF-8、NUL、预算边界、往返/负载类型保持、schema 异常、未知定义先拒绝、定义捕获释放和依赖不可削弱。
+
+最终验证与日志在下表；未把已有 UI ASan 重复计入本轮解析层结果。
+
+| Q4b 验证 | 结果 |
+|---|---|
+| Ela/MSVC Debug、Release | 各 204/204，含 10 项新增 YAML/文件示例场景 |
+| 无 Qt GCC Debug、Release | 各 134/134 |
+| MSVC ASan | 17/17 Loader 场景；第一方结构/解析/定义校验及 LibYAML C 库均插桩 |
+| 格式与来源 | 第一方差异检查、固定源码一致性及新头独立包含通过 |
+
+日志为 build/p3-q4b-ela-msvc-<mode>.log、build/p3-q4b-core-gcc-<mode>.log、build/p3-q4b-asan.log。ASan 复用 build/p3-q3-asan；新启用的 C 编译器使用 /fsanitize=address /Zi、RelWithDebInfo /O1，C++ 插桩配置保持原值；构建 cordis_loader_tests、cordis_config_yaml_tests、cordis_configuration_demo，再运行 `ctest --test-dir build/p3-q3-asan -L loader --output-on-failure`。本轮不包含泄漏或物理卸载证明。
+
+Q4b 交付范围不含目标 CAS、运行协调、Superseded、持久化、watcher 或配置 UI；后续 Q4c1 补齐通用协调协议，见下文。上述文本校验不构成完整 L01–L04/S05 验收。
+
+## Q4c1 目标接受与串行协调基础
+
+新增 Cordis::ConfigCoordinator 和 cordis/loader/coordinator.hpp。accept 验证有效候选及 expectedDesiredRevision，预检返回后重查 CAS/关闭门禁；接受成功发布完整目标与独立 settled Task。初始修订为 0，成功接受递增；执行失败、Pending 或被替代不偷偷改回目标。驱动查询失败时，snapshot 仍提供 desired，运行错误单独放在 runningError，不误报运行列表为空即完全静止。
+
+IReconcileDriver 提供 preflight、实际状态规划、动作执行、快照及停止协议。协调器不把 PlanPreview 直接当作执行计划：A 当前动作未结束时接受 B/C，B 未开始即 Superseded；A 等真实检查点保留已应用部分，其余项 Superseded，随后从实际部分状态重新为 C 规划。至多一个在途动作，失败默认跳过本计划后续项；不安全检查点、异常 Task 或非法结果会停止新执行入口。
+
+close 同步关门，优先广播驱动停止，不等待未完成动作先稳定；同时等关闭证据和在途回执完成。同步驱动调用期间，嵌套泵送不能提前进入下一次执行/关闭。跨线程投递故障只改原子门禁和 Promise，向尚未完成的登记目标发布失败；成功与失败并发终结遵循 Task 一次仲裁。未知静止状态保守保留资源控制块。完整边界见 [ADR-0013](adr/0013-configuration-coordinator.md)。
+
+本轮仅完成通用协调基础，尚未提供 Kernel 运行树驱动。测试的 ControlledDriver 通过显式 gate 维护已完成的实际值，用于证明串行、替代和关闭协议；不是产品默认驱动，不证明真实服务依赖排序、父子树运行及 UI 接入。驱动预检必须拒绝自身未实现的能力。
+
+| CTest | 覆盖 |
+|---|---|
+| p3.coordinator_cas | 接受后才排队、修订冲突、移动后候选、能力拒绝不改目标 |
+| p3.coordinator_serial | 单在途动作、实际值与目标分离、NoOp 不改代次 |
+| p3.coordinator_latest | A/B/C gate、旧报告保留部分成功、最新目标从实际部分重建 |
+| p3.coordinator_failure | 默认遇错停后项、保留目标和已生效项、再次接受后从实际状态重试 |
+| p3.coordinator_pending | 无关项继续运行、Pending 历史任务不随资源恢复改写 |
+| p3.coordinator_shutdown | 关闭优先广播、终结在途和待执行目标、同步重入等待调用栈退出 |
+| p3.coordinator_unsafe | 未知静止时拒绝新目标、失败关闭后释放 facade 仍保留驱动，成功关闭不留所有权环 |
+| p3.coordinator_delivery | worker 完成/预检期间 scheduler 关闭，所有已接受任务终结失败 |
+| p3.coordinator_reentry | 预检中接受/关闭重查门禁，规划中替代不应用旧目标 |
+| p3.coordinator_guards | 非法计划/结果、驱动异常、错误线程及运行查询失败仍可读取目标 |
+
+| Q4c1 验证 | 结果 |
+|---|---|
+| Ela/MSVC Debug、Release | 各 214/214，含新增 10 项协调协议及既有回归 |
+| 无 Qt GCC Debug、Release | 各 144/144 |
+| MSVC ASan | 27/27 Loader 场景，含协调协议 10 项，第一方及 LibYAML 按既有配置插桩 |
+| 代码检查 | git diff --check；新公共头在测试中首先独立包含，两个编译器均通过 |
+
+日志：build/p3-q4c-ela-msvc-<mode>.log、build/p3-q4c-core-gcc-<mode>.log、build/p3-q4c-asan.log。ASan 在 build/p3-q3-asan 构建 cordis_config_coordinator_tests 及既有 Loader 测试/文件示例，使用 `ctest --test-dir build/p3-q3-asan -L loader --output-on-failure`。不静止/投递阻断场景按契约保留控制块和驱动；不构成泄漏、真实 Kernel 协调或物理卸载证明。
+
+Q4c 仍有 Kernel 适配和真实依赖/子树执行待完成，不据此登记完整 L01–L04/S05 通过。
+
+### Q4a/Q4b/Q4c1 提交前审查
+
+检查结构/解析预算、严格字段、schema 生命周期、有效依赖、CAS、串行动作、部分失败与关闭/投递路径。修复规划期间 scheduler 关闭后仍启动 apply 的缺陷：同步驱动返回、规划失败报告发布前及下一步执行前重查投递能力，关闭后统一阻断并终结等待任务。新增 p3.coordinator_planning_gate 覆盖规划正常返回、抛错和重入 coordinator.close 三种关闭路径；修复前真实失败，见 build/review-q4-before.log。规范方面修正公共注释，集中投递检查；核对第一方格式、公共头、构建边界和原始第三方许可。详见 [审查记录](code-review.md#p3-q4aq4bq4c1-提交前审核)。
+
+| 审查后验证 | 结果 |
+|---|---|
+| Ela/MSVC Debug、Release | 各 215/215 |
+| 无 Qt GCC Debug、Release | 各 145/145 |
+| MSVC ASan | 28/28 Loader 场景，含 11 项协调器场景；第一方与 LibYAML C 库插桩 |
+| 来源与格式 | 固定归档 SHA256 及 10 个上游源码文件一致，第一方暂存差异检查通过 |
+
+日志：build/review-q4-ela-msvc-<mode>.log、build/review-q4-core-gcc-<mode>.log、build/review-q4-asan.log。本次将 Q4a/Q4b/Q4c1 一并提交；Core/Qt/UI/Ela 及只读参考未改动，原生桌面人工项继续待验。ASan 不构成泄漏、真实 Kernel 协调或 DLL 卸载证明。
+
 ## 后续工作
 
-先完成 Q3c 原生 Windows 桌面人工验收，再推进 Q4 Loader/Store、配置计划与持久化，管理页随之接入配置候选差异、条目启停与保存状态；模块引用/驻留/卸载详情随 P4 接入。connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解是 P3 的开发顺序，不表示完成了原设计中任何尚未运行的 L/Q/U 场景。
+完成 Q3c 原生 Windows 桌面人工验收，推进 Q4c2 Kernel 运行树驱动及真实依赖/子树协调，再接 Q4d Store 冲突/原子保存；管理页随之接入候选差异、条目启停和保存状态。模块引用/驻留/卸载详情随 P4 接入；connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解不表示完成了原设计中任何尚未运行的 L/Q/U 场景。

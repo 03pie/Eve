@@ -458,6 +458,12 @@ ConfigStore 通过单写队列提交完整目标，使用 Qt 层的同目录临�
 
 首版配置编辑器保存规范化 YAML，不承诺保留原注释和原排版；保存前预览差异。精确保留注释需要另行选定 round-trip parser 后扩展。
 
+### 10.5 当前前置实现边界
+
+Q4a 已提供独立 Cordis::Loader：有界 typed Document 结构校验、规范 EntryPath、父禁用级联和纯目标差异预览，见 [ADR-0011](docs/adr/0011-configuration-preview.md)。DocumentCandidate 仅证明结构有效；PlanPreview 不是可直接执行的计划。Q4b 的独立 Cordis::ConfigYaml 接入受限单文档 UTF-8 YAML、规范文本往返和内置定义/schema 校验，发布仅含内置插件的 ValidatedCandidate，见 [ADR-0012](docs/adr/0012-restricted-yaml-validation.md)。外部模块路径/产物及真实运行适配、持久化仍待后续实施。
+
+Q4c1 的 Cordis::ConfigCoordinator 已实现目标接受/CAS、串行检查点、最新目标替代、部分结果及关闭门禁，见 [ADR-0013](docs/adr/0013-configuration-coordinator.md)。真实规划/资源动作由宿主 IReconcileDriver 提供，当前尚无 Kernel 适配器；不能将受控驱动协议测试等同于真实插件计划执行。外部模块、真实运行树及持久化仍待后续实现。
+
 ## 11. 原生模块与 ABI
 
 ### 11.1 Manifest

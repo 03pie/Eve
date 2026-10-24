@@ -1,5 +1,7 @@
 # 开发环境和构建操作
 
+当前补充（2026-10-24）：本页保留早期工具链准备记录；最新 Qt/Ela 及配置模块状态见 [P3 记录](p3-development.md)。Q4b 新增 LibYAML C 静态库，完整工程需要配套 C/C++ 编译器：GCC 预设明确使用 gcc/g++，MSVC 预设均使用 cl。Core 不链接 Qt、Ela 或 LibYAML；解析层作为独立 Cordis::ConfigYaml 链接。依赖源码与许可随仓库提供，构建不联网。
+
 ## 1. 两条验证路径
 
 | 路径 | 用途 | 要求 |

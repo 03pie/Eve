@@ -4,6 +4,43 @@ cordis_target_defaults(cordis_sdk_contract)
 add_test(NAME foundation.sdk_contract COMMAND cordis_sdk_contract)
 set_tests_properties(foundation.sdk_contract PROPERTIES LABELS "foundation;sdk")
 
+add_executable(cordis_loader_tests unit/loader.cpp)
+target_link_libraries(cordis_loader_tests PRIVATE Cordis::Loader)
+cordis_target_defaults(cordis_loader_tests)
+foreach(case IN ITEMS structure disabled limits normalization actions subtree definitions)
+    add_test(NAME p3.loader_${case} COMMAND cordis_loader_tests ${case})
+    set_tests_properties(p3.loader_${case} PROPERTIES LABELS "p3;loader;configuration" TIMEOUT 15)
+endforeach()
+
+add_executable(cordis_config_yaml_tests unit/config_yaml.cpp)
+target_link_libraries(cordis_config_yaml_tests PRIVATE Cordis::ConfigYaml)
+cordis_target_defaults(cordis_config_yaml_tests)
+foreach(case IN ITEMS parsing mappings restricted types limits roundtrip schemas dependencies)
+    add_test(NAME p3.config_yaml_${case} COMMAND cordis_config_yaml_tests ${case})
+    set_tests_properties(p3.config_yaml_${case} PROPERTIES LABELS "p3;loader;configuration;yaml" TIMEOUT 15)
+endforeach()
+
+if(TARGET cordis_configuration_demo)
+    add_test(NAME p3.configuration_demo COMMAND cordis_configuration_demo
+        "${PROJECT_SOURCE_DIR}/examples/configuration/base.yaml"
+        "${PROJECT_SOURCE_DIR}/examples/configuration/candidate.yaml")
+    set_tests_properties(p3.configuration_demo PROPERTIES LABELS "p3;loader;configuration;yaml;example" TIMEOUT 15)
+    add_test(NAME p3.configuration_rejected COMMAND "${CMAKE_COMMAND}"
+        "-DDEMO=$<TARGET_FILE:cordis_configuration_demo>"
+        "-DBASE=${PROJECT_SOURCE_DIR}/examples/configuration/base.yaml"
+        "-DCANDIDATE=${PROJECT_SOURCE_DIR}/examples/configuration/rejected.yaml"
+        -P "${PROJECT_SOURCE_DIR}/tests/configuration_rejection.cmake")
+    set_tests_properties(p3.configuration_rejected PROPERTIES LABELS "p3;loader;configuration;yaml;example" TIMEOUT 15)
+endif()
+
+add_executable(cordis_config_coordinator_tests unit/coordinator.cpp)
+target_link_libraries(cordis_config_coordinator_tests PRIVATE Cordis::ConfigCoordinator)
+cordis_target_defaults(cordis_config_coordinator_tests)
+foreach(case IN ITEMS cas serial latest failure pending shutdown unsafe delivery reentry planning_gate guards)
+    add_test(NAME p3.coordinator_${case} COMMAND cordis_config_coordinator_tests ${case})
+    set_tests_properties(p3.coordinator_${case} PROPERTIES LABELS "p3;loader;configuration;coordinator" TIMEOUT 15)
+endforeach()
+
 add_executable(cordis_diagnostics_tests unit/diagnostics.cpp)
 target_link_libraries(cordis_diagnostics_tests PRIVATE Cordis::Core)
 cordis_target_defaults(cordis_diagnostics_tests)

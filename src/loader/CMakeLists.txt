@@ -1,0 +1,15 @@
+add_library(cordis_loader STATIC configuration.cpp)
+add_library(Cordis::Loader ALIAS cordis_loader)
+target_include_directories(cordis_loader PUBLIC "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/sdk/include>")
+cordis_target_defaults(cordis_loader)
+
+add_subdirectory("${PROJECT_SOURCE_DIR}/third_party/libyaml" "${CMAKE_BINARY_DIR}/third_party/libyaml")
+add_library(cordis_config_yaml STATIC yaml.cpp validation.cpp)
+add_library(Cordis::ConfigYaml ALIAS cordis_config_yaml)
+target_link_libraries(cordis_config_yaml PUBLIC Cordis::Loader PRIVATE cordis_libyaml)
+cordis_target_defaults(cordis_config_yaml)
+
+add_library(cordis_config_coordinator STATIC coordinator.cpp)
+add_library(Cordis::ConfigCoordinator ALIAS cordis_config_coordinator)
+target_link_libraries(cordis_config_coordinator PUBLIC Cordis::ConfigYaml Cordis::Core)
+cordis_target_defaults(cordis_config_coordinator)

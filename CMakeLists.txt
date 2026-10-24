@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(CordisCpp VERSION 0.1.0 LANGUAGES CXX)
+project(CordisCpp VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CORDIS_MSVC_SHOWINCLUDES_PREFIX "" CACHE STRING "Override a misdecoded MSVC /showIncludes prefix")
 if(MSVC AND CORDIS_MSVC_SHOWINCLUDES_PREFIX)
@@ -42,6 +42,7 @@ function(cordis_target_defaults target)
 endfunction()
 
 add_subdirectory(src/core)
+add_subdirectory(src/loader)
 if(CORDIS_REQUIRE_QT5152)
     add_subdirectory(src/qt)
 endif()
