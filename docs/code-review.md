@@ -1,5 +1,21 @@
 # 提交前代码审查记录
 
+## P3 Q3c 提交前审核
+
+日期：2026-10-24。范围：8f15edd 之后全部未提交的 Ela 组件迁移、项目内基础库、原生导航与工作台布局、宿主模型、演示、测试和文档，包括新增文件。核对固定上游库与本地修改，保留 MIT 许可和来源；sources/research、Core 和公开 SDK 未改动。
+
+- P1，紧凑菜单残留：菜单动作捕获节点裸指针，撤页未移除动作，分组菜单还以可复用的节点地址作键。compact_removal 在修复前确认旧动作仍存在。现在菜单/动作使用稳定 key，触发时重新查找节点，撤页同步删除旧动作、空菜单及已撤销分组的菜单；同组其他页面仍可导航。
+- P1，恢复模式访问已删除分组：紧凑模式缓存展开节点裸指针，插件停止后恢复展开模式会解引用旧分组。removed_expanded_group 在修复前被 ASan 确认为 heap-use-after-free。现在只缓存分组 key，恢复时从当前模型解析，跳过已删除分组。
+- P1，原生导航关闭重入：原生切页信号中可关闭外壳并处理 DeferredDelete，返回后仍访问导航私有对象和旧节点；程序导航还会用旧节点安排滚动。native_close_reentry 在修复前被 ASan 确认为 heap-use-after-free。现在切页/页脚信号返回后检查 QPointer 和模型归属，程序导航保存持久索引，窗口或节点消失时直接结束；鼠标释放路径也检查视图存活，宿主选择同步使用导航访问屏障。
+- P2，通知返回序号：输出 textChanged 信号中重入发布通知会更新共享 sequence，外层返回后一个通知的序号。增强 notifications 在修复前实际失败。现在提交历史后保存本次序号，展示回调重入不会改变返回值，历史仍有界且为纯文本。
+- 规范与质量：合并两个带分组的 addPageNode 重载中重复的四条菜单创建分支，集中处理动作创建与清理；拆开新增选择同步中的嵌套单行控制流，补齐 QMouseEvent/QPointer/QStringList 直接依赖并移除无用包含。核对模型项所有权、分组隔离、导航门禁、固定标签归属、主题适配、输出限额、关闭顺序、CMake 可选构建、原始许可与资源分发。
+
+修复前证据：build/review-q3c-before.log（菜单残留和分组 UAF）、build/review-q3c-native-before.log（原生关闭 UAF）、build/review-q3c-notification-before.log（序号重入）。修复后 Ela/MSVC Debug、Release 各 187/187；无 Qt GCC Debug、Release 各 117/117；MSVC ASan 的 45/45 UI 场景通过，第一方与项目内 Ela 插桩，预编译 Qt 未插桩。完整日志为 build/review-q3c-ela-msvc-<mode>.log、build/review-q3c-core-gcc-<mode>.log、build/review-q3c-asan.log。未发现其他阻止本次提交的问题。
+
+格式检查区分导入原文和本地改动：`git diff --cached --check -- . ':(exclude)third_party/ela/ElaWidgetTools/**'` 通过；Ela 相对固定上游目录的本地补丁没有新增空白告警。整个导入目录的暂存检查会报告上游已有的文件尾空行及少量行尾空格，保留原文以便后续比较，不为这些告警重排库源码；记录为 build/review-q3c-staged-check.log、build/review-q3c-vendor-check.log。
+
+原生 Windows 缩放、主题动画和完整键鼠交互仍按 [桌面验收单](../tests/acceptance/p3-ui.md) 人工执行，未代填验收结果。清理失败/投递阻断按设计保留资源；ASan 结果不构成泄漏或 DLL 物理卸载证明。Loader/Store、模块管理和专用资源适配仍按后续工作包推进。
+
 ## P3 Q3b2 提交前审核
 
 日期：2026-10-24。范围：4f3b808 之后全部未提交的管理页、诊断 SDK、Kernel/Instance 查询、外壳集成、示例、构建、测试与文档，包括新增文件。sources/research 未改动。

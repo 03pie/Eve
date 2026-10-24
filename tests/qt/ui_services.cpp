@@ -7,7 +7,8 @@
 #include <QApplication>
 #include <QEventLoop>
 #include <QLabel>
-#include <QListWidget>
+#include <QListView>
+#include <QPlainTextEdit>
 #include <QPointer>
 #include <QTest>
 #include <QTimer>
@@ -123,8 +124,8 @@ void rowReentry()
     std::optional<Context> context;
     auto runtime = scene.kernel.registerPlugin("row", [&](Context ctx) { context = ctx; return completedTask(); }).value();
     auto instance = scene.kernel.mount(runtime).value(); wait(instance.ready(), scene.scheduler);
-    QListWidget* list = nullptr;
-    for (auto window : QApplication::topLevelWidgets()) if (auto found = window->findChild<QListWidget*>("CordisCommandList")) list = found;
+    QListView* list = nullptr;
+    for (auto window : QApplication::topLevelWidgets()) if (auto found = window->findChild<QListView*>("CordisCommandList")) list = found;
     CHECK(list);
     bool captureHeldInside = false;
     std::optional<Task<void>> closed;
@@ -323,11 +324,27 @@ void notifications()
     QLabel* label = nullptr;
     for (auto window : QApplication::topLevelWidgets()) if (auto found = window->findChild<QLabel*>("CordisNotification")) label = found;
     CHECK(label && label->textFormat() == Qt::PlainText && label->text().contains("<b>"));
+    QPlainTextEdit* output = nullptr;
+    for (auto window : QApplication::topLevelWidgets())
+        if (auto found = window->findChild<QPlainTextEdit*>("CordisWorkbenchOutput")) output = found;
+    CHECK(output);
+    std::optional<Result<std::uint64_t>> nested;
+    bool entered = false;
+    auto connection = QObject::connect(output, &QPlainTextEdit::textChanged, output, [&] {
+        if (entered) return;
+        entered = true;
+        nested.emplace(scene.notices->post(*context, {NotificationLevel::Info, "nested", {}}));
+    });
+    auto outer = scene.notices->post(*context, {NotificationLevel::Info, "outer", {}});
+    QObject::disconnect(connection);
+    CHECK(outer.hasValue() && outer.value() == 121 && nested && nested->hasValue() && nested->value() == 122);
+    history = scene.notices->snapshot().value();
+    CHECK(history.size() == NotificationService::historyLimit && history.back().sequence == 122);
     wait(instance.stop(), scene.scheduler);
     CHECK(scene.notices->snapshot().value().size() == NotificationService::historyLimit);
     CHECK(!scene.notices->post(*context, {NotificationLevel::Info, "late", {}}).hasValue());
     scene.close();
-    CHECK(scene.notices->snapshot().value().back().sequence == 120);
+    CHECK(scene.notices->snapshot().value().back().sequence == 122);
 }
 /** @brief worker 请求与异 scheduler Context 都拒绝，不破坏现有贡献或通知历史。 */
 void guards()
@@ -396,17 +413,17 @@ void interaction()
         return emptyError->ready();
     }).value();
     auto instance = scene.kernel.mount(runtime).value(); wait(instance.ready(), scene.scheduler);
-    QListWidget* list = nullptr;
-    for (auto window : QApplication::topLevelWidgets()) if (auto found = window->findChild<QListWidget*>("CordisCommandList")) list = found;
-    CHECK(list && list->count() == 2);
-    list->setCurrentRow(0);
+    QListView* list = nullptr;
+    for (auto window : QApplication::topLevelWidgets()) if (auto found = window->findChild<QListView*>("CordisCommandList")) list = found;
+    CHECK(list && list->model()->rowCount() == 2);
+    list->setCurrentIndex(list->model()->index(0, 0));
     QTest::keyClick(list, Qt::Key_Return);
     CHECK(entered == 0);
     until([&] { return entered == 1 && handle->snapshot().value().activeCalls == 0; });
     QTest::keyClick(list, Qt::Key_Return);
     until([&] { return !scene.notices->snapshot().value().empty(); });
     CHECK(entered == 1 && scene.notices->snapshot().value().back().notification.level == NotificationLevel::Error);
-    list->setCurrentRow(1);
+    list->setCurrentIndex(list->model()->index(1, 0));
     QTest::keyClick(list, Qt::Key_Return);
     until([&] { return emptyError->snapshot().value().activeCalls == 0; });
     // owner 还需消费宿主结果观察者，使用显式队列回执确认其已执行。

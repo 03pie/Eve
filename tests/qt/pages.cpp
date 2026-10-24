@@ -3,16 +3,22 @@
  */
 #include <cordis/ui/ela_shell.hpp>
 #include <cordis/kernel.hpp>
+#include <ElaWindow.h>
+#include <ElaMenu.h>
+#include <QAction>
 #include <QApplication>
 #include <QEventLoop>
 #include <QLabel>
 #include <QInputMethodEvent>
 #include <QLineEdit>
 #include <QPointer>
+#include <QStyle>
+#include <QStackedWidget>
+#include <QPropertyAnimation>
 #include <QPushButton>
 #include <QShortcut>
 #include <QShortcutEvent>
-#include <QTreeWidget>
+#include <QTreeView>
 #include <QVBoxLayout>
 #include <QTest>
 #include <QTimer>
@@ -352,14 +358,156 @@ void keyboardNavigation()
     auto instance = scene.kernel.mount(runtime).value();
     wait(instance.ready(), scene.scheduler);
     CHECK(first->navigate().hasValue());
-    QTreeWidget* navigation = nullptr;
+    QTreeView* navigation = nullptr;
     for (auto window : QApplication::topLevelWidgets())
-        if (auto tree = window->findChild<QTreeWidget*>("CordisPageNavigation")) navigation = tree;
+        if (auto tree = window->findChild<QTreeView*>("ElaNavigationView")) navigation = tree;
     CHECK(navigation);
     QTest::keyClick(navigation, Qt::Key_Down);
     CHECK(second->snapshot().value().current && !first->snapshot().value().current);
     wait(second->close(), scene.scheduler);
     CHECK(!first->snapshot().value().current);
+    scene.close();
+}
+/** @brief 反复导航后立即撤页，并让原生延迟滚动实际触发；ASan 检查旧模型节点不被访问。 */
+void deferredRemoval()
+{
+    Scenario scene;
+    std::optional<PageHandle> page;
+    auto runtime = scene.kernel.registerPlugin("native-removal", [&](Context ctx) {
+        page = scene.pages->add(ctx, spec()).value(); return page->ready();
+    }).value();
+    for (int i = 0; i < 12; ++i) {
+        auto instance = scene.kernel.mount(runtime).value(); wait(instance.ready(), scene.scheduler);
+        page->navigate().value();
+        wait(instance.stop(), scene.scheduler);
+        CHECK(!page->snapshot().value().widgetAlive && scene.pages->snapshot().value().empty());
+    }
+    // 原生导航的滚动延迟为 200 ms；此 gate 让旧延迟路径在窗口仍存活时经过一次真实触发。
+    QEventLoop loop;
+    QTimer::singleShot(650, &loop, &QEventLoop::quit);
+    loop.exec();
+    scene.close();
+}
+/** @brief 原生展开/紧凑导航保持页面归属，撤销后直接调用 Ela 导航也不能绕过门禁。 */
+void nativeModes()
+{
+    Scenario scene;
+    ElaWindow* window = nullptr;
+    for (auto widget : QApplication::topLevelWidgets()) if (auto host = qobject_cast<ElaWindow*>(widget)) window = host;
+    CHECK(window && window->getIsNavigationBarEnable() && window->getCurrentStackIndex() == 0);
+    std::optional<PageHandle> page;
+    QPointer<QWidget> nativePage;
+    auto runtime = scene.kernel.registerPlugin("native-modes", [&](Context ctx) {
+        auto value = spec();
+        value.factory = [&] { auto widget = std::make_unique<QWidget>(); nativePage = widget.get(); return widget; };
+        page = scene.pages->add(ctx, std::move(value)).value(); return page->ready();
+    }).value();
+    auto instance = scene.kernel.mount(runtime).value(); wait(instance.ready(), scene.scheduler);
+    const auto key = nativePage->property("ElaPageKey").toString(); CHECK(!key.isEmpty());
+    for (auto mode : {ElaNavigationType::Compact, ElaNavigationType::Maximal, ElaNavigationType::Minimal, ElaNavigationType::Maximal}) {
+        window->setNavigationBarDisplayMode(mode);
+        page->navigate().value();
+        CHECK(window->getCurrentNavigationPageKey() == key && page->snapshot().value().current);
+    }
+    scene.shell.showManagement().value();
+    const auto management = window->getCurrentNavigationPageKey();
+    auto closed = page->close();
+    window->navigation(key);
+    CHECK(window->getCurrentNavigationPageKey() == management && !page->snapshot().value().current);
+    wait(closed, scene.scheduler); CHECK(nativePage.isNull());
+    scene.close();
+}
+/** @brief 紧凑菜单随页面撤销删除动作，分组仍存活时不能留下指向旧节点的入口。 */
+void compactRemoval()
+{
+    Scenario scene;
+    std::optional<PageHandle> first, second;
+    auto runtime = scene.kernel.registerPlugin("compact-removal", [&](Context ctx) {
+        first = scene.pages->add(ctx, {"first", "待撤销页面", "共享分组", [] { return std::make_unique<QWidget>(); }}).value();
+        second = scene.pages->add(ctx, {"second", "保留页面", "共享分组", [] { return std::make_unique<QWidget>(); }}).value();
+        return second->ready();
+    }).value();
+    auto instance = scene.kernel.mount(runtime).value(); wait(instance.ready(), scene.scheduler);
+    ElaWindow* window = nullptr;
+    for (auto widget : QApplication::topLevelWidgets()) if (auto host = qobject_cast<ElaWindow*>(widget)) window = host;
+    CHECK(window);
+    QPointer<ElaMenu> menu;
+    QPointer<QAction> removedAction;
+    for (auto candidate : window->findChildren<ElaMenu*>()) for (auto action : candidate->actions())
+        if (action->text() == QString::fromUtf8("待撤销页面")) { menu = candidate; removedAction = action; }
+    CHECK(menu && removedAction && menu->actions().size() == 2);
+    wait(first->close(), scene.scheduler);
+    CHECK(removedAction.isNull() && menu && menu->actions().size() == 1);
+    menu->actions().front()->trigger();
+    CHECK(second->snapshot().value().current);
+    wait(second->close(), scene.scheduler);
+    CHECK(menu.isNull());
+    scene.close();
+}
+/** @brief 展开分组后切到紧凑模式，在模式恢复前删除分组不能访问缓存的旧节点。 */
+void removedExpandedGroup()
+{
+    Scenario scene;
+    ElaWindow* window = nullptr;
+    for (auto widget : QApplication::topLevelWidgets()) if (auto host = qobject_cast<ElaWindow*>(widget)) window = host;
+    CHECK(window);
+    window->setNavigationBarDisplayMode(ElaNavigationType::Maximal);
+    std::optional<PageHandle> page;
+    auto runtime = scene.kernel.registerPlugin("expanded-removal", [&](Context ctx) {
+        page = scene.pages->add(ctx, spec("page", "将被删除的分组")).value(); return page->ready();
+    }).value();
+    auto instance = scene.kernel.mount(runtime).value(); wait(instance.ready(), scene.scheduler);
+    page->navigate().value();
+    window->setNavigationBarDisplayMode(ElaNavigationType::Compact);
+    wait(instance.stop(), scene.scheduler);
+    window->setNavigationBarDisplayMode(ElaNavigationType::Maximal);
+    CHECK(!page->snapshot().value().navigationPresent && scene.pages->snapshot().value().empty());
+    scene.shell.showManagement().value();
+    scene.close();
+}
+/** @brief 原生菜单与宿主程序入口不同；切页信号重入删除窗口后，原生调用不得继续访问旧节点。 */
+void nativeCloseReentry()
+{
+    Scenario scene;
+    QPointer<ElaWindow> window;
+    for (auto widget : QApplication::topLevelWidgets()) if (auto host = qobject_cast<ElaWindow*>(widget)) window = host;
+    CHECK(window);
+    auto management = window->findChild<QWidget*>("CordisManagement");
+    CHECK(management);
+    const auto key = management->property("ElaPageKey").toString();
+    auto stack = qobject_cast<QStackedWidget*>(management->parentWidget());
+    CHECK(stack);
+    std::optional<Task<void>> closed;
+    QObject::connect(stack, &QStackedWidget::currentChanged, stack, [&](int) {
+        closed = scene.shell.close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    });
+    window->navigation(key);
+    CHECK(closed);
+    wait(*closed, scene.scheduler);
+    CHECK(window.isNull());
+    scene.close();
+}
+/** @brief 关闭窗口必须删除导航样式和仍在运行的动画，不得留下访问旧 viewport 的回调。 */
+void animationCleanup()
+{
+    Scenario scene;
+    std::optional<PageHandle> page;
+    auto runtime = scene.kernel.registerPlugin("native-animation", [&](Context ctx) {
+        page = scene.pages->add(ctx, spec()).value(); return page->ready();
+    }).value();
+    auto instance = scene.kernel.mount(runtime).value(); wait(instance.ready(), scene.scheduler);
+    page->navigate().value(); scene.shell.showManagement().value();
+    QPointer<QStyle> style;
+    for (auto window : QApplication::topLevelWidgets()) if (auto view = window->findChild<QTreeView*>("ElaNavigationView"))
+        style = view->findChild<QStyle*>("ElaNavigationOwnedStyle");
+    CHECK(style);
+    std::vector<QPointer<QPropertyAnimation>> animations;
+    for (auto animation : style->findChildren<QPropertyAnimation*>()) animations.push_back(animation);
+    CHECK(!animations.empty());
+    wait(scene.shell.close(), scene.scheduler);
+    CHECK(style.isNull());
+    for (const auto& animation : animations) CHECK(animation.isNull());
     scene.close();
 }
 /** @brief 每个场景运行真实 Ela DLL 与 Qt QApplication，offscreen 由 CTest 指定。 */
@@ -379,6 +527,12 @@ int main(int argc, char** argv)
         else if (name == "shutdown") shutdown();
         else if (name == "input_gate") inputGate();
         else if (name == "keyboard_navigation") keyboardNavigation();
+        else if (name == "deferred_removal") deferredRemoval();
+        else if (name == "native_modes") nativeModes();
+        else if (name == "compact_removal") compactRemoval();
+        else if (name == "removed_expanded_group") removedExpandedGroup();
+        else if (name == "native_close_reentry") nativeCloseReentry();
+        else if (name == "animation_cleanup") animationCleanup();
         else if (name == "shortcut_gate") shortcutGate();
         else return EXIT_FAILURE;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return EXIT_FAILURE; }

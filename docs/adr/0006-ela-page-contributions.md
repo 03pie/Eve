@@ -14,6 +14,8 @@ ElaWidgetTools 固定为 `aae58f5d0d98e05eabe10c263aa7da5f2491d702`，归档 SHA
 
 因此当前使用 ElaWindow 作为外壳，通过公开 addCentralWidget 接入宿主 QTreeWidget/QStackedWidget。动态贡献不调用 Ela 原生导航，避免依赖未知延迟回调排空时长，也无需修改第三方源码。关闭原生导航、页面动画、路由按钮和独立页面窗口。未来若恢复原生导航，必须先修复/升级固定依赖并重验动态删除与历史路由；本次通过不能推广到该路径。
 
+Q3c 初次适配将上述 QTreeWidget 替换为 ElaTreeView 与宿主 QStandardItemModel，见 [ADR-0009](0009-ela-components-theme.md)。后续按用户授权将 Ela 源码纳入项目维护，修正延迟滚动和动画归属，恢复原生导航；当前策略以 [ADR-0010](0010-maintained-ela-navigation.md) 为准，本页保留原始问题及临时规避的证据。
+
 ## 所有权与业务门禁
 
 - 普通插件只消费 ui.pages/v1 的 UiPagesService，提供 id、标题、单层分类和页面工厂；不获得 ElaWindow、Qt 导航模型、原生 key 或宿主关闭权限。

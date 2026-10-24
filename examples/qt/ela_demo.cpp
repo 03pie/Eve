@@ -5,7 +5,9 @@
 #include <cordis/kernel.hpp>
 #include <QApplication>
 #include <QFontDatabase>
-#include <QLabel>
+#include <ElaText.h>
+#include <ElaPushButton.h>
+#include <ElaTheme.h>
 #include <QPushButton>
 #include <QPixmap>
 #include <QTimer>
@@ -79,9 +81,11 @@ struct Application : std::enable_shared_from_this<Application> {
                 auto added = pages.add(context, {"notes", "笔记示例", "内置插件", [] {
                     auto widget = std::make_unique<QWidget>();
                     auto layout = new QVBoxLayout(widget.get());
-                    auto label = new QLabel(QString::fromUtf8("此页面由内置插件通过 ui.pages/v1 创建。"), widget.get());
+                    auto label = new ElaText(QString::fromUtf8("此页面由内置插件通过 ui.pages/v1 创建。"), widget.get());
                     label->setWordWrap(true);
-                    auto button = new QPushButton(QString::fromUtf8("点击计数：0"), widget.get());
+                    label->setTextPixelSize(14);
+                    label->setTextFormat(Qt::PlainText);
+                    auto button = new ElaPushButton(QString::fromUtf8("点击计数：0"), widget.get());
                     auto count = std::make_shared<int>(0);
                     QObject::connect(button, &QPushButton::clicked, widget.get(), [button, count] {
                         button->setText(QString::fromUtf8("点击计数：%1").arg(++*count));
@@ -145,7 +149,7 @@ struct Application : std::enable_shared_from_this<Application> {
             fail("management diagnostics missing pending/failed examples"); return;
         }
         for (auto window : QApplication::topLevelWidgets()) if (window->windowTitle() == QString::fromUtf8("Cordis 插件平台")) {
-            if (!window->grab().save(QCoreApplication::applicationDirPath() + "/ela-smoke.png")) { fail("preview capture failed"); return; }
+            if (!window->grab().save(QCoreApplication::applicationDirPath() + (eTheme->getThemeMode() == ElaThemeType::Dark ? "/ela-smoke-dark.png" : "/ela-smoke.png"))) { fail("preview capture failed"); return; }
             window->close(); return;
         }
         fail("Ela window missing");
@@ -153,13 +157,15 @@ struct Application : std::enable_shared_from_this<Application> {
 };
 } // namespace
 
-/** @brief 默认交互运行，--smoke 通过真实关闭事件自动验证完整退出。 */
+/** @brief 默认交互运行，--smoke/--smoke-dark 分别检查明暗预览和真实关闭事件的完整退出。 */
 int main(int argc, char** argv)
 {
     try {
         QApplication app(argc, argv);
         app.setQuitOnLastWindowClosed(false);
-        const bool smoke = argc == 2 && std::string(argv[1]) == "--smoke";
+        const bool dark = argc == 2 && std::string(argv[1]) == "--smoke-dark";
+        const bool smoke = dark || (argc == 2 && std::string(argv[1]) == "--smoke");
+        eTheme->setThemeMode(dark ? ElaThemeType::Dark : ElaThemeType::Light);
 #ifdef Q_OS_WIN
         // offscreen 不枚举 Windows 字体；预览显式加载系统中文字体，交互模式仍用系统字体库。
         if (smoke && QApplication::platformName() == "offscreen")

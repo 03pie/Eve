@@ -5,7 +5,9 @@
 #include <cordis/ui/commands.hpp>
 #include <cordis/ui/notifications.hpp>
 #include <QLabel>
-#include <QListWidget>
+#include <QPlainTextEdit>
+#include <QListView>
+#include <QStandardItemModel>
 #include <QPointer>
 #include <atomic>
 #include <deque>
@@ -30,7 +32,7 @@ struct CommandControl : std::enable_shared_from_this<CommandControl> {
     CommandSpec spec;
     std::function<Result<void>()> guard;
     std::optional<EffectToken> effect;
-    QListWidgetItem* row = nullptr;
+    QStandardItem* row = nullptr;
     bool revoked = false;
     bool retiring = false;
     bool draining = false;
@@ -65,10 +67,12 @@ struct CommandControl : std::enable_shared_from_this<CommandControl> {
 /** @brief 宿主 UI 后端仅由应用线程写入，通知序号和历史都是宿主值。 */
 struct ServicesControl : std::enable_shared_from_this<ServicesControl> {
     std::shared_ptr<qt::QtScheduler> scheduler;
-    QPointer<QListWidget> commands;
+    QPointer<QListView> commands;
+    QStandardItemModel* model = nullptr;
     QPointer<QLabel> notification;
+    QPointer<QPlainTextEdit> output;
     std::map<CommandKey, std::shared_ptr<CommandControl>> records;
-    std::map<QListWidgetItem*, std::weak_ptr<CommandControl>> rows;
+    std::map<QStandardItem*, std::weak_ptr<CommandControl>> rows;
     std::deque<NotificationSnapshot> history;
     std::uint64_t sequence = 0;
     bool open = true;
@@ -103,12 +107,16 @@ struct ServicesControl : std::enable_shared_from_this<ServicesControl> {
             return Result<std::uint64_t>::failure(makeError(ErrorCode::InvalidArgument, "invalid notification or exhausted sequence"));
         history.push_back({sequence + 1, owner, std::move(value)});
         ++sequence;
+        // 输出控件会同步发出 textChanged；重入提交不能改变本次提交的返回序号。
+        const auto submittedSequence = sequence;
         if (history.size() > NotificationService::historyLimit) history.pop_front();
         const auto& latest = history.back().notification;
         const QString prefix = latest.level == NotificationLevel::Error ? QString::fromUtf8("错误：") :
             latest.level == NotificationLevel::Warning ? QString::fromUtf8("提示：") : QString::fromUtf8("消息：");
-        notification->setText(prefix + QString::fromStdString(latest.text));
-        return Result<std::uint64_t>::success(sequence);
+        const auto text = prefix + QString::fromStdString(latest.text);
+        notification->setText(text);
+        if (output) output->appendPlainText(text);
+        return Result<std::uint64_t>::success(submittedSequence);
     }
     /** @brief 贡献记录保留到 effect 完整报告，不能只凭内部 drained 完成关闭。 */
     void checkClosed()
@@ -222,7 +230,7 @@ Task<void> CommandControl::retire()
     });
     if (auto state = host.lock()) {
         state->rows.erase(row);
-        if (state->commands && row) delete row;
+        if (state->commands && row) state->model->removeRow(row->row());
     }
     row = nullptr;
     checkDrained();
@@ -247,18 +255,21 @@ Task<void> CommandControl::execute()
 }
 /** @brief 只有宿主列表的激活信号可以查找内部命令；连接不持任何插件回调。 */
 std::shared_ptr<ServicesControl> createUiServices(std::shared_ptr<qt::QtScheduler> scheduler,
-                                               QListWidget* commands, QLabel* notification)
+                                               QListView* commands, QLabel* notification, QPlainTextEdit* output)
 {
     auto state = std::make_shared<ServicesControl>();
     state->scheduler = std::move(scheduler);
     state->commands = commands;
+    state->model = new QStandardItemModel(commands);
+    commands->setModel(state->model);
     state->notification = notification;
+    state->output = output;
     notification->setTextFormat(Qt::PlainText);
     std::weak_ptr<ServicesControl> weak = state;
-    QObject::connect(commands, &QListWidget::itemActivated, commands, [weak](QListWidgetItem* row) {
+    QObject::connect(commands, &QListView::activated, commands, [weak](const QModelIndex& index) {
         auto owner = weak.lock();
         if (!owner) return;
-        auto found = owner->rows.find(row);
+        auto found = owner->rows.find(owner->model->itemFromIndex(index));
         if (found == owner->rows.end()) return;
         auto record = found->second.lock();
         if (!record) return;
@@ -320,9 +331,10 @@ Result<CommandHandle> CommandService::add(const Context& owner, CommandSpec spec
     auto effect = context.effect([record, host](EffectSetupContext setup) {
         auto result = setup.addCleanup([record] { return record->retire(); });
         if (!result.hasValue()) return failedTask(result.error());
-        record->row = new QListWidgetItem(QString::fromStdString(record->spec.title), host->commands);
+        record->row = new QStandardItem(QString::fromStdString(record->spec.title));
         record->row->setToolTip(QString::fromUtf8("双击或按回车执行"));
         host->rows.emplace(record->row, record);
+        host->model->appendRow(record->row);
         return completedTask();
     }, "ui.command:" + record->spec.id);
     if (!effect.hasValue()) { host->records.erase(record->key()); return Result<CommandHandle>::failure(effect.error()); }

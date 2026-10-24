@@ -1,6 +1,6 @@
 # P3 桌面适配开发记录
 
-日期：2026-10-24。状态：进行中；Q0–Q2、Q3a/Q3b1 贡献服务及 Q3b2 基础管理页已完成；原生桌面人工交互另验，下一步 Q4 Loader/Store，其他专用资源按集成补齐。
+日期：2026-10-24。状态：进行中；Q0–Q3b2 功能基线和 Q3c Ela 基础库、原生导航和工作台已实现并通过自动化检查；下一步 Q3c 原生桌面人工验收，随后 Q4 Loader/Store，其他专用资源按集成补齐。
 
 ## 已安装与验证
 
@@ -295,6 +295,48 @@ Q3a 不代表命令/通知服务、插件管理页、任意 queued connection、
 
 审查日志为 `build/review-q3b2-ela-msvc-<mode>.log`、`build/review-q3b2-core-gcc-<mode>.log`、`build/review-q3b2-asan.log`；失败证据为 `build/review-q3b2-before.log` 和 `build/review-q3b2-navigation-before.log`。三个公共头独立包含及差异检查通过。ASan、无 Qt 隔离和原生桌面人工交互的验证边界保持上述约定。
 
+## Q3c Ela 组件、原生导航与工作台
+
+Q3b2 完成的是管理功能与生命周期基线，本轮补齐 Ela 组件和主题，并按用户授权将组件库作为项目内维护的 UI 基础设施。third_party/ela 导入 aae58f5d0d98e05eabe10c263aa7da5f2491d702 的库及所需资源，约 4.5 MB；保留 MIT LICENSE 与 UPSTREAM.md，构建不再联网下载。架构决策见 [ADR-0010](adr/0010-maintained-ela-navigation.md)，[ADR-0009](adr/0009-ela-components-theme.md) 保留初次组件迁移记录。
+
+组件使用 ElaTableView、ElaListView、ElaText、ElaPushButton、ElaPlainTextEdit、ElaTabWidget，笔记演示同样接入 Ela 文本/按钮。表格和命令使用宿主模型；导航改为真正的 ElaWindow 原生页面、展开分组和页脚节点，保留图标与紧凑/展开模式。普通插件继续通过贡献服务协作，Core 不引入 Qt/Ela，公开 SDK 不新增 Ela 类型。
+
+布局参考官方示例的 Fluent 组件与 VS Code 的工作台分区：左侧原生 Ela 活动栏、资源管理器、中央页面页签/页面区、底部命令和输出面板、状态栏。页签及资源树以原生 key 同步，撤销时一同移除。Qt splitter 可调整侧栏宽度与面板高度；Ctrl+B/侧栏按钮控制资源树，Ctrl+J/面板按钮或左下终端按钮控制底部面板。输出只保留有界纯文本，不伪造系统终端或工作区持久化能力。
+
+移除固定浅色导航背景，处理稳定 objectName 对 Ela 默认样式选择器的影响，详情容器调色板跟随 ElaTheme，检查最终合成背景。诊断和中央页面标签禁止拖出独立窗口。浅/深预览为 build/ela-msvc-debug/bin/ela-smoke.png 与 ela-smoke-dark.png，已查看 offscreen 图像；这不等于原生桌面人工验收。
+
+本地修正原生导航生命周期：延迟滚动使用持久索引并检查有效性；节点删除清除选择，动画借用使用 QPointer；导航视图拥有并显式删除样式，动画由样式/delegate 拥有，防止窗口删除后继续更新旧 viewport；通用 navigationGuard 在切页前接入宿主生命周期。Debug 调用栈实际定位到旧动画 valueChanged 回调，见 build/q3-workbench-trace.log；临时诊断代码已移出产品构建。页面仍由 QObjectResource 确认完整析构，原生 removeNavigationNode 不能代替清理屏障。路由回退和独立页面窗口继续关闭。
+
+新增/增强检查：
+
+| CTest | 覆盖 |
+|---|---|
+| p3.management_theme | 实际 Ela 组件、明暗颜色/合成背景、选择和 epoch 保持，固定标签不能拖出 |
+| p3.management_workbench | 中央页签/资源树同步、面板隐藏恢复、纯文本输出和撤页后的模型同步删除 |
+| p3.ela_demo_dark | 深色状态检查、截图及完整退出；原 p3.ela_demo 检查浅色 |
+| p3.ui_pages_deferred_removal | 十二轮导航后立即停止并删除页面，窗口存活时经过原生延迟滚动触发 |
+| p3.ui_pages_native_modes | 原生模式切换、页面归属及直接调用原生导航不能绕过撤销门禁 |
+| p3.ui_pages_animation_cleanup | 根窗口关闭后原生导航样式和动画实际销毁 |
+
+| Q3c 开发验证（提交前审查之前） | 结果 |
+|---|---|
+| Ela/MSVC Debug、Release | 各 184/184 |
+| 无 Qt GCC Debug、Release | 各 117/117，保持构建隔离 |
+| MSVC ASan | 42/42 UI 场景；第一方及项目内 Ela 插桩，预编译 Qt 未插桩 |
+| 差异检查 | git diff --check 通过 |
+
+日志：build/q3-workbench-ela-msvc-debug.log、build/q3-workbench-ela-msvc-release.log、build/q3-workbench-core-gcc-debug.log、build/q3-workbench-core-gcc-release.log 和 build/q3-workbench-asan.log。原生导航初次接回仍出现崩溃，修正动画归属后通过；较早的临时构建混用修改前后的内部类布局，不能将那些堆布局错误误记为独立内核问题。
+
+原生 Windows 的缩放、主题动画及完整鼠标/键盘操作仍待按 [桌面验收单](../tests/acceptance/p3-ui.md) 执行。清理失败/投递阻断按契约保留未静止资源，ASan 不构成泄漏或物理卸载证明。
+
+### Q3c 提交前审查
+
+审查修复四项问题：紧凑菜单残留并捕获旧节点、恢复导航模式时访问已删除分组、原生导航信号重入关闭后的悬空访问，以及输出信号重入提交导致通知返回序号错误。菜单和展开缓存改用稳定 key，撤页同步释放动作/空菜单；原生信号返回后检查 QPointer 与模型归属，后续滚动只用有效持久索引；通知返回本次提交时保存的序号。菜单创建逻辑集中复用，选择同步控制流与直接包含依赖同时整理。
+
+新增 p3.ui_pages_compact_removal、p3.ui_pages_removed_expanded_group、p3.ui_pages_native_close_reentry，增强既有 p3.ui_services_notifications。两项 UAF 均由修复前 ASan 实际复现，失败日志与审查细节见 [代码审查记录](code-review.md#p3-q3c-提交前审核)。
+
+审查后 Ela/MSVC Debug、Release 各 187/187，无 Qt GCC Debug、Release 各 117/117；MSVC ASan 的 45/45 UI 场景通过。日志为 build/review-q3c-ela-msvc-<mode>.log、build/review-q3c-core-gcc-<mode>.log 和 build/review-q3c-asan.log。人工桌面验收和 ASan 的验证边界保持上述约定。
+
 ## 后续工作
 
-Q4 推进 Loader/Store、配置计划与持久化，管理页随之接入配置候选差异、条目启停与保存状态；模块引用/驻留/卸载详情随 P4 接入。原生 Windows 人工交互仍待专项验收。connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解是 P3 的开发顺序，不表示完成了原设计中任何尚未运行的 L/Q/U 场景。
+先完成 Q3c 原生 Windows 桌面人工验收，再推进 Q4 Loader/Store、配置计划与持久化，管理页随之接入配置候选差异、条目启停与保存状态；模块引用/驻留/卸载详情随 P4 接入。connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解是 P3 的开发顺序，不表示完成了原设计中任何尚未运行的 L/Q/U 场景。

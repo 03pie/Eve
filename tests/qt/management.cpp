@@ -11,7 +11,17 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QStackedWidget>
-#include <QTableWidget>
+#include <QTableView>
+#include <QStandardItemModel>
+#include <QTreeView>
+#include <QListView>
+#include <QTabWidget>
+#include <QTabBar>
+#include <QMouseEvent>
+#include <QSplitter>
+#include <QToolButton>
+#include <QImage>
+#include <ElaTheme.h>
 #include <QTest>
 #include <QTimer>
 #include <QWidget>
@@ -84,9 +94,9 @@ void pending()
     auto data = scene.diagnostics->snapshot().value();
     CHECK(data.instances.size() == 1 && data.instances[0].name == "等待存储" && entered == 0);
     CHECK(data.instances[0].dependencies[0].error->code == ErrorCode::DependencyMissing && data.instances[0].canStop && !data.instances[0].canRetry);
-    auto table = scene.widget<QTableWidget>("CordisInstanceTable");
+    auto table = scene.widget<QTableView>("CordisInstanceTable");
     auto details = scene.widget<QPlainTextEdit>("CordisManagementDetails");
-    CHECK(table && table->rowCount() == 1 && table->item(0, 2)->text() == QString::fromUtf8("等待依赖"));
+    CHECK(table && table->model()->rowCount() == 1 && table->model()->index(0, 2).data().toString() == QString::fromUtf8("等待依赖"));
     CHECK(details && details->toPlainText().contains("missing.store/v1 @1") && details->toPlainText().contains("write"));
     auto provider = scene.kernel->registerPlugin("store", [](Context ctx) { ctx.provide({"missing.store"}, std::make_shared<int>(1)).value(); return completedTask(); }, {},
         {ServiceOutput::of<int>({"missing.store"}, true, {2, {"write"}})}).value();
@@ -116,7 +126,7 @@ void diagnostics()
     data.instances[0].name = "changed";
     CHECK(scene.diagnostics->snapshot().value().instances[0].name == "diagnostics");
     scene.management->refresh().value();
-    CHECK(scene.widget<QTableWidget>("CordisInstanceTable")->item(1, 1)->text() == QString::fromUtf8("<b>客户端</b>"));
+    CHECK(scene.widget<QTableView>("CordisInstanceTable")->model()->index(1, 1).data().toString() == QString::fromUtf8("<b>客户端</b>"));
     CHECK(scene.widget<QPlainTextEdit>("CordisManagementNotices")->toPlainText().contains("<b>text</b>"));
     scene.close();
 }
@@ -170,11 +180,11 @@ void stop()
     auto data = scene.diagnostics->snapshot().value();
     CHECK(data.instances.size() == 1 && data.instances[0].instance.instance == survivor.snapshot().value().instance && data.operations[0].cleanup->quiescent && !scene.management->stop(id).hasValue());
     CHECK(scene.widget<QPlainTextEdit>("CordisManagementOperations")->toPlainText().contains(QString::fromUtf8("实例=%1").arg(id.value())));
-    CHECK(scene.widget<QTableWidget>("CordisInstanceTable")->currentRow() == -1);
+    CHECK(scene.widget<QTableView>("CordisInstanceTable")->currentIndex().row() == -1);
     auto stopButton = scene.widget<QPushButton>("CordisManagementStop"); CHECK(!stopButton->isEnabled());
     QTest::mouseClick(stopButton, Qt::LeftButton); wait(completedTask(), scene.scheduler);
     scene.management->refresh().value();
-    CHECK(scene.widget<QTableWidget>("CordisInstanceTable")->currentRow() == -1 && !stopButton->isEnabled());
+    CHECK(scene.widget<QTableView>("CordisInstanceTable")->currentIndex().row() == -1 && !stopButton->isEnabled());
     CHECK(survivor.snapshot().value().state == InstanceState::Active && scene.diagnostics->snapshot().value().operations.size() == 1);
     scene.close();
 }
@@ -185,11 +195,11 @@ void deselect()
     auto runtime = scene.kernel->registerPlugin("selection", [](Context) { return completedTask(); }).value();
     auto instance = scene.kernel->mount(runtime).value(); wait(instance.ready(), scene.scheduler);
     scene.management->refresh().value();
-    auto table = scene.widget<QTableWidget>("CordisInstanceTable");
+    auto table = scene.widget<QTableView>("CordisInstanceTable");
     auto button = scene.widget<QPushButton>("CordisManagementStop");
     CHECK(table && button && button->isEnabled());
     table->clearSelection();
-    CHECK(table->currentRow() == 0 && table->selectionModel()->selectedRows().empty());
+    CHECK(table->currentIndex().row() == 0 && table->selectionModel()->selectedRows().empty());
     CHECK(!button->isEnabled());
     scene.management->refresh().value();
     CHECK(table->selectionModel()->selectedRows().empty() && !button->isEnabled());
@@ -250,7 +260,7 @@ void expiredKernel()
     wait(scene.kernel->close(), scene.scheduler);
     scene.kernel.reset();
     CHECK(weak.expired() && !scene.management->refresh().hasValue() && !scene.diagnostics->snapshot().hasValue());
-    CHECK(scene.widget<QTableWidget>("CordisInstanceTable")->rowCount() == 0);
+    CHECK(scene.widget<QTableView>("CordisInstanceTable")->model()->rowCount() == 0);
     CHECK(!scene.management->attach(std::make_shared<Kernel>(scene.scheduler)).hasValue());
     wait(scene.shell.close(), scene.scheduler); scene.scheduler->close().value();
 }
@@ -260,11 +270,11 @@ void viewReentry()
     Scenario scene;
     auto runtime = scene.kernel->registerPlugin("view", [](Context) { return completedTask(); }).value();
     auto instance = scene.kernel->mount(runtime).value(); wait(instance.ready(), scene.scheduler);
-    auto table = scene.widget<QTableWidget>("CordisInstanceTable");
+    auto table = scene.widget<QTableView>("CordisInstanceTable");
     QPointer<QWidget> page = scene.widget<QWidget>("CordisManagement");
     CHECK(table && page);
     // 定时刷新可能已填充列表；显式清空以保证本次手动刷新一定发出插入信号。
-    table->setRowCount(0);
+    qobject_cast<QStandardItemModel*>(table->model())->setRowCount(0);
     std::optional<Task<void>> closed;
     bool heldInside = false;
     auto connection = QObject::connect(table->model(), &QAbstractItemModel::rowsInserted, table, [&] {
@@ -328,6 +338,78 @@ void blocked()
     CHECK(instance.snapshot().value().state == InstanceState::Active);
     // 故意违反正常退出协议，不伪造 Kernel 静止或强制清空插件资源。
 }
+/** @brief 明暗主题切换不重启实例、不改变选择，诊断标签拖动也不能产生独立窗口。 */
+void theme()
+{
+    Scenario scene;
+    int entered = 0;
+    auto runtime = scene.kernel->registerPlugin("theme", [&](Context) { ++entered; return completedTask(); }).value();
+    auto instance = scene.kernel->mount(runtime).value(); wait(instance.ready(), scene.scheduler);
+    scene.management->refresh().value(); scene.shell.showManagement().value();
+    auto table = scene.widget<QTableView>("CordisInstanceTable");
+    auto label = scene.widget<QLabel>("CordisManagementSummary");
+    auto tabs = scene.widget<QTabWidget>("CordisManagementTabs");
+    auto details = scene.widget<QPlainTextEdit>("CordisManagementDetails");
+    CHECK(table->inherits("ElaTableView") && label->inherits("ElaText") && tabs->inherits("ElaTabWidget"));
+    CHECK(details->inherits("ElaPlainTextEdit") && scene.widget<QPushButton>("CordisManagementStop")->inherits("ElaPushButton"));
+    CHECK(scene.widget<QTreeView>("ElaNavigationView")->inherits("ElaNavigationView"));
+    CHECK(scene.widget<QListView>("CordisCommandList")->inherits("ElaListView"));
+    const auto selected = table->selectionModel()->selectedRows().front().data(Qt::UserRole);
+    const auto epoch = instance.snapshot().value().epoch;
+    const auto operation = instance.operation().value().id;
+    scene.shell.show().value();
+    for (auto mode : {ElaThemeType::Dark, ElaThemeType::Light}) {
+        eTheme->setThemeMode(mode);
+        scene.management->refresh().value();
+        CHECK(label->palette().color(QPalette::WindowText) == eTheme->getThemeColor(mode, ElaThemeType::BasicText));
+        // CSS 透明背景会覆盖 Base 调色板；检查最终合成图，防止透明编辑器仍叠在白色容器上。
+        const auto rendered = details->grab().toImage();
+        const auto background = rendered.pixelColor(rendered.width() - 20, rendered.height() - 20);
+        CHECK(mode == ElaThemeType::Dark ? background.lightness() < 100 : background.lightness() > 180);
+        CHECK(table->selectionModel()->selectedRows().front().data(Qt::UserRole) == selected);
+        CHECK(instance.snapshot().value().epoch == epoch && instance.operation().value().id == operation && entered == 1);
+    }
+    const int windows = QApplication::topLevelWidgets().size();
+    auto bar = tabs->tabBar();
+    const QPoint start = bar->tabRect(0).center();
+    QTest::mousePress(bar, Qt::LeftButton, Qt::NoModifier, start);
+    QMouseEvent move(QEvent::MouseMove, QPointF(start.x(), -100), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(bar, &move);
+    QTest::mouseRelease(bar, Qt::LeftButton, Qt::NoModifier, start);
+    CHECK(tabs->count() == 4 && tabs->widget(0) == details && QApplication::topLevelWidgets().size() == windows);
+    tabs->setCurrentIndex(1); CHECK(tabs->currentIndex() == 1);
+    scene.close();
+}
+/** @brief 工作台页签和侧栏共享导航，面板可隐藏恢复，撤页后模型和页签同步删除。 */
+void workbench()
+{
+    Scenario scene;
+    std::optional<PageHandle> page;
+    auto runtime = scene.kernel->registerPlugin("workbench", [&](Context ctx) {
+        page = scene.shell.pages()->add(ctx, {"document", "文档页", "工作区", [] { return std::make_unique<QWidget>(); }}).value();
+        scene.shell.notifications()->post(ctx, {NotificationLevel::Info, "workbench <b>output</b>", {}}).value();
+        return page->ready();
+    }).value();
+    auto instance = scene.kernel->mount(runtime).value(); wait(instance.ready(), scene.scheduler);
+    scene.shell.show().value(); scene.shell.showManagement().value();
+    auto tabs = scene.widget<QTabBar>("CordisPageTabs");
+    auto explorer = scene.widget<QTreeView>("CordisResourceExplorer");
+    auto side = scene.widget<QWidget>("CordisWorkbenchSidebar");
+    auto panel = scene.widget<QTabWidget>("CordisWorkbenchPanel");
+    CHECK(scene.widget<QSplitter>("ElaWorkbenchContainer") && scene.widget<QSplitter>("ElaWorkbenchPanelSplitter"));
+    CHECK(tabs && tabs->count() == 3 && tabs->currentIndex() == 1 && explorer->model()->rowCount() == 3);
+    tabs->setCurrentIndex(2); CHECK(page->snapshot().value().current);
+    scene.shell.showManagement().value(); CHECK(tabs->currentIndex() == 1 && !page->snapshot().value().current);
+    CHECK(explorer->currentIndex().data(Qt::UserRole).toString() == tabs->tabData(1).toString());
+    auto toggleSide = scene.widget<QToolButton>("CordisToggleSidebar");
+    auto togglePanel = scene.widget<QToolButton>("CordisTogglePanel");
+    toggleSide->click(); CHECK(side->isHidden()); toggleSide->click(); CHECK(!side->isHidden());
+    togglePanel->click(); CHECK(panel->isHidden()); togglePanel->click(); CHECK(!panel->isHidden());
+    CHECK(scene.widget<QPlainTextEdit>("CordisWorkbenchOutput")->toPlainText().contains("<b>output</b>"));
+    auto closed = instance.stop(); wait(closed, scene.scheduler);
+    CHECK(tabs->count() == 2 && explorer->model()->rowCount() == 2 && !page->snapshot().value().widgetAlive);
+    scene.close();
+}
 /** @brief 每个场景运行独立的真实 QApplication；offscreen 由 CTest 环境指定。 */
 int main(int argc, char** argv)
 {
@@ -347,6 +429,8 @@ int main(int argc, char** argv)
         else if (name == "navigation_reentry") navigationReentry();
         else if (name == "cleanup_failure") cleanupFailure();
         else if (name == "blocked") blocked();
+        else if (name == "theme") theme();
+        else if (name == "workbench") workbench();
         else return EXIT_FAILURE;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return EXIT_FAILURE; }
     return EXIT_SUCCESS;

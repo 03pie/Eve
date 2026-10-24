@@ -6,6 +6,8 @@
 
 新增 CommandService（ui.commands/v1）、NotificationService（ui.notifications/v1）。由宿主 ElaShell 创建并通过现有 Context.provide/consume 接入；普通插件不获得 ElaWindow、QListWidget、QAction 或宿主关闭能力。命令以 InstanceId/Epoch/id 命名，同一实例代次的重复 id 拒绝，不同实例可以使用相同 id。CommandHandle 是本代单条命令的能力，服务没有按裸 id 绕过归属的任意调用入口。
 
+Q3c 将展示列表替换为 ElaListView 与宿主 QStandardItemModel；普通插件仍不获得列表、模型或项指针，调用和清理契约不变，见 [ADR-0009](0009-ela-components-theme.md)。
+
 add/post 校验 owner 线程、有效 Context、同一 scheduler 及开放外壳。Context 的私有 guard 只捕获弱实例与 epoch；停止或服务恢复后旧代不能执行/重新贡献，也不能用旧 Context 提交通知。通知历史只保存复制的归属值，不保存 Context。
 
 注册先保留 Context 值副本；std::function 的移动也可能重入关闭，因此接管回调后必须再次验证宿主与本代门禁，再预留贡献索引。列表项创建/登记在 effect setup 内完成；Qt rowsInserted 信号可重入关闭和事件循环，setup 未返回前不能清理该命令或销毁外壳。effect token 返回后再补发初始化期间收到的宿主关闭请求。

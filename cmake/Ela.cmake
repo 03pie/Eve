@@ -1,16 +1,5 @@
-# 使用固定归档构建库子目录，避免上游顶层覆盖 Qt 路径或构建其示例。
-include(FetchContent)
-if(POLICY CMP0135)
-    cmake_policy(SET CMP0135 NEW)
-endif()
-FetchContent_Declare(cordis_ela
-    URL https://codeload.github.com/Liniyous/ElaWidgetTools/zip/aae58f5d0d98e05eabe10c263aa7da5f2491d702
-    URL_HASH SHA256=3f52ac2a47387ebaee0975c72a251795873f927cffee6ba179b17f2d1a2a307a
-    DOWNLOAD_DIR "${PROJECT_SOURCE_DIR}/build/deps"
-    DOWNLOAD_NAME ela-aae58f5.zip
-    SOURCE_SUBDIR cordis-do-not-use-upstream-root
-)
-FetchContent_MakeAvailable(cordis_ela)
+# 使用仓库内维护的 Ela 基础库，只构建库子目录，不执行上游示例或覆盖 Qt 路径。
+set(cordis_ela_SOURCE_DIR "${PROJECT_SOURCE_DIR}/third_party/ela")
 
 # 此固定版本的导出宏仅支持 DLL；第三方选项限定在函数作用域。
 function(cordis_build_ela)

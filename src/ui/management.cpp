@@ -2,6 +2,7 @@
  * @brief 以宿主值快照驱动管理页，排队校验停止/重试，不把管理能力交给普通插件。
  */
 #include "management_p.hpp"
+#include "fixed_tabs_p.hpp"
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QItemSelectionModel>
@@ -11,8 +12,11 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QStringList>
-#include <QTableWidget>
-#include <QTabWidget>
+#include <ElaTableView.h>
+#include <ElaText.h>
+#include <ElaPushButton.h>
+#include <ElaPlainTextEdit.h>
+#include <QStandardItemModel>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QVariant>
@@ -112,7 +116,8 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
     std::shared_ptr<CommandService> commands;
     std::shared_ptr<NotificationService> notifications;
     QPointer<QWidget> widget;
-    QPointer<QTableWidget> table;
+    QPointer<ElaTableView> table;
+    QStandardItemModel* model = nullptr;
     QPointer<QPlainTextEdit> details;
     QPointer<QPlainTextEdit> services;
     QPointer<QPlainTextEdit> notices;
@@ -189,7 +194,7 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         if (!table || !table->selectionModel()) return {};
         const auto rows = table->selectionModel()->selectedRows(0);
         if (rows.size() != 1) return {};
-        auto item = table->item(rows.front().row(), 0);
+        auto item = model->item(rows.front().row(), 0);
         return item ? InstanceId(item->data(Qt::UserRole).toULongLong()) : InstanceId{};
     }
     /** @brief 只渲染已复制详情；所有文字控件均使用纯文本。 */
@@ -245,7 +250,7 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         auto data = capture();
         if (!data.hasValue()) {
             displayed.reset();
-            table->setRowCount(0);
+            model->setRowCount(0);
             stopButton->setEnabled(false); retryButton->setEnabled(false);
             details->clear(); services->clear(); notices->clear(); operationsView->clear();
             summary->setText(QString::fromUtf8("管理页未连接可用内核"));
@@ -257,8 +262,8 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         displayed.emplace(std::move(data.value()));
         const auto& view = *displayed;
         {
-            QSignalBlocker blocker(table);
-            table->setRowCount(static_cast<int>(view.instances.size()));
+            QSignalBlocker blocker(table->selectionModel());
+            model->setRowCount(static_cast<int>(view.instances.size()));
             int chosen = -1;
             for (std::size_t i = 0; i < view.instances.size(); ++i) {
                 const auto& row = view.instances[i];
@@ -267,15 +272,15 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
                 QStringList columns{QString::number(id.value()), QString::fromStdString(row.name), stateName(row.instance.state),
                     QString::number(row.instance.revision), QString::number(row.instance.epoch)};
                 for (int column = 0; column < columns.size(); ++column) {
-                    auto item = new QTableWidgetItem(columns[column]);
-                    if (column == 0) item->setData(Qt::UserRole, QVariant::fromValue<qulonglong>(id.value()));
-                    table->setItem(static_cast<int>(i), column, item);
+                    auto item = new QStandardItem(columns[column]);
+                    if (column == 0) item->setData(QVariant::fromValue<qulonglong>(id.value()), Qt::UserRole);
+                    model->setItem(static_cast<int>(i), column, item);
                     if (!open) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "management closed during render"));
                 }
             }
             if (chosen < 0 && !previous.valid() && initialSelection && !view.instances.empty()) { chosen = 0; initialSelection = false; }
             if (chosen >= 0) table->selectRow(chosen);
-            else { table->clearSelection(); table->setCurrentCell(-1, -1); }
+            else { table->clearSelection(); table->setCurrentIndex({}); }
         }
         summary->setText(QString::fromUtf8("顶层实例 %1  服务绑定 %2  页面 %3  命令 %4%5")
             .arg(view.instances.size()).arg(view.bindings.size()).arg(view.pages.size()).arg(view.commands.size())
@@ -414,29 +419,37 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
     state->scheduler = std::move(scheduler); state->pages = std::move(pages); state->commands = std::move(commands); state->notifications = std::move(notifications);
     auto root = new QWidget(parent); root->setObjectName("CordisManagement"); state->widget = root;
     auto layout = new QVBoxLayout(root);
-    auto title = new QLabel(QString::fromUtf8("插件管理"), root); title->setStyleSheet("font-size:22px;font-weight:600;"); layout->addWidget(title);
-    auto summary = new QLabel(QString::fromUtf8("管理页未连接内核"), root); summary->setObjectName("CordisManagementSummary"); summary->setTextFormat(Qt::PlainText); layout->addWidget(summary); state->summary = summary;
-    auto table = new QTableWidget(0, 5, root); table->setObjectName("CordisInstanceTable");
-    table->setHorizontalHeaderLabels({QString::fromUtf8("实例"), QString::fromUtf8("插件"), QString::fromUtf8("状态"), QString::fromUtf8("配置修订"), QString::fromUtf8("代次")});
+    auto title = new ElaText(QString::fromUtf8("插件管理"), root); title->setTextPixelSize(22); title->setIsBold(true); layout->addWidget(title);
+    auto summary = new ElaText(QString::fromUtf8("管理页未连接内核"), root); summary->setTextPixelSize(14); summary->setObjectName("CordisManagementSummary"); summary->setTextFormat(Qt::PlainText); layout->addWidget(summary); state->summary = summary;
+    auto table = new ElaTableView(root);
+    state->model = new QStandardItemModel(0, 5, table);
+    table->setModel(state->model); table->setObjectName("CordisInstanceTable");
+    state->model->setHorizontalHeaderLabels({QString::fromUtf8("实例"), QString::fromUtf8("插件"), QString::fromUtf8("状态"), QString::fromUtf8("配置修订"), QString::fromUtf8("代次")});
     table->setSelectionBehavior(QAbstractItemView::SelectRows); table->setSelectionMode(QAbstractItemView::SingleSelection);
-    table->setEditTriggers(QAbstractItemView::NoEditTriggers); table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->verticalHeader()->hide();
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    table->horizontalHeader()->setMinimumSectionSize(64);
+    table->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    table->setColumnWidth(0, 64); table->setColumnWidth(1, 180);
+    table->setColumnWidth(2, 110); table->setColumnWidth(3, 110);
     table->horizontalHeader()->setStretchLastSection(true); layout->addWidget(table, 2); state->table = table;
     auto actions = new QHBoxLayout;
-    auto refresh = new QPushButton(QString::fromUtf8("刷新"), root); refresh->setObjectName("CordisManagementRefresh"); actions->addWidget(refresh); state->refreshButton = refresh;
-    auto stop = new QPushButton(QString::fromUtf8("停止实例"), root); stop->setObjectName("CordisManagementStop"); stop->setEnabled(false); actions->addWidget(stop); state->stopButton = stop;
-    auto retry = new QPushButton(QString::fromUtf8("重试失败实例"), root); retry->setObjectName("CordisManagementRetry"); retry->setEnabled(false); actions->addWidget(retry); state->retryButton = retry;
+    auto refresh = new ElaPushButton(QString::fromUtf8("刷新"), root); refresh->setObjectName("CordisManagementRefresh"); actions->addWidget(refresh); state->refreshButton = refresh;
+    auto stop = new ElaPushButton(QString::fromUtf8("停止实例"), root); stop->setObjectName("CordisManagementStop"); stop->setEnabled(false); actions->addWidget(stop); state->stopButton = stop;
+    auto retry = new ElaPushButton(QString::fromUtf8("重试失败实例"), root); retry->setObjectName("CordisManagementRetry"); retry->setEnabled(false); actions->addWidget(retry); state->retryButton = retry;
     actions->addStretch(); layout->addLayout(actions);
-    auto tabs = new QTabWidget(root); layout->addWidget(tabs, 3);
-    auto details = new QPlainTextEdit(tabs); details->setObjectName("CordisManagementDetails"); details->setReadOnly(true); tabs->addTab(details, QString::fromUtf8("实例详情")); state->details = details;
-    auto services = new QPlainTextEdit(tabs); services->setObjectName("CordisManagementServices"); services->setReadOnly(true); tabs->addTab(services, QString::fromUtf8("服务与界面")); state->services = services;
-    auto notices = new QPlainTextEdit(tabs); notices->setObjectName("CordisManagementNotices"); notices->setReadOnly(true); tabs->addTab(notices, QString::fromUtf8("通知")); state->notices = notices;
-    auto operations = new QPlainTextEdit(tabs); operations->setObjectName("CordisManagementOperations"); operations->setReadOnly(true); tabs->addTab(operations, QString::fromUtf8("操作记录")); state->operationsView = operations;
-    auto status = new QLabel(root); status->setObjectName("CordisManagementStatus"); status->setTextFormat(Qt::PlainText); status->setWordWrap(true); layout->addWidget(status); state->status = status;
+    auto tabs = new FixedDiagnosticsTabs(root); tabs->setObjectName("CordisManagementTabs"); layout->addWidget(tabs, 3);
+    auto details = new ElaPlainTextEdit(tabs); details->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}"); details->setObjectName("CordisManagementDetails"); details->setReadOnly(true); tabs->addTab(details, QString::fromUtf8("实例详情")); state->details = details;
+    auto services = new ElaPlainTextEdit(tabs); services->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}"); services->setObjectName("CordisManagementServices"); services->setReadOnly(true); tabs->addTab(services, QString::fromUtf8("服务与界面")); state->services = services;
+    auto notices = new ElaPlainTextEdit(tabs); notices->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}"); notices->setObjectName("CordisManagementNotices"); notices->setReadOnly(true); tabs->addTab(notices, QString::fromUtf8("通知")); state->notices = notices;
+    auto operations = new ElaPlainTextEdit(tabs); operations->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}"); operations->setObjectName("CordisManagementOperations"); operations->setReadOnly(true); tabs->addTab(operations, QString::fromUtf8("操作记录")); state->operationsView = operations;
+    auto status = new ElaText(root); status->setTextPixelSize(14); status->setObjectName("CordisManagementStatus"); status->setTextFormat(Qt::PlainText); status->setWordWrap(true); layout->addWidget(status); state->status = status;
     auto timer = new QTimer(root); timer->setInterval(250); state->timer = timer;
     std::weak_ptr<ManagementControl> weak = state;
     QObject::connect(timer, &QTimer::timeout, root, [weak] { if (auto owner = weak.lock()) owner->refreshFromSignal(); });
     QObject::connect(refresh, &QPushButton::clicked, root, [weak] { if (auto owner = weak.lock()) owner->refreshFromSignal(); });
-    QObject::connect(table, &QTableWidget::itemSelectionChanged, root, [weak] { if (auto owner = weak.lock()) owner->renderSelection(); });
+    QObject::connect(table->selectionModel(), &QItemSelectionModel::selectionChanged, root, [weak] { if (auto owner = weak.lock()) owner->renderSelection(); });
     QObject::connect(stop, &QPushButton::clicked, root, [weak] { if (auto owner = weak.lock()) {
         auto result = owner->request(owner->selected(), ManagementAction::Stop);
         if (!result.hasValue() && owner->open) owner->status->setText(errorText(result.error()));
