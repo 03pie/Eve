@@ -6,6 +6,7 @@
 #include "services_p.hpp"
 #include "management_p.hpp"
 #include "fixed_tabs_p.hpp"
+#include "workbench_p.hpp"
 #include <ElaApplication.h>
 #include <ElaActionCommander.h>
 #include <ElaWindow.h>
@@ -23,12 +24,11 @@
 #include <QTreeView>
 #include <QPersistentModelIndex>
 #include <ElaListView.h>
-#include <ElaTreeView.h>
 #include <ElaToolButton.h>
 #include <ElaTabBar.h>
 #include <ElaPlainTextEdit.h>
-#include <QStandardItemModel>
 #include <QSignalBlocker>
+#include <QScopedValueRollback>
 #include <QKeySequence>
 #include <ElaText.h>
 #include <QItemSelectionModel>
@@ -74,7 +74,6 @@ struct PageControl : std::enable_shared_from_this<PageControl> {
     std::unique_ptr<QObject> detached;
     std::optional<qt::QObjectResource> resource;
     std::optional<EffectToken> effect;
-    QStandardItem* explorerItem = nullptr;
     QString navigationKey;
     QPersistentModelIndex navigationIndex;
     bool navigation = false;
@@ -95,10 +94,10 @@ struct PageControl : std::enable_shared_from_this<PageControl> {
 };
 /** @brief 一个实例代次的分类仅包含它自己的页面。 */
 struct Group {
-    QStandardItem* explorerItem = nullptr;
     QString nodeKey;
     QPersistentModelIndex index;
     std::size_t pages = 0;
+    QString target;
 };
 /** @brief 原生关闭事件必须先交宿主异步停止流程，不直接退出事件循环。 */
 class HostWindow final : public ElaWindow {
@@ -122,15 +121,16 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
     std::optional<qt::QObjectResource> windowResource;
     QPointer<ElaNavigationBar> navigation;
     QPointer<QTreeView> navigationView;
-    QPointer<ElaTreeView> explorer;
-    QStandardItemModel* explorerModel = nullptr;
     QPointer<HostPageTabs> tabs;
     QPointer<QStackedWidget> stack;
     QPointer<QWidget> safePage;
     QPointer<QWidget> managementPage;
+    std::shared_ptr<WorkbenchControl> workbench;
     QString safeKey;
     QString managementKey;
     QString commandsKey;
+    QString settingsKey;
+    QString aboutKey;
     std::map<QString, std::weak_ptr<PageControl>> rows;
     std::map<Key, std::shared_ptr<PageControl>> pages;
     std::map<Key, Group> groups;
@@ -142,6 +142,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
     bool failed = false;
     bool closeRequested = false;
     bool servicesClosed = false;
+    bool rememberPluginSelection = true;
     bool managementClosed = false;
     std::size_t navigationAccesses = 0;
     std::size_t waiting = 0;
@@ -157,25 +158,44 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
     /** @brief 原生导航和页签共享稳定 key，反向同步选择不再次派发导航。 */
     void syncSelection(const QString& key)
     {
-        QSignalBlocker blocked(tabs);
-        for (int i = 0; i < tabs->count(); ++i) {
-            if (tabs->tabData(i).toString() != key) continue;
-            tabs->setCurrentIndex(i);
-            break;
+        if (!open || !stack || !stack->currentWidget() || stack->currentWidget()->property("ElaPageKey").toString() != key) return;
+        auto found = rows.find(key);
+        if (rememberPluginSelection && found != rows.end()) {
+            if (auto page = found->second.lock(); page && !page->spec.category.empty()) {
+                auto group = groups.find(page->group());
+                if (group != groups.end()) {
+                    group->second.target = key;
+                    navigation->setExpanderNavigationTarget(group->second.nodeKey, key);
+                }
+            }
         }
+        selectWorkbenchPage(workbench, key, rememberPluginSelection);
+    }
+    /** @brief 关闭最后一个视图后只显示空画布，页面对象仍由各自 effect 保留。 */
+    void selectEmpty()
+    {
+        if (!open || !window) return;
+        NavigationAccess access(*this);
+        window->showEmptyWorkbench();
+        if (open && stack->currentWidget()->objectName() == "ElaEmptyWorkbench") selectWorkbenchEmpty(workbench);
+    }
+    /** @brief 菜单、搜索与历史只接收当前外壳的键，插件页继续校验代次。 */
+    Result<void> selectKey(const QString& key, bool rememberPlugin = true)
+    {
+        if (!open || !window) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closing"));
+        QScopedValueRollback<bool> remember(rememberPluginSelection, rememberPlugin);
         auto found = rows.find(key);
         if (found != rows.end()) {
-            if (auto page = found->second.lock()) {
-                if (page->explorerItem) explorer->setCurrentIndex(page->explorerItem->index());
-            }
-            return;
+            auto page = found->second.lock();
+            if (page) return navigate(page);
         }
-        for (int i = 0; i < explorerModel->rowCount(); ++i) {
-            auto item = explorerModel->item(i);
-            if (item->data(Qt::UserRole).toString() != key) continue;
-            explorer->setCurrentIndex(item->index());
-            break;
-        }
+        if (key != safeKey && key != managementKey && key != settingsKey && key != aboutKey)
+            return Result<void>::failure(makeError(ErrorCode::StaleContext, "page is no longer registered"));
+        NavigationAccess access(*this);
+        navigation->navigation(key, false);
+        if (!open) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closed during navigation"));
+        syncSelection(key);
+        return Result<void>::success();
     }
     /** @brief 永久管理页的程序入口和导航信号共用关闭屏障，重入关门后不再改变选择。 */
     Result<void> selectManagement()
@@ -186,14 +206,6 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
         syncSelection(managementKey);
         if (!open) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closed during management navigation"));
         return Result<void>::success();
-    }
-    /** @brief 永久安全页不属于插件，其生命周期覆盖所有贡献。 */
-    void selectSafe()
-    {
-        if (navigation) {
-            navigation->navigation(safeKey, false);
-            syncSelection(safeKey);
-        }
     }
     /** @brief 鼠标导航与 PageHandle 使用同一业务门禁，禁止旧代通过界面重新进入。 */
     Result<void> navigate(std::shared_ptr<PageControl> page)
@@ -206,7 +218,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
         navigation->navigation(page->navigationKey, false);
         syncSelection(page->navigationKey);
         if (!open) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closed during navigation"));
-        if (page->navigationIndex.isValid()) navigationView->setCurrentIndex(page->navigationIndex);
+        if (stack->currentWidget() == page->widget && page->navigationIndex.isValid()) navigationView->setCurrentIndex(page->navigationIndex);
         return Result<void>::success();
     }
     /** @brief 将窗口关闭请求隔离在 Qt 边界；宿主可通过 close() 重试/读取结果。 */
@@ -255,6 +267,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
         open = false;
         closing = true;
         starting = true;
+        closeWorkbench(workbench);
         auto self = shared_from_this();
         cordis::detail::TaskAccess::observe(closeManagement(management), [self](Task<void>::Snapshot result) {
             if (result->hasValue()) self->managementClosed = true;
@@ -362,17 +375,24 @@ Task<void> PageControl::retire()
         return closed.task();
     }
     if (navigation) {
-        if (state->stack->currentWidget() == widget) state->selectSafe();
+        if (!state->open && state->stack->currentWidget() == widget) state->window->showEmptyWorkbench();
         state->rows.erase(navigationKey);
-        if (explorerItem) {
-            state->explorerModel->removeRow(explorerItem->row(), explorerItem->parent() ? explorerItem->parent()->index() : QModelIndex{});
-            explorerItem = nullptr;
-        }
+        removeWorkbenchPage(state->workbench, navigationKey);
         {
             QSignalBlocker blocked(state->tabs);
             for (int i = 0; i < state->tabs->count(); ++i) if (state->tabs->tabData(i).toString() == navigationKey) { state->tabs->removeTab(i); break; }
         }
         state->window->removeNavigationNode(navigationKey);
+        auto category = state->groups.find(group());
+        if (category != state->groups.end() && category->second.target == navigationKey) {
+            category->second.target.clear();
+            for (const auto& entry : state->pages) {
+                const auto& candidate = entry.second;
+                if (candidate.get() == this || candidate->group() != group() || candidate->revoked || candidate->retiring || !candidate->navigation) continue;
+                category->second.target = candidate->navigationKey; break;
+            }
+            state->navigation->setExpanderNavigationTarget(category->second.nodeKey, category->second.target);
+        }
         navigationKey.clear();
         navigationIndex = {};
         navigation = false;
@@ -380,7 +400,6 @@ Task<void> PageControl::retire()
     }
     auto category = state->groups.find(group());
     if (!spec.category.empty() && category != state->groups.end() && category->second.pages == 0) {
-        state->explorerModel->removeRow(category->second.explorerItem->row());
         state->window->removeNavigationNode(category->second.nodeKey);
         state->groups.erase(category);
     }
@@ -436,23 +455,17 @@ Result<PageHandle> UiPagesService::add(const Context& owner, PageSpec spec) cons
         if (!allowed.hasValue()) return failedTask(allowed.error());
         if (!state->open) return failedTask(makeError(ErrorCode::ContextClosing, "shell closed during page creation"));
         QString categoryKey;
-        QStandardItem* explorerParent = state->explorerModel->invisibleRootItem();
         QModelIndex parentIndex;
         if (!page->spec.category.empty()) {
             auto group = state->groups.find(page->group());
             if (group == state->groups.end()) {
-                auto added = state->window->addExpanderNode(QString::fromStdString(page->spec.category), categoryKey, ElaIconType::FolderOpen);
+                auto added = state->window->addExpanderNode(QString::fromStdString(page->spec.title), categoryKey, ElaIconType::PuzzlePiece);
                 if (added != ElaNavigationType::Success) return failedTask(makeError(ErrorCode::InvalidArgument, "Ela category registration failed"));
                 auto model = state->navigationView->model();
                 parentIndex = model->index(model->rowCount() - 1, 0);
-                auto explorerGroup = new QStandardItem(QString::fromStdString(page->spec.category));
-                state->explorerModel->appendRow(explorerGroup);
-                state->groups.emplace(page->group(), detail::Group{explorerGroup, categoryKey, parentIndex, 0});
-                explorerParent = explorerGroup;
-                state->explorer->setExpanded(explorerGroup->index(), true);
+                state->groups.emplace(page->group(), detail::Group{categoryKey, parentIndex, 0, {}});
                 state->window->expandNavigationNode(categoryKey);
             } else {
-                explorerParent = group->second.explorerItem;
                 categoryKey = group->second.nodeKey;
                 parentIndex = group->second.index;
             }
@@ -464,15 +477,17 @@ Result<PageHandle> UiPagesService::add(const Context& owner, PageSpec spec) cons
         page->navigationKey = page->widget->property("ElaPageKey").toString();
         auto model = state->navigationView->model();
         page->navigationIndex = model->index(model->rowCount(parentIndex) - 1, 0, parentIndex);
-        page->explorerItem = new QStandardItem(title);
-        page->explorerItem->setData(page->navigationKey, Qt::UserRole);
-        explorerParent->appendRow(page->explorerItem);
-        const int tab = state->tabs->addTab(title);
-        state->tabs->setTabData(tab, page->navigationKey);
         state->rows.emplace(page->navigationKey, page);
         page->navigation = true;
         page->detached.release();
-        if (!categoryKey.isEmpty()) ++state->groups.at(page->group()).pages;
+        if (!categoryKey.isEmpty()) {
+            auto& group = state->groups.at(page->group());
+            if (++group.pages == 1) {
+                group.target = page->navigationKey;
+                state->navigation->setExpanderNavigationTarget(categoryKey, page->navigationKey);
+            }
+        }
+        detail::registerWorkbenchPage(state->workbench, page->navigationKey, title, QString::fromStdString(page->spec.category), QString::number(page->owner.instance.value()));
         return completedTask();
     }, "ui.page:" + page->spec.id);
     if (!effect.hasValue()) { page->finish(); state->pages.erase(page->key()); return Result<PageHandle>::failure(effect.error()); }
@@ -549,29 +564,13 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler)
     control_->navigation = window->findChild<ElaNavigationBar*>();
     control_->navigationView = window->findChild<QTreeView*>("ElaNavigationView");
     if (!control_->navigation || !control_->navigationView) throw std::runtime_error("pinned Ela navigation unavailable");
-    auto safe = new QWidget;
-    auto layout = new QVBoxLayout(safe);
-    auto title = new ElaText(QString::fromUtf8("Cordis 插件平台"), 24, safe);
-    title->setIsBold(true);
-    layout->addWidget(title);
-    layout->addWidget(new ElaText(QString::fromUtf8("从左侧导航打开插件页面。关闭窗口会先等待插件清理完成。"), 14, safe));
-    layout->addStretch();
+    control_->navigation->setIsRouteHistoryEnabled(false);
+    auto safe = detail::createWelcomePage();
     window->addPageNode(QString::fromUtf8("概览"), safe, ElaIconType::House);
     control_->safePage = safe;
     control_->safeKey = safe->property("ElaPageKey").toString();
     control_->stack = qobject_cast<QStackedWidget*>(safe->parentWidget());
     if (!control_->stack) throw std::runtime_error("pinned Ela page stack unavailable");
-    auto sideBar = new QWidget;
-    sideBar->setObjectName("CordisWorkbenchSidebar"); sideBar->setMinimumWidth(160);
-    auto sideLayout = new QVBoxLayout(sideBar);
-    sideLayout->addWidget(new ElaText(QString::fromUtf8("资源管理器"), 14, sideBar));
-    auto explorer = new ElaTreeView(sideBar);
-    explorer->setObjectName("CordisResourceExplorer");
-    explorer->setStyleSheet("ElaTreeView{background-color:transparent;border:0;}");
-    explorer->setEditTriggers(QAbstractItemView::NoEditTriggers); explorer->setHeaderHidden(true); explorer->setItemHeight(32);
-    control_->explorer = explorer;
-    control_->explorerModel = new QStandardItemModel(explorer); explorer->setModel(control_->explorerModel);
-    sideLayout->addWidget(explorer, 1);
     auto panel = new detail::FixedDiagnosticsTabs(nullptr);
     panel->setObjectName("CordisWorkbenchPanel"); panel->setMinimumHeight(110);
     auto commandList = new ElaListView(panel);
@@ -587,17 +586,14 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler)
     auto headerLayout = new QHBoxLayout(header); headerLayout->setContentsMargins(0, 0, 0, 0);
     control_->tabs = new detail::HostPageTabs(header); control_->tabs->setObjectName("CordisPageTabs");
     headerLayout->addWidget(control_->tabs, 1);
-    auto toggleSidebar = new ElaToolButton(header);
-    toggleSidebar->setObjectName("CordisToggleSidebar"); toggleSidebar->setText(QString::fromUtf8("侧栏"));
-    toggleSidebar->setToolButtonStyle(Qt::ToolButtonTextOnly); toggleSidebar->setShortcut(QKeySequence("Ctrl+B"));
-    toggleSidebar->setToolTip(QString::fromUtf8("切换资源管理器（Ctrl+B）"));
     auto togglePanel = new ElaToolButton(header);
     togglePanel->setObjectName("CordisTogglePanel"); togglePanel->setText(QString::fromUtf8("面板"));
     togglePanel->setToolButtonStyle(Qt::ToolButtonTextOnly); togglePanel->setShortcut(QKeySequence("Ctrl+J"));
     togglePanel->setToolTip(QString::fromUtf8("切换命令与输出（Ctrl+J）"));
-    headerLayout->addWidget(toggleSidebar); headerLayout->addWidget(togglePanel);
+    headerLayout->addWidget(togglePanel);
     window->setCentralCustomWidget(header);
-    window->setWorkbenchWidgets(sideBar, panel);
+    window->setWorkbenchWidgets(nullptr, panel);
+    panel->hide();
     auto statusBar = new ElaStatusBar(window.get());
     auto notification = new ElaText(QString::fromUtf8("就绪"), 14, statusBar);
     notification->setObjectName("CordisNotification");
@@ -613,17 +609,74 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler)
     window->addPageNode(QString::fromUtf8("插件管理"), control_->managementPage, ElaIconType::TableList);
     control_->managementKey = control_->managementPage->property("ElaPageKey").toString();
     window->addFooterNode(QString::fromUtf8("命令与输出"), control_->commandsKey, 0, ElaIconType::Terminal);
-    for (const auto& entry : {std::make_pair(QString::fromUtf8("概览"), control_->safeKey), std::make_pair(QString::fromUtf8("插件管理"), control_->managementKey)}) {
-        int tab = control_->tabs->addTab(entry.first); control_->tabs->setTabData(tab, entry.second);
-        auto item = new QStandardItem(entry.first); item->setData(entry.second, Qt::UserRole); control_->explorerModel->appendRow(item);
-    }
     management_ = std::shared_ptr<ManagementController>(new ManagementController(control_->management));
     diagnostics_ = std::shared_ptr<DiagnosticsService>(new DiagnosticsService(control_->management));
     ElaActionCommander::getInstance()->setIsMessageDisplayEnable(false);
     std::weak_ptr<detail::ShellControl> weak = control_;
-    QObject::connect(toggleSidebar, &ElaToolButton::clicked, window.get(), [sideBar] { sideBar->setVisible(sideBar->isHidden()); });
+    std::weak_ptr<DiagnosticsService> weakDiagnostics = diagnostics_;
+    control_->workbench = detail::createWorkbench(window.get(), control_->tabs, panel, output, togglePanel,
+        control_->safeKey, control_->managementKey, {
+            [weak](const QString& key, bool remember) {
+                auto state = weak.lock();
+                return state ? state->selectKey(key, remember) : Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell expired"));
+            },
+            [weak] {
+                if (auto state = weak.lock(); state && state->open) {
+                    detail::ShellControl::NavigationAccess access(*state);
+                    detail::refreshManagement(state->management);
+                }
+              },
+              [weak] { if (auto state = weak.lock()) state->selectEmpty(); },
+              [weak, weakDiagnostics] {
+                  std::vector<detail::HomePlugin> plugins;
+                  auto state = weak.lock(); auto diagnostics = weakDiagnostics.lock();
+                  if (!state || !state->open || !diagnostics) return plugins;
+                  auto snapshot = diagnostics->snapshot();
+                  if (!snapshot.hasValue()) return plugins;
+                  for (const auto& row : snapshot.value().instances) {
+                      QString status;
+                      switch (row.instance.state) {
+                      case InstanceState::Active: status = QString::fromUtf8("运行中"); break;
+                      case InstanceState::Pending: status = QString::fromUtf8("等待依赖"); break;
+                      case InstanceState::Loading: status = QString::fromUtf8("启动中"); break;
+                      case InstanceState::Unloading: status = QString::fromUtf8("清理中"); break;
+                      case InstanceState::Failed: status = QString::fromUtf8("失败"); break;
+                      case InstanceState::Disposed: status = QString::fromUtf8("已停止"); break;
+                      }
+                      detail::HomePlugin item{QString::number(row.instance.instance.value()), state->managementKey, QString::fromStdString(row.name), status,
+                          QString::fromUtf8("打开插件管理，查看此实例的依赖、状态与操作记录。")};
+                      bool selected = false;
+                      for (const auto& entry : state->pages) {
+                          const auto& page = entry.second;
+                          if (page->owner.instance != row.instance.instance || !page->navigation || page->revoked || page->retiring) continue;
+                          auto group = state->groups.find(page->group());
+                          const bool preferred = group != state->groups.end() && group->second.target == page->navigationKey;
+                          if (selected && !preferred) continue;
+                          item.target = page->navigationKey; item.title = QString::fromStdString(page->spec.title);
+                          item.description = QString::fromUtf8("打开插件界面。页签关闭后仍保留页面状态，子页可在插件内部选择。\n实例：%1").arg(row.instance.instance.value());
+                          selected = true;
+                      }
+                      plugins.push_back(std::move(item));
+                  }
+                  return plugins;
+              },
+              [weak](const std::function<void()>& action) {
+                  if (auto state = weak.lock(); state && state->open) {
+                      detail::ShellControl::NavigationAccess access(*state);
+                      action();
+                  }
+              }});
+    window->addFooterNode(QString::fromUtf8("设置"), detail::workbenchSettings(control_->workbench), control_->settingsKey, 0, ElaIconType::GearComplex);
+    window->addFooterNode(QString::fromUtf8("关于"), detail::workbenchAbout(control_->workbench), control_->aboutKey, 0, ElaIconType::CircleInfo);
+    for (const auto& entry : {std::make_pair(control_->safeKey, QString::fromUtf8("概览")),
+                             std::make_pair(control_->managementKey, QString::fromUtf8("插件管理")),
+                             std::make_pair(control_->settingsKey, QString::fromUtf8("设置")),
+                             std::make_pair(control_->aboutKey, QString::fromUtf8("关于 Cordis"))})
+        detail::registerWorkbenchPage(control_->workbench, entry.first, entry.second);
+    detail::selectWorkbenchPage(control_->workbench, control_->safeKey);
     QObject::connect(togglePanel, &ElaToolButton::clicked, window.get(), [panel] { panel->setVisible(panel->isHidden()); });
-    QObject::connect(window.get(), &ElaWindow::navigationNodeClicked, window.get(), [weak, panel](ElaNavigationType::NavigationNodeType, const QString& key) {
+    // ElaWindow 转发信号发生在堆栈切换之前；直接监听其后注册的原生信号，记录实际已切换页面。
+    QObject::connect(control_->navigation.data(), &ElaNavigationBar::navigationNodeClicked, window.get(), [weak, panel](ElaNavigationType::NavigationNodeType, const QString& key, bool) {
         if (auto state = weak.lock()) {
             detail::ShellControl::NavigationAccess access(*state);
             if (key == state->commandsKey) panel->setVisible(panel->isHidden());
@@ -635,14 +688,6 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler)
             if (!state->open || index < 0) return;
             detail::ShellControl::NavigationAccess access(*state);
             state->navigation->navigation(state->tabs->tabData(index).toString(), false);
-        }
-    });
-    QObject::connect(explorer, &QTreeView::clicked, window.get(), [weak](const QModelIndex& index) {
-        if (auto state = weak.lock()) {
-            const auto key = index.data(Qt::UserRole).toString();
-            if (!state->open || key.isEmpty()) return;
-            detail::ShellControl::NavigationAccess access(*state);
-            state->navigation->navigation(key, false);
         }
     });
     control_->navigation->setNavigationGuard([weak](const QString& key) {

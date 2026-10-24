@@ -51,8 +51,10 @@ public:
 
     void setCentralCustomWidget(QWidget* customWidget);
     QWidget* getCentralCustomWidget() const;
-    /** @brief 一次性接入工作台侧栏和底部面板；窗口接管 parent，原生页面路由保持不变。 */
+    /** @brief 一次性接入底部面板与可选侧栏（可传 nullptr）；窗口接管 parent，原生页面路由保持不变。 */
     void setWorkbenchWidgets(QWidget* sideBar, QWidget* panel);
+    /** @brief 显示不占导航节点的空工作区；已有页面和工厂保持原有生命周期。 */
+    void showEmptyWorkbench();
 
     void setCustomMenu(QMenu* customMenu);
     QMenu* getCustomMenu() const;

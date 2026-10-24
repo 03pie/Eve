@@ -76,6 +76,11 @@ void ElaNavigationBarPrivate::onTreeViewClicked(const QModelIndex& index, bool i
         }
         if (node->getIsExpanderNode())
         {
+            const auto target = _expanderTargets.value(nodeKey);
+            if (!target.isEmpty() && _navigationModel->getNavigationNode(target)) {
+                q->navigation(target, isLogRoute, isRouteBack);
+                return;
+            }
             _expandOrCollapseExpanderNode(node, !_navigationView->isExpanded(index));
         }
         else
@@ -89,7 +94,7 @@ void ElaNavigationBarPrivate::onTreeViewClicked(const QModelIndex& index, bool i
             if (selectedNode != node)
             {
                 // 记录跳转
-                if (isLogRoute)
+                if (isLogRoute && _pIsRouteHistoryEnabled)
                 {
                     QString backPageKey;
                     if (selectedNode)
@@ -187,7 +192,7 @@ void ElaNavigationBarPrivate::onFooterViewClicked(const QModelIndex& index, bool
     if (selectedNode != node)
     {
         // 记录跳转
-        if (isLogRoute && node->getIsHasFooterPage())
+        if (isLogRoute && _pIsRouteHistoryEnabled && node->getIsHasFooterPage())
         {
             QVariantMap routeData = QVariantMap();
             QString backPageKey;
@@ -445,6 +450,10 @@ void ElaNavigationBarPrivate::_addCompactPageAction(ElaNavigationNode* node)
 /** @brief 模型删除完成后只保留仍存在的动作，分组或最后一个页面撤销时释放菜单。 */
 void ElaNavigationBarPrivate::_pruneCompactMenus()
 {
+    for (auto it = _expanderTargets.begin(); it != _expanderTargets.end();) {
+        if (!_navigationModel->getNavigationNode(it.key()) || !_navigationModel->getNavigationNode(it.value())) it = _expanderTargets.erase(it);
+        else ++it;
+    }
     for (auto it = _compactMenuMap.begin(); it != _compactMenuMap.end();)
     {
         auto menu = it.value();

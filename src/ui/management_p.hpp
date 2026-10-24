@@ -13,6 +13,8 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
     std::shared_ptr<UiPagesService> pages, std::shared_ptr<CommandService> commands, std::shared_ptr<NotificationService> notifications);
 /** @brief 仅宿主用于接入页面堆栈；关闭后返回的 QWidget 由外壳完整删除。 */
 QWidget* managementWidget(const std::shared_ptr<ManagementControl>& control);
+/** @brief 工作台菜单刷新沿用管理页同一状态门禁。 */
+Result<void> refreshManagement(const std::shared_ptr<ManagementControl>& control);
 /** @brief 同步关门、停止刷新，晚到结果只更新值账目，不再操作窗口。 */
 Task<void> closeManagement(const std::shared_ptr<ManagementControl>& control);
 } // namespace cordis::ui::detail

@@ -4,6 +4,7 @@
 #include "ElaPropertyMacro.h"
 #include <QAction>
 #include <QObject>
+#include <QPointer>
 #include <QSize>
 #include <QVariantMap>
 #include <QVector>
@@ -41,21 +42,25 @@ public:
     Q_SLOT void onThemeModeChanged(ElaThemeType::ThemeMode themeMode);
     Q_SLOT void onSearchEditTextEdit(const QString& searchText);
     Q_SLOT void onSearchViewClicked(const QModelIndex& index);
+    /** @brief 先停止动画和清空展示模型，再撤销建议对象。 */
+    void resetSearch();
 
 private:
     ElaThemeType::ThemeMode _themeMode;
     QAction* _lightSearchAction{nullptr};
     QAction* _darkSearchAction{nullptr};
     QVector<ElaSuggestion*> _suggestionVector;
-    ElaSuggestBoxSearchViewContainer* _searchViewBaseWidget{nullptr};
+    QPointer<ElaSuggestBoxSearchViewContainer> _searchViewBaseWidget;
     ElaLineEdit* _searchEdit{nullptr};
     ElaSuggestModel* _searchModel{nullptr};
-    ElaBaseListView* _searchView{nullptr};
+    QPointer<ElaBaseListView> _searchView;
     ElaSuggestDelegate* _searchDelegate{nullptr};
     QVBoxLayout* _shadowLayout{nullptr};
     QSize _lastSize;
     bool _isExpandAnimationFinished{true};
     bool _isCloseAnimationFinished{true};
+    bool _resetting{false};
+    quint64 _suggestionVersion{0};
     void _startSizeAnimation(QSize oldSize, QSize newSize);
     void _startExpandAnimation();
     void _startCloseAnimation();

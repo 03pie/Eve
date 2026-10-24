@@ -21,6 +21,7 @@
 #include <QResizeEvent>
 #include <QScreen>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QStyleOption>
 #include <QToolBar>
 #include <QtMath>
@@ -216,7 +217,7 @@ QWidget* ElaWindow::getCentralCustomWidget() const
 void ElaWindow::setWorkbenchWidgets(QWidget* sideBar, QWidget* panel)
 {
     Q_D(ElaWindow);
-    if (!sideBar || !panel || findChild<QWidget*>("ElaWorkbenchContainer")) return;
+    if (!panel || findChild<QWidget*>("ElaWorkbenchContainer")) return;
     auto horizontal = new QSplitter(Qt::Horizontal, this);
     horizontal->setObjectName("ElaWorkbenchContainer");
     horizontal->setChildrenCollapsible(false);
@@ -224,14 +225,27 @@ void ElaWindow::setWorkbenchWidgets(QWidget* sideBar, QWidget* panel)
     vertical->setObjectName("ElaWorkbenchPanelSplitter");
     vertical->setChildrenCollapsible(false);
     d->_centerLayout->removeWidget(d->_navigationCenterStackedWidget);
-    horizontal->addWidget(sideBar);
+    if (sideBar) horizontal->addWidget(sideBar);
     horizontal->addWidget(vertical);
     vertical->addWidget(d->_navigationCenterStackedWidget);
     vertical->addWidget(panel);
-    horizontal->setStretchFactor(0, 0); horizontal->setStretchFactor(1, 1);
+    horizontal->setStretchFactor(0, sideBar ? 0 : 1);
+    if (sideBar) horizontal->setStretchFactor(1, 1);
     vertical->setStretchFactor(0, 1); vertical->setStretchFactor(1, 0);
     horizontal->setSizes({220, 900}); vertical->setSizes({520, 160});
     d->_centerLayout->addWidget(horizontal, 1);
+}
+
+void ElaWindow::showEmptyWorkbench()
+{
+    Q_D(ElaWindow);
+    auto stack = d->_navigationCenterStackedWidget->getContainerStackedWidget();
+    auto empty = stack->findChild<QWidget*>("ElaEmptyWorkbench", Qt::FindDirectChildrenOnly);
+    if (!empty) { empty = new QWidget(stack); empty->setObjectName("ElaEmptyWorkbench"); stack->addWidget(empty); }
+    d->_navigationTargetIndex = -1;
+    d->_navigationCenterStackedWidget->setLastTargetIndex(-1);
+    d->_navigationBar->clearNavigationSelection();
+    stack->setCurrentWidget(empty);
 }
 
 void ElaWindow::setCustomMenu(QMenu* customMenu)

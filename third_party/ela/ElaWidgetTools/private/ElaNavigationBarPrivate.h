@@ -31,6 +31,7 @@ class ElaNavigationBarPrivate : public QObject
     ELA_PIMPL_D(ElaNavigationBar)
     ELA_PROPERTY_D(bool, IsTransparent)
     ELA_PROPERTY_D(bool, IsAllowPageOpenInNewWindow)
+    ELA_PROPERTY_D(bool, IsRouteHistoryEnabled)
     ELA_PROPERTY_D(int, NavigationBarWidth)
     ELA_PROPERTY(int, NavigationViewWidth);
     ELA_PROPERTY(int, UserButtonSpacing);
@@ -56,6 +57,7 @@ private:
     QMap<QString, const QMetaObject*> _pageMetaMap;
     QMap<QString, int> _pageNewWindowCountMap;
     QMap<QString, ElaMenu*> _compactMenuMap;
+    QMap<QString, QString> _expanderTargets;
     QVBoxLayout* _userCardLayout{nullptr};
     QVBoxLayout* _userButtonLayout{nullptr};
 

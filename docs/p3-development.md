@@ -312,7 +312,7 @@ Q3b2 完成的是管理功能与生命周期基线，本轮补齐 Ela 组件和�
 | CTest | 覆盖 |
 |---|---|
 | p3.management_theme | 实际 Ela 组件、明暗颜色/合成背景、选择和 epoch 保持，固定标签不能拖出 |
-| p3.management_workbench | 中央页签/资源树同步、面板隐藏恢复、纯文本输出和撤页后的模型同步删除 |
+| p3.management_workbench | 中央页签按需打开与同步、面板隐藏恢复、纯文本输出和撤页后的页签同步删除 |
 | p3.ela_demo_dark | 深色状态检查、截图及完整退出；原 p3.ela_demo 检查浅色 |
 | p3.ui_pages_deferred_removal | 十二轮导航后立即停止并删除页面，窗口存活时经过原生延迟滚动触发 |
 | p3.ui_pages_native_modes | 原生模式切换、页面归属及直接调用原生导航不能绕过撤销门禁 |
@@ -517,6 +517,48 @@ Q4d1/Q4d2 本次一并审查提交。真实 Kernel、watcher、后台 I/O、管�
 发现通用 Store 接受与基线不一致的 Unchanged 回执，可能误推进保存修订并清除 dirty。新增 p3.store_unchanged_protocol，修复前真实失败，见 build/review-q4d-before.log；修复后要求完整版本及原文均与基线一致。非法回执停止后续保存、保留原历史与 dirty，关闭不能虚报成功。另统一文件大小查询错误分类、Qt 空目标错误阶段和直接包含依赖。详细范围见 [审查记录](code-review.md#p3-q4d1q4d2-提交前审核)。
 
 审查后 Ela/MSVC Debug、Release 各 243/243，无 Qt GCC Debug、Release 各 158/158；Loader ASan 56/56，其中 17 项 Store 场景。日志为 build/review-q4d-ela-msvc-<mode>.log、build/review-q4d-core-gcc-<mode>.log、build/review-q4d-asan.log。公开头首包含、无 Qt 依赖隔离、第一方暂存格式和本地文档链接检查通过。Qt 预编译库未插桩，原有人工验收及资源保留边界保持不变。
+
+## Q3c Example 交互与插件内部布局
+
+按用户要求重新核对固定基线 aae58f5 的 ElaWidgetToolsExample/mainwindow.cpp、T_BasePage、T_Setting、T_Navigation，参考资料只读。复用 Ela 原生 MenuBar/Menu、SuggestBox、ToolButton、ScrollPage/ScrollPageArea、ComboBox、ToggleSwitch；标题栏放置菜单、前进/后退和页面搜索，中央提供可关闭/恢复的页签与欢迎/设置/关于页，底部提供命令/输出、隐藏、清空/复制输出，状态栏显示当前页。F5 刷新管理状态，Ctrl+P 搜索、方向键/回车打开、Escape 收起；Alt+←/→ 前进后退，Ctrl+W 关闭视图但保留页面状态。
+
+用户明确资源管理器属于插件页内部，因此删除全局资源树和对应重复账目。全局只保留 Ela 插件导航，Ctrl+B 展开/收起它；树/列表等内容由插件根 QWidget 拥有。笔记演示以内部 ElaTreeView 切换临时笔记及使用说明，并提供 Ela 编辑器和计数。离开笔记页时内部树一起隐藏，关闭页签后重开仍保留内容；停止 notes 才销毁页面资源。未增加新公共 SDK 或 Core 依赖。
+
+历史只记录每窗口最多 128 个稳定 key，支持前进分支截断；撤页同步裁剪历史及搜索建议。Cordis 禁用原生全局 Ela 命令记录，库默认行为保留。搜索建议增加键盘入口、撤销模型同步、QPointer 借用及动画所有权；重查取消旧收起动画，点击时先复制数据再通知，避免回调撤页/删除控件后的访问。搜索框创建时即处于根窗口下，保证建议弹层不被标题栏裁剪。Shell 在原生堆栈切换后同步最终选择，重入导航不覆盖最终历史。
+
+新增 7 项 workbench 场景覆盖历史、页签状态、搜索/动态撤销、菜单/设置、窗口隔离、建议点击删除和重入导航。人工清单同步增加菜单、搜索、历史与插件内部布局项，仍为待验；工作区布局持久化、文件保存和完整 Example 控件展示馆不在本次范围。验证证据见本节后续记录。
+
+本轮 Ela/MSVC Debug、Release 各 250/250，全 UI 标签 52 项 ASan 检查通过；新增测试及工作台、搜索模型/动画等修改单元均使用 ASan 插桩，Qt 预编译库未插桩。日志为 build/p3-example-workbench-ela-msvc-debug.log、build/p3-example-workbench-ela-msvc-release.log、build/p3-example-workbench-asan.log。已查看管理页和插件内部布局的浅/深色 offscreen 截图：各构建 bin/ela-smoke[-dark].png、ela-notes-smoke[-dark].png。原生 Windows 缩放、鼠标/键盘和主题体验仍按 [人工清单](../tests/acceptance/p3-ui.md) 验收，本轮未提交。
+
+### 多行卡片高度修复
+
+人工反馈欢迎、设置等页面出现文字被压扁和按钮重叠。原因是 ElaScrollPageArea 构造时 setFixedHeight(75)，官方 Example 将其用于单行设置项，而本轮页面把标题、说明和多个控件放入同一张卡片。第一方卡片解除固定高度，以布局的最小尺寸和换行高度确定大小；内容布局明确最小尺寸约束，窗口较小时使用滚动条。笔记插件的内容/使用说明卡片一并修复，保留组件原有主题及通用库默认值。
+
+新增 p3.workbench_layout 和 layout_hidpi：使用真实中文字体检查欢迎/设置/关于的明暗主题、1200×800、1000×520、1880×900 窗口及 150% 缩放。逐项验证控件高度足以显示文字、控件位于卡片内、超出视口时存在滚动范围；明暗截图已查看。修复前回归实际失败于控件高度断言，见 build/ui-card-before.log。设置预览见 build/ela-msvc-debug/bin/CordisSettingsPage-light-100.png，高缩放图片后缀为 150。本次不代替原生桌面人工验收。
+
+原 Release 曾因演示进程占用 DLL 报 LNK1104，临时使用独立目录验证。随后按用户要求回到原目录，以 ela-msvc-release 预设完成重新编译及验证。临时 build/ui-card-release 的递归删除被自动审批拒绝（工具仅返回 blocked by policy），目录仍保留，待手动清理。
+
+修复后原目录 Debug/Release 均 252/252，通过包含 54 项 UI 回归的完整检查；新增两项覆盖布局及 150% 缩放。本次只调整第一方布局，不重复将既有 ASan 结果计为新验证。日志为 build/ui-card-ela-msvc-debug.log、build/ui-card-ela-msvc-release.log，定向布局记录为 build/ui-card-layout.log。Release 启动文件仍为 build/ela-msvc-release/bin/cordis_ela_demo.exe。
+
+### 插件直达、空工作区与 Home 卡片中心
+
+根据进一步交互要求，左侧分组由稳定键默认目标直接打开插件页签，右键保留子页菜单。默认目标随用户主动选择更新，关闭页签时自动回落到其他已打开页不会覆盖该选择；默认页撤销后换成同组现存页。分组标题取首个页面标题，图标使用插件图标；原生展开/紧凑模式和 epoch 门禁保持。未配置默认目标的 Ela 调用方继续原有展开/菜单行为。
+
+注册页面不再提前创建页签，只在访问时打开。概览、管理、设置、关于和插件页签全部允许关闭；关闭视图仍保留对象、工厂和插件状态。最后一个页签关闭后中央显示不占导航节点的空画布，撤销未打开插件不会自动打开概览。空画布不记为伪页面，回退可以重开最近关闭的视图。新增通用空工作区入口同时清空导航选择及两处切页缓存，避免回退或重新点击同一页面时被旧缓存拦截。
+
+参考固定基线 ElaWidgetToolsExample 的 T_Home，新增 HomePage：ElaImageCard 品牌背景、快捷入口、ElaFlowLayout 流式 ElaPopularCard 与悬浮详情。背景由原生 Qt 绘制，不引入研究目录资源或新增图片下载。首页按插件实例聚合卡片，合并只读管理快照和贡献目录；有界面插件打开最近主动选择的页面，无界面/待依赖/失败/已停止实例进入管理页。演示默认打开 Home，四个实例均有状态卡片，内容由贡献/诊断自动更新，插件无须获得宿主窗口。
+
+动态卡片清理同时修正 ElaPopularCard 浮层所有权、动画 parent 和点击返回后的存活检查；浮层点击重入删除卡片也受保护。新增 workbench_empty、activation、cards 覆盖全页签关闭、空画布回退/重开、单击直达、右键子页、默认目标撤销、卡片聚合/最近目标、悬浮中停止插件以及卡片/浮层点击中删除。既有布局测试继续覆盖 Home 的宽窄窗口、主题及 150% 缩放。
+
+原目录 Ela/MSVC Debug/Release 各 255/255，57 项 UI ASan 检查通过；新首页及卡片/浮层等修改单元使用 ASan，预编译 Qt 未插桩。日志为 build/home-ela-msvc-debug.log、build/home-ela-msvc-release.log、build/home-asan.log。已核对各构建 bin/ela-home-smoke.png、ela-home-smoke-dark.png 及 ela-empty-workbench.png；演示截图同时断言四个插件卡片均已登记。原生桌面人工项仍待执行，改动未提交；Release 沿用 build/ela-msvc-release/bin/cordis_ela_demo.exe。
+
+按后续偏好，底部命令/输出工作区启动时默认收起；面板按钮、终端入口、Ctrl+J 和 Ctrl+Shift+P 继续可用，通知记录照常保留。设置页开关按面板真实显隐状态初始化，管理/菜单既有回归断言同步调整。原目录 Debug/Release 的 57 项 UI 检查各自通过，日志为 build/panel-default-debug.log、build/panel-default-release.log。
+
+### 工作台与 Home 提交前审查
+
+2026-10-25 审查并修复四项问题：首页刷新信号重入关闭后的控件访问、关闭页签时相邻目标失效、查询文本规范化/模型复位重入导致结果过时、卡片迁移后旧浮层区域失效。新增四项回归，前三项修复前 0/3 通过，首页刷新有 ASan 异常证据；第四项复现失效区域仍被返回。规范整理包括直接 include、语句/缩进、平面模型父索引契约及避免无变化的卡片布局/属性更新。详情见 [审核记录](code-review.md#p3-ela-工作台与-home-提交前审核)。
+
+原目录 Ela/MSVC Debug/Release 各 259/259，无 Qt GCC Debug/Release 各 158/158，UI ASan 61/61 通过；日志为 build/review-workbench-ela-msvc-<mode>.log、build/review-workbench-core-gcc-<mode>.log、build/review-workbench-asan.log。本次将此前工作台/Home/布局/面板默认收起改动与审查修复一并提交；人工验收和后续 Loader/Store 装配状态保持不变。
 
 ## 后续工作
 

@@ -1,12 +1,14 @@
 # 开发进度
 
-最后更新：2026-10-24（北京时间）。当前工作区：`D:/01_C++/Eve`。
+最后更新：2026-10-25（北京时间）。当前工作区：`D:/01_C++/Eve`。
 
 本文件是项目进度的统一入口，记录实际状态；设计细节见说明书，任务完成条件见工作单，测试依据见验收规范和验证报告。代码行数、文档篇幅和测试数量不作为项目完成百分比。
 
 ## 当前状态
 
 **W0–W7 首阶段工作单已完成。P3 Q3c 工作台、Q4a/Q4b 配置校验及 Q4c1 协调协议已提交。Q4d1 文件事务及 Q4d2 Store 已通过提交前审查：Ela/MSVC Debug/Release 各 243/243，无 Qt GCC 各 158/158，56 项 Loader ASan 检查通过。Q3c 原生桌面人工验收待办；Q4c2 Kernel 运行树按此前置条件接入，后续推进 Q4d3 watcher。**
+
+本轮补齐 Ela 菜单、搜索、前进后退和 Home 插件卡片中心，资源树归插件内部。左侧单击直达页面，所有页签可关闭，零页签为空工作区，底部面板默认收起；多行卡片高度已修复。提交前审查另修复刷新关闭重入、失效页签回落、查询重入和浮层区域生命周期四项问题。原目录 Ela/MSVC Debug/Release 各 259/259，无 Qt GCC 各 158/158，UI ASan 61/61 通过；人工验收仍待办，见 [审核记录](code-review.md#p3-ela-工作台与-home-提交前审核)。
 
 Qt 5.15.2 Core/Widgets/Test 已就绪，路径与当前 MSVC 组合见 [P3 记录](p3-development.md)。QtScheduler、Timer/QObject、贡献服务及基础管理页已通过真实循环/offscreen 测试，配置文本/schema、文件事务和 Store 已有独立验证；后台 I/O、connection/worker/watcher、真实配置执行/管理页保存/模块管理、完整子树、原生桌面交互及跨 ABI 仍待验收。
 
@@ -86,6 +88,10 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | P3 Q3b1 提交前审查、注册/Qt 初始化重入及错误展示 | 2026-10-24 | Ela/MSVC Debug/Release 各 164/164；无 Qt GCC Debug/Release 各 115/115；24 项 UI 场景 ASan 通过；三个公共头独立包含通过 | [审核记录](code-review.md#p3-q3b1-提交前审核)、[Q3b1 审查记录](p3-development.md#q3b1-提交前审查) |
 | P3 Q3b2 基础管理页、只读诊断与受控操作 | 2026-10-24 | Ela/MSVC Debug/Release 各 178/178；无 Qt GCC Debug/Release 各 117/117；36 项 UI 场景 ASan 通过；三个公共头独立包含通过 | [Q3b2 记录](p3-development.md#q3b2-基础管理页)、[ADR-0008](adr/0008-management-diagnostics.md) |
 | P3 Q3c Ela 基础库、原生导航与工作台 | 2026-10-24 | 审查后 Ela/MSVC Debug/Release 各 187/187；GCC Debug/Release 各 117/117；45 项 UI 场景 ASan 通过；浅/深色 offscreen 图像已查看 | [Q3c 记录](p3-development.md#q3c-ela-组件原生导航与工作台)、[ADR-0010](adr/0010-maintained-ela-navigation.md)、[审查](code-review.md#p3-q3c-提交前审核) |
+| P3 Q3c Example 交互与插件内部布局 | 2026-10-24 | Ela/MSVC Debug/Release 各 250/250，52 项 UI ASan 通过；取消全局资源树，树归插件内部；人工验收待办 | [本轮记录](p3-development.md#q3c-example-交互与插件内部布局)、[ADR-0010](adr/0010-maintained-ela-navigation.md) |
+| P3 Q3c 多行卡片高度修复 | 2026-10-24 | Debug/Release 各 252/252，含 54 项 UI 检查；欢迎/设置/关于明暗及 150% 缩放布局回归通过，笔记卡片同修 | [修复记录](p3-development.md#多行卡片高度修复) |
+| P3 Q3c 插件直达、空工作区与 Home | 2026-10-24 | 原目录 Debug/Release 各 255/255，57 项 UI ASan 通过；所有页签可关闭，零页签空白，插件卡片/悬浮详情和默认目标动态同步 | [交付记录](p3-development.md)、[ADR-0010](adr/0010-maintained-ela-navigation.md) |
+| P3 工作台/Home 提交前审查 | 2026-10-25 | 原目录 Ela Debug/Release 各 259/259，GCC 各 158/158；61 项 UI ASan，通过四项缺陷回归与格式/公开头检查 | [审查记录](code-review.md#p3-ela-工作台与-home-提交前审核) |
 | P3 Q4a 配置结构候选与差异预览 | 2026-10-24 | Ela/MSVC Debug/Release 各 194/194；GCC Debug/Release 各 124/124；7 项 Loader 场景 ASan 通过，含子树、预算和规范化 | [Q4a 记录](p3-development.md#q4a-配置结构候选与差异预览)、[ADR-0011](adr/0011-configuration-preview.md) |
 | P3 Q4b 受限 YAML / 内置定义与文件预览 | 2026-10-24 | Ela/MSVC Debug/Release 各 204/204；GCC Debug/Release 各 134/134；17 项 Loader 场景 ASan 通过，C/C++ 解析实现均插桩 | [Q4b 记录](p3-development.md#q4b-受限-yaml-与内置定义校验)、[ADR-0012](adr/0012-restricted-yaml-validation.md) |
 | P3 Q4c1 目标接受与串行协调基础 | 2026-10-24 | Ela/MSVC Debug/Release 各 214/214；GCC Debug/Release 各 144/144；27 项 Loader 场景 ASan 通过，其中协调协议 10 项 | [Q4c1 记录](p3-development.md#q4c1-目标接受与串行协调基础)、[ADR-0013](adr/0013-configuration-coordinator.md) |

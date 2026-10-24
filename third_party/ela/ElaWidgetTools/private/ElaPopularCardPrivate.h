@@ -4,6 +4,7 @@
 #include "ElaPropertyMacro.h"
 #include <QObject>
 #include <QPixmap>
+#include <QPointer>
 
 #include "ElaWidgetToolsDef.h"
 class ElaPopularCard;
@@ -19,7 +20,6 @@ class ElaPopularCardPrivate : public QObject
     ELA_PROPERTY_D(QString, InteractiveTips)
     ELA_PROPERTY_D(QString, DetailedText)
     ELA_PROPERTY_D(QString, CardButtonText)
-    ELA_PROPERTY_D(QWidget*, CardFloatArea)
     ELA_PROPERTY_D(QPixmap, CardFloatPixmap)
     ELA_PROPERTY(qreal, HoverYOffset);
     ELA_PROPERTY(qreal, HoverOpacity);
@@ -30,9 +30,10 @@ public:
 
 private:
     friend class ElaPopularCardFloater;
+    QPointer<QWidget> _pCardFloatArea;
     ElaThemeType::ThemeMode _themeMode;
     QTimer* _floatTimer{nullptr};
-    ElaPopularCardFloater* _floater{nullptr};
+    QPointer<ElaPopularCardFloater> _floater;
     bool _isFloating{false};
     int _shadowBorderWidth{6};
     int _textHSpacing{20};

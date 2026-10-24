@@ -6,6 +6,7 @@
 #include <QPainterPath>
 #include <QPropertyAnimation>
 #include <QTimer>
+#include <QPointer>
 
 #include "ElaPopularCardFloater.h"
 #include "ElaPopularCardPrivate.h"
@@ -44,6 +45,9 @@ ElaPopularCard::ElaPopularCard(QWidget* parent)
 
 ElaPopularCard::~ElaPopularCard()
 {
+    Q_D(ElaPopularCard);
+    // 浮层属于展示区域，但不得比提供数据的卡片活得更久。
+    delete d->_floater.data();
 }
 
 void ElaPopularCard::setCardButtonText(const QString& cardButtonText)
@@ -54,7 +58,7 @@ void ElaPopularCard::setCardButtonText(const QString& cardButtonText)
         return;
     }
     d->_pCardButtonText = cardButtonText;
-    d->_floater->_overButton->setText(d->_pCardButtonText);
+    if (d->_floater) d->_floater->_overButton->setText(d->_pCardButtonText);
     Q_EMIT pCardButtonTextChanged();
 }
 
@@ -72,14 +76,19 @@ void ElaPopularCard::setCardFloatArea(QWidget* floatArea)
         return;
     }
     d->_pCardFloatArea = floatArea;
-    d->_floater->setParent(floatArea);
+    if (d->_floater) d->_floater->setParent(floatArea);
+    else {
+        d->_isFloating = false;
+        d->_floater = new ElaPopularCardFloater(this, d, floatArea);
+        if (!d->_pCardButtonText.isEmpty()) d->_floater->_overButton->setText(d->_pCardButtonText);
+    }
     Q_EMIT pCardFloatAreaChanged();
 }
 
 QWidget* ElaPopularCard::getCardFloatArea() const
 {
     Q_D(const ElaPopularCard);
-    return d->_pCardFloatArea;
+    return d->_pCardFloatArea.data();
 }
 
 bool ElaPopularCard::event(QEvent* event)
@@ -90,7 +99,7 @@ bool ElaPopularCard::event(QEvent* event)
     case QEvent::Enter:
     {
         d->_floatTimer->start(450);
-        QPropertyAnimation* hoverAnimation = new QPropertyAnimation(d, "pHoverYOffset");
+        QPropertyAnimation* hoverAnimation = new QPropertyAnimation(d, "pHoverYOffset", this);
         connect(hoverAnimation, &QPropertyAnimation::valueChanged, this, [=]() {
             update();
         });
@@ -98,7 +107,7 @@ bool ElaPopularCard::event(QEvent* event)
         hoverAnimation->setStartValue(d->_pHoverYOffset);
         hoverAnimation->setEndValue(6);
         hoverAnimation->start(QAbstractAnimation::DeleteWhenStopped);
-        QPropertyAnimation* opacityAnimation = new QPropertyAnimation(d, "pHoverOpacity");
+        QPropertyAnimation* opacityAnimation = new QPropertyAnimation(d, "pHoverOpacity", this);
         opacityAnimation->setDuration(130);
         opacityAnimation->setStartValue(d->_pHoverOpacity);
         opacityAnimation->setEndValue(1);
@@ -108,7 +117,7 @@ bool ElaPopularCard::event(QEvent* event)
     case QEvent::Leave:
     {
         d->_floatTimer->stop();
-        QPropertyAnimation* hoverAnimation = new QPropertyAnimation(d, "pHoverYOffset");
+        QPropertyAnimation* hoverAnimation = new QPropertyAnimation(d, "pHoverYOffset", this);
         connect(hoverAnimation, &QPropertyAnimation::valueChanged, this, [=]() {
             update();
         });
@@ -116,7 +125,7 @@ bool ElaPopularCard::event(QEvent* event)
         hoverAnimation->setStartValue(d->_pHoverYOffset);
         hoverAnimation->setEndValue(0);
         hoverAnimation->start(QAbstractAnimation::DeleteWhenStopped);
-        QPropertyAnimation* opacityAnimation = new QPropertyAnimation(d, "pHoverOpacity");
+        QPropertyAnimation* opacityAnimation = new QPropertyAnimation(d, "pHoverOpacity", this);
         opacityAnimation->setDuration(130);
         opacityAnimation->setStartValue(d->_pHoverOpacity);
         opacityAnimation->setEndValue(0);
@@ -125,7 +134,9 @@ bool ElaPopularCard::event(QEvent* event)
     }
     case QEvent::MouseButtonRelease:
     {
+        QPointer<ElaPopularCard> alive(this);
         Q_EMIT popularCardClicked();
+        if (!alive) return true;
         break;
     }
     default:
@@ -140,7 +151,7 @@ void ElaPopularCard::paintEvent(QPaintEvent* event)
 {
     Q_D(ElaPopularCard);
     int fontPixelSize = eApp->getFontPixelSize();
-    if (d->_isFloating)
+    if (d->_isFloating && d->_floater)
     {
         return;
     }
@@ -171,13 +182,14 @@ void ElaPopularCard::paintEvent(QPaintEvent* event)
 
     //文字绘制
     //计算按钮最终矩形
-    int buttonTargetWidth = d->_floater->_overButton->fontMetrics().horizontalAdvance(d->_floater->_overButton->text()) + 40;
+    const auto buttonText = d->_pCardButtonText.isEmpty() ? QString::fromUtf8("获取") : d->_pCardButtonText;
+    int buttonTargetWidth = (d->_floater ? d->_floater->_overButton->fontMetrics() : fontMetrics()).horizontalAdvance(buttonText) + 40;
     if (buttonTargetWidth > width() * 0.25)
     {
         buttonTargetWidth = width() * 0.25;
     }
     //处理ElaPushButton的阴影偏移
-    d->_buttonTargetRect = QRect(QPoint(width() + 2 * d->_floater->_floatGeometryOffset - d->_shadowBorderWidth + 3 - foregroundRect.height() * 0.15 - buttonTargetWidth, foregroundRect.height() * 0.15 - 3), QSize(buttonTargetWidth, 36));
+    d->_buttonTargetRect = QRect(QPoint(width() + 2 * ElaPopularCardFloater::_floatGeometryOffset - d->_shadowBorderWidth + 3 - foregroundRect.height() * 0.15 - buttonTargetWidth, foregroundRect.height() * 0.15 - 3), QSize(buttonTargetWidth, 36));
 
     // Title
     painter.setPen(ElaThemeColor(d->_themeMode, BasicText));
@@ -186,7 +198,7 @@ void ElaPopularCard::paintEvent(QPaintEvent* event)
     font.setPixelSize(fontPixelSize + 2);
     painter.setFont(font);
     int titleHeight = painter.fontMetrics().height();
-    QRectF titleRect(pixRect.right() + d->_textHSpacing, pixRect.y(), d->_floater->_floatGeometryOffset * 2 + foregroundRect.width() - pixRect.width() - d->_textHSpacing * 2 - foregroundRect.height() * 0.15 - buttonTargetWidth, titleHeight);
+    QRectF titleRect(pixRect.right() + d->_textHSpacing, pixRect.y(), ElaPopularCardFloater::_floatGeometryOffset * 2 + foregroundRect.width() - pixRect.width() - d->_textHSpacing * 2 - foregroundRect.height() * 0.15 - buttonTargetWidth, titleHeight);
     QString titleText = painter.fontMetrics().elidedText(d->_pTitle, Qt::ElideRight, titleRect.width());
     painter.drawText(titleRect, Qt::AlignLeft | Qt::AlignTop | Qt::TextSingleLine, titleText);
 
@@ -195,7 +207,7 @@ void ElaPopularCard::paintEvent(QPaintEvent* event)
     font.setPixelSize(fontPixelSize);
     painter.setFont(font);
     int subTitleHeight = painter.fontMetrics().height();
-    QRectF subTitleRect(pixRect.right() + d->_textHSpacing, titleRect.bottom() + d->_textVSpacing, d->_floater->_floatGeometryOffset * 2 + foregroundRect.width() - pixRect.width() - d->_textHSpacing * 2 - foregroundRect.height() * 0.15 - buttonTargetWidth,
+    QRectF subTitleRect(pixRect.right() + d->_textHSpacing, titleRect.bottom() + d->_textVSpacing, ElaPopularCardFloater::_floatGeometryOffset * 2 + foregroundRect.width() - pixRect.width() - d->_textHSpacing * 2 - foregroundRect.height() * 0.15 - buttonTargetWidth,
                         subTitleHeight);
     QString subTitleText = painter.fontMetrics().elidedText(d->_pSubTitle, Qt::ElideRight, subTitleRect.width());
     painter.drawText(subTitleRect, Qt::AlignLeft | Qt::AlignTop | Qt::TextSingleLine, subTitleText);

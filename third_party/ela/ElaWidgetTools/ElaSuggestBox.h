@@ -19,6 +19,10 @@ public:
     explicit ElaSuggestBox(QWidget* parent = nullptr);
     ~ElaSuggestBox() override;
     void setPlaceholderText(const QString& placeholderText);
+    /** @brief 程序更新搜索文本时同步刷新建议，清空文本立即收起旧结果。 */
+    void setSearchText(const QString& text);
+    QString getSearchText() const;
+    void focusSearch();
     void setFixedSize(const QSize& size);
     void setFixedSize(int w, int h);
     void setFixedHeight(int h);
@@ -43,6 +47,8 @@ public:
     void clearSuggestion();
 Q_SIGNALS:
     Q_SIGNAL void suggestionClicked(const ElaSuggestBox::SuggestData& suggestData);
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
 };
 
 #endif // ELAWORKSPACE_ELAWIDGETTOOLS_ELASUGGESTBOX_H_

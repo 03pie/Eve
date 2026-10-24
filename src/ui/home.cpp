@@ -1,0 +1,188 @@
+/** @file home.cpp
+ * @brief 以 Ela 原生背景卡、流式应用卡片和悬浮详情展示真实插件。
+ */
+#include "home_p.hpp"
+#include <ElaFlowLayout.h>
+#include <ElaIcon.h>
+#include <ElaImageCard.h>
+#include <ElaPopularCard.h>
+#include <ElaPushButton.h>
+#include <ElaText.h>
+#include <QHBoxLayout>
+#include <QImage>
+#include <QLinearGradient>
+#include <QPainter>
+#include <QPen>
+#include <QPixmap>
+#include <QSet>
+#include <QVBoxLayout>
+#include <QVariant>
+#include <utility>
+
+namespace cordis::ui::detail {
+namespace {
+/** @brief 品牌背景使用原生绘制，缩放时保持清晰，不依赖演示仓库的大体积图片。 */
+QImage banner()
+{
+    QImage image(1600, 380, QImage::Format_ARGB32_Premultiplied);
+    QPainter painter(&image);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QLinearGradient gradient(0, 0, 1600, 380);
+    gradient.setColorAt(0, QColor("#102644"));
+    gradient.setColorAt(.48, QColor("#234c82"));
+    gradient.setColorAt(1, QColor("#6652a3"));
+    painter.fillRect(image.rect(), gradient);
+    for (int i = 0; i < 7; ++i) {
+        painter.setPen(QPen(QColor(190, 221, 255, 35), 2));
+        painter.drawEllipse(QPointF(1330, 130), 100 + i * 60, 100 + i * 60);
+    }
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(99, 223, 246, 70));
+    painter.drawEllipse(QPointF(1150, 190), 100, 100);
+    painter.setBrush(QColor(211, 190, 255, 65));
+    painter.drawRoundedRect(QRectF(1330, 195, 160, 160), 32, 32);
+    return image;
+}
+/** @brief 实例标识决定卡片配色，使用 Ela 图标，不借用插件提供的图像对象。 */
+QPixmap pluginIcon(const QString& id)
+{
+    const QColor colors[]{QColor("#3476cb"), QColor("#7c5cc4"), QColor("#168c96"), QColor("#c17b38")};
+    auto color = colors[qHash(id) % 4];
+    QPixmap pixmap(96, 96);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(color);
+    painter.drawRoundedRect(pixmap.rect(), 20, 20);
+    painter.drawPixmap(24, 24,
+                       ElaIcon::getInstance()->getElaIcon(ElaIconType::PuzzlePiece, 42, Qt::white).pixmap(48, 48));
+    return pixmap;
+}
+} // namespace
+
+HomePage::HomePage()
+{
+    setObjectName("CordisWelcomePage");
+    setWindowTitle(QString::fromUtf8("Cordis 插件工作台"));
+    setTitleVisible(false);
+    setContentsMargins(12, 8, 12, 8);
+    auto content = new QWidget;
+    content->setWindowTitle(windowTitle());
+    auto layout = new QVBoxLayout(content);
+    layout->setContentsMargins(8, 8, 8, 20);
+    layout->setSpacing(18);
+    layout->setSizeConstraint(QLayout::SetMinimumSize);
+    auto hero = new ElaImageCard(content);
+    hero->setObjectName("CordisHomeBanner");
+    hero->setCardImage(banner());
+    hero->setBorderRadius(14);
+    hero->setFixedHeight(260);
+    auto body = new QVBoxLayout(hero);
+    body->setContentsMargins(30, 24, 30, 24);
+    body->setSpacing(12);
+    auto eyebrow = new ElaText("CORDIS  /  PLUGIN WORKBENCH", 13, hero);
+    auto title = new ElaText(QString::fromUtf8("把灵感，连接成工作台。"), 32, hero);
+    title->setIsBold(true);
+    auto subtitle = new ElaText(QString::fromUtf8("你的插件、工具与创作空间，从这里出发。"), 15, hero);
+    for (auto text : {eyebrow, title, subtitle}) {
+        text->setStyleSheet("color:white;background:transparent;");
+        body->addWidget(text);
+    }
+    body->addStretch();
+    auto actions = new QHBoxLayout;
+    actions->setSpacing(10);
+    for (const auto& entry :
+         {std::make_pair("CordisWelcomePlugins", "管理插件"), std::make_pair("CordisWelcomeSettings", "个性化设置"),
+          std::make_pair("CordisWelcomeCommands", "打开命令")}) {
+        auto button = new ElaPushButton(QString::fromUtf8(entry.second), hero);
+        button->setObjectName(QString::fromLatin1(entry.first));
+        button->setMinimumHeight(34);
+        actions->addWidget(button);
+    }
+    actions->addStretch();
+    body->addLayout(actions);
+    layout->addWidget(hero);
+    auto heading = new QHBoxLayout;
+    auto label = new ElaText(QString::fromUtf8("发现你的插件"), 22, content);
+    label->setIsBold(true);
+    heading->addWidget(label);
+    heading->addStretch();
+    count_ = new ElaText(QString::fromUtf8("0 个插件"), 13, content);
+    heading->addWidget(count_);
+    layout->addLayout(heading);
+    auto help = new ElaText(QString::fromUtf8("点击卡片即可打开 · 悬停查看详情 · 关闭页签会保留插件状态"), 13, content);
+    layout->addWidget(help);
+    cards_ = new QWidget(content);
+    cards_->setObjectName("CordisPluginCards");
+    flow_ = new ElaFlowLayout(cards_, 0, 12, 12);
+    flow_->setIsAnimation(false);
+    layout->addWidget(cards_);
+    empty_ = new ElaText(QString::fromUtf8("插件就绪后会显示在这里，也可以先到插件管理中查看。"), 14, content);
+    layout->addWidget(empty_);
+    layout->addStretch();
+    addCentralWidget(content);
+}
+
+void HomePage::setPlugins(const std::vector<HomePlugin>& plugins, std::function<void(const QString&)> open)
+{
+    open_ = std::move(open);
+    bool layoutChanged = false;
+    QSet<QString> retained;
+    for (const auto& plugin : plugins) {
+        retained.insert(plugin.id);
+        auto item = items_.value(plugin.id);
+        if (!item) {
+            layoutChanged = true;
+            item = new ElaPopularCard(cards_);
+            item->setObjectName("CordisPluginCard");
+            item->setProperty("CordisPluginId", plugin.id);
+            item->setCardPixmap(pluginIcon(plugin.id));
+            item->setCardFloatArea(this);
+            flow_->addWidget(item);
+            items_.insert(plugin.id, item);
+            item->setInteractiveTips(QString::fromUtf8("打开"));
+            item->setCardButtonText(QString::fromUtf8("打开"));
+            auto activate = [this, item] {
+                if (!item || !item->isEnabled() || !open_)
+                    return;
+                const auto key = item->property("CordisPageKey").toString();
+                auto open = open_;
+                open(key);
+            };
+            connect(item, &ElaPopularCard::popularCardClicked, this, activate);
+            connect(item, &ElaPopularCard::popularCardButtonClicked, this, activate);
+        }
+        if (item->getTitle() != plugin.title)
+            item->setTitle(plugin.title);
+        if (item->getSubTitle() != plugin.subtitle)
+            item->setSubTitle(plugin.subtitle);
+        if (item->getDetailedText() != plugin.description)
+            item->setDetailedText(plugin.description);
+        item->setProperty("CordisPageKey", plugin.target);
+        item->setEnabled(!plugin.target.isEmpty());
+        item->setToolTip(plugin.title.toHtmlEscaped() + "<br>" + plugin.subtitle.toHtmlEscaped());
+    }
+    for (auto it = items_.begin(); it != items_.end();) {
+        if (retained.contains(it.key())) {
+            ++it;
+            continue;
+        }
+        auto item = it.value();
+        it = items_.erase(it);
+        layoutChanged = true;
+        if (item) {
+            item->setEnabled(false);
+            item->hide();
+            flow_->removeWidget(item);
+            item->deleteLater();
+        }
+    }
+    count_->setText(QString::fromUtf8("%1 个插件").arg(plugins.size()));
+    empty_->setVisible(plugins.empty());
+    if (layoutChanged) {
+        flow_->invalidate();
+        cards_->updateGeometry();
+    }
+}
+} // namespace cordis::ui::detail

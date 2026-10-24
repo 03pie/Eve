@@ -462,6 +462,8 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
 }
 /** @brief 页面所有权始终属于外壳的 Qt 对象树。 */
 QWidget* managementWidget(const std::shared_ptr<ManagementControl>& control) { return control->widget; }
+/** @brief 保留调用控制块，管理视图访问屏障处理信号重入。 */
+Result<void> refreshManagement(const std::shared_ptr<ManagementControl>& control) { return control->refresh(); }
 /** @brief 管理操作结果只持宿主记录；关闭等待当前 UI 写入栈返回，不取消已进入的内核操作。 */
 Task<void> closeManagement(const std::shared_ptr<ManagementControl>& control)
 {

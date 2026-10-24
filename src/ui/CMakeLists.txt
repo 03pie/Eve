@@ -1,5 +1,5 @@
 include("${PROJECT_SOURCE_DIR}/cmake/Ela.cmake")
-add_library(cordis_ui STATIC pages.cpp services.cpp management.cpp)
+add_library(cordis_ui STATIC pages.cpp services.cpp management.cpp workbench.cpp home.cpp)
 add_library(Cordis::Ui ALIAS cordis_ui)
 target_link_libraries(cordis_ui PUBLIC Cordis::Qt Qt5::Widgets PRIVATE Ela::WidgetTools)
 cordis_target_defaults(cordis_ui)

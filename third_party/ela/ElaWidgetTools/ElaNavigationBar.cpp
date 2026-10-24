@@ -23,15 +23,39 @@
 #include <QPropertyAnimation>
 #include <QResizeEvent>
 #include <QScroller>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 ELA_PROPERTY_Q_CPP(ElaNavigationBar, bool, IsTransparent)
 ELA_PROPERTY_Q_CPP(ElaNavigationBar, bool, IsAllowPageOpenInNewWindow)
+ELA_PROPERTY_Q_CPP(ElaNavigationBar, bool, IsRouteHistoryEnabled)
+void ElaNavigationBar::setExpanderNavigationTarget(const QString& groupKey, const QString& pageKey)
+{
+    Q_D(ElaNavigationBar);
+    if (pageKey.isEmpty()) d->_expanderTargets.remove(groupKey);
+    else d->_expanderTargets.insert(groupKey, pageKey);
+}
+
+void ElaNavigationBar::clearNavigationSelection()
+{
+    Q_D(ElaNavigationBar);
+    QSignalBlocker mainBlocked(d->_navigationView->selectionModel());
+    QSignalBlocker footerBlocked(d->_footerView->selectionModel());
+    d->_navigationModel->setSelectedNode(nullptr);
+    d->_navigationModel->setSelectedExpandedNode(nullptr);
+    d->_footerModel->setSelectedNode(nullptr);
+    d->_navigationView->selectionModel()->clear();
+    d->_footerView->selectionModel()->clear();
+    d->_navigationView->viewport()->update();
+    d->_footerView->viewport()->update();
+}
+
 ElaNavigationBar::ElaNavigationBar(QWidget* parent)
     : QWidget{parent}, d_ptr(new ElaNavigationBarPrivate())
 {
     Q_D(ElaNavigationBar);
     d->q_ptr = this;
     d->_pIsAllowPageOpenInNewWindow = true;
+    d->_pIsRouteHistoryEnabled = true;
     d->_pNavigationBarWidth = 300;
     setFixedWidth(300);
     d->_pIsTransparent = true;

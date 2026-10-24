@@ -4,12 +4,24 @@
 #include <cordis/ui/ela_shell.hpp>
 #include <cordis/kernel.hpp>
 #include <QApplication>
+#include <QAction>
 #include <QFontDatabase>
 #include <ElaText.h>
 #include <ElaPushButton.h>
+#include <ElaPlainTextEdit.h>
+#include <ElaPopularCard.h>
+#include <ElaScrollPage.h>
+#include <ElaScrollPageArea.h>
 #include <ElaTheme.h>
+#include <ElaTreeView.h>
+#include <QHBoxLayout>
+#include <QItemSelectionModel>
+#include <QSplitter>
+#include <QStackedWidget>
+#include <QStandardItemModel>
 #include <QPushButton>
 #include <QPixmap>
+#include <QPointer>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -24,6 +36,61 @@
 namespace {
 using namespace cordis;
 using namespace cordis::ui;
+/** @brief 资源树属于笔记插件的根 QWidget，只切换插件内部内容，不参与宿主导航。 */
+std::unique_ptr<QWidget> createNotesPage()
+{
+    auto root = std::make_unique<QWidget>();
+    auto rootLayout = new QHBoxLayout(root.get()); rootLayout->setContentsMargins(0, 0, 0, 0);
+    auto splitter = new QSplitter(Qt::Horizontal, root.get()); rootLayout->addWidget(splitter);
+    auto sidebar = new QWidget(splitter); sidebar->setMinimumWidth(150);
+    sidebar->setObjectName("CordisDemoNotesSidebar");
+    auto sidebarLayout = new QVBoxLayout(sidebar);
+    sidebarLayout->addWidget(new ElaText(QString::fromUtf8("笔记资源"), 14, sidebar));
+    auto tree = new ElaTreeView(sidebar); tree->setObjectName("CordisDemoNotesTree");
+    tree->setHeaderHidden(true); tree->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    tree->setItemHeight(32); tree->setStyleSheet("ElaTreeView{background-color:transparent;border:0;}");
+    auto model = new QStandardItemModel(tree); tree->setModel(model);
+    for (const auto& title : {"临时笔记", "使用说明"}) model->appendRow(new QStandardItem(QString::fromUtf8(title)));
+    sidebarLayout->addWidget(tree, 1);
+    auto stack = new QStackedWidget(splitter);
+    auto notes = new ElaScrollPage(stack); notes->setWindowTitle(QString::fromUtf8("临时笔记"));
+    auto content = new QWidget; content->setWindowTitle(notes->windowTitle()); auto layout = new QVBoxLayout(content);
+    layout->setSizeConstraint(QLayout::SetMinimumSize);
+    auto area = new ElaScrollPageArea(content); auto body = new QVBoxLayout(area);
+    area->setMinimumHeight(0); area->setMaximumHeight(QWIDGETSIZE_MAX);
+    area->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    body->setContentsMargins(20, 16, 20, 16);
+    auto label = new ElaText(QString::fromUtf8("切换页面或关闭页签会保留本次运行的内容。停止插件后清空。"), area);
+    label->setWordWrap(true); label->setTextPixelSize(14); label->setTextFormat(Qt::PlainText);
+    auto button = new ElaPushButton(QString::fromUtf8("点击计数：0"), area);
+    auto count = std::make_shared<int>(0);
+    QObject::connect(button, &QPushButton::clicked, root.get(), [button, count] {
+        button->setText(QString::fromUtf8("点击计数：%1").arg(++*count));
+    });
+    body->addWidget(label); body->addWidget(button); layout->addWidget(area);
+    auto editor = new ElaPlainTextEdit(content); editor->setObjectName("CordisDemoNotes");
+    editor->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}");
+    editor->setPlaceholderText(QString::fromUtf8("在这里输入临时笔记……"));
+    editor->setMinimumHeight(180); layout->addWidget(editor); layout->addStretch();
+    notes->addCentralWidget(content); stack->addWidget(notes);
+    auto guide = new ElaScrollPage(stack); guide->setWindowTitle(QString::fromUtf8("使用说明"));
+    auto guideContent = new QWidget; guideContent->setWindowTitle(guide->windowTitle()); auto guideLayout = new QVBoxLayout(guideContent);
+    guideLayout->setSizeConstraint(QLayout::SetMinimumSize);
+    auto guideArea = new ElaScrollPageArea(guideContent); auto guideBody = new QVBoxLayout(guideArea);
+    guideArea->setMinimumHeight(0); guideArea->setMaximumHeight(QWIDGETSIZE_MAX);
+    guideArea->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    guideBody->setContentsMargins(20, 16, 20, 16);
+    auto text = new ElaText(QString::fromUtf8("左侧笔记资源树属于此插件；全局活动栏只负责打开插件页面。\n\n顶部前进/后退切换宿主页面，不改变笔记内部选择。\n\n底部“显示笔记提醒”命令会打开插件并写入通知与输出。\n\n当前笔记仅保存在内存中，尚未接入文件保存。"), guideArea);
+    text->setWordWrap(true); text->setTextFormat(Qt::PlainText); text->setTextPixelSize(14);
+    guideBody->addWidget(text); guideLayout->addWidget(guideArea); guideLayout->addStretch();
+    guide->addCentralWidget(guideContent); stack->addWidget(guide);
+    QObject::connect(tree->selectionModel(), &QItemSelectionModel::currentChanged, root.get(), [stack](const QModelIndex& index) {
+        if (index.isValid()) stack->setCurrentIndex(index.row());
+    });
+    tree->setCurrentIndex(model->index(0, 0));
+    splitter->setStretchFactor(0, 0); splitter->setStretchFactor(1, 1); splitter->setSizes({190, 800});
+    return root;
+}
 /** @brief 演示状态由 main 与正在执行的 continuation 持有，运行时定义仅借用弱引用。 */
 struct Application : std::enable_shared_from_this<Application> {
     std::shared_ptr<qt::QtScheduler> scheduler = std::make_shared<qt::QtScheduler>();
@@ -78,21 +145,7 @@ struct Application : std::enable_shared_from_this<Application> {
             if (!self) return failedTask(makeError(ErrorCode::StaleContext, "demo expired"));
             auto service = context.consume<UiPagesService>({"ui.pages"}).value();
             auto call = service.withService([&](UiPagesService& pages) {
-                auto added = pages.add(context, {"notes", "笔记示例", "内置插件", [] {
-                    auto widget = std::make_unique<QWidget>();
-                    auto layout = new QVBoxLayout(widget.get());
-                    auto label = new ElaText(QString::fromUtf8("此页面由内置插件通过 ui.pages/v1 创建。"), widget.get());
-                    label->setWordWrap(true);
-                    label->setTextPixelSize(14);
-                    label->setTextFormat(Qt::PlainText);
-                    auto button = new ElaPushButton(QString::fromUtf8("点击计数：0"), widget.get());
-                    auto count = std::make_shared<int>(0);
-                    QObject::connect(button, &QPushButton::clicked, widget.get(), [button, count] {
-                        button->setText(QString::fromUtf8("点击计数：%1").arg(++*count));
-                    });
-                    layout->addWidget(label); layout->addWidget(button); layout->addStretch();
-                    return widget;
-                }});
+                auto added = pages.add(context, {"notes", "笔记示例", "内置插件", createNotesPage});
                 if (!added.hasValue()) throw std::runtime_error(added.error().message);
                 self->page.emplace(added.value());
             });
@@ -131,8 +184,8 @@ struct Application : std::enable_shared_from_this<Application> {
         shell.show().value();
         auto self = shared_from_this();
         notes->ready().thenOn(scheduler, [self, smoke](const Result<void>& result) {
-            if (!result.hasValue() || !self->page->navigate().hasValue()) { self->fail("page activation failed"); return; }
-            if (!smoke) { self->shell.management()->refresh().value(); self->shell.showManagement().value(); }
+            if (!result.hasValue()) { self->fail("page activation failed"); return; }
+            if (!smoke) { self->shell.management()->refresh().value(); return; }
             if (smoke) self->command->execute().thenOn(self->scheduler, [self](const Result<void>& invoked) {
                 if (!invoked.hasValue() || self->shell.notifications()->snapshot().value().empty()) { self->fail("command notification failed"); return; }
                 self->shell.management()->refresh().value();
@@ -150,7 +203,21 @@ struct Application : std::enable_shared_from_this<Application> {
         }
         for (auto window : QApplication::topLevelWidgets()) if (window->windowTitle() == QString::fromUtf8("Cordis 插件平台")) {
             if (!window->grab().save(QCoreApplication::applicationDirPath() + (eTheme->getThemeMode() == ElaThemeType::Dark ? "/ela-smoke-dark.png" : "/ela-smoke.png"))) { fail("preview capture failed"); return; }
-            window->close(); return;
+            QPointer<QWidget> guarded(window);
+            auto self = shared_from_this();
+            auto home = window->findChild<QAction*>("CordisOpenHome");
+            if (!home) { fail("home action missing"); return; }
+            home->trigger();
+            QTimer::singleShot(100, QCoreApplication::instance(), [self, guarded] {
+                if (!guarded || guarded->findChildren<ElaPopularCard*>().size() != 4) { self->fail("home plugin catalogue incomplete"); return; }
+                if (!guarded || !guarded->grab().save(QCoreApplication::applicationDirPath() + (eTheme->getThemeMode() == ElaThemeType::Dark ? "/ela-home-smoke-dark.png" : "/ela-home-smoke.png"))) { self->fail("home preview capture failed"); return; }
+                self->page->navigate().value();
+                QTimer::singleShot(350, QCoreApplication::instance(), [self, guarded] {
+                    if (!guarded || !guarded->grab().save(QCoreApplication::applicationDirPath() + (eTheme->getThemeMode() == ElaThemeType::Dark ? "/ela-notes-smoke-dark.png" : "/ela-notes-smoke.png"))) { self->fail("plugin preview capture failed"); return; }
+                    guarded->close();
+                });
+            });
+            return;
         }
         fail("Ela window missing");
     }

@@ -4,6 +4,9 @@
 #include <QDebug>
 #include <QHBoxLayout>
 #include <QLineEdit>
+#include <QKeyEvent>
+#include <QAbstractAnimation>
+#include <QPointer>
 #include <QListView>
 #include <QMap>
 #include <QPainter>
@@ -87,11 +90,18 @@ ElaSuggestBox::ElaSuggestBox(QWidget* parent)
     d->_searchViewBaseWidget->hide();
     connect(d->_searchEdit, &ElaLineEdit::textEdited, d, &ElaSuggestBoxPrivate::onSearchEditTextEdit);
     connect(d->_searchEdit, &ElaLineEdit::focusIn, d, &ElaSuggestBoxPrivate::onSearchEditTextEdit);
-    connect(d->_searchView, &ElaBaseListView::clicked, d, &ElaSuggestBoxPrivate::onSearchViewClicked);
+    connect(d->_searchView.data(), &ElaBaseListView::clicked, d, &ElaSuggestBoxPrivate::onSearchViewClicked);
+    d->_searchEdit->installEventFilter(this);
+    connect(d->_searchEdit, &QLineEdit::returnPressed, this, [this] {
+        Q_D(ElaSuggestBox);
+        if (!d->_searchView || d->_searchModel->rowCount() == 0) return;
+        auto index = d->_searchView->currentIndex();
+        d->onSearchViewClicked(index.isValid() ? index : d->_searchModel->index(0, 0));
+    });
 
     // 焦点事件
     connect(d->_searchEdit, &ElaLineEdit::wmFocusOut, this, [=]() {
-        if (!d->_searchView->underMouse())
+        if (d->_searchView && !d->_searchView->underMouse())
         {
             d->_startCloseAnimation();
         }
@@ -100,6 +110,44 @@ ElaSuggestBox::ElaSuggestBox(QWidget* parent)
 
 ElaSuggestBox::~ElaSuggestBox()
 {
+    Q_D(ElaSuggestBox);
+    for (auto animation : d->findChildren<QAbstractAnimation*>()) animation->stop();
+    delete d->_searchViewBaseWidget.data();
+}
+
+void ElaSuggestBox::setSearchText(const QString& text)
+{
+    Q_D(ElaSuggestBox);
+    QPointer<ElaSuggestBox> alive(this);
+    d->_searchEdit->setText(text);
+    if (alive) d->onSearchEditTextEdit(d->_searchEdit->text());
+}
+
+QString ElaSuggestBox::getSearchText() const { Q_D(const ElaSuggestBox); return d->_searchEdit->text(); }
+void ElaSuggestBox::focusSearch()
+{
+    Q_D(ElaSuggestBox);
+    QPointer<ElaSuggestBox> alive(this);
+    d->_searchEdit->setFocus(Qt::ShortcutFocusReason);
+    if (alive) d->_searchEdit->selectAll();
+}
+
+bool ElaSuggestBox::eventFilter(QObject* watched, QEvent* event)
+{
+    Q_D(ElaSuggestBox);
+    if (watched == d->_searchEdit && event->type() == QEvent::KeyPress) {
+        auto key = static_cast<QKeyEvent*>(event)->key();
+        if (key == Qt::Key_Escape) { setSearchText({}); return true; }
+        if ((key == Qt::Key_Down || key == Qt::Key_Up) && d->_searchView && d->_searchModel->rowCount() > 0) {
+            const auto index = d->_searchView->currentIndex();
+            const int count = d->_searchModel->rowCount();
+            const int next = !index.isValid() ? (key == Qt::Key_Down ? 0 : count - 1) :
+                (index.row() + (key == Qt::Key_Down ? 1 : count - 1)) % count;
+            d->_searchView->setCurrentIndex(d->_searchModel->index(next, 0));
+            return true;
+        }
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void ElaSuggestBox::setPlaceholderText(const QString& placeholderText)
@@ -136,6 +184,7 @@ QString ElaSuggestBox::addSuggestion(const QString& suggestText, const QVariantM
     suggest->setSuggestText(suggestText);
     suggest->setSuggestData(suggestData);
     d->_suggestionVector.append(suggest);
+    ++d->_suggestionVersion;
     return suggest->getSuggestKey();
 }
 
@@ -147,6 +196,7 @@ QString ElaSuggestBox::addSuggestion(ElaIconType::IconName icon, const QString& 
     suggest->setSuggestText(suggestText);
     suggest->setSuggestData(suggestData);
     d->_suggestionVector.append(suggest);
+    ++d->_suggestionVersion;
     return suggest->getSuggestKey();
 }
 
@@ -158,6 +208,7 @@ QString ElaSuggestBox::addSuggestion(const ElaSuggestBox::SuggestData& suggestDa
     suggest->setSuggestText(suggestData.getSuggestText());
     suggest->setSuggestData(suggestData.getSuggestData());
     d->_suggestionVector.append(suggest);
+    ++d->_suggestionVersion;
     return suggest->getSuggestKey();
 }
 
@@ -172,6 +223,7 @@ QStringList ElaSuggestBox::addSuggestion(const QList<ElaSuggestBox::SuggestData>
         suggest->setSuggestText(suggestData.getSuggestText());
         suggest->setSuggestData(suggestData.getSuggestData());
         d->_suggestionVector.append(suggest);
+        ++d->_suggestionVersion;
         suggestKeyList.append(suggest->getSuggestKey());
     }
     return suggestKeyList;
@@ -180,34 +232,29 @@ QStringList ElaSuggestBox::addSuggestion(const QList<ElaSuggestBox::SuggestData>
 void ElaSuggestBox::removeSuggestion(const QString& suggestKey)
 {
     Q_D(ElaSuggestBox);
-    foreach (auto suggest, d->_suggestionVector)
-    {
-        if (suggest->getSuggestKey() == suggestKey)
-        {
-            d->_suggestionVector.removeOne(suggest);
-            suggest->deleteLater();
-        }
-    }
+    for (int i = 0; i < d->_suggestionVector.size(); ++i)
+        if (d->_suggestionVector[i]->getSuggestKey() == suggestKey) { removeSuggestion(i); return; }
 }
 
 void ElaSuggestBox::removeSuggestion(int index)
 {
     Q_D(ElaSuggestBox);
-    if (index >= d->_suggestionVector.count())
+    if (index < 0 || index >= d->_suggestionVector.count())
     {
         return;
     }
-    ElaSuggestion* suggest = d->_suggestionVector[index];
-    d->_suggestionVector.removeOne(suggest);
+    ElaSuggestion* suggest = d->_suggestionVector.takeAt(index);
+    ++d->_suggestionVersion;
     suggest->deleteLater();
+    d->resetSearch();
 }
 
 void ElaSuggestBox::clearSuggestion()
 {
     Q_D(ElaSuggestBox);
-    foreach (auto suggest, d->_suggestionVector)
-    {
-        d->_suggestionVector.removeOne(suggest);
-        suggest->deleteLater();
-    }
+    auto removed = d->_suggestionVector;
+    d->_suggestionVector.clear();
+    ++d->_suggestionVersion;
+    for (auto suggest : removed) suggest->deleteLater();
+    d->resetSearch();
 }

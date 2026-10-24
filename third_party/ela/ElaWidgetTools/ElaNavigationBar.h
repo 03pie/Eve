@@ -15,11 +15,17 @@ class ELA_EXPORT ElaNavigationBar : public QWidget
     ELA_PIMPL_Q(ElaNavigationBar)
     ELA_PROPERTY_Q_H(bool, IsTransparent)
     ELA_PROPERTY_Q_H(bool, IsAllowPageOpenInNewWindow)
+    /** @brief 宿主自管窗口内历史时可关闭全局命令记录，默认保持上游行为。 */
+    ELA_PROPERTY_Q_H(bool, IsRouteHistoryEnabled)
 public:
     explicit ElaNavigationBar(QWidget* parent = nullptr);
     ~ElaNavigationBar() override;
     /** @brief 宿主在 owner 线程设置节点门禁；拒绝后不切页、不记录路由，不改变选择。 */
     void setNavigationGuard(std::function<bool(const QString&)> guard);
+    /** @brief 分组主入口可直接打开指定页面；空键恢复默认的展开/菜单行为。 */
+    void setExpanderNavigationTarget(const QString& groupKey, const QString& pageKey);
+    /** @brief 空工作区清除导航高亮，下一次点击同页仍会正常派发导航。 */
+    void clearNavigationSelection();
 
     void setNavigationBarWidth(int navigationBarWidth);
     Q_REQUIRED_RESULT int getNavigationBarWidth() const;

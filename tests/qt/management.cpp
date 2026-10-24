@@ -380,7 +380,7 @@ void theme()
     tabs->setCurrentIndex(1); CHECK(tabs->currentIndex() == 1);
     scene.close();
 }
-/** @brief 工作台页签和侧栏共享导航，面板可隐藏恢复，撤页后模型和页签同步删除。 */
+/** @brief 页面按需打开页签，面板可隐藏恢复，撤页同步删除已打开页签。 */
 void workbench()
 {
     Scenario scene;
@@ -393,21 +393,19 @@ void workbench()
     auto instance = scene.kernel->mount(runtime).value(); wait(instance.ready(), scene.scheduler);
     scene.shell.show().value(); scene.shell.showManagement().value();
     auto tabs = scene.widget<QTabBar>("CordisPageTabs");
-    auto explorer = scene.widget<QTreeView>("CordisResourceExplorer");
-    auto side = scene.widget<QWidget>("CordisWorkbenchSidebar");
     auto panel = scene.widget<QTabWidget>("CordisWorkbenchPanel");
     CHECK(scene.widget<QSplitter>("ElaWorkbenchContainer") && scene.widget<QSplitter>("ElaWorkbenchPanelSplitter"));
-    CHECK(tabs && tabs->count() == 3 && tabs->currentIndex() == 1 && explorer->model()->rowCount() == 3);
+    CHECK(tabs && tabs->count() == 2 && tabs->currentIndex() == 1);
+    page->navigate().value(); CHECK(tabs->count() == 3);
+    scene.shell.showManagement().value();
     tabs->setCurrentIndex(2); CHECK(page->snapshot().value().current);
     scene.shell.showManagement().value(); CHECK(tabs->currentIndex() == 1 && !page->snapshot().value().current);
-    CHECK(explorer->currentIndex().data(Qt::UserRole).toString() == tabs->tabData(1).toString());
-    auto toggleSide = scene.widget<QToolButton>("CordisToggleSidebar");
     auto togglePanel = scene.widget<QToolButton>("CordisTogglePanel");
-    toggleSide->click(); CHECK(side->isHidden()); toggleSide->click(); CHECK(!side->isHidden());
-    togglePanel->click(); CHECK(panel->isHidden()); togglePanel->click(); CHECK(!panel->isHidden());
+    CHECK(panel->isHidden());
+    togglePanel->click(); CHECK(!panel->isHidden()); togglePanel->click(); CHECK(panel->isHidden());
     CHECK(scene.widget<QPlainTextEdit>("CordisWorkbenchOutput")->toPlainText().contains("<b>output</b>"));
     auto closed = instance.stop(); wait(closed, scene.scheduler);
-    CHECK(tabs->count() == 2 && explorer->model()->rowCount() == 2 && !page->snapshot().value().widgetAlive);
+    CHECK(tabs->count() == 2 && !page->snapshot().value().widgetAlive);
     scene.close();
 }
 /** @brief 每个场景运行独立的真实 QApplication；offscreen 由 CTest 环境指定。 */

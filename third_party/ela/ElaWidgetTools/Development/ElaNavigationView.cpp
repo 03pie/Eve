@@ -88,6 +88,12 @@ void ElaNavigationView::navigationNodeStateChange(const QVariantMap& data)
 
 void ElaNavigationView::onCustomContextMenuRequested(const QPoint& pos)
 {
+    auto candidate = indexAt(pos);
+    if (candidate.isValid() && _pNavigationBarPrivate->_expanderTargets.contains(static_cast<ElaNavigationNode*>(candidate.internalPointer())->getNodeKey())) {
+        auto node = static_cast<ElaNavigationNode*>(candidate.internalPointer());
+        if (auto menu = _pNavigationBarPrivate->_compactMenuMap.value(node->getNodeKey())) menu->popup(mapToGlobal(pos));
+        return;
+    }
     if (!_pNavigationBarPrivate->_pIsAllowPageOpenInNewWindow)
     {
         return;

@@ -6,6 +6,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPropertyAnimation>
+#include <QPointer>
 
 #include "ElaPopularCard.h"
 #include "ElaPopularCardPrivate.h"
@@ -55,7 +56,7 @@ void ElaPopularCardFloater::showFloater()
     _pHoverOpacity = 1;
     _opacityEffect->setOpacity(1);
 
-    QPropertyAnimation* geometryAnimation = new QPropertyAnimation(this, "geometry");
+    QPropertyAnimation* geometryAnimation = new QPropertyAnimation(this, "geometry", this);
     connect(geometryAnimation, &QPropertyAnimation::valueChanged, this, [=]() {
         update();
     });
@@ -69,7 +70,7 @@ void ElaPopularCardFloater::showFloater()
     geometryAnimation->start(QAbstractAnimation::DeleteWhenStopped);
 
     //Button动画
-    QPropertyAnimation* buttonAnimation = new QPropertyAnimation(_overButton, "geometry");
+    QPropertyAnimation* buttonAnimation = new QPropertyAnimation(_overButton, "geometry", this);
     buttonAnimation->setEasingCurve(QEasingCurve::OutQuad);
     buttonAnimation->setDuration(300);
     buttonAnimation->setStartValue(_cardPrivate->_interactiveTipsBaseRect);
@@ -85,7 +86,7 @@ void ElaPopularCardFloater::hideFloater()
         return;
     }
     _isHideAnimationFinished = false;
-    QPropertyAnimation* geometryAnimation = new QPropertyAnimation(this, "geometry");
+    QPropertyAnimation* geometryAnimation = new QPropertyAnimation(this, "geometry", this);
     connect(geometryAnimation, &QPropertyAnimation::valueChanged, this, [=]() {
         QRect endGeometry = QRect(_card->mapTo(_cardPrivate->_pCardFloatArea, QPoint(0, 0)), _card->size());
         geometryAnimation->setEndValue(endGeometry);
@@ -102,14 +103,14 @@ void ElaPopularCardFloater::hideFloater()
     geometryAnimation->setEndValue(endGeometry);
     geometryAnimation->start(QAbstractAnimation::DeleteWhenStopped);
 
-    QPropertyAnimation* opacityAnimation = new QPropertyAnimation(this, "pHoverOpacity");
+    QPropertyAnimation* opacityAnimation = new QPropertyAnimation(this, "pHoverOpacity", this);
     opacityAnimation->setDuration(300);
     opacityAnimation->setStartValue(_pHoverOpacity);
     opacityAnimation->setEndValue(0);
     opacityAnimation->start(QAbstractAnimation::DeleteWhenStopped);
 
     //内容调整动画
-    QPropertyAnimation* hoverAnimation = new QPropertyAnimation(this, "pHoverYOffset");
+    QPropertyAnimation* hoverAnimation = new QPropertyAnimation(this, "pHoverYOffset", this);
     connect(hoverAnimation, &QPropertyAnimation::valueChanged, this, [=]() {
         update();
     });
@@ -119,7 +120,7 @@ void ElaPopularCardFloater::hideFloater()
     hoverAnimation->start(QAbstractAnimation::DeleteWhenStopped);
 
     //Button动画
-    QPropertyAnimation* buttonAnimation = new QPropertyAnimation(_overButton, "geometry");
+    QPropertyAnimation* buttonAnimation = new QPropertyAnimation(_overButton, "geometry", this);
     buttonAnimation->setEasingCurve(QEasingCurve::InOutSine);
     buttonAnimation->setDuration(300);
     buttonAnimation->setStartValue(_overButton->geometry());
@@ -128,7 +129,7 @@ void ElaPopularCardFloater::hideFloater()
     buttonAnimation->setEndValue(endRect);
     buttonAnimation->start(QAbstractAnimation::DeleteWhenStopped);
 
-    QPropertyAnimation* buttonOpacityAnimation = new QPropertyAnimation(_overButton->graphicsEffect(), "opacity");
+    QPropertyAnimation* buttonOpacityAnimation = new QPropertyAnimation(_overButton->graphicsEffect(), "opacity", this);
     buttonOpacityAnimation->setEasingCurve(QEasingCurve::InOutSine);
     buttonOpacityAnimation->setDuration(350);
     buttonOpacityAnimation->setStartValue(1);
@@ -147,7 +148,9 @@ bool ElaPopularCardFloater::event(QEvent* event)
     }
     case QEvent::MouseButtonRelease:
     {
+        QPointer<ElaPopularCardFloater> alive(this);
         Q_EMIT _card->popularCardClicked();
+        if (!alive) return true;
         break;
     }
     default:

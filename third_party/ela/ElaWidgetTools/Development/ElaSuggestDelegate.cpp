@@ -27,7 +27,8 @@ void ElaSuggestDelegate::paint(QPainter* painter, const QStyleOptionViewItem& op
     initStyleOption(&viewOption, index);
 
     ElaSuggestModel* model = dynamic_cast<ElaSuggestModel*>(const_cast<QAbstractItemModel*>(index.model()));
-    ElaSuggestion* suggest = model->getSearchSuggestion(index.row());
+    ElaSuggestion* suggest = model ? model->getSearchSuggestion(index.row()) : nullptr;
+    if (!suggest) return;
     if (option.state.testFlag(QStyle::State_HasFocus))
     {
         viewOption.state &= ~QStyle::State_HasFocus;

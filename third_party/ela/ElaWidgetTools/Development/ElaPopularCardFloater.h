@@ -34,7 +34,7 @@ private:
     ElaPopularCard* _card{nullptr};
     ElaPopularCardPrivate* _cardPrivate{nullptr};
     QRect _calculateTargetGeometry(QRect cardGeometry);
-    int _floatGeometryOffset{25};
+    static constexpr int _floatGeometryOffset = 25;
 };
 
 #endif // ELAWORKSPACE_ELAWIDGETTOOLS_DEVELOPERCOMPONENTS_ELAPOPULARCARDFLOATER_H_

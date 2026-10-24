@@ -29,7 +29,7 @@
 | `Cordis::ConfigFileQt` | 可选 Qt 配置文件事务，原文/hash 基线、冲突保留及临时文件提交 |
 | `Cordis::ConfigStore` / `Cordis::ConfigStoreQt` | 无 Qt 的保存状态/单写队列，以及可选真实 Qt 文件后端 |
 | `src/qt` | 可选 Cordis::Qt，包含 QtScheduler、QtClock 与 QObjectResource |
-| `src/ui` | 可选 Cordis::Ui，包含原生 Ela 导航、工作台、贡献服务和只读诊断 |
+| `src/ui` | 可选 Cordis::Ui，包含 Ela 插件卡片首页、单击直达的插件导航、菜单/搜索/前进后退、可全部关闭的中央页签、底部工作区、贡献服务和只读诊断；资源树属于具体插件页 |
 | `third_party/ela` | 项目内维护的 Ela 组件库及资源，保留上游基线、本地修改和 MIT 许可 |
 | `third_party/libyaml` | 固定 0.2.5 C 解析库和 MIT 许可，私有链接至配置文本层 |
 | `examples/builtin` | 异步 Task、Effect、EventBus 与插件联合生命周期示例 |

@@ -16,6 +16,7 @@ ElaPopularCardPrivate::~ElaPopularCardPrivate()
 
 void ElaPopularCardPrivate::_showFloater()
 {
+    if (!_floater || !_pCardFloatArea) { _floatTimer->stop(); return; }
     Q_Q(ElaPopularCard);
     q->update();
     _isFloating = true;
