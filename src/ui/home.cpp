@@ -1,23 +1,30 @@
 /** @file home.cpp
- * @brief 以 Ela 原生背景卡、流式应用卡片和悬浮详情展示真实插件。
+ * @brief 以 Ela 背景卡和紧凑状态卡展示插件，卡片不参与页面导航。
  */
 #include "home_p.hpp"
 #include <ElaFlowLayout.h>
 #include <ElaIcon.h>
 #include <ElaImageCard.h>
-#include <ElaPopularCard.h>
 #include <ElaPushButton.h>
+#include <ElaScrollPageArea.h>
 #include <ElaText.h>
+#include <ElaToggleSwitch.h>
 #include <QHBoxLayout>
 #include <QImage>
+#include <QFontMetrics>
+#include <QLayout>
 #include <QLinearGradient>
 #include <QPainter>
 #include <QPen>
 #include <QPixmap>
 #include <QSet>
+#include <QSignalBlocker>
+#include <QString>
 #include <QVBoxLayout>
 #include <QVariant>
+#include <functional>
 #include <utility>
+#include <vector>
 
 namespace cordis::ui::detail {
 namespace {
@@ -104,15 +111,21 @@ HomePage::HomePage()
     body->addLayout(actions);
     layout->addWidget(hero);
     auto heading = new QHBoxLayout;
-    auto label = new ElaText(QString::fromUtf8("发现你的插件"), 22, content);
+    auto label = new ElaText(QString::fromUtf8("插件状态"), 22, content);
     label->setIsBold(true);
     heading->addWidget(label);
     heading->addStretch();
     count_ = new ElaText(QString::fromUtf8("0 个插件"), 13, content);
     heading->addWidget(count_);
     layout->addLayout(heading);
-    auto help = new ElaText(QString::fromUtf8("点击卡片即可打开 · 悬停查看详情 · 关闭页签会保留插件状态"), 13, content);
+    auto help = new ElaText(QString::fromUtf8("查看插件当前状态，使用左右开关加载或停止插件。"), 13, content);
     layout->addWidget(help);
+    error_ = new ElaText(content);
+    error_->setObjectName("CordisHomeError");
+    error_->setTextFormat(Qt::PlainText);
+    error_->setWordWrap(true);
+    error_->hide();
+    layout->addWidget(error_);
     cards_ = new QWidget(content);
     cards_->setObjectName("CordisPluginCards");
     flow_ = new ElaFlowLayout(cards_, 0, 12, 12);
@@ -124,9 +137,10 @@ HomePage::HomePage()
     addCentralWidget(content);
 }
 
-void HomePage::setPlugins(const std::vector<HomePlugin>& plugins, std::function<void(const QString&)> open)
+void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
+                          std::function<Result<void>(const QString&, bool)> power)
 {
-    open_ = std::move(open);
+    power_ = std::move(power);
     bool layoutChanged = false;
     QSet<QString> retained;
     for (const auto& plugin : plugins) {
@@ -134,33 +148,90 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins, std::function<
         auto item = items_.value(plugin.id);
         if (!item) {
             layoutChanged = true;
-            item = new ElaPopularCard(cards_);
+            item = new ElaScrollPageArea(cards_);
             item->setObjectName("CordisPluginCard");
             item->setProperty("CordisPluginId", plugin.id);
-            item->setCardPixmap(pluginIcon(plugin.id));
-            item->setCardFloatArea(this);
+            item->setFixedWidth(280);
+            item->setMinimumHeight(144);
+            item->setMaximumHeight(QWIDGETSIZE_MAX);
+            auto body = new QVBoxLayout(item);
+            body->setContentsMargins(14, 14, 14, 14);
+            body->setSpacing(10);
+            body->setSizeConstraint(QLayout::SetNoConstraint);
+            auto header = new QHBoxLayout;
+            header->setSpacing(12);
+            auto icon = new ElaText(item);
+            icon->setPixmap(pluginIcon(plugin.id).scaled(48, 48, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            icon->setFixedSize(48, 48);
+            header->addWidget(icon);
+            auto text = new QVBoxLayout;
+            text->setSpacing(4);
+            auto title = new ElaText(item);
+            title->setObjectName("CordisPluginTitle");
+            title->setTextFormat(Qt::PlainText);
+            title->setTextPixelSize(16);
+            title->setIsBold(true);
+            auto status = new ElaText(item);
+            status->setObjectName("CordisPluginStatus");
+            status->setTextFormat(Qt::PlainText);
+            status->setTextPixelSize(13);
+            text->addWidget(title);
+            text->addWidget(status);
+            header->addLayout(text, 1);
+            body->addLayout(header);
+            auto footer = new QHBoxLayout;
+            auto identity = new ElaText(QString::fromUtf8("实例 #%1").arg(plugin.id), 12, item);
+            footer->addWidget(identity, 1);
+            auto button = new ElaToggleSwitch(item);
+            button->setObjectName("CordisPluginPower");
+            footer->addWidget(button, 0, Qt::AlignVCenter);
+            body->addLayout(footer);
             flow_->addWidget(item);
             items_.insert(plugin.id, item);
-            item->setInteractiveTips(QString::fromUtf8("打开"));
-            item->setCardButtonText(QString::fromUtf8("打开"));
-            auto activate = [this, item] {
-                if (!item || !item->isEnabled() || !open_)
-                    return;
-                const auto key = item->property("CordisPageKey").toString();
-                auto open = open_;
-                open(key);
-            };
-            connect(item, &ElaPopularCard::popularCardClicked, this, activate);
-            connect(item, &ElaPopularCard::popularCardButtonClicked, this, activate);
+            // 排队执行，让原生开关的鼠标/动画处理先返回；控件撤销后不再使用旧指针。
+            connect(
+                button, &ElaToggleSwitch::toggled, this,
+                [this, button = QPointer<ElaToggleSwitch>(button), id = plugin.id](bool enabled) {
+                    if (!button || !button->isEnabled() || !power_)
+                        return;
+                    QPointer<HomePage> alive(this);
+                    auto invoke = power_;
+                    const auto key = id;
+                    button->setEnabled(false);
+                    if (!alive)
+                        return;
+                    auto result = invoke(key, enabled);
+                    if (!alive)
+                        return;
+                    QPointer<ElaText> message(error_);
+                    if (!result.hasValue())
+                        message->setText(QString::fromStdString(result.error().message));
+                    if (message)
+                        message->setVisible(!result.hasValue());
+                },
+                Qt::QueuedConnection);
         }
-        if (item->getTitle() != plugin.title)
-            item->setTitle(plugin.title);
-        if (item->getSubTitle() != plugin.subtitle)
-            item->setSubTitle(plugin.subtitle);
-        if (item->getDetailedText() != plugin.description)
-            item->setDetailedText(plugin.description);
-        item->setProperty("CordisPageKey", plugin.target);
-        item->setEnabled(!plugin.target.isEmpty());
+        auto title = item->findChild<ElaText*>("CordisPluginTitle");
+        auto status = item->findChild<ElaText*>("CordisPluginStatus");
+        auto button = item->findChild<ElaToggleSwitch*>("CordisPluginPower");
+        const auto name = title->fontMetrics().elidedText(plugin.title, Qt::ElideRight, 192);
+        if (title->text() != name)
+            title->setText(name);
+        title->setAccessibleName(plugin.title);
+        const auto state = plugin.busy ? QString::fromUtf8("操作中 · %1").arg(plugin.subtitle) : plugin.subtitle;
+        if (status->text() != state)
+            status->setText(state);
+        button->setEnabled(static_cast<bool>(power_) && !plugin.busy &&
+                           (plugin.canStop || plugin.canLoad || plugin.canRetry));
+        if (button->getIsToggled() != plugin.enabled) {
+            const QSignalBlocker blocked(button);
+            button->setIsToggled(plugin.enabled);
+        }
+        const auto action = plugin.canStop    ? QString::fromUtf8("停止插件")
+                            : plugin.canRetry ? QString::fromUtf8("重试加载")
+                                              : QString::fromUtf8("加载插件");
+        button->setToolTip(plugin.busy ? QString::fromUtf8("正在处理，请稍候") : action);
+        button->setAccessibleName(action);
         item->setToolTip(plugin.title.toHtmlEscaped() + "<br>" + plugin.subtitle.toHtmlEscaped());
     }
     for (auto it = items_.begin(); it != items_.end();) {

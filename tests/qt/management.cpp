@@ -178,13 +178,15 @@ void stop()
     CHECK(scene.diagnostics->snapshot().value().operations[0].pending);
     until([&] { return !scene.diagnostics->snapshot().value().operations[0].pending; });
     auto data = scene.diagnostics->snapshot().value();
-    CHECK(data.instances.size() == 1 && data.instances[0].instance.instance == survivor.snapshot().value().instance && data.operations[0].cleanup->quiescent && !scene.management->stop(id).hasValue());
+    CHECK(data.instances.size() == 2 && data.instances[0].instance.instance == survivor.snapshot().value().instance &&
+          data.operations[0].cleanup->quiescent && !scene.management->stop(id).hasValue());
+    CHECK(data.instances[1].instance.instance == id && data.instances[1].canLoad);
     CHECK(scene.widget<QPlainTextEdit>("CordisManagementOperations")->toPlainText().contains(QString::fromUtf8("实例=%1").arg(id.value())));
-    CHECK(scene.widget<QTableView>("CordisInstanceTable")->currentIndex().row() == -1);
+    CHECK(scene.widget<QTableView>("CordisInstanceTable")->currentIndex().row() >= 0);
     auto stopButton = scene.widget<QPushButton>("CordisManagementStop"); CHECK(!stopButton->isEnabled());
     QTest::mouseClick(stopButton, Qt::LeftButton); wait(completedTask(), scene.scheduler);
     scene.management->refresh().value();
-    CHECK(scene.widget<QTableView>("CordisInstanceTable")->currentIndex().row() == -1 && !stopButton->isEnabled());
+    CHECK(!stopButton->isEnabled());
     CHECK(survivor.snapshot().value().state == InstanceState::Active && scene.diagnostics->snapshot().value().operations.size() == 1);
     scene.close();
 }
@@ -408,6 +410,51 @@ void workbench()
     CHECK(tabs->count() == 2 && !page->snapshot().value().widgetAlive);
     scene.close();
 }
+/** @brief 控制器保留已停止输入，加载分配新身份并对新旧实例锁定去重。 */
+void load()
+{
+    Scenario scene;
+    Promise<void> gate;
+    int calls = 0;
+    std::string configuration;
+    auto runtime = scene.kernel
+                       ->registerPlugin("loadable",
+                                        [&](Context context) {
+                                            configuration = context.config();
+                                            return ++calls == 3 ? gate.task() : completedTask();
+                                        })
+                       .value();
+    auto instance = scene.kernel->mount(runtime, "initial").value();
+    wait(instance.ready(), scene.scheduler);
+    auto updated = instance.update("latest", 1).value();
+    wait(updated.target, scene.scheduler);
+    const auto old = instance.snapshot().value().instance;
+    CHECK(!scene.management->load(old).hasValue());
+    scene.management->stop(old).value();
+    until([&] { return !scene.diagnostics->snapshot().value().operations.back().pending; });
+    CHECK(scene.diagnostics->snapshot().value().instances.front().canLoad);
+    scene.management->load(old).value();
+    CHECK(!scene.management->load(old).hasValue());
+    until([&] { return scene.diagnostics->snapshot().value().operations.back().previousInstance == old; });
+    auto data = scene.diagnostics->snapshot().value();
+    const auto current = data.operations.back().instance;
+    CHECK(current != old && data.instances.size() == 1 && data.instances.front().busy &&
+          !scene.management->stop(current).hasValue() && configuration == "latest");
+    gate.resolve();
+    until([&] { return !scene.diagnostics->snapshot().value().operations.back().pending; });
+    data = scene.diagnostics->snapshot().value();
+    CHECK(data.instances.front().instance.state == InstanceState::Active && data.instances.front().canStop &&
+          data.operations.back().stable->outcome == StableOutcome::Active &&
+          instance.snapshot().value().state == InstanceState::Disposed);
+    scene.management->stop(current).value();
+    until([&] { return !scene.diagnostics->snapshot().value().operations.back().pending; });
+    scene.management->load(current).value();
+    wait(scene.shell.close(), scene.scheduler);
+    until([&] { return !scene.diagnostics->snapshot().value().operations.back().pending; });
+    CHECK(calls == 3 && scene.diagnostics->snapshot().value().operations.back().error);
+    scene.close();
+}
+
 /** @brief 每个场景运行独立的真实 QApplication；offscreen 由 CTest 环境指定。 */
 int main(int argc, char** argv)
 {
@@ -419,6 +466,8 @@ int main(int argc, char** argv)
         else if (name == "diagnostics") diagnostics();
         else if (name == "retry") retry();
         else if (name == "stop") stop();
+        else if (name == "load")
+            load();
         else if (name == "deselect") deselect();
         else if (name == "guards") guards();
         else if (name == "queued_close") queuedClose();

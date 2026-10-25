@@ -1,5 +1,20 @@
 # 提交前代码审查记录
 
+## P3 Kernel 配置驱动与 Home 生命周期操作提交前审核
+
+日期：2026-10-25。范围：4f743ed 之后全部未提交的 Q4c2a/b、实例附加依赖/重新加载、Home 状态卡片/左右开关、管理控制器、示例、测试及文档，包括新增文件。sources/research 和第三方组件源码未修改。
+
+- P1，Core 内部投递失败可能永远等待：IScheduler 仍开放时，单次拒绝内部激活任务会使实例标记 deliveryBlocked，但驱动只观察未完成的稳定目标，动作和关闭可能一直等待，快照还显示正常 Pending。现在统一检查自有实例及 EffectScope 投递状态，挂载时发现阻断立即终结动作，业务和快照入口返回明确错误；关闭仍向其他自有实例广播停止，再返回失败并保守保留账目。internal_delivery 同时覆盖首次投递被拒绝、后续激活回执被拒绝和健康实例仍收到停止。
+- P2，首页忙碌状态误显示为关闭：开关位置绑定 canStop，管理加载期间 busy 会使其变为 false，实际 Loading 实例显示关闭。现在把真实启用状态与操作权限分离，Loading/Active/Pending 显示开启，操作期间仍禁用；刷新屏蔽业务信号。power_busy 使用显式激活 gate 验证等待中的真实状态及没有多余管理请求。
+- P2，重新加载已移动句柄崩溃：Kernel.remount 在读取来源快照前没有检查句柄，移动后空控制块导致空指针访问。现在返回 InvalidArgument；diagnostics_remount 增加已移动来源和保留副本验证。
+- 规范与质量：仅格式化第一方改动行及新增文件，展开过度压缩语句，整理 include、直接依赖和中文 Doxygen。复用 Core 描述符校验、驱动健康检查及 Qt 状态等待辅助函数；明确停止缓存和操作历史各自的边界，不强行释放非静止实例。保留固定契约、有效依赖比较、部分状态再规划和真实稳定任务的分离。
+
+三项回归在修复前 0/3，含真实崩溃；修复后 3/3。证据为 build/review-kernel-home-before.log、build/review-kernel-home-fixes.log。既有 delivery 回归同步要求阻断快照返回错误，并独立检查 Kernel 中资源仍然保留，不能把诊断错误解释成排空。
+
+修复后原目录 Ela/MSVC Debug/Release 各 287/287，无 Qt GCC Debug/Release 各 183/183；MSVC ASan 的 UI/Loader 141/141（64 项 UI、77 项 Loader），Core 契约/remount 10/10。日志为 build/review-kernel-home-<ela-msvc|core-gcc>-<mode>.log、build/review-kernel-home-asan.log、build/review-kernel-home-core-asan.log。Kernel、ConfigKernel、管理 SDK 的无 Qt 独立包含、189 项本地文档链接、第一方 UTF-8/LF、差异空白及 Core 依赖隔离检查通过；修改单元的 ASan 插桩已核对，预编译 Qt 未插桩。
+
+未发现其他阻止本次提交的问题。此次将 Q4c2a/b 与 Home 生命周期操作一并提交；此前桌面人工验收确认保留，Home 变更仍待专项人工复核。显式配置子树、管理页保存装配、watcher/worker、ABI 与物理卸载继续按计划推进，ASan 不构成泄漏或物理卸载证明。
+
 ## P3 Ela 工作台与 Home 提交前审核
 
 日期：2026-10-25。范围：88edada 之后全部未提交的工作台菜单/搜索/导航历史、插件直达与空工作区、Home 卡片、插件内部布局、Ela 本地修正、示例、测试及文档，包括新增文件。Core/Qt 适配实现、sources/research 未修改；公开 UI SDK 只更新页面贡献注释，未新增 Ela 类型。

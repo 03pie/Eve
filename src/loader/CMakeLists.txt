@@ -14,6 +14,11 @@ add_library(Cordis::ConfigCoordinator ALIAS cordis_config_coordinator)
 target_link_libraries(cordis_config_coordinator PUBLIC Cordis::ConfigYaml Cordis::Core)
 cordis_target_defaults(cordis_config_coordinator)
 
+add_library(cordis_config_kernel STATIC kernel_driver.cpp)
+add_library(Cordis::ConfigKernel ALIAS cordis_config_kernel)
+target_link_libraries(cordis_config_kernel PUBLIC Cordis::ConfigCoordinator)
+cordis_target_defaults(cordis_config_kernel)
+
 add_library(cordis_config_store STATIC store.cpp)
 add_library(Cordis::ConfigStore ALIAS cordis_config_store)
 target_link_libraries(cordis_config_store PUBLIC Cordis::ConfigYaml Cordis::Core)

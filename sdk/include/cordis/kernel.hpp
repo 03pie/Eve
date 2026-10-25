@@ -34,8 +34,11 @@ public:
     Result<Runtime> registerPlugin(std::string name, Runtime::Activate activate, std::vector<ServiceRequirement> dependencies = {}, std::vector<ServiceOutput> outputs = {});
     /** @brief 获取共享索引的宿主句柄，用于隔离域配置和诊断。 */
     ServiceRegistry services() const { return *services_; }
-    /** @brief 挂载本内核登记的 Runtime，异步激活由实例调度。 */
-    Result<Instance> mount(const Runtime& runtime, std::string config = {}, RealmMap realms = {});
+    /** @brief 挂载已登记 Runtime；附加类型化依赖只能增加或收紧本实例的要求。 */
+    Result<Instance> mount(const Runtime& runtime, std::string config = {}, RealmMap realms = {},
+                           std::vector<ServiceRequirement> additionalDependencies = {});
+    /** @brief 用本内核已静止实例的最新配置及 realm 创建新 InstanceId，不复活旧实例。 */
+    Result<Instance> remount(const Instance& previous);
     /** @brief 请求停止全部实例，共享关闭报告；非静止实例继续保留。 */
     Task<CleanupReport> close();
     /** @brief owner 线程读取诊断并回收已经 Disposed 的实例记录。 */

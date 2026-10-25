@@ -20,7 +20,6 @@
 #include <QClipboard>
 #include <QEvent>
 #include <QHBoxLayout>
-#include <QMap>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QScopedValueRollback>
@@ -120,7 +119,6 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
     QPointer<QTimer> homeTimer;
     std::vector<QPointer<QAction>> actions;
     std::vector<Entry> entries;
-    QMap<QString, QString> lastPluginPages;
     std::vector<QString> history;
     std::size_t cursor = 0;
     std::optional<Replay> replay;
@@ -231,18 +229,11 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
             if (entry.plugin.isEmpty() || ids.contains(entry.plugin))
                 continue;
             ids.insert(entry.plugin);
-            auto last = std::find_if(entries.begin(), entries.end(), [&](const Entry& value) {
-                return value.key == lastPluginPages.value(entry.plugin);
-            });
-            const auto& target = last == entries.end() ? entry : *last;
-            plugins.push_back({entry.plugin, target.key, target.title, QString::fromUtf8("界面插件"),
-                               QString::fromUtf8("点击打开插件，关闭页签后状态仍会保留。")});
+            HomePlugin value{entry.plugin, entry.title, QString::fromUtf8("界面已就绪")};
+            value.enabled = true;
+            plugins.push_back(std::move(value));
         }
-        std::weak_ptr<WorkbenchControl> weak = shared_from_this();
-        page->setPlugins(plugins, [weak](const QString& key) {
-            if (auto state = weak.lock())
-                state->navigate(key);
-        });
+        page->setPlugins(plugins, callbacks.power);
     }
     /** @brief 关闭页签仅关闭视图；再次从左侧打开时复用原页面和业务状态。 */
     void closeTab(int index)
@@ -571,7 +562,7 @@ void registerWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, con
         control->search->setSearchText(control->search->getSearchText());
 }
 
-void selectWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const QString& key, bool rememberPlugin)
+void selectWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const QString& key)
 {
     if (!control || !control->open || !control->tabs || !control->contains(key))
         return;
@@ -579,8 +570,6 @@ void selectWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const
     auto entry = std::find_if(control->entries.begin(), control->entries.end(),
                               [&](const WorkbenchControl::Entry& item) { return item.key == key; });
     const auto title = entry->title;
-    if (rememberPlugin && !entry->plugin.isEmpty())
-        control->lastPluginPages.insert(entry->plugin, key);
     {
         QSignalBlocker blocked(control->tabs);
         int index = 0;
@@ -618,7 +607,6 @@ void removeWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const
     if (entry == control->entries.end())
         return;
     const auto suggestion = entry->suggestion;
-    const auto plugin = entry->plugin;
     if (control->open && control->tabs) {
         for (int i = 0; i < control->tabs->count(); ++i)
             if (control->tabs->tabData(i).toString() == key) {
@@ -630,9 +618,6 @@ void removeWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const
                          [&](const WorkbenchControl::Entry& item) { return item.key == key; });
     if (entry != control->entries.end())
         control->entries.erase(entry);
-    if (!plugin.isEmpty() && std::none_of(control->entries.begin(), control->entries.end(),
-                                          [&](const WorkbenchControl::Entry& item) { return item.plugin == plugin; }))
-        control->lastPluginPages.remove(plugin);
     const auto oldCursor = control->cursor;
     std::size_t before = 0;
     for (std::size_t i = 0; i < control->history.size(); ++i)

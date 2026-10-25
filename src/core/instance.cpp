@@ -2,15 +2,66 @@
  * @brief 通过每代 EffectScope 屏障驱动配置收敛、失败回滚与实例终结。
  */
 #include <cordis/instance.hpp>
-#include <atomic>
+
 #include <algorithm>
-#include <optional>
-#include <stdexcept>
+#include <atomic>
+#include <cstdint>
 #include <limits>
 #include <map>
+#include <memory>
+#include <optional>
 #include <set>
+#include <stdexcept>
+#include <string>
+#include <typeindex>
+#include <utility>
+#include <vector>
 
 namespace cordis::detail {
+/** @brief 插件固定契约与宿主附加契约共用键、类型及能力名称校验。 */
+bool validServiceDescriptor(const ServiceKey& key, std::type_index type, const std::vector<std::string>& capabilities)
+{
+    if (key.name.empty() || key.interfaceMajor == 0 || !key.realm.valid() || type == typeid(void))
+        return false;
+    std::set<std::string> names;
+    for (const auto& name : capabilities)
+        if (name.empty() || !names.insert(name).second)
+            return false;
+    return true;
+}
+/** @brief 按精确解析域联合依赖，类型必须一致，minor 取最大值、能力取并集。 */
+std::vector<ServiceRequirement> mergeDependencies(const std::vector<ServiceRequirement>& required,
+                                                  const std::vector<ServiceRequirement>& additional,
+                                                  const RealmMap& realms)
+{
+    std::map<ServiceKey, ServiceRequirement> merged;
+    for (const auto* list : {&required, &additional})
+        for (const auto& dependency : *list) {
+            if (!validServiceDescriptor(dependency.key, dependency.type, dependency.capabilities))
+                throw std::invalid_argument("invalid additional service requirement");
+            auto value = dependency;
+            value.key = realms.resolve(value.key);
+            auto found = merged.find(value.key);
+            if (found == merged.end()) {
+                const auto key = value.key;
+                merged.emplace(key, std::move(value));
+            } else {
+                if (found->second.type != value.type)
+                    throw std::invalid_argument("conflicting dependency types for resolved service key");
+                found->second.minimumMinor = std::max(found->second.minimumMinor, value.minimumMinor);
+                auto& capabilities = found->second.capabilities;
+                capabilities.insert(capabilities.end(), value.capabilities.begin(), value.capabilities.end());
+            }
+        }
+    std::vector<ServiceRequirement> result;
+    for (auto& entry : merged) {
+        auto& capabilities = entry.second.capabilities;
+        std::sort(capabilities.begin(), capabilities.end());
+        capabilities.erase(std::unique(capabilities.begin(), capabilities.end()), capabilities.end());
+        result.push_back(std::move(entry.second));
+    }
+    return result;
+}
 /** @brief 一次清理调用的访问窗口；完成可在工作线程原子撤销。 */
 struct CleanupAccess {
     std::weak_ptr<IScheduler> scheduler;
@@ -546,18 +597,14 @@ Result<EffectToken> Context::onCleanup(InstanceCleanup cleanup, std::string labe
 Runtime::Runtime(Activate activate, std::vector<ServiceRequirement> dependencies, std::vector<ServiceOutput> outputs)
 {
     if (!activate) throw std::invalid_argument("empty plugin activation");
-    auto valid = [](const ServiceKey& key, std::type_index type, const std::vector<std::string>& capabilities) {
-        if (key.name.empty() || key.interfaceMajor == 0 || !key.realm.valid() || type == typeid(void)) return false;
-        std::set<std::string> names;
-        for (const auto& name : capabilities) if (name.empty() || !names.insert(name).second) return false;
-        return true;
-    };
     std::set<ServiceKey> dependencyKeys, outputKeys;
     for (const auto& dependency : dependencies)
-        if (!valid(dependency.key, dependency.type, dependency.capabilities) || !dependencyKeys.insert(dependency.key).second)
+        if (!detail::validServiceDescriptor(dependency.key, dependency.type, dependency.capabilities) ||
+            !dependencyKeys.insert(dependency.key).second)
             throw std::invalid_argument("invalid or duplicate service requirement");
     for (const auto& output : outputs)
-        if (!valid(output.key, output.type, output.metadata.capabilities) || !outputKeys.insert(output.key).second)
+        if (!detail::validServiceDescriptor(output.key, output.type, output.metadata.capabilities) ||
+            !outputKeys.insert(output.key).second)
             throw std::invalid_argument("invalid or duplicate service output declaration");
     activate_ = std::make_shared<const Activate>(std::move(activate));
     id_ = detail::allocateId<RuntimeTag>();
@@ -566,7 +613,9 @@ Runtime::Runtime(Activate activate, std::vector<ServiceRequirement> dependencies
 }
 
 /** @brief 在调用用户代码前建立实例与激活所有权。 */
-Instance Instance::mount(const Runtime& runtime, std::shared_ptr<IScheduler> scheduler, std::string config, std::shared_ptr<ServiceRegistry> services, RealmMap realms)
+Instance Instance::mount(const Runtime& runtime, std::shared_ptr<IScheduler> scheduler, std::string config,
+                         std::shared_ptr<ServiceRegistry> services, RealmMap realms,
+                         std::vector<ServiceRequirement> additionalDependencies)
 {
     if (!runtime.activate_) throw std::invalid_argument("runtime handle moved from");
     auto control = std::make_shared<detail::InstanceControl>(std::move(scheduler), runtime.activate_);
@@ -579,12 +628,13 @@ Instance Instance::mount(const Runtime& runtime, std::shared_ptr<IScheduler> sch
         if (!services || !services->containsRealm(key.realm) || !outputKeys.insert(key).second)
             throw std::invalid_argument("invalid or duplicate resolved output realm/key");
     }
-    for (const auto& dependency : runtime.dependencies_)
+    auto dependencies = detail::mergeDependencies(runtime.dependencies_, additionalDependencies, realms);
+    for (const auto& dependency : dependencies)
         if (services && !services->containsRealm(realms.resolve(dependency.key).realm)) throw std::invalid_argument("dependency uses foreign realm");
     control->pin = control;
     control->config = std::move(config);
     control->runtime = runtime.id();
-    control->dependencies = runtime.dependencies_;
+    control->dependencies = std::move(dependencies);
     control->declarations = runtime.outputs_;
     control->realms = std::move(realms);
     control->services = std::move(services);
@@ -691,6 +741,19 @@ Result<OperationHandle> Instance::change(std::string config, ConfigRevision expe
 /** @brief 接受新配置并递增配置修订。 */
 Result<OperationHandle> Instance::update(std::string config, ConfigRevision expectedRevision) const
 { return change(std::move(config), expectedRevision, true); }
+
+/** @brief 复制的是宿主输入；只有完整停止的实例才允许重新挂载。 */
+Result<Instance> Instance::remount(const Runtime& runtime, const std::shared_ptr<IScheduler>& scheduler,
+                                   const std::shared_ptr<ServiceRegistry>& services) const
+{
+    if (control_->scheduler != scheduler || control_->services != services || control_->runtime != runtime.id())
+        return Result<Instance>::failure(makeError(ErrorCode::InvalidArgument, "instance belongs to another kernel"));
+    if (control_->state != InstanceState::Disposed || control_->blocked.load())
+        return Result<Instance>::failure(
+            makeError(ErrorCode::ContextClosing, "remount requires quiescent disposed instance"));
+    return Result<Instance>::success(
+        Instance::mount(runtime, scheduler, control_->config, services, control_->realms, control_->dependencies));
+}
 
 /** @brief 仅在失败回滚完成后重试，不允许绕过清理失败。 */
 Result<OperationHandle> Instance::retry() const

@@ -169,7 +169,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
                 }
             }
         }
-        selectWorkbenchPage(workbench, key, rememberPluginSelection);
+        selectWorkbenchPage(workbench, key);
     }
     /** @brief 关闭最后一个视图后只显示空画布，页面对象仍由各自 effect 保留。 */
     void selectEmpty()
@@ -614,58 +614,94 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler)
     ElaActionCommander::getInstance()->setIsMessageDisplayEnable(false);
     std::weak_ptr<detail::ShellControl> weak = control_;
     std::weak_ptr<DiagnosticsService> weakDiagnostics = diagnostics_;
-    control_->workbench = detail::createWorkbench(window.get(), control_->tabs, panel, output, togglePanel,
-        control_->safeKey, control_->managementKey, {
-            [weak](const QString& key, bool remember) {
-                auto state = weak.lock();
-                return state ? state->selectKey(key, remember) : Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell expired"));
-            },
-            [weak] {
-                if (auto state = weak.lock(); state && state->open) {
-                    detail::ShellControl::NavigationAccess access(*state);
-                    detail::refreshManagement(state->management);
-                }
-              },
-              [weak] { if (auto state = weak.lock()) state->selectEmpty(); },
-              [weak, weakDiagnostics] {
-                  std::vector<detail::HomePlugin> plugins;
-                  auto state = weak.lock(); auto diagnostics = weakDiagnostics.lock();
-                  if (!state || !state->open || !diagnostics) return plugins;
-                  auto snapshot = diagnostics->snapshot();
-                  if (!snapshot.hasValue()) return plugins;
-                  for (const auto& row : snapshot.value().instances) {
-                      QString status;
-                      switch (row.instance.state) {
-                      case InstanceState::Active: status = QString::fromUtf8("运行中"); break;
-                      case InstanceState::Pending: status = QString::fromUtf8("等待依赖"); break;
-                      case InstanceState::Loading: status = QString::fromUtf8("启动中"); break;
-                      case InstanceState::Unloading: status = QString::fromUtf8("清理中"); break;
-                      case InstanceState::Failed: status = QString::fromUtf8("失败"); break;
-                      case InstanceState::Disposed: status = QString::fromUtf8("已停止"); break;
-                      }
-                      detail::HomePlugin item{QString::number(row.instance.instance.value()), state->managementKey, QString::fromStdString(row.name), status,
-                          QString::fromUtf8("打开插件管理，查看此实例的依赖、状态与操作记录。")};
-                      bool selected = false;
-                      for (const auto& entry : state->pages) {
-                          const auto& page = entry.second;
-                          if (page->owner.instance != row.instance.instance || !page->navigation || page->revoked || page->retiring) continue;
-                          auto group = state->groups.find(page->group());
-                          const bool preferred = group != state->groups.end() && group->second.target == page->navigationKey;
-                          if (selected && !preferred) continue;
-                          item.target = page->navigationKey; item.title = QString::fromStdString(page->spec.title);
-                          item.description = QString::fromUtf8("打开插件界面。页签关闭后仍保留页面状态，子页可在插件内部选择。\n实例：%1").arg(row.instance.instance.value());
-                          selected = true;
-                      }
-                      plugins.push_back(std::move(item));
-                  }
-                  return plugins;
-              },
-              [weak](const std::function<void()>& action) {
-                  if (auto state = weak.lock(); state && state->open) {
-                      detail::ShellControl::NavigationAccess access(*state);
-                      action();
-                  }
-              }});
+    control_->workbench = detail::createWorkbench(
+        window.get(), control_->tabs, panel, output, togglePanel, control_->safeKey, control_->managementKey,
+        {[weak](const QString& key, bool remember) {
+             auto state = weak.lock();
+             return state ? state->selectKey(key, remember)
+                          : Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell expired"));
+         },
+         [weak] {
+             if (auto state = weak.lock(); state && state->open) {
+                 detail::ShellControl::NavigationAccess access(*state);
+                 detail::refreshManagement(state->management);
+             }
+         },
+         [weak] {
+             if (auto state = weak.lock())
+                 state->selectEmpty();
+         },
+         [weak, weakDiagnostics] {
+             std::vector<detail::HomePlugin> plugins;
+             auto state = weak.lock();
+             auto diagnostics = weakDiagnostics.lock();
+             if (!state || !state->open || !diagnostics)
+                 return plugins;
+             auto snapshot = diagnostics->snapshot();
+             if (!snapshot.hasValue())
+                 return plugins;
+             for (const auto& row : snapshot.value().instances) {
+                 QString status;
+                 switch (row.instance.state) {
+                 case InstanceState::Active:
+                     status = QString::fromUtf8("运行中");
+                     break;
+                 case InstanceState::Pending:
+                     status = QString::fromUtf8("等待依赖");
+                     break;
+                 case InstanceState::Loading:
+                     status = QString::fromUtf8("启动中");
+                     break;
+                 case InstanceState::Unloading:
+                     status = QString::fromUtf8("清理中");
+                     break;
+                 case InstanceState::Failed:
+                     status = QString::fromUtf8("失败");
+                     break;
+                 case InstanceState::Disposed:
+                     status = QString::fromUtf8("已停止");
+                     break;
+                 }
+                 if (row.instance.state == InstanceState::Unloading && row.instance.failure)
+                     status = QString::fromUtf8("清理受阻");
+                 detail::HomePlugin item{QString::number(row.instance.instance.value()),
+                                         QString::fromStdString(row.name), status};
+                 item.canStop = row.canStop && !row.canRetry;
+                 item.canRetry = row.canRetry;
+                 item.canLoad = row.canLoad;
+                 item.busy = row.busy;
+                 item.enabled = row.instance.state == InstanceState::Active ||
+                                row.instance.state == InstanceState::Pending ||
+                                row.instance.state == InstanceState::Loading;
+                 for (const auto& entry : state->pages) {
+                     const auto& page = entry.second;
+                     if (page->owner.instance != row.instance.instance || !page->navigation || page->revoked ||
+                         page->retiring)
+                         continue;
+                     item.title = QString::fromStdString(page->spec.title);
+                     break;
+                 }
+                 plugins.push_back(std::move(item));
+             }
+             return plugins;
+         },
+         [weak](const std::function<void()>& action) {
+             if (auto state = weak.lock(); state && state->open) {
+                 detail::ShellControl::NavigationAccess access(*state);
+                 action();
+             }
+         },
+         [weak](const QString& id, bool enabled) {
+             auto state = weak.lock();
+             if (!state || !state->open)
+                 return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closing"));
+             detail::ShellControl::NavigationAccess access(*state);
+             bool valid = false;
+             const auto value = id.toULongLong(&valid);
+             if (!valid || value == 0)
+                 return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "invalid plugin instance"));
+             return detail::setManagementEnabled(state->management, InstanceId(value), enabled);
+         }});
     window->addFooterNode(QString::fromUtf8("设置"), detail::workbenchSettings(control_->workbench), control_->settingsKey, 0, ElaIconType::GearComplex);
     window->addFooterNode(QString::fromUtf8("关于"), detail::workbenchAbout(control_->workbench), control_->aboutKey, 0, ElaIconType::CircleInfo);
     for (const auto& entry : {std::make_pair(control_->safeKey, QString::fromUtf8("概览")),

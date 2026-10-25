@@ -17,8 +17,8 @@
 namespace cordis::ui {
 namespace detail { struct ManagementControl; }
 class ElaShell;
-/** @brief 宿主支持的操作；停止终结 InstanceId，重试只用于清理完成的失败实例。 */
-enum class ManagementAction { Stop, Retry };
+/** @brief 停止终结身份；重试用于已回滚失败；加载从保留的终结实例创建新身份。 */
+enum class ManagementAction { Stop, Retry, Load };
 /** @brief 不含 Task 或闭包的操作记录；request 是管理请求号，operation 是内核真实操作号。 */
 struct ManagementOperation {
     std::uint64_t request = 0;
@@ -30,8 +30,10 @@ struct ManagementOperation {
     std::optional<StableReport> stable;
     std::optional<CleanupReport> cleanup;
     std::optional<ErrorInfo> error;
+    /** @brief Load 的源实例；instance 在执行挂载后改为新身份，其他操作保持无效值。 */
+    InstanceId previousInstance;
 };
-/** @brief 当前顶层实例的只读详情，包含当前操作历史结果和实时依赖查找状态。 */
+/** @brief 顶层实例及有界停止缓存的只读详情，不返回 Instance 或 Runtime 能力。 */
 struct ManagedInstanceSnapshot {
     InstanceSnapshot instance;
     std::string name;
@@ -41,6 +43,7 @@ struct ManagedInstanceSnapshot {
     bool busy = false;
     bool canStop = false;
     bool canRetry = false;
+    bool canLoad = false;
 };
 /** @brief 全部为宿主值数据；子实例当前只显示数量，配置计划/持久化/模块账目另接入。 */
 struct DiagnosticsSnapshot {
@@ -67,6 +70,7 @@ private:
 /** @brief 仅宿主持有的管理入口；每个实例最多一个管理请求，所有动作排队重新校验。 */
 class ManagementController {
 public:
+    /** @brief 管理历史及停止后可加载缓存各自最多保留 100 条。 */
     static constexpr std::size_t historyLimit = 100;
     /** @brief owner 绑定同 scheduler 的 Kernel，只持弱引用；相同 Kernel 重复绑定幂等。 */
     Result<void> attach(const std::shared_ptr<Kernel>& kernel) const;
@@ -76,6 +80,9 @@ public:
     Result<std::uint64_t> stop(InstanceId instance) const;
     /** @brief 接受后排队重试，记录新 OperationId 和最终 StableReport，不改配置修订。 */
     Result<std::uint64_t> retry(InstanceId instance) const;
+    /** @brief 为本控制器停止并保留的实例创建新身份；复用配置/realm，不恢复旧页签内容。 */
+    Result<std::uint64_t> load(InstanceId instance) const;
+
 private:
     friend class ElaShell;
     /** @brief 控制器不强持 Kernel 或原生窗口，宿主关闭后不得发起新操作。 */

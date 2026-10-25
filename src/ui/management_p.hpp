@@ -15,6 +15,8 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
 QWidget* managementWidget(const std::shared_ptr<ManagementControl>& control);
 /** @brief 工作台菜单刷新沿用管理页同一状态门禁。 */
 Result<void> refreshManagement(const std::shared_ptr<ManagementControl>& control);
+/** @brief 首页开关表达期望启停状态，按最新快照选择加载/重试/停止，不反转过时操作。 */
+Result<void> setManagementEnabled(const std::shared_ptr<ManagementControl>& control, InstanceId instance, bool enabled);
 /** @brief 同步关门、停止刷新，晚到结果只更新值账目，不再操作窗口。 */
 Task<void> closeManagement(const std::shared_ptr<ManagementControl>& control);
 } // namespace cordis::ui::detail

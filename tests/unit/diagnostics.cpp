@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 
 using namespace cordis;
 using cordis::testing::FakeScheduler;
@@ -68,6 +69,66 @@ void dependencies()
     valid.retire().value(); valid.release().value(); global.retire().value(); global.release().value();
     scheduler->close();
 }
+/** @brief 停止后加载使用新身份并保留最新配置和 realm，清理未完成与跨内核请求均拒绝。 */
+void remount()
+{
+    auto scheduler = std::make_shared<FakeScheduler>();
+    Kernel kernel(scheduler), other(scheduler);
+    Promise<void> cleanup;
+    int calls = 0;
+    std::string config;
+    const auto realm = kernel.services().createRealm().value();
+    auto runtime =
+        kernel
+            .registerPlugin("reload",
+                            [&](Context context) {
+                                ++calls;
+                                config = context.config();
+                                context.provide<int>({"value"}, std::make_shared<int>(calls)).value();
+                                if (calls == 2)
+                                    context.onCleanup([cleanup](CleanupContext) { return cleanup.task(); }).value();
+                                return completedTask();
+                            },
+                            {}, {ServiceOutput::of<int>({"value"})})
+            .value();
+    auto instance = kernel.mount(runtime, "first", RealmMap{}.isolate("value", realm).value()).value();
+    scheduler->runUntilIdle().value();
+    CHECK(!kernel.remount(instance).hasValue());
+    auto updated = instance.update("second", 1).value();
+    scheduler->runUntilIdle().value();
+    CHECK(updated.target.tryResult()->value().outcome == StableOutcome::Active && calls == 2);
+    auto stopped = instance.stop();
+    scheduler->runUntilIdle().value();
+    CHECK(!stopped.isReady() && !kernel.remount(instance).hasValue());
+    cleanup.resolve();
+    scheduler->runUntilIdle().value();
+    CHECK(stopped.tryResult()->value().quiescent && kernel.snapshot().value().instances.empty());
+    auto moved = instance;
+    auto held = std::move(moved);
+    auto invalid = kernel.remount(moved);
+    CHECK(!invalid.hasValue() && invalid.error().code == ErrorCode::InvalidArgument &&
+          held.snapshot().value().state == InstanceState::Disposed);
+    CHECK(!other.remount(instance).hasValue());
+    bool wrong = false;
+    std::thread worker([&] {
+        auto result = kernel.remount(instance);
+        wrong = !result.hasValue() && result.error().code == ErrorCode::WrongThread;
+    });
+    worker.join();
+    CHECK(wrong);
+    auto loaded = kernel.remount(instance).value();
+    scheduler->runUntilIdle().value();
+    CHECK(calls == 3 && config == "second" &&
+          loaded.snapshot().value().instance != instance.snapshot().value().instance);
+    CHECK(instance.snapshot().value().state == InstanceState::Disposed &&
+          loaded.snapshot().value().state == InstanceState::Active);
+    CHECK(kernel.services().snapshot().value().front().key.realm == realm);
+    auto closed = kernel.close();
+    scheduler->runUntilIdle().value();
+    CHECK(closed.tryResult()->value().quiescent && !kernel.remount(instance).hasValue());
+    scheduler->close();
+}
+
 /** @brief 每个行为对应独立 CTest，不引入 Qt/Ela 依赖。 */
 int main(int argc, char** argv)
 {
@@ -76,6 +137,8 @@ int main(int argc, char** argv)
         const std::string name = argv[1];
         if (name == "lookup") lookup();
         else if (name == "dependencies") dependencies();
+        else if (name == "remount")
+            remount();
         else return EXIT_FAILURE;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return EXIT_FAILURE; }
     return EXIT_SUCCESS;

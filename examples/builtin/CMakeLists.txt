@@ -20,3 +20,7 @@ cordis_target_defaults(cordis_platform_demo)
 add_executable(cordis_configuration_demo configuration_demo.cpp)
 target_link_libraries(cordis_configuration_demo PRIVATE Cordis::ConfigYaml)
 cordis_target_defaults(cordis_configuration_demo)
+
+add_executable(cordis_reconcile_demo reconcile_demo.cpp)
+target_link_libraries(cordis_reconcile_demo PRIVATE Cordis::ConfigKernel)
+cordis_target_defaults(cordis_reconcile_demo)

@@ -5,9 +5,12 @@
 #include <cordis/testing/fake_scheduler.hpp>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <thread>
+#include <vector>
 
 using namespace cordis;
 using cordis::testing::FakeScheduler;
@@ -244,6 +247,127 @@ void schemaValidation()
     CHECK(other.close().tryResult()->value().quiescent);
 }
 
+/** @brief 附加依赖按精确域联合，弱要求不削弱 Runtime，新增依赖真正阻止提前激活。 */
+void additionalDependencies()
+{
+    auto scheduler = std::make_shared<FakeScheduler>();
+    Kernel kernel(scheduler);
+    const auto realm = kernel.services().createRealm().value();
+    int calls = 0;
+    auto runtime = kernel
+                       .registerPlugin("additional",
+                                       [&](Context context) {
+                                           context.consume<int>({"x"}).value();
+                                           context.consume<int>({"y"}).value();
+                                           ++calls;
+                                           return completedTask();
+                                       },
+                                       {ServiceRequirement::of<int>({"x"}, 2, {"read"})})
+                       .value();
+    auto instance = kernel
+                        .mount(runtime, {}, RealmMap{}.isolate("x", realm).value(),
+                               {ServiceRequirement::of<int>({"x"}, 1, {"write"}), ServiceRequirement::of<int>({"y"})})
+                        .value();
+    scheduler->runUntilIdle().value();
+    CHECK(calls == 0 && instance.snapshot().value().state == InstanceState::Pending);
+    auto dependencies = instance.dependencies().value();
+    CHECK(dependencies.size() == 2 && dependencies[0].key.realm == realm && dependencies[0].minimumMinor == 2 &&
+          dependencies[0].capabilities == std::vector<std::string>({"read", "write"}));
+    auto x = kernel.services().stage<int>({"x", 1, realm}, std::make_shared<int>(1), {2, {"read", "write"}}).value();
+    x.publish().value();
+    scheduler->runUntilIdle().value();
+    CHECK(calls == 0);
+    auto y = kernel.services().stage<int>({"y"}, std::make_shared<int>(2)).value();
+    y.publish().value();
+    scheduler->runUntilIdle().value();
+    CHECK(calls == 1 && instance.snapshot().value().committedLeases == 2);
+    CHECK(runtime.requirements().size() == 1 &&
+          runtime.requirements().front().capabilities == std::vector<std::string>({"read"}));
+    auto closed = kernel.close();
+    scheduler->runUntilIdle().value();
+    CHECK(closed.tryResult()->value().quiescent);
+    x.retire().value();
+    x.release().value();
+    y.retire().value();
+    y.release().value();
+    scheduler->close();
+}
+
+/** @brief 非法附加契约及解析域后的类型冲突在挂载前拒绝，不增加运行实例。 */
+void additionalGuards()
+{
+    auto scheduler = std::make_shared<FakeScheduler>();
+    Kernel kernel(scheduler), foreign(scheduler);
+    int calls = 0;
+    auto runtime = kernel
+                       .registerPlugin("guard",
+                                       [&](Context) {
+                                           ++calls;
+                                           return completedTask();
+                                       },
+                                       {ServiceRequirement::of<int>({"x"})})
+                       .value();
+    const auto realm = kernel.services().createRealm().value();
+    const auto other = foreign.services().createRealm().value();
+    for (const auto& dependency : std::vector<ServiceRequirement>{
+             ServiceRequirement::of<std::string>({"x"}), ServiceRequirement::of<int>({""}),
+             ServiceRequirement::of<int>({"y", 0}), ServiceRequirement::of<int>({"y", 1, other}),
+             ServiceRequirement::of<void>({"y"}), ServiceRequirement::of<int>({"y"}, 0, {""}),
+             ServiceRequirement::of<int>({"y"}, 0, {"read", "read"})}) {
+        CHECK(!kernel.mount(runtime, {}, {}, {dependency}).hasValue());
+    }
+    CHECK(!kernel
+               .mount(runtime, {}, RealmMap{}.isolate("x", realm).value(),
+                      {ServiceRequirement::of<std::string>({"x", 1, realm})})
+               .hasValue());
+    CHECK(kernel.snapshot().value().instances.empty() && calls == 0);
+    CHECK(kernel.close().tryResult()->value().quiescent);
+    CHECK(foreign.close().tryResult()->value().quiescent);
+    scheduler->close();
+}
+
+/** @brief 更新及停止后重新加载保留附加依赖，Runtime 身份和固定定义不膨胀。 */
+void additionalRemount()
+{
+    auto scheduler = std::make_shared<FakeScheduler>();
+    Kernel kernel(scheduler);
+    const auto realm = kernel.services().createRealm().value();
+    auto provider = kernel.services().stage<int>({"extra", 1, realm}, std::make_shared<int>(3), {1, {"read"}}).value();
+    provider.publish().value();
+    int calls = 0;
+    auto runtime = kernel
+                       .registerPlugin("remount",
+                                       [&](Context context) {
+                                           context.consume<int>({"extra", 1, realm}).value();
+                                           ++calls;
+                                           return completedTask();
+                                       })
+                       .value();
+    auto instance =
+        kernel.mount(runtime, "first", {}, {ServiceRequirement::of<int>({"extra", 1, realm}, 1, {"read"})}).value();
+    scheduler->runUntilIdle().value();
+    auto updated = instance.update("latest", 1).value();
+    scheduler->runUntilIdle().value();
+    CHECK(updated.target.tryResult()->value().outcome == StableOutcome::Active && calls == 2);
+    auto stopped = instance.stop();
+    scheduler->runUntilIdle().value();
+    CHECK(stopped.tryResult()->value().quiescent && kernel.snapshot().value().instances.empty());
+    auto remounted = kernel.remount(instance).value();
+    scheduler->runUntilIdle().value();
+    CHECK(calls == 3 && remounted.snapshot().value().state == InstanceState::Active &&
+          remounted.snapshot().value().instance != instance.snapshot().value().instance);
+    auto requirement = remounted.dependencies().value().front();
+    CHECK(requirement.key.realm == realm && requirement.minimumMinor == 1 &&
+          requirement.capabilities == std::vector<std::string>({"read"}));
+    CHECK(runtime.requirements().empty() && kernel.snapshot().value().runtimes == 1);
+    auto closed = kernel.close();
+    scheduler->runUntilIdle().value();
+    CHECK(closed.tryResult()->value().quiescent);
+    provider.retire().value();
+    provider.release().value();
+    scheduler->close();
+}
+
 /** @brief 根据名称运行 W4 收尾契约场景。 */
 int main(int argc, char** argv)
 {
@@ -256,6 +380,12 @@ int main(int argc, char** argv)
         else if (name == "async") asyncCalls();
         else if (name == "async_blocked") asyncBlocked();
         else if (name == "validation") schemaValidation();
+        else if (name == "additional")
+            additionalDependencies();
+        else if (name == "additional_guards")
+            additionalGuards();
+        else if (name == "additional_remount")
+            additionalRemount();
         else return EXIT_FAILURE;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return EXIT_FAILURE; }
     return EXIT_SUCCESS;

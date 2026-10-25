@@ -9,6 +9,7 @@
 #include <ElaScrollPageArea.h>
 #include <ElaSuggestBox.h>
 #include <ElaTheme.h>
+#include <ElaToggleSwitch.h>
 #include <ElaWindow.h>
 #include <QAction>
 #include <QApplication>
@@ -40,6 +41,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 using namespace cordis;
 using namespace cordis::ui;
@@ -48,6 +50,24 @@ using namespace cordis::ui;
         if (!(x))                                                                                                      \
             throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__));                             \
     } while (false)
+
+/** @brief 以真实 Qt 循环等待状态变化，超时只作为故障保护。 */
+void until(const std::function<bool()>& done)
+{
+    QEventLoop loop;
+    QTimer poll, deadline;
+    deadline.setSingleShot(true);
+    QObject::connect(&poll, &QTimer::timeout, &loop, [&] {
+        if (done())
+            loop.quit();
+    });
+    QObject::connect(&deadline, &QTimer::timeout, &loop, &QEventLoop::quit);
+    poll.start(5);
+    deadline.start(5000);
+    if (!done())
+        loop.exec();
+    CHECK(done());
+}
 
 /** @brief 等待真实事件循环中的任务，超时必须失败。 */
 template <class T> void wait(const Task<T>& task)
@@ -361,29 +381,30 @@ void directActivation()
     scene.close();
 }
 
-/** @brief 同实例多页只显示一张卡片；悬浮中撤销插件必须销毁浮层及其动画。 */
+/** @brief 状态卡片不跳转或弹出打开按钮，插件撤销仍及时清理；保留原生卡片生命周期回归。 */
 void homeCards()
 {
     Scene scene;
     auto home = scene.find<QWidget>("CordisWelcomePage");
-    auto cards = home->findChildren<ElaPopularCard*>();
+    auto cards = home->findChildren<ElaScrollPageArea*>("CordisPluginCard");
     CHECK(cards.size() == 1);
-    QPointer<ElaPopularCard> card = cards.front();
+    QPointer<ElaScrollPageArea> card = cards.front();
+    CHECK(card->width() == 280 && card->height() >= 144);
     QTest::mouseClick(card, Qt::LeftButton);
-    CHECK(scene.first->snapshot().value().current);
+    CHECK(home->isVisible() && !scene.first->snapshot().value().current);
     scene.second->navigate().value();
     scene.action("CordisOpenHome");
     QTest::mouseClick(card, Qt::LeftButton);
-    CHECK(scene.second->snapshot().value().current);
+    CHECK(home->isVisible() && !scene.second->snapshot().value().current);
     scene.action("CordisOpenHome");
     QEvent enter(QEvent::Enter);
     QCoreApplication::sendEvent(card, &enter);
     QTest::qWait(520);
     QPointer<QWidget> floater = home->findChild<QWidget*>("ElaPopularCardFloater");
-    CHECK(floater && floater->isVisible());
+    CHECK(!floater);
     wait(scene.instance->stop());
     QTest::qWait(350);
-    CHECK(!card && !floater && home->findChildren<ElaPopularCard*>().isEmpty());
+    CHECK(!card && !floater && home->findChildren<ElaScrollPageArea*>("CordisPluginCard").isEmpty());
     scene.close();
     auto parent = std::make_unique<QWidget>();
     QPointer<ElaPopularCard> reentrant = new ElaPopularCard(parent.get());
@@ -422,15 +443,115 @@ void cardAreaLifetime()
     CHECK(floater && floater->isVisible());
 }
 
+/** @brief 左右开关刷新不发请求，停止/加载及失败重试不切换页签，连续点击只接受一次。 */
+void homePower()
+{
+    Scene scene;
+    scene.shell.management()->attach(scene.kernel).value();
+    const auto original = scene.instance->snapshot().value().instance;
+    auto home = scene.find<QWidget>("CordisWelcomePage");
+    auto button = scene.find<ElaToggleSwitch>("CordisPluginPower");
+    until([&] { return button->isEnabled() && button->getIsToggled(); });
+    CHECK(scene.shell.diagnostics()->snapshot().value().operations.empty());
+    QTest::mouseClick(button, Qt::LeftButton);
+    QTest::mouseClick(button, Qt::LeftButton);
+    until([&] { return !button->isEnabled(); });
+    CHECK(home->isVisible());
+    until([&] { return button->isEnabled() && !button->getIsToggled(); });
+    CHECK(scene.shell.diagnostics()->snapshot().value().operations.size() == 1);
+    CHECK(scene.instance->snapshot().value().state == InstanceState::Disposed &&
+          button->accessibleName() == QString::fromUtf8("加载插件"));
+    QTest::mouseClick(button, Qt::LeftButton);
+    until([&] { return !button->isEnabled(); });
+    until([&] {
+        const auto data = scene.shell.diagnostics()->snapshot().value();
+        return data.instances.size() == 1 && data.instances.front().instance.instance != original &&
+               data.instances.front().instance.state == InstanceState::Active;
+    });
+    until([&] { return scene.find<ElaToggleSwitch>("CordisPluginPower")->isEnabled(); });
+    CHECK(home->isVisible() && scene.find<QTabBar>("CordisPageTabs")->count() == 1);
+    int calls = 0;
+    auto runtime =
+        scene.kernel
+            ->registerPlugin("recoverable",
+                             [&](Context) {
+                                 return ++calls == 1
+                                            ? failedTask(makeError(ErrorCode::ActivationFailed, "first attempt"))
+                                            : completedTask();
+                             })
+            .value();
+    auto failed = scene.kernel->mount(runtime).value();
+    wait(failed.operation().value().target);
+    const auto id = QString::number(failed.snapshot().value().instance.value());
+    QPointer<ElaToggleSwitch> retry;
+    until([&] {
+        for (auto card : home->findChildren<QWidget*>("CordisPluginCard"))
+            if (card->property("CordisPluginId").toString() == id)
+                retry = card->findChild<ElaToggleSwitch*>("CordisPluginPower");
+        return retry && retry->isEnabled();
+    });
+    CHECK(retry->accessibleName() == QString::fromUtf8("重试加载"));
+    QTest::mouseClick(retry, Qt::LeftButton);
+    until([&] { return failed.snapshot().value().state == InstanceState::Active; });
+    CHECK(calls == 2 && home->isVisible());
+    scene.close();
+}
+
+/** @brief 挂载在途时开关显示实际已加载状态，不能把 busy 的不可停止误作关闭。 */
+void homePowerBusy()
+{
+    Scene scene;
+    scene.shell.management()->attach(scene.kernel).value();
+    Promise<void> gate;
+    int calls = 0;
+    auto runtime =
+        scene.kernel
+            ->registerPlugin("slow", [&, gate](Context) { return ++calls == 2 ? gate.task() : completedTask(); })
+            .value();
+    auto instance = scene.kernel->mount(runtime).value();
+    wait(instance.ready());
+    const auto original = instance.snapshot().value().instance;
+    scene.shell.management()->stop(original).value();
+    until([&] { return !scene.shell.diagnostics()->snapshot().value().operations.back().pending; });
+    scene.shell.management()->load(original).value();
+    until([&] { return scene.shell.diagnostics()->snapshot().value().operations.back().previousInstance == original; });
+    const auto current = scene.shell.diagnostics()->snapshot().value().operations.back().instance;
+    auto home = scene.find<QWidget>("CordisWelcomePage");
+    QPointer<ElaToggleSwitch> toggle;
+    until([&] {
+        for (auto card : home->findChildren<QWidget*>("CordisPluginCard"))
+            if (card->property("CordisPluginId").toString() == QString::number(current.value()))
+                toggle = card->findChild<ElaToggleSwitch*>("CordisPluginPower");
+        return toggle && !toggle->isEnabled();
+    });
+    CHECK(scene.kernel->findInstance(current).value().snapshot().value().state == InstanceState::Loading);
+    CHECK(toggle->getIsToggled());
+    gate.resolve();
+    until([&] { return toggle && toggle->isEnabled(); });
+    CHECK(toggle->getIsToggled() && scene.shell.diagnostics()->snapshot().value().operations.size() == 2);
+    scene.close();
+}
+
 /** @brief 定时刷新卡片期间重入关闭，窗口必须保留到本轮控件写入返回。 */
 void homeRefreshReentry()
 {
     Scene scene;
-    auto card = scene.find<ElaPopularCard>("CordisPluginCard");
+    auto card = scene.find<ElaToggleSwitch>("CordisPluginPower");
     scene.shell.management()->attach(scene.kernel).value();
     bool entered = false, retained = false;
     std::optional<Task<void>> closing;
-    QObject::connect(card, &ElaPopularCard::pSubTitleChanged, scene.window, [&] {
+    /** @brief 观察刷新触发的启用变化，关闭可重入但不能提前销毁当前控件写入栈。 */
+    struct EnabledProbe final : QObject {
+        std::function<void()> callback;
+        /** @brief 开关快照同步屏蔽 toggled，仅通过真实 Qt 状态事件触发重入探针。 */
+        bool eventFilter(QObject* watched, QEvent* event) override
+        {
+            if (event->type() == QEvent::EnabledChange)
+                callback();
+            return QObject::eventFilter(watched, event);
+        }
+    } probe;
+    probe.callback = [&] {
         if (entered)
             return;
         entered = true;
@@ -439,7 +560,8 @@ void homeRefreshReentry()
         QTimer::singleShot(60, &nested, &QEventLoop::quit);
         nested.exec();
         retained = scene.window && !closing->isReady();
-    });
+    };
+    card->installEventFilter(&probe);
     QTest::qWait(750);
     CHECK(entered && retained && closing);
     wait(*closing);
@@ -587,6 +709,10 @@ int main(int argc, char** argv)
             directActivation();
         else if (name == "cards")
             homeCards();
+        else if (name == "power")
+            homePower();
+        else if (name == "power_busy")
+            homePowerBusy();
         else if (name == "home_refresh_reentry")
             homeRefreshReentry();
         else if (name == "tab_fallback")

@@ -347,6 +347,13 @@ Result<void> ServiceRegistry::checkDeclarations(InstanceId instance) const
 bool ServiceRegistry::usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const { return control_->scheduler == scheduler; }
 /** @brief 域归属由 owner 线程的索引创建记录确定。 */
 bool ServiceRegistry::containsRealm(RealmId realm) const { return control_->realms.count(realm) != 0; }
+/** @brief 公开查询先检查 owner，避免适配层为验证域而试挂载或登记服务。 */
+Result<bool> ServiceRegistry::ownsRealm(RealmId realm) const
+{
+    if (!control_->scheduler->isCurrentThread())
+        return Result<bool>::failure(makeError(ErrorCode::WrongThread, "realm query requires owner thread"));
+    return Result<bool>::success(containsRealm(realm));
+}
 /** @brief 在索引与类型校验后增加绑定保留，不允许跨 scheduler 连接消费者。 */
 Result<std::shared_ptr<detail::CommittedLease>> ServiceRegistry::commitErased(const ServiceKey& key, std::type_index type,
     const std::shared_ptr<IScheduler>& scheduler, InstanceId instance, Epoch epoch,

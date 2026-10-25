@@ -2,7 +2,10 @@
  * @brief 实现插件登记、实例归属和全量停止结果汇总。
  */
 #include <cordis/kernel.hpp>
+#include <memory>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 namespace cordis {
 /** @brief 校验开放调度器与 owner 线程。 */
@@ -29,18 +32,44 @@ Result<Runtime> Kernel::registerPlugin(std::string name, Runtime::Activate activ
 }
 
 /** @brief 拒绝其他内核的运行时，并在激活前保存实例句柄。 */
-Result<Instance> Kernel::mount(const Runtime& runtime, std::string config, RealmMap realms)
+Result<Instance> Kernel::mount(const Runtime& runtime, std::string config, RealmMap realms,
+                               std::vector<ServiceRequirement> additionalDependencies)
 {
     if (!scheduler_->isCurrentThread()) return Result<Instance>::failure(makeError(ErrorCode::WrongThread, "mount requires owner thread"));
     if (closing_) return Result<Instance>::failure(makeError(ErrorCode::ContextClosing, "kernel closing"));
     if (!scheduler_->isOpen()) return Result<Instance>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
     for (const auto& entry : runtimes_) if (entry.second.id() == runtime.id()) {
         try {
-            auto instance = Instance::mount(runtime, scheduler_, std::move(config), services_, std::move(realms));
+            auto instance = Instance::mount(runtime, scheduler_, std::move(config), services_, std::move(realms),
+                                            std::move(additionalDependencies));
             instances_.emplace(instance.snapshot().value().instance, instance);
             return Result<Instance>::success(std::move(instance));
         } catch (const std::invalid_argument& error) { return Result<Instance>::failure(makeError(ErrorCode::InvalidArgument, error.what())); }
     }
+    return Result<Instance>::failure(makeError(ErrorCode::InvalidArgument, "runtime not registered here"));
+}
+
+/** @brief 由旧句柄保留输入，允许已被 snapshot 回收的终结实例重新加载。 */
+Result<Instance> Kernel::remount(const Instance& previous)
+{
+    if (!scheduler_->isCurrentThread())
+        return Result<Instance>::failure(makeError(ErrorCode::WrongThread, "remount requires owner thread"));
+    if (closing_)
+        return Result<Instance>::failure(makeError(ErrorCode::ContextClosing, "kernel closing"));
+    if (!scheduler_->isOpen())
+        return Result<Instance>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
+    if (!previous.control_)
+        return Result<Instance>::failure(makeError(ErrorCode::InvalidArgument, "remount source was moved from"));
+    auto snapshot = previous.snapshot();
+    if (!snapshot.hasValue())
+        return Result<Instance>::failure(snapshot.error());
+    for (const auto& entry : runtimes_)
+        if (entry.second.id() == snapshot.value().runtime) {
+            auto mounted = previous.remount(entry.second, scheduler_, services_);
+            if (mounted.hasValue())
+                instances_.emplace(mounted.value().snapshot().value().instance, mounted.value());
+            return mounted;
+        }
     return Result<Instance>::failure(makeError(ErrorCode::InvalidArgument, "runtime not registered here"));
 }
 

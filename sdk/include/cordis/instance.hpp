@@ -139,6 +139,10 @@ class Runtime {
 public:
     /** @brief 获取进程内唯一标识，副本共享标识；移动后原句柄返回无效标识。 */
     RuntimeId id() const noexcept { return activate_ ? id_ : RuntimeId{}; }
+    /** @brief 宿主读取不可变的类型化依赖契约，不授予激活回调或服务调用能力。 */
+    const std::vector<ServiceRequirement>& requirements() const noexcept { return dependencies_; }
+    /** @brief 宿主读取不可变的输出契约，用于运行计划排序与域匹配。 */
+    const std::vector<ServiceOutput>& outputs() const noexcept { return outputs_; }
     using Activate = std::function<Task<void>(Context)>;
     /** @brief 创建插件定义；全部输出须声明，空输出表禁止 provide；无效描述抛 invalid_argument。 */
     explicit Runtime(Activate activate, std::vector<ServiceRequirement> dependencies = {}, std::vector<ServiceOutput> outputs = {});
@@ -199,7 +203,8 @@ class Instance {
 public:
     /** @brief 排队激活插件；要求开放的 owner-thread scheduler，否则抛 invalid_argument。 */
     static Instance mount(const Runtime& runtime, std::shared_ptr<IScheduler> scheduler, std::string config = {},
-        std::shared_ptr<ServiceRegistry> services = {}, RealmMap realms = {});
+                          std::shared_ptr<ServiceRegistry> services = {}, RealmMap realms = {},
+                          std::vector<ServiceRequirement> additionalDependencies = {});
     /** @brief 在期望修订匹配时替换目标配置；返回独立稳定结果观察句柄。 */
     Result<OperationHandle> update(std::string config, ConfigRevision expectedRevision) const;
     /** @brief 对失败且已静止的实例重新激活，保留配置修订并分配新操作。 */
@@ -220,6 +225,10 @@ public:
     Result<std::vector<DependencySnapshot>> dependencies() const;
 private:
     friend class Context;
+    friend class Kernel;
+    /** @brief 仅 Kernel 以同一注册表和 Runtime 复制已终结实例的输入，旧实例保持终结。 */
+    Result<Instance> remount(const Runtime& runtime, const std::shared_ptr<IScheduler>& scheduler,
+                             const std::shared_ptr<ServiceRegistry>& services) const;
     /** @brief 接受配置替换或重试，区分配置修订与操作标识。 */
     Result<OperationHandle> change(std::string config, ConfigRevision expectedRevision, bool revise) const;
     /** @brief 持有实例共享控制块，句柄析构不执行异步停止。 */

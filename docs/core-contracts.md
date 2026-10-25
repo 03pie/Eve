@@ -112,6 +112,10 @@ W5 将子→父所有权边加入消费者→提供者的实际图，拒绝父�
 
 已稳定返回 PendingMissingDependency 的实例，后来预检因环或版本不兼容而 Failed 时，会创建新的自动收敛操作发布 Failed；旧操作仍返回历史 Pending，配置修订不递增。当前失败通过 operation/awaitTarget 与 snapshot.failure 一致观察。
 
+### 实例级附加依赖（Q4c2b）
+
+Kernel::mount 和 Instance::mount 可传入 additionalDependencies，按解析后的完整服务键与 Runtime 固定需求联合，minor 取最大值、能力取并集。同键不同 C++ 类型拒绝；重复键归一化为一个提交租约。Runtime 本身不修改，不因配置创建新定义。实例的 update/retry 保留契约，停止后 Kernel::remount 也复制完整实例依赖；修改有效契约须停止并重建。Loader 的类型目录、接受前复核和配置规划规则见 [ADR-0017](adr/0017-instance-inject-contracts.md)。
+
 ## 6. Event
 
 emit/bail/waterfall 是同步协议；serial/parallel 使用 Task。终止使用 Continue/Stop(value) 显式类型。once 在进入回调前注销；快照调用前检查 liveness；Next 限当前调用栈且至多一次。内部观察者错误逐个隔离，不中断清理。

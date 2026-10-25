@@ -9,7 +9,6 @@
 #include <ElaText.h>
 #include <ElaPushButton.h>
 #include <ElaPlainTextEdit.h>
-#include <ElaPopularCard.h>
 #include <ElaScrollPage.h>
 #include <ElaScrollPageArea.h>
 #include <ElaTheme.h>
@@ -209,8 +208,14 @@ struct Application : std::enable_shared_from_this<Application> {
             if (!home) { fail("home action missing"); return; }
             home->trigger();
             QTimer::singleShot(100, QCoreApplication::instance(), [self, guarded] {
-                if (!guarded || guarded->findChildren<ElaPopularCard*>().size() != 4) { self->fail("home plugin catalogue incomplete"); return; }
-                if (!guarded || !guarded->grab().save(QCoreApplication::applicationDirPath() + (eTheme->getThemeMode() == ElaThemeType::Dark ? "/ela-home-smoke-dark.png" : "/ela-home-smoke.png"))) { self->fail("home preview capture failed"); return; }
+                if (!guarded || guarded->findChildren<QWidget*>("CordisPluginCard").size() != 4) {
+                    self->fail("home plugin catalogue incomplete");
+                    return;
+                }
+                if (!guarded || !guarded->grab().save(QCoreApplication::applicationDirPath() + (eTheme->getThemeMode() == ElaThemeType::Dark ? "/ela-home-smoke-dark.png" : "/ela-home-smoke.png"))) {
+                    self->fail("home preview capture failed");
+                    return;
+                }
                 self->page->navigate().value();
                 QTimer::singleShot(350, QCoreApplication::instance(), [self, guarded] {
                     if (!guarded || !guarded->grab().save(QCoreApplication::applicationDirPath() + (eTheme->getThemeMode() == ElaThemeType::Dark ? "/ela-notes-smoke-dark.png" : "/ela-notes-smoke.png"))) { self->fail("plugin preview capture failed"); return; }

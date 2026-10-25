@@ -1,6 +1,6 @@
 # P3 桌面适配开发记录
 
-日期：2026-10-24。状态：进行中；Q0–Q3c 自动化基线、Q4a/Q4b 校验、Q4c1 协调、Q4d1 文件事务及 Q4d2 Store 状态/队列已实现；原生桌面人工验收待办，后续按前置条件接入 Kernel 驱动、watcher/后台 I/O 和管理页保存。
+最后更新：2026-10-25。状态：进行中；Q0–Q3c、Q4a/Q4b 校验、Q4c1 协调及 Q4d1/Q4d2 文件和 Store 已实现。用户已确认此前工作台的原生桌面人工验收完成；Q4c2a/b 已接入顶层内置配置及动态 inject 的真实 Kernel 驱动，显式配置子树、watcher/后台 I/O 和管理页保存继续待办。
 
 ## 已安装与验证
 
@@ -16,7 +16,7 @@ py -3.10 -m venv build/qt-tools
 
 本轮使用 VS2022 Professional 的 MSVC 19.44 x64/v143，Debug /MDd、Release /MD；Qt 库来自 msvc2019_64 包。该组合已实际编译、链接、加载和运行探测。微软的二进制兼容约束允许支持版本的较新工具链链接较旧库，但仍要求合适的运行库和链接版本，/GL 等另有限制，不能推广成任意 Qt/插件组合都已验证。[微软兼容性说明](https://learn.microsoft.com/en-us/cpp/porting/binary-compat-2015-2017)
 
-v142 未安装；当前选定并验证的是上述 v143 组合，未把它记为 v142 验收。Ela 页面贡献已通过下述 Q3a 检查，完整 UI 及原生桌面人工交互仍待验收。
+v142 未安装；当前选定并验证的是上述 v143 组合，未把它记为 v142 验收。下文各轮记录保留当时的验证状态；原生桌面交互的最新用户确认见本文末尾及验收单。
 
 ## 项目配置与运行
 
@@ -560,6 +560,70 @@ Q4d1/Q4d2 本次一并审查提交。真实 Kernel、watcher、后台 I/O、管�
 
 原目录 Ela/MSVC Debug/Release 各 259/259，无 Qt GCC Debug/Release 各 158/158，UI ASan 61/61 通过；日志为 build/review-workbench-ela-msvc-<mode>.log、build/review-workbench-core-gcc-<mode>.log、build/review-workbench-asan.log。本次将此前工作台/Home/布局/面板默认收起改动与审查修复一并提交；人工验收和后续 Loader/Store 装配状态保持不变。
 
+## Q3c 人工桌面验收完成
+
+2026-10-25 用户在本次会话明确回复“桌面人工验收完成”。按该确认登记 [Q3c 验收单](../tests/acceptance/p3-ui.md) 为通过，解除 Q4c2 真实运行驱动的前置条件。此记录来源于用户实际验收，未补造 Windows 版本、分辨率或缩放明细；之前各轮“人工待验”保留为历史状态。
+
+## Q4c2a 顶层内置配置驱动
+
+新增 `Cordis::ConfigKernel` 与 `KernelReconcileDriver`，将 Q4c1 通用协调协议接到真实 Kernel 的 mount/update/retry/stop 和稳定操作。按精确服务键/类型/版本/能力规划提供者先启动、消费者先移除；配置修改复用实例、realm/插件变化完整停止后重建。运行失败保留用户目标，缺依赖为 Pending，后续依赖恢复不改写历史结果。关闭只排空驱动拥有的实例，不接管共享 Kernel 中其他实例。
+
+预检拒绝本轮未实现的显式 children 和动态 inject 契约，检查 realm 归属、配置内重复提供者及环。跨启用路径交换输出键要求显式移除阶段；清理失败或投递故障保留资源证据并阻断后续执行。新只读 Runtime 契约和 ServiceRegistry::ownsRealm 供适配检查，Core 保持无 Loader/Qt/Ela 依赖。协议与限制见 [ADR-0016](adr/0016-kernel-configuration-driver.md)。
+
+新增 13 项真实 Kernel 单测及 `cordis_reconcile_demo` 冒烟示例。示例不依赖 Qt：先后接受服务值 1、2 两份 YAML，消费者随提供者配置重启恢复，然后等待全部实例静止退出。运行 `build/core-gcc-debug/examples/builtin/cordis_reconcile_demo.exe`；Ela 预设对应程序同样位于其现有构建目录的 examples/builtin。
+
+验证结果（2026-10-25）：
+
+| 检查 | 结果 |
+|---|---|
+| 原目录 Ela/MSVC Debug、Release | 各 273/273；新增 13 项真实 Kernel 场景及 1 项示例 |
+| 无 Qt GCC Debug、Release | 各 172/172；公开驱动头 C++17 独立包含通过 |
+| 最终边界补充 | Debug 两工具链各 14/14 定向回归；覆盖重建途中关闭及版本/能力拒绝 |
+| MSVC ASan | Loader 70/70；新驱动/单测/示例及 Core 服务编译单元插桩已核对，预编译 Qt 未插桩 |
+| 规范及边界 | UTF-8/LF、差异空白、本地文档链接及 Core/驱动无 Qt/Ela 依赖检查通过 |
+
+日志为 `build/p3-q4c2-core-gcc-<mode>.log`、`build/p3-q4c2-ela-msvc-<mode>.log`、`build/p3-q4c2-final-<core|ela>-debug.log` 和 `build/p3-q4c2-asan.log`。Release 初次链接因正在运行的原目录演示程序占用 exe 失败；请求正常关闭后在同一目录完整重建并通过，无新增 Release 构建目录。最后补充的驱动/测试调整以 Debug 定向构建复核，Release 的完整回归包含最终版本。
+
+ASan 验证内存访问，不证明阻断场景没有保守驻留或具备物理卸载能力。本轮未提交，不包含 UI 配置管理入口或全应用保存/退出装配。
+
+## Home 状态卡片与电源操作
+
+2026-10-25 按用户要求取消首页插件卡片的打开跳转及 PopularCard 打开浮层，改用 ElaScrollPageArea/ElaText 展示名称、实例号和当前状态。操作控件按后续偏好由电源图标换为 ElaToggleSwitch 左右滑动开关。卡片宽 280、最小高 144，流布局自动换行；长标题省略并保留完整提示，不再保存首页卡片的页面目标或最近子页账目。导航侧栏和首页顶部快捷入口继续使用原有页面入口。
+
+每张卡片只有一个左右开关：右侧开启执行加载/失败重试，左侧关闭执行停止。宿主基于最新快照校验期望状态并使用管理请求去重；加载不切换页签。控制器缓存自己停止的实例，重新加载以最新配置及 realm 创建新身份，旧实例仍为 Disposed。停止缓存及操作历史分别限 100 条，清理未完成不能重挂载。生命周期与归属详见 [管理决策增补](adr/0008-management-diagnostics.md#home-电源操作增补2026-10-25)。
+
+新增 diagnostics_remount、management_load 和 workbench_power，更新状态卡片、停止诊断、关闭重入及示例截图检查；覆盖配置/realm 保留、旧实例不复活、跨内核/错误线程/关闭拒绝、重复点击、新旧身份的在途门禁、排队加载期间关闭和失败重试。
+
+原目录 Ela/MSVC Debug、Release 各 276/276，无 Qt GCC Debug、Release 各 173/173；UI ASan 63/63，加内核 remount 场景 1/1，通过。已核对新 UI/Core/测试单元的 ASan 插桩；预编译 Qt 未插桩。明暗截图 ela-home-smoke[-dark].png 已查看，布局回归含宽窄窗口及 150% 缩放。公开 Kernel/管理头独立包含、Core 无 Qt 依赖、UTF-8/LF、文档链接及差异空白检查通过。
+
+日志为 build/home-power-ela-msvc-<mode>.log、build/home-power-core-gcc-<mode>.log、build/home-power-asan.log 和 build/home-power-core-asan.log；定向记录为 build/home-power-debug-tests.log。原 Release 启动文件仍为 build/ela-msvc-release/bin/cordis_ela_demo.exe。本轮未提交；此前人工验收记录保留，新增 Home 专项待人工复核。
+
+左右开关后续验证：程序同步位置时屏蔽 toggled，刷新不产生管理请求；连续点击仅接受一次。原生开关信号排队处理，撤页后的旧信号忽略。关闭重入改由真实 EnabledChange 事件复核，保留窗口访问屏障。此次仅改变私有 UI 接口，原目录 MSVC Debug/Release 的管理/工作台/示例专项各 34/34，ASan 同范围 34/34 通过，含明暗及 150% 布局检查。已查看更新后的浅/深色 Home 截图；日志为 build/home-toggle-<debug|release|asan>-tests.log。不重复计作无 Qt 内核回归，Release 沿用原目录。
+
+## Q4c2b 动态 inject 契约
+
+本轮补齐配置中增加/收紧依赖的真实执行。Kernel/Instance.mount 可接收类型化附加依赖，按解析后的完整键联合固定要求，minor 取最大值、能力取并集，同键不同类型拒绝。完整契约属于实例，update/retry 及停止后 remount 保留；Runtime 定义不修改、不按配置注册变体。
+
+KernelPlugin.configurableInject 由宿主声明允许按需追加的接口类型、原始域和最低要求。驱动复核 effectiveInject 不弱于固定 Runtime/接口目录，未知新增类型在接受前拒绝。真实规划包含追加边的类型、版本、能力及环；有效契约变化先完整停止再重建，冗余低要求不重复激活。记录实际接受的契约，旧实例清理失败不覆盖运行输入。协议见 [ADR-0017](adr/0017-instance-inject-contracts.md)。
+
+新增 3 项 Core、6 项真实 Kernel 驱动场景，示例改为由 YAML counter/v1 inject 触发消费者预检。补充部分应用期间被最新目标替代的回归：旧高要求消费者与新低版本提供者短暂共存时，旧图只用于清理排序，兼容性由新目标严格检查；修复前失败证据为 build/q4c2b-replan-before.log。
+
+| 检查 | 结果 |
+|---|---|
+| 原目录 Ela/MSVC Debug、Release 完整回归 | 各 285/285，新增 9 项场景 |
+| 无 Qt GCC Debug、Release 完整回归 | 各 182/182，Core 保持无 Loader/Qt/Ela 依赖 |
+| 最终重规划修正 | 四配置受影响的驱动/示例各 20/20 再次通过；未改动其余模块 |
+| MSVC ASan | Loader 76/76，Core 服务契约及 remount 10/10；本轮修改单元插桩已核对 |
+| 规范及边界 | Kernel/驱动公开头独立包含、UTF-8/LF、文档链接、差异空白及依赖隔离通过 |
+
+完整日志为 build/p3-q4c2b-<core-gcc|ela-msvc>-<mode>.log，最终重规划复核为 build/q4c2b-final-<gcc|msvc>-<mode>.log，ASan 为 build/p3-q4c2b-asan-loader.log、build/p3-q4c2b-asan-core.log。Loader ASan 已包含最终修正；预编译 Qt 未插桩。所有构建沿用原有目录，本轮未提交。显式配置子树、管理页保存及全应用装配继续待办。
+
+## Q4c2a/b 与 Home 提交前审查
+
+2026-10-25 对 4f743ed 后全部未提交改动审查并修复三项问题：Core 内部任务被单次拒绝但调度器仍开放时，配置动作/关闭无法终结且快照掩盖阻断；管理加载在途时左右开关误显示关闭；Kernel.remount 读取已移动来源崩溃。修复前 0/3、修复后 3/3，详见 [审查记录](code-review.md#p3-kernel-配置驱动与-home-生命周期操作提交前审核)。源状态和操作权限分离，驱动在故障关闭时仍广播停止并保守保留，没有静止证明不释放资源。
+
+审查后原目录 Ela/MSVC Debug/Release 各 287/287，无 Qt GCC Debug/Release 各 183/183；ASan UI/Loader 141/141、Core 10/10。日志为 build/review-kernel-home-<ela-msvc|core-gcc>-<mode>.log、build/review-kernel-home-asan.log、build/review-kernel-home-core-asan.log。公共头独立包含、Core 隔离、修改单元插桩、UTF-8/LF、文档链接和差异空白通过；Qt 预编译库未插桩。此前各节“本轮未提交”为当时记录，Q4c2a/b、Home 与本次审查修复一并随本次提交归档。Home 专项人工复核和其余 P3 工作保持待办。
+
 ## 后续工作
 
-完成 Q3c 原生 Windows 桌面人工验收后接 Q4c2 Kernel 运行树驱动及真实依赖/子树协调；独立推进 Q4d3 watcher、重命名后恢复监听和自身写入 hash 消重，后台 I/O 随专用 worker 屏障接入。管理页随后接入候选差异、条目启停和保存状态。模块引用/驻留/卸载详情随 P4 接入；connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解不表示完成了原设计中任何尚未运行的 L/Q/U 场景。
+继续 Q4c2 的显式配置子树，再接管理页候选差异、配置拥有条目的启停、保存状态及 Store/驱动的应用装配。Q4d3 处理 watcher、重命名后恢复监听和自身写入 hash 消重，后台 I/O 随专用 worker 屏障接入。模块引用/驻留/卸载详情随 P4 接入；connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解不表示完成了原设计中任何尚未运行的 L/Q/U 场景。

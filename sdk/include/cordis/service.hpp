@@ -167,6 +167,8 @@ public:
     explicit ServiceRegistry(std::shared_ptr<IScheduler> scheduler);
     /** @brief 分配本注册表可用的进程唯一隔离域。 */
     Result<RealmId> createRealm() const;
+    /** @brief owner 只读检查隔离域归属，关闭调度器后仍可诊断，不创建新域。 */
+    Result<bool> ownsRealm(RealmId realm) const;
     /** @brief 保留完整键并登记 Staged 服务；同键所有未释放状态均冲突。 */
     template<class T> Result<ProviderHandle> stage(ServiceKey key, std::shared_ptr<T> object, ServiceMetadata metadata = {}) const
     { return stageErased(std::move(key), std::move(object), typeid(T), std::move(metadata)); }

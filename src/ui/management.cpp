@@ -89,7 +89,10 @@ QString outcomeName(StableOutcome outcome)
 /** @brief 操作记录使用纯文本；未派发前不把无效零值编号显示成内核操作。 */
 QString operationText(const ManagementOperation& operation)
 {
-    QString text = QString("#%1 ").arg(operation.request) + (operation.action == ManagementAction::Stop ? QString::fromUtf8("停止") : QString::fromUtf8("重试"));
+    QString text = QString("#%1 ").arg(operation.request) +
+                   (operation.action == ManagementAction::Stop   ? QString::fromUtf8("停止")
+                    : operation.action == ManagementAction::Load ? QString::fromUtf8("加载")
+                                                                 : QString::fromUtf8("重试"));
     text += QString::fromUtf8(" 实例=%1 ").arg(operation.instance.value());
     text += operation.pending ? QString::fromUtf8("等待完成") : operation.stable ? outcomeName(operation.stable->outcome) : operation.error ? QString::fromUtf8("失败") : QString::fromUtf8("已完成");
     if (operation.deliveryBlocked) text += QString::fromUtf8("（投递受阻）");
@@ -132,6 +135,7 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
     std::uint64_t sequence = 0;
     std::deque<std::shared_ptr<ManagementRecord>> operations;
     std::map<InstanceId, std::uint64_t> busy;
+    std::map<InstanceId, Instance> stopped;
     /** @brief 只在 owner 读取非原子账目，关闭后可读取诊断但不可发起操作。 */
     Result<void> thread() const
     {
@@ -185,6 +189,24 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             auto value = operation->data;
             value.deliveryBlocked = operation->blocked.load();
             output.operations.push_back(std::move(value));
+        }
+        // 仅保留控制器亲自停止的实例；终结对象不再携带激活闭包，缓存有界。
+        for (const auto& entry : stopped) {
+            auto snapshot = entry.second.snapshot();
+            if (!snapshot.hasValue() || snapshot.value().state != InstanceState::Disposed)
+                continue;
+            std::string name;
+            for (const auto& runtime : core.value().names)
+                if (runtime.id == snapshot.value().runtime)
+                    name = runtime.name;
+            auto operation = entry.second.operation().value();
+            ManagedInstanceSnapshot row{
+                snapshot.value(), std::move(name), {}, operation.id, {}, busy.count(entry.first) != 0, false, false};
+            if (auto result = operation.target.tryResult(); result && result->hasValue())
+                row.stable = result->value();
+            row.canLoad = open && scheduler->isOpen() && !core.value().closing && !row.busy &&
+                          !snapshot.value().deliveryBlocked && !snapshot.value().resources.deliveryBlocked;
+            output.instances.push_back(std::move(row));
         }
         return Result<DiagnosticsSnapshot>::success(std::move(output));
     }
@@ -323,7 +345,7 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
     void finish(const std::shared_ptr<ManagementRecord>& record)
     {
         if (record->data.stable && record->data.stable->outcome == StableOutcome::Failed && !record->data.error) {
-            auto error = makeError(ErrorCode::ActivationFailed, "retry failed");
+            auto error = makeError(ErrorCode::ActivationFailed, "activation failed");
             error.instance = record->data.instance; error.operation = record->data.operation;
             if (auto target = kernel.lock()) {
                 auto instance = target->findInstance(record->data.instance);
@@ -354,9 +376,56 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             record->data.error = snapshot.hasValue() ? makeError(ErrorCode::ContextClosing, "kernel closing") : snapshot.error(); finish(record); return;
         }
         auto instance = target->findInstance(record->data.instance);
+        if (record->data.action == ManagementAction::Load) {
+            auto found = stopped.find(record->data.instance);
+            if (found == stopped.end()) {
+                record->data.error = makeError(ErrorCode::InstanceDisposed, "stopped instance unavailable");
+                finish(record);
+                return;
+            }
+            auto mounted = target->remount(found->second);
+            if (!mounted.hasValue()) {
+                record->data.error = mounted.error();
+                finish(record);
+                return;
+            }
+            const auto previous = record->data.instance;
+            record->data.previousInstance = previous;
+            record->data.instance = mounted.value().snapshot().value().instance;
+            busy.erase(previous);
+            busy.emplace(record->data.instance, record->data.request);
+            stopped.erase(found);
+            auto operation = mounted.value().operation().value();
+            record->data.operation = operation.id;
+            std::weak_ptr<ManagementControl> weak = shared_from_this();
+            watch(operation.target.thenOn(scheduler,
+                                          [weak, record](const Result<StableReport>& result) {
+                                              if (result.hasValue())
+                                                  record->data.stable = result.value();
+                                              else
+                                                  record->data.error = result.error();
+                                              if (auto owner = weak.lock())
+                                                  owner->finish(record);
+                                          }),
+                  record);
+            return;
+        }
         if (!instance.hasValue()) { record->data.error = instance.error(); finish(record); return; }
         std::weak_ptr<ManagementControl> weak = shared_from_this();
         if (record->data.action == ManagementAction::Stop) {
+            if (stopped.count(record->data.instance) == 0 && stopped.size() == ManagementController::historyLimit) {
+                auto old = std::find_if(stopped.begin(), stopped.end(), [&](const auto& entry) {
+                    return busy.count(entry.first) == 0 &&
+                           entry.second.snapshot().value().state == InstanceState::Disposed;
+                });
+                if (old == stopped.end()) {
+                    record->data.error = makeError(ErrorCode::ContextClosing, "stopped instance cache full");
+                    finish(record);
+                    return;
+                }
+                stopped.erase(old);
+            }
+            stopped.emplace(record->data.instance, instance.value());
             auto operation = instance.value().operation();
             if (operation.hasValue()) record->data.operation = operation.value().id;
             watch(instance.value().stop().thenOn(scheduler, [weak, record](const Result<CleanupReport>& result) {
@@ -390,7 +459,9 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         if (!data.hasValue()) return Result<std::uint64_t>::failure(data.error());
         auto found = std::find_if(data.value().instances.begin(), data.value().instances.end(), [id](const ManagedInstanceSnapshot& row) { return row.instance.instance == id; });
         if (found == data.value().instances.end()) return Result<std::uint64_t>::failure(makeError(ErrorCode::InstanceDisposed, "unknown or disposed instance"));
-        if ((action == ManagementAction::Stop && !found->canStop) || (action == ManagementAction::Retry && !found->canRetry))
+        if ((action == ManagementAction::Stop && !found->canStop) ||
+            (action == ManagementAction::Retry && !found->canRetry) ||
+            (action == ManagementAction::Load && !found->canLoad))
             return Result<std::uint64_t>::failure(makeError(ErrorCode::ContextClosing, "instance busy or action unavailable"));
         if (sequence == std::numeric_limits<std::uint64_t>::max()) return Result<std::uint64_t>::failure(makeError(ErrorCode::InvalidArgument, "management request ids exhausted"));
         if (operations.size() == ManagementController::historyLimit) {
@@ -464,6 +535,32 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
 QWidget* managementWidget(const std::shared_ptr<ManagementControl>& control) { return control->widget; }
 /** @brief 保留调用控制块，管理视图访问屏障处理信号重入。 */
 Result<void> refreshManagement(const std::shared_ptr<ManagementControl>& control) { return control->refresh(); }
+/** @brief 单图标入口仍经过管理请求的线程、排队、实例忙及关闭门禁。 */
+Result<void> setManagementEnabled(const std::shared_ptr<ManagementControl>& control, InstanceId instance, bool enabled)
+{
+    auto snapshot = control->capture();
+    if (!snapshot.hasValue())
+        return Result<void>::failure(snapshot.error());
+    if (!control->open || !control->scheduler->isOpen())
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "management closing"));
+    const auto& rows = snapshot.value().instances;
+    auto found = std::find_if(rows.begin(), rows.end(),
+                              [instance](const auto& row) { return row.instance.instance == instance; });
+    if (found == rows.end())
+        return Result<void>::failure(makeError(ErrorCode::InstanceDisposed, "plugin instance unavailable"));
+    if (!found->busy && snapshot.value().managementOpen && !snapshot.value().kernel.closing &&
+        ((enabled &&
+          (found->instance.state == InstanceState::Active || found->instance.state == InstanceState::Pending ||
+           found->instance.state == InstanceState::Loading)) ||
+         (!enabled && found->instance.state == InstanceState::Disposed)))
+        return Result<void>::success();
+    if ((enabled && !found->canRetry && !found->canLoad) || (!enabled && !found->canStop))
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "plugin action unavailable"));
+    auto result = control->request(instance, !enabled          ? ManagementAction::Stop
+                                             : found->canRetry ? ManagementAction::Retry
+                                                               : ManagementAction::Load);
+    return result.hasValue() ? Result<void>::success() : Result<void>::failure(result.error());
+}
 /** @brief 管理操作结果只持宿主记录；关闭等待当前 UI 写入栈返回，不取消已进入的内核操作。 */
 Task<void> closeManagement(const std::shared_ptr<ManagementControl>& control)
 {
@@ -518,5 +615,13 @@ Result<std::uint64_t> ManagementController::retry(InstanceId instance) const
     auto control = control_.lock();
     if (!control) return Result<std::uint64_t>::failure(makeError(ErrorCode::ContextClosing, "management expired"));
     return control->request(instance, ManagementAction::Retry);
+}
+/** @brief 加载沿用相同的 owner、排队、去重和关闭门禁。 */
+Result<std::uint64_t> ManagementController::load(InstanceId instance) const
+{
+    auto control = control_.lock();
+    if (!control)
+        return Result<std::uint64_t>::failure(makeError(ErrorCode::ContextClosing, "management expired"));
+    return control->request(instance, ManagementAction::Load);
 }
 } // namespace cordis::ui

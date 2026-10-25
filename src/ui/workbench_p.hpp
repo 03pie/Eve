@@ -15,9 +15,11 @@ class QToolButton;
 class QPlainTextEdit;
 namespace cordis::ui::detail {
 struct WorkbenchControl;
-/** @brief 首页卡片只接收宿主值数据，目标仍由工作台的生命周期门禁检查。 */
+/** @brief 首页只展示插件值状态，电源操作由宿主按实例身份重新校验。 */
 struct HomePlugin {
-    QString id, target, title, subtitle, description;
+    QString id, title, subtitle;
+    bool canStop = false, canLoad = false, canRetry = false, busy = false;
+    bool enabled = false;
 };
 /** @brief 所有导航仍由 Shell 校验贡献及 epoch，刷新只调用宿主管理器。 */
 struct WorkbenchActions {
@@ -27,6 +29,7 @@ struct WorkbenchActions {
     std::function<std::vector<HomePlugin>()> plugins;
     /** @brief 在控件写入期间保留根窗口，关闭任务等访问栈返回后才允许销毁。 */
     std::function<void(const std::function<void()>&)> withWindowAccess;
+    std::function<Result<void>(const QString&, bool)> power;
 };
 /** @brief 创建 Example 风格滚动首页，入口在工作台构造时连接。 */
 QWidget* createWelcomePage();
@@ -45,8 +48,7 @@ void registerWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, con
 /** @brief 页面撤销同步裁剪历史、建议和页签，旧搜索结果不能恢复旧贡献。 */
 void removeWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const QString& key);
 /** @brief 所有鼠标/键盘/程序入口统一记录选择，历史重放不产生新分支。 */
-void selectWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const QString& key,
-                         bool rememberPlugin = true);
+void selectWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const QString& key);
 /** @brief 无活动页签时清空当前选择，可通过历史重新打开已关闭视图。 */
 void selectWorkbenchEmpty(const std::shared_ptr<WorkbenchControl>& control);
 /** @brief 同步关闭所有新入口，清除搜索弹层与快捷键，控件仍由窗口清理屏障销毁。 */
