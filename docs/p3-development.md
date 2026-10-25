@@ -1,6 +1,6 @@
 # P3 桌面适配开发记录
 
-最后更新：2026-10-25。状态：进行中；Q0–Q3c、Q4a/Q4b 校验、Q4c1 协调及 Q4d1/Q4d2 文件和 Store 已实现。用户已确认此前工作台的原生桌面人工验收完成；Q4c2a/b 已接入顶层内置配置及动态 inject 的真实 Kernel 驱动，显式配置子树、watcher/后台 I/O 和管理页保存继续待办。
+最后更新：2026-10-25。状态：进行中；Q0–Q3c、Q4a/Q4b 校验、Q4c1 协调及 Q4d1/Q4d2 文件和 Store 已实现。用户已确认此前工作台的原生桌面人工验收完成；Q4c2a/b 已提交，Q4c2c1 补齐父代上下文/类型化子实例的 Core 桥，显式配置子树协调、watcher/后台 I/O 和管理页保存继续待办。
 
 ## 已安装与验证
 
@@ -622,8 +622,32 @@ KernelPlugin.configurableInject 由宿主声明允许按需追加的接口类型
 
 2026-10-25 对 4f743ed 后全部未提交改动审查并修复三项问题：Core 内部任务被单次拒绝但调度器仍开放时，配置动作/关闭无法终结且快照掩盖阻断；管理加载在途时左右开关误显示关闭；Kernel.remount 读取已移动来源崩溃。修复前 0/3、修复后 3/3，详见 [审查记录](code-review.md#p3-kernel-配置驱动与-home-生命周期操作提交前审核)。源状态和操作权限分离，驱动在故障关闭时仍广播停止并保守保留，没有静止证明不释放资源。
 
-审查后原目录 Ela/MSVC Debug/Release 各 287/287，无 Qt GCC Debug/Release 各 183/183；ASan UI/Loader 141/141、Core 10/10。日志为 build/review-kernel-home-<ela-msvc|core-gcc>-<mode>.log、build/review-kernel-home-asan.log、build/review-kernel-home-core-asan.log。公共头独立包含、Core 隔离、修改单元插桩、UTF-8/LF、文档链接和差异空白通过；Qt 预编译库未插桩。此前各节“本轮未提交”为当时记录，Q4c2a/b、Home 与本次审查修复一并随本次提交归档。Home 专项人工复核和其余 P3 工作保持待办。
+审查后原目录 Ela/MSVC Debug/Release 各 287/287，无 Qt GCC Debug/Release 各 183/183；ASan UI/Loader 141/141、Core 10/10。日志为 build/review-kernel-home-<ela-msvc|core-gcc>-<mode>.log、build/review-kernel-home-asan.log、build/review-kernel-home-core-asan.log。公共头独立包含、Core 隔离、修改单元插桩、UTF-8/LF、文档链接和差异空白通过；Qt 预编译库未插桩。此前各节“本轮未提交”为当时记录，Q4c2a/b、Home 与本次审查修复已一并提交为 8befcbd。Home 专项人工复核和其余 P3 工作保持待办。
+
+## Q4c2c1 父代上下文与子实例桥
+
+按“提交后继续推进”先完成上述归档，再补齐显式配置子树的 Core 前置接口。Instance.whenActiveAfter(afterEpoch) 让宿主观察大于阈值的当前有效或后续成功代次，得到弱 Context；不回放退役历史，不把失败当成功，stop 立即取消未完成观察。已有操作 target 保留失败诊断职责；收到排队通知后仍须检查业务门禁。
+
+Context.inject 增加可选的类型化 additionalDependencies，沿用实例级联合和原始 Runtime 定义，继承调用上下文的精确 realm。父退役仍先停止整棵旧子树，子清理 gate 未完成就不能进入父清理或新激活。宿主观察新代后可创建新身份的配置子实例，不跨代复用旧 Context，也不向 Core 引入 Loader/Qt/Ela。协议见 [ADR-0018](adr/0018-activation-context-bridge.md)。
+
+新增四项真实 Core 场景及 cordis_child_epoch_demo：
+
+- tree：父 Pending/恢复、附加依赖的精确域、旧子异步清理阻挡父更新、旧 Context 失效、新子身份和完整关闭。
+- retry：首次失败继续等待成功、显式重试、新配置及历史 ready/Context 结果不改写。
+- guards：owner、未来阈值、Loading 中停止立即取消观察，源激活未完成时不虚报静止。
+- weak：移动来源拒绝、非法子描述不增加账目、成功结果不保活实例。
+- 示例：宿主观察父配置更新，检查旧子终结后挂载新子，Kernel.close 排空并取消未来观察。
+
+专项 5/5 通过；原目录 Ela/MSVC Debug、Release 全量各 292/292，无 Qt GCC Debug、Release 各 188/188。MSVC ASan 相关回归 45/45，覆盖新增观察/示例、既有父子、服务契约、remount 和真实配置驱动；本轮修改单元插桩已核对，Qt 预编译库未插桩。instance.hpp 独立包含、Core 依赖隔离、第一方 UTF-8/LF、文档本地链接/锚点及差异空白检查通过。日志为 build/p3-q4c2c1-<core-gcc|ela-msvc>-<mode>.log、build/p3-q4c2c1-asan.log，构建沿用原有目录。
+
+上述为开发完成时的验证记录；本阶段连同下述审查修复纳入本次提交。KernelReconcileDriver 继续在 preflight 拒绝显式 children；下一步接入配置路径到父代/子实例的映射、父恢复后的自动子树重建和协调状态，不提前宣告完整显式配置子树完成。
+
+## Q4c2c1 提交前审查
+
+2026-10-25 审查 8befcbd 之后全部改动，复现并修复两项通知重入缺陷：成功通知中 stop 遗漏其余未完成观察的取消，目标通知中 update 后新登记的观察回放旧代 Context。成功瞬间冻结观察及配置快照，真实登记保留到通知结束，stop 仍能取消未完成任务；历史成功保持原值。两项回归修复前 0/2，修复后 2/2，观察/示例专项 7/7；详见 [审查记录](code-review.md#p3-父代上下文与子实例桥提交前审核)。
+
+第一方改动行及新增文件格式、直接 include 和中文 Doxygen 已核对；公共头在 GCC/MSVC C++17 中独立包含通过。修复后原目录 Ela/MSVC Debug、Release 各 294/294，无 Qt GCC Debug、Release 各 190/190；MSVC ASan 相关回归 47/47 通过，含新增重入及现有父子、契约、remount、配置驱动。Core 依赖隔离、ASan 插桩、UTF-8/LF、文档本地链接/锚点及差异空白通过，预编译 Qt 未插桩。日志为 build/review-activation-<ela-msvc|core-gcc>-<mode>.log、build/review-activation-asan.log 和 build/review-activation-audit.log。审查保持 Core/Loader 边界，未修改 UI 或代填人工验收；Q4c2c1 连同修复随本次提交归档。
 
 ## 后续工作
 
-继续 Q4c2 的显式配置子树，再接管理页候选差异、配置拥有条目的启停、保存状态及 Store/驱动的应用装配。Q4d3 处理 watcher、重命名后恢复监听和自身写入 hash 消重，后台 I/O 随专用 worker 屏障接入。模块引用/驻留/卸载详情随 P4 接入；connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解不表示完成了原设计中任何尚未运行的 L/Q/U 场景。
+基于 Q4c2c1 的 Core 桥继续显式配置子树协调，再接管理页候选差异、配置拥有条目的启停、保存状态及 Store/驱动的应用装配。Q4d3 处理 watcher、重命名后恢复监听和自身写入 hash 消重，后台 I/O 随专用 worker 屏障接入。模块引用/驻留/卸载详情随 P4 接入；connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解不表示完成了原设计中任何尚未运行的 L/Q/U 场景。

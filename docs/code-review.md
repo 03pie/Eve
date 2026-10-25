@@ -1,5 +1,19 @@
 # 提交前代码审查记录
 
+## P3 父代上下文与子实例桥提交前审核
+
+日期：2026-10-25。范围：8befcbd 之后全部未提交的 whenActiveAfter、类型化 Context.inject、示例、构建、测试及文档，包括新增文件。sources/research 和第三方组件源码未修改。
+
+- P2，通知重入停止遗漏取消：发布成功上下文前把全部合格 Promise 从实例登记中移走，首项完成向调度器投递回调时重入 stop，后面的未完成观察不在取消集合中，stop 返回后仍可成功。现在完成通知期间保留原登记；stop 能同步取消其余任务，完成后只清除已终结记录。首项历史成功保持，不因后续停止改写。
+- P2，新观察回放退役代次：在发布 ready/active/target 后才收集上下文观察，目标通知投递重入 update 并在退役期间登记新观察时，它被混入旧成功代次的完成集合，收到旧配置和已失效 Context。现在激活成功时先冻结观察集合及上下文快照，新登记只等待后续成功代次。
+- 规范与质量：仅格式化第一方改动行和新增文件，整理参数对齐、直接 include、中文 Doxygen 及测试调度边界说明。冻结集合与保留可取消登记各自承担通知/生命周期职责，遍历快照不持有可被重入修改的容器引用，完成后统一清除。Runtime 不增加配置变体，Context 仍只弱持实例；Core 无 Loader/Qt/Ela 依赖。
+
+新增 reentry_stop/reentry_update 使用真实 FakeScheduler FIFO，虚拟 post 边界只重入宿主，不提前执行任务。修复前 0/2，见 build/review-activation-before.log；修复后含既有观察及示例 7/7，见 build/review-activation-fixes.log。验证既有成功不改写、stop 返回前取消、退役期间登记不回放及新代配置/身份，不以业务回调被执行替代任务完成证据。
+
+修复后原目录 Ela/MSVC Debug、Release 各 294/294，无 Qt GCC Debug、Release 各 190/190，MSVC ASan 相关回归 47/47。日志为 build/review-activation-<ela-msvc|core-gcc>-<mode>.log、build/review-activation-asan.log。instance.hpp 在两套 C++17 编译器中独立包含通过；12 个改动/新增文件 UTF-8/LF、Core 的 7 个编译单元依赖隔离、新增/修改单元 ASan 插桩、文档本地链接/锚点及差异空白通过，见 build/review-activation-audit.log。预编译 Qt 未插桩。
+
+未发现其他阻止本次提交的问题。Q4c2c1、示例及上述修复随本次提交归档。显式配置子树协调、管理页保存装配和其余 P3 工作仍待完成，本次不修改 UI 交互或人工验收记录。
+
 ## P3 Kernel 配置驱动与 Home 生命周期操作提交前审核
 
 日期：2026-10-25。范围：4f743ed 之后全部未提交的 Q4c2a/b、实例附加依赖/重新加载、Home 状态卡片/左右开关、管理控制器、示例、测试及文档，包括新增文件。sources/research 和第三方组件源码未修改。
@@ -13,7 +27,7 @@
 
 修复后原目录 Ela/MSVC Debug/Release 各 287/287，无 Qt GCC Debug/Release 各 183/183；MSVC ASan 的 UI/Loader 141/141（64 项 UI、77 项 Loader），Core 契约/remount 10/10。日志为 build/review-kernel-home-<ela-msvc|core-gcc>-<mode>.log、build/review-kernel-home-asan.log、build/review-kernel-home-core-asan.log。Kernel、ConfigKernel、管理 SDK 的无 Qt 独立包含、189 项本地文档链接、第一方 UTF-8/LF、差异空白及 Core 依赖隔离检查通过；修改单元的 ASan 插桩已核对，预编译 Qt 未插桩。
 
-未发现其他阻止本次提交的问题。此次将 Q4c2a/b 与 Home 生命周期操作一并提交；此前桌面人工验收确认保留，Home 变更仍待专项人工复核。显式配置子树、管理页保存装配、watcher/worker、ABI 与物理卸载继续按计划推进，ASan 不构成泄漏或物理卸载证明。
+未发现其他阻止本次提交的问题。Q4c2a/b、Home 生命周期操作及上述修复已一并提交为 8befcbd；此前桌面人工验收确认保留，Home 变更仍待专项人工复核。显式配置子树、管理页保存装配、watcher/worker、ABI 与物理卸载继续按计划推进，ASan 不构成泄漏或物理卸载证明。
 
 ## P3 Ela 工作台与 Home 提交前审核
 

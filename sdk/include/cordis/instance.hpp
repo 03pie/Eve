@@ -9,6 +9,7 @@
 namespace cordis {
 class Runtime;
 class Instance;
+struct ServiceRequirement;
 template<class T> class EventBus;
 namespace detail { struct InstanceControl; }
 namespace detail { struct CleanupAccess; }
@@ -61,8 +62,9 @@ class Context {
 public:
     /** @brief 在业务仍有效时读取实例与代次；不会授予新的业务或清理能力。 */
     Result<ContextIdentity> identity() const;
-    /** @brief 创建本代拥有的子实例，继承域视图；子实例独立等待依赖，父代退役会终结它。 */
-    Result<Instance> inject(const Runtime& runtime, std::string config = {}) const;
+    /** @brief 本代创建子实例，继承域视图/索引，可追加类型化依赖；父退役等待整个子树。 */
+    Result<Instance> inject(const Runtime& runtime, std::string config = {},
+                            std::vector<ServiceRequirement> additionalDependencies = {}) const;
     /** @brief 派生只覆盖指定服务的 realm 视图，不修改父上下文，旧 epoch 不得派生能力。 */
     Result<Context> isolate(std::string name, RealmId realm) const;
     /** @brief 在本代登记托管 Staged 输出，激活完成后才对其他实例发布。 */
@@ -103,6 +105,7 @@ private:
     Result<std::shared_ptr<detail::CommittedLease>> consumeErased(const ServiceRegistry& registry,
         const ServiceKey& key, std::type_index type) const;
     friend struct detail::InstanceControl;
+    friend class Instance;
     /** @brief 捕获实例的弱引用，不延长实例生命周期。 */
     explicit Context(std::weak_ptr<detail::InstanceControl> control, Epoch epoch, std::string config, RealmMap realms = {})
         : control_(std::move(control)), epoch_(epoch), config_(std::move(config)), realms_(std::move(realms)) {}
@@ -215,6 +218,8 @@ public:
     Task<StableReport> awaitTarget(const OperationHandle& operation) const;
     /** @brief 查询已经启动的代次，未知/未来代次报错；退役前未激活的代次报取消。 */
     Task<ActiveReport> awaitActive(Epoch epoch) const;
+    /** @brief owner 观察当前或后续 afterEpoch 后的弱上下文；不回放退役代次，失败可等重试，停止取消。 */
+    Task<Context> whenActiveAfter(Epoch afterEpoch = 0) const;
     /** @brief 兼容的首次有效激活观察；失败后不重置，后续代次通过操作 target 观察。 */
     Task<void> ready() const;
     /** @brief 幂等终结实例，等待激活和所有 effect 清理；错误线程返回失败任务。 */

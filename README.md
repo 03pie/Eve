@@ -2,7 +2,7 @@
 
 基于 Cordis 思路设计的 C++17 插件内核，目标桌面环境为 Qt 5.15.2 + ElaWidgetTools。
 
-当前已完成 **W0–W7 首阶段内置内核与联合验收**。P3 的 Qt/Ela 工作台此前已获用户人工验收确认，配置校验、协调及文件/Store 已实现；Q4c2a/b 将顶层内置配置及宿主类型化的动态 inject 接入真实 Kernel，支持依赖排序/恢复、契约变更重建及完整退出。显式配置子树、watcher、后台 I/O 和管理页保存装配仍待完成。
+当前已完成 **W0–W7 首阶段内置内核与联合验收**。P3 的 Qt/Ela 工作台此前已获用户人工验收确认，配置校验、协调及文件/Store 已实现；Q4c2a/b 将顶层内置配置及宿主类型化的动态 inject 接入真实 Kernel，支持依赖排序/恢复、契约变更重建及完整退出。Q4c2c1 已补齐宿主观察父代上下文及创建类型化子实例的 Core 桥；显式配置子树协调、watcher、后台 I/O 和管理页保存装配仍待完成。
 
 ## 从这里开始
 
@@ -50,6 +50,14 @@
 
 示例接受两份 YAML 目标，由 inject 声明建立真实消费者依赖，更新提供者配置并验证消费者恢复，最后确认全部自有实例静止。它不写配置文件；完整协议及本阶段能力限制见 [Kernel 配置驱动](docs/adr/0016-kernel-configuration-driver.md) 和 [实例级配置依赖](docs/adr/0017-instance-inject-contracts.md)。
 
+父代上下文/子实例的纯 Core 示例：
+
+```powershell
+./build/core-gcc-debug/examples/builtin/cordis_child_epoch_demo.exe
+```
+
+宿主通过 whenActiveAfter 观察父实例新代次，使用弱 Context 创建带类型化依赖的子实例；父更新等待旧子清理，再挂载新子。该示例验证 Core 桥接能力，Loader 的 YAML 显式 children 协调仍待实现，见 [跨代观察协议](docs/adr/0018-activation-context-bridge.md)。
+
 ## 设计及实施入口
 
 - [开发进度](docs/progress.md)：当前状态、工作包、验证台账及下一任务。
@@ -65,6 +73,7 @@
 - [目标接受与串行协调](docs/adr/0013-configuration-coordinator.md)：CAS、实际状态再规划、部分失败与关闭协议。
 - [Kernel 配置驱动](docs/adr/0016-kernel-configuration-driver.md)：顶层内置配置的真实依赖/realm 映射、执行、退出及剩余范围。
 - [实例级配置依赖](docs/adr/0017-instance-inject-contracts.md)：动态 inject 的类型目录、契约联合、实际状态规划和重建边界。
+- [宿主跨代观察](docs/adr/0018-activation-context-bridge.md)：弱 Context、父重启后的子实例重建及类型化依赖桥。
 - [配置文件事务](docs/adr/0014-configuration-file-transactions.md)：Qt 原始字节版本、协作锁、冲突来源及临时文件提交的范围。
 - [配置 Store](docs/adr/0015-configuration-store.md)：已接受目标/历史保存、dirty、单写队列、显式 rebase 与退出刷新。
 - [P3 桌面验收单](tests/acceptance/p3-ui.md)：明暗主题、缩放、组件一致性、交互及正常退出；2026-10-25 用户确认完成。

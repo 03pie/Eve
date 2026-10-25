@@ -6,11 +6,11 @@
 
 ## 当前状态
 
-**W0–W7 首阶段工作单已完成。P3 Q3c 工作台、Q4a/Q4b 配置校验、Q4c1 协调及 Q4d1/Q4d2 文件/Store 已提交。2026-10-25 用户确认此前工作台的原生桌面人工验收完成，解除 B01。Q4c2a/b 已接入顶层内置配置及动态 inject 的真实 Kernel 驱动；显式配置子树、管理页保存装配和 Q4d3 watcher 继续待办。**
+**W0–W7 首阶段工作单已完成。P3 Q3c 工作台、Q4a/Q4b 配置校验、Q4c1 协调及 Q4d1/Q4d2 文件/Store 已提交。2026-10-25 用户确认此前工作台的原生桌面人工验收完成，解除 B01。Q4c2a/b 及 Home 生命周期操作已提交为 8befcbd；Q4c2c1 父代上下文/子实例桥已完成审查并随本次提交归档。显式配置子树协调、管理页保存装配和 Q4d3 watcher 继续待办。**
 
-最新完成 Q4c2b：实例级类型化依赖联合、配置新增/收紧、契约变化重建及部分应用状态再规划；Runtime 定义不随配置膨胀。原目录 Ela/MSVC Debug/Release 各 285/285、GCC 各 182/182，最终驱动复核四配置各 20/20；ASan Loader 76/76、Core 10/10。范围及剩余项见 [Q4c2b 记录](p3-development.md#q4c2b-动态-inject-契约)。
+最新完成 Q4c2c1：新增 whenActiveAfter 成功代次观察和 Context.inject 的类型化附加依赖，宿主可在父更新后用新代弱 Context 重建子实例；旧子清理阻挡父重启，旧 Context 不再授予业务能力。审查修复通知重入 stop 遗漏取消及 update 后新观察回放退役代次，修复前 0/2、修复后 2/2。原目录 Ela/MSVC Debug、Release 各 294/294，GCC Debug、Release 各 190/190，ASan 相关回归 47/47；Loader 显式 children 仍保持 preflight 拒绝。范围见 [开发记录](p3-development.md#q4c2c1-父代上下文与子实例桥)及 [审查记录](code-review.md#p3-父代上下文与子实例桥提交前审核)。
 
-提交前审查修复内部投递故障挂起、忙碌开关状态及已移动 remount 来源崩溃；审查后原目录 Ela/MSVC Debug/Release 各 287/287、GCC 各 183/183，ASan UI/Loader 141/141、Core 10/10。本次将 Q4c2a/b 与 Home 生命周期操作归档，见 [审核记录](code-review.md#p3-kernel-配置驱动与-home-生命周期操作提交前审核)。
+已提交的审查修复内部投递故障挂起、忙碌开关状态及已移动 remount 来源崩溃；提交前原目录 Ela/MSVC Debug/Release 各 287/287、GCC 各 183/183，ASan UI/Loader 141/141、Core 10/10。Q4c2a/b 包含实例级依赖联合、契约变更重建及部分应用再规划，Runtime 定义不随配置膨胀，见 [审核记录](code-review.md#p3-kernel-配置驱动与-home-生命周期操作提交前审核)。
 
 本轮新增真实配置执行、依赖排序/恢复、失败重试、realm 重建和资源排空，以及 13 项真实 Kernel 单测和 1 项示例。原目录 Ela/MSVC Debug/Release 各 273/273、无 Qt GCC 各 172/172、Loader ASan 70/70 通过，见 [Q4c2a 记录](p3-development.md#q4c2a-顶层内置配置驱动)。工作台/Home 先前审查和 UI ASan 61/61 证据保留于 [审核记录](code-review.md#p3-ela-工作台与-home-提交前审核)。
 
@@ -37,7 +37,7 @@ Qt 5.15.2 Core/Widgets/Test 已就绪，路径与当前 MSVC 组合见 [P3 记�
 | P0 研究、设计与编码准备 | 已完成（内核起步范围） | 设计说明书、契约、工程及环境检查齐备；桌面工具链在对应阶段前补齐 |
 | P1 内置插件与基础内核 | 已完成（首阶段内置范围） | W1–W3/W6/W7 与 A01–A10 内核证据；生产适配、全局事件 schema/post 另验 |
 | P2 响应式服务依赖 | 已完成（首阶段内置范围） | W4/W5/W7 联合闭环通过；跨 ABI、物理卸载及替换不在本轮 |
-| P3 Qt / Loader / Ela | 进行中 | Q0–Q3c 含此前用户确认的人工验收、Q4a/Q4b 校验、Q4c1 协调、Q4c2a/b 顶层 Kernel/动态依赖和 Q4d1/Q4d2 文件/Store 已实现；显式子树、后台 I/O/watcher/管理页保存及其他资源适配待完成 |
+| P3 Qt / Loader / Ela | 进行中 | Q0–Q3c 含此前用户确认的人工验收、Q4a/Q4b 校验、Q4c1 协调、Q4c2a/b 顶层 Kernel/动态依赖和 Q4d1/Q4d2 文件/Store 已实现；Q4c2c1 补齐父代上下文/子实例桥，显式子树协调、后台 I/O/watcher/管理页保存及其他资源适配待完成 |
 | P4 原生插件模块 | 未开始 | ABI、ModuleManager 和驻留账目待实现 |
 | P5 受控替换 | 未开始 | 新旧代替换、恢复和卸载专项验证待实现 |
 
@@ -109,6 +109,8 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | P3 Q4c2a 顶层内置 Kernel 驱动 | 2026-10-25 | Ela/MSVC Debug/Release 各 273/273，GCC Debug/Release 各 172/172；Loader ASan 70/70；新增 13 项真实 Kernel 场景及 1 项示例 | [开发记录](p3-development.md#q4c2a-顶层内置配置驱动)、[ADR-0016](adr/0016-kernel-configuration-driver.md) |
 | P3 Q4c2b 动态 inject 契约 | 2026-10-25 | Ela/MSVC Debug/Release 各 285/285，GCC 各 182/182；最终驱动四配置各 20/20；ASan Loader 76/76、Core 10/10 | [开发记录](p3-development.md#q4c2b-动态-inject-契约)、[ADR-0017](adr/0017-instance-inject-contracts.md) |
 | Q4c2a/b 与 Home 提交前审查 | 2026-10-25 | Ela/MSVC Debug/Release 各 287/287，GCC 各 183/183；ASan UI/Loader 141/141、Core 10/10；修复前 0/3、修复后 3/3 | [审查记录](code-review.md#p3-kernel-配置驱动与-home-生命周期操作提交前审核) |
+| P3 Q4c2c1 父代上下文与子实例桥 | 2026-10-25 | Ela/MSVC Debug、Release 各 292/292，GCC Debug、Release 各 188/188；专项 5/5、ASan 45/45 | [开发记录](p3-development.md#q4c2c1-父代上下文与子实例桥)、[ADR-0018](adr/0018-activation-context-bridge.md) |
+| Q4c2c1 提交前审查 | 2026-10-25 | Ela/MSVC Debug、Release 各 294/294，GCC Debug、Release 各 190/190；ASan 47/47；重入回归修复前 0/2、修复后 2/2 | [审查记录](code-review.md#p3-父代上下文与子实例桥提交前审核) |
 | Home 状态卡片、电源停止/加载/重试 | 2026-10-25 | Ela/MSVC Debug/Release 各 276/276，GCC 各 173/173；UI ASan 63/63、Core remount 1/1；明暗及 150% 布局通过 | [Home 记录](p3-development.md#home-状态卡片与电源操作)；本次 Home 专项人工复核待办 |
 | Home 左右滑动开关替换 | 2026-10-25 | 原目录 Ela/MSVC Debug/Release 专项各 34/34，ASan 同范围 34/34；同步位置不触发操作，连续点击去重通过 | [Home 记录](p3-development.md#home-状态卡片与电源操作)；仅私有 UI 接口变更 |
 | 完整配置管理 UI、ABI、物理卸载和替换 | — | 待实现或验证 | [设计说明书](../Cordis插件平台-软件设计说明书.md) |
@@ -176,7 +178,9 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | 2026-10-25 | Home 卡片取消跳转/浮层、调整尺寸，单电源图标管理停止/加载/失败重试；已停止实例以原配置/realm 创建新身份 | Ela Debug/Release 各 276/276，GCC 各 173/173，UI ASan 63/63、Core remount 1/1；[管理决策](adr/0008-management-diagnostics.md#home-电源操作增补2026-10-25) | 本次 Home 人工复核；Q4 后续工作保持 | 本轮未提交 |
 | 2026-10-25 | 按后续偏好把 Home 电源图标换成 Ela 左右开关，按期望启停状态执行，程序刷新屏蔽业务信号 | 原目录 Debug/Release 专项各 34/34，ASan 同范围 34/34，明暗/150% 布局通过 | 本次 Home 人工复核；Q4 后续工作保持 | 本轮未提交 |
 | 2026-10-25 | Q4c2b：Core 实例级附加契约，Loader 类型目录/联合/重建，修正部分应用被替代后的旧图排序，示例按 YAML inject 真正等待服务 | Ela Debug/Release 各 285/285，GCC 各 182/182，最终驱动四配置各 20/20，ASan Loader 76/76、Core 10/10 | 显式配置子树、管理页/保存装配及 watcher/后台 I/O | 本轮未提交 |
-| 2026-10-25 | 审查全部 Kernel 驱动/Home 改动，修复内部投递故障、忙碌开关和已移动 remount 来源，整理规范及质量 | Ela 各 287/287，GCC 各 183/183，ASan UI/Loader 141/141、Core 10/10；[审查记录](code-review.md#p3-kernel-配置驱动与-home-生命周期操作提交前审核) | 提交后继续显式配置子树 | 随本次提交归档 |
+| 2026-10-25 | 审查全部 Kernel 驱动/Home 改动，修复内部投递故障、忙碌开关和已移动 remount 来源，整理规范及质量 | Ela 各 287/287，GCC 各 183/183，ASan UI/Loader 141/141、Core 10/10；[审查记录](code-review.md#p3-kernel-配置驱动与-home-生命周期操作提交前审核) | 继续显式配置子树 | 8befcbd |
+| 2026-10-25 | Q4c2c1：宿主成功代次观察、弱 Context 与类型化子实例注入，父更新等待旧子清理后重建示例 | Ela/MSVC 各 292/292，GCC 各 188/188，ASan 45/45；[ADR-0018](adr/0018-activation-context-bridge.md) | Loader 显式子树协调、管理页保存及 watcher/后台 I/O | 随本次审查归档 |
+| 2026-10-25 | 审查父代上下文/子实例桥，修复通知重入 stop 遗漏取消、update 后新观察回放旧代；核对规范与质量 | Ela/MSVC 各 294/294，GCC 各 190/190，ASan 47/47；回归修复前 0/2、修复后 2/2；[审查记录](code-review.md#p3-父代上下文与子实例桥提交前审核) | Loader 显式子树协调，管理页保存及 watcher/后台 I/O | 随本次提交归档 |
 
 
 ## 更新约定

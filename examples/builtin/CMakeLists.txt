@@ -24,3 +24,7 @@ cordis_target_defaults(cordis_configuration_demo)
 add_executable(cordis_reconcile_demo reconcile_demo.cpp)
 target_link_libraries(cordis_reconcile_demo PRIVATE Cordis::ConfigKernel)
 cordis_target_defaults(cordis_reconcile_demo)
+
+add_executable(cordis_child_epoch_demo child_epoch_demo.cpp)
+target_link_libraries(cordis_child_epoch_demo PRIVATE Cordis::Core)
+cordis_target_defaults(cordis_child_epoch_demo)

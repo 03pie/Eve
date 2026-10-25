@@ -116,6 +116,14 @@ W5 将子→父所有权边加入消费者→提供者的实际图，拒绝父�
 
 Kernel::mount 和 Instance::mount 可传入 additionalDependencies，按解析后的完整服务键与 Runtime 固定需求联合，minor 取最大值、能力取并集。同键不同 C++ 类型拒绝；重复键归一化为一个提交租约。Runtime 本身不修改，不因配置创建新定义。实例的 update/retry 保留契约，停止后 Kernel::remount 也复制完整实例依赖；修改有效契约须停止并重建。Loader 的类型目录、接受前复核和配置规划规则见 [ADR-0017](adr/0017-instance-inject-contracts.md)。
 
+### 宿主成功代次观察（Q4c2c1）
+
+Instance::whenActiveAfter(afterEpoch = 0) 在 owner 线程观察大于阈值的当前有效或后续成功代次，返回 Task<Context>。不查询退役历史；阈值大于当前代次报 InvalidArgument。Pending/失败保留观察，重试或恢复成功再完成；失败诊断仍用 operation/target。stop 立即取消未完成观察，新查询报 InstanceDisposed。已有投递故障拒绝登记，登记后的故障遵守保守保留协议，宿主还须检查 deliveryBlocked。
+
+成功 Context 弱持实例并保留该代配置/域快照，历史 Task 不重写；收到排队通知后每次业务调用仍检查 epoch 和停止门禁，不把成功结果当成永久权限。Context::inject 也可接收 additionalDependencies，联合规则同 mount，子继承调用视图且仍由本父代拥有。父新代成功之前必须等待旧子树静止；宿主可观察新代再创建新身份的子实例。详见 [ADR-0018](adr/0018-activation-context-bridge.md)；Loader 显式配置子树执行仍待接入。
+
+成功瞬间冻结观察集合，随后 ready/target 通知中重入更新并登记的观察不回放旧代。完成通知前保留原登记的取消能力，重入 stop 必须在返回前取消其余尚未完成观察；已经成功的观察不重写为取消。
+
 ## 6. Event
 
 emit/bail/waterfall 是同步协议；serial/parallel 使用 Task。终止使用 Continue/Stop(value) 显式类型。once 在进入回调前注销；快照调用前检查 liveness；Next 限当前调用栈且至多一次。内部观察者错误逐个隔离，不中断清理。

@@ -86,6 +86,11 @@ template<class T> Task<T> queryFailure(ErrorCode code, const char* message)
     result.reject(makeError(code, message));
     return result.task();
 }
+/** @brief 待观察代次保存阈值及 Promise，成功结果只借用实例的弱上下文。 */
+struct ActiveContextWaiter {
+    Epoch after;
+    Promise<Context> promise;
+};
 /** @brief owner 线程单写的实例控制块；投递失败时保守固定所有权。 */
 struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     std::shared_ptr<IScheduler> scheduler;
@@ -112,6 +117,7 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     OperationId operationId = allocateId<OperationTag>();
     std::map<OperationId, Task<StableReport>> operations;
     std::map<Epoch, Promise<ActiveReport>> active;
+    std::vector<ActiveContextWaiter> activeContexts;
     std::vector<std::shared_ptr<CommittedLease>> committed;
     std::shared_ptr<ServiceRegistry> services;
     std::vector<ServiceRequirement> dependencies;
@@ -332,11 +338,27 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
         }));
     }
 
+    /** @brief 只通知成功瞬间的观察快照，保留原登记以允许重入 stop 立即取消其余观察。 */
+    void publishContext(const Context& context, Epoch publishedEpoch, const std::vector<ActiveContextWaiter>& waiting)
+    {
+        for (const auto& waiter : waiting) {
+            if (waiter.after < publishedEpoch)
+                waiter.promise.resolve(context);
+        }
+        activeContexts.erase(
+            std::remove_if(activeContexts.begin(), activeContexts.end(),
+                           [](const ActiveContextWaiter& waiter) { return waiter.promise.task().isReady(); }),
+            activeContexts.end());
+    }
     /** @brief 请求关闭，只有确认静止才能解除实例所有权 pin。 */
     Task<CleanupReport> stop()
     {
         if (!stopping) {
             stopping = true;
+            auto waiting = std::exchange(activeContexts, {});
+            for (const auto& waiter : waiting)
+                waiter.promise.reject(
+                    makeError(ErrorCode::OperationCancelled, "instance stopped before next activation"));
             ready.reject(makeError(ErrorCode::OperationCancelled, "instance stopped during activation"));
             if (retirementFailure) {
                 auto self = shared_from_this();
@@ -458,9 +480,15 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
                     self->failed = true; self->retire(); return;
                 }
                 self->state = InstanceState::Active;
+                const auto waiting = self->activeContexts;
+                std::optional<Context> published;
+                if (!waiting.empty())
+                    published.emplace(Context(self, captured, self->config, self->realms));
                 self->ready.resolve();
                 self->active.at(captured).resolve(ActiveReport{self->id, captured, self->revision});
                 self->target.resolve(StableReport{StableOutcome::Active, self->revision, captured});
+                if (published)
+                    self->publishContext(*published, captured, waiting);
             } else {
                 self->state = InstanceState::Failed;
                 self->failure.emplace(result.error());
@@ -500,14 +528,16 @@ Result<std::function<Result<void>()>> Context::eventGuard(const std::shared_ptr<
     });
 }
 /** @brief 子实例沿用父视图与索引，排队激活前即纳入父代所有权。 */
-Result<Instance> Context::inject(const Runtime& runtime, std::string config) const
+Result<Instance> Context::inject(const Runtime& runtime, std::string config,
+                                 std::vector<ServiceRequirement> additionalDependencies) const
 {
     auto self = control_.lock();
     if (!self) return Result<Instance>::failure(makeError(ErrorCode::StaleContext, "instance expired"));
     auto allowed = self->business(epoch_);
     if (!allowed.hasValue()) return Result<Instance>::failure(allowed.error());
     try {
-        auto child = Instance::mount(runtime, self->scheduler, std::move(config), self->services, realms_);
+        auto child = Instance::mount(runtime, self->scheduler, std::move(config), self->services, realms_,
+                                     std::move(additionalDependencies));
         if (self->services) self->services->attachParent(child.control_->id, self->id);
         self->children.push_back(child.control_);
         return Result<Instance>::success(std::move(child));
@@ -780,6 +810,37 @@ Task<StableReport> Instance::awaitTarget(const OperationHandle& operation) const
     if (operation.instance != control_->id || found == control_->operations.end())
         return detail::queryFailure<StableReport>(ErrorCode::InvalidArgument, "foreign or unknown operation");
     return found->second;
+}
+
+/** @brief 只观察当前有效或后续新代次，不保存历史上下文或赋予跨代能力。 */
+Task<Context> Instance::whenActiveAfter(Epoch afterEpoch) const
+{
+    if (!control_)
+        return detail::queryFailure<Context>(ErrorCode::InvalidArgument, "activation source was moved from");
+    auto& control = *control_;
+    if (!control.scheduler->isCurrentThread())
+        return detail::queryFailure<Context>(ErrorCode::WrongThread, "activation context requires owner thread");
+    if (control.stopping)
+        return detail::queryFailure<Context>(ErrorCode::InstanceDisposed, "instance has stopped accepting activations");
+    if (afterEpoch > control.epoch)
+        return detail::queryFailure<Context>(ErrorCode::InvalidArgument, "activation threshold exceeds current epoch");
+    if (!control.scheduler->isOpen() || control.blocked.load())
+        return detail::queryFailure<Context>(ErrorCode::SchedulerClosed, "activation context delivery unavailable");
+    auto resources = control.scope.snapshot();
+    if (!resources.hasValue()) {
+        Promise<Context> failed;
+        failed.reject(resources.error());
+        return failed.task();
+    }
+    if (resources.value().deliveryBlocked)
+        return detail::queryFailure<Context>(ErrorCode::SchedulerClosed, "activation scope delivery unavailable");
+    Promise<Context> result;
+    if (control.state == InstanceState::Active && control.epoch > afterEpoch &&
+        control.business(control.epoch).hasValue())
+        result.resolve(Context(control_, control.epoch, control.config, control.realms));
+    else
+        control.activeContexts.push_back({afterEpoch, result});
+    return result.task();
 }
 
 /** @brief 返回已登记代次的历史激活任务，不隐式创建未来等待项。 */
