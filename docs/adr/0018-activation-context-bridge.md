@@ -34,4 +34,4 @@ Context 只保存控制块的弱引用和该代配置/realm 快照，不因保�
 
 六项真实 Core 测试覆盖精确域附加依赖 Pending/恢复、旧子异步清理阻挡父重启、父先后配置快照、失败后 retry、owner/未来阈值/移动来源门禁、停止中即时取消、弱结果不保活实例，以及通知投递重入 stop/update。重入回归在修复前 0/2、修复后 2/2；真实 FIFO 不提前执行已投递任务。cordis_child_epoch_demo 演示更新父配置、检查旧子终结、在新代创建子实例及完整关闭。
 
-此阶段不解除 KernelReconcileDriver 对显式 children 的 preflight 拒绝；自动配置子树重建、父失败及子失败的协调状态、路径映射/再规划、管理页保存装配仍待实施。不据此前置能力宣告全部 L01–L04/S05 或跨 ABI 验收完成。实测工具链及日志见 [开发记录](../p3-development.md#q4c2c1-父代上下文与子实例桥)。
+本文保留 Q4c2c1 当时的范围：该阶段不解除 KernelReconcileDriver 对显式 children 的 preflight 拒绝。后续自动配置子树、失败协调及路径映射已按 [ADR-0019](0019-configuration-subtrees.md) 扩展，管理页保存装配仍待实施。不据此前置能力宣告全部 L01–L04/S05 或跨 ABI 验收完成。实测工具链及日志见 [开发记录](../p3-development.md#q4c2c1-父代上下文与子实例桥)。

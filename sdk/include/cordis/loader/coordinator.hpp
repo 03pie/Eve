@@ -45,6 +45,12 @@ struct RunningEntry {
     InstanceState state = InstanceState::Pending;
     InstanceId instance;
     Epoch epoch = 0;
+    /** @brief 子项已登记但尚无可用父代；此时 instance 无效，不冒充真实挂载。 */
+    bool waitingForParent = false;
+    /** @brief 真实子实例所属父代，顶层或尚未挂载时为零。 */
+    Epoch parentEpoch = 0;
+    /** @brief 实际激活或后台重建错误，不改写已终结的计划报告。 */
+    std::optional<ErrorInfo> failure{};
 };
 /** @brief 宿主运行适配协议；所有方法只在 owner 线程调用，方法可同步重入协调器。 */
 class IReconcileDriver {

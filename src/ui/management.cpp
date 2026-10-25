@@ -1,22 +1,22 @@
 /** @file management.cpp
  * @brief 以宿主值快照驱动管理页，排队校验停止/重试，不把管理能力交给普通插件。
  */
-#include "management_p.hpp"
 #include "fixed_tabs_p.hpp"
-#include <QHeaderView>
+#include "management_p.hpp"
+#include <ElaPlainTextEdit.h>
+#include <ElaPushButton.h>
+#include <ElaTableView.h>
+#include <ElaText.h>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
 #include <QSignalBlocker>
-#include <QStringList>
-#include <ElaTableView.h>
-#include <ElaText.h>
-#include <ElaPushButton.h>
-#include <ElaPlainTextEdit.h>
 #include <QStandardItemModel>
+#include <QStringList>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QVariant>
@@ -29,6 +29,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -90,9 +91,40 @@ QString outcomeName(StableOutcome outcome)
 QString operationText(const ManagementOperation& operation)
 {
     QString text = QString("#%1 ").arg(operation.request) +
-                   (operation.action == ManagementAction::Stop   ? QString::fromUtf8("停止")
-                    : operation.action == ManagementAction::Load ? QString::fromUtf8("加载")
-                                                                 : QString::fromUtf8("重试"));
+                   (operation.action == ManagementAction::Stop         ? QString::fromUtf8("停止")
+                    : operation.action == ManagementAction::Load       ? QString::fromUtf8("加载")
+                    : operation.action == ManagementAction::SetEnabled ? QString::fromUtf8("配置启停")
+                    : operation.action == ManagementAction::Reconcile  ? QString::fromUtf8("重新协调")
+                                                                       : QString::fromUtf8("重试"));
+    if (!operation.configurationPath.empty()) {
+        text += QString::fromStdString(operation.configurationPath) +
+                QString::fromUtf8(" 基准修订=%1 ").arg(operation.expectedDesiredRevision);
+        if (operation.pending)
+            text += QString::fromUtf8("等待完成");
+        else if (operation.error)
+            text += errorText(*operation.error);
+        else if (operation.configurationResult) {
+            text += QString::fromUtf8("目标修订=%1 ").arg(operation.configurationResult->revision);
+            switch (operation.configurationResult->outcome) {
+            case ConfigurationOutcome::Applied:
+                text += QString::fromUtf8("已应用");
+                break;
+            case ConfigurationOutcome::Pending:
+                text += QString::fromUtf8("等待依赖/父项");
+                break;
+            case ConfigurationOutcome::Failed:
+                text += QString::fromUtf8("失败");
+                break;
+            case ConfigurationOutcome::Superseded:
+                text += QString::fromUtf8("已被新目标替代");
+                break;
+            case ConfigurationOutcome::Cancelled:
+                text += QString::fromUtf8("已取消");
+                break;
+            }
+        }
+        return text + "\n";
+    }
     text += QString::fromUtf8(" 实例=%1 ").arg(operation.instance.value());
     text += operation.pending ? QString::fromUtf8("等待完成") : operation.stable ? outcomeName(operation.stable->outcome) : operation.error ? QString::fromUtf8("失败") : QString::fromUtf8("已完成");
     if (operation.deliveryBlocked) text += QString::fromUtf8("（投递受阻）");
@@ -136,6 +168,100 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
     std::deque<std::shared_ptr<ManagementRecord>> operations;
     std::map<InstanceId, std::uint64_t> busy;
     std::map<InstanceId, Instance> stopped;
+    std::weak_ptr<IConfigurationManagement> configuration;
+    bool configurationAttached = false, readingConfiguration = false;
+    std::set<RuntimeId> protectedRuntimes;
+    std::optional<ConfigurationManagementSnapshot> lastConfiguration;
+    std::map<std::string, std::uint64_t> configurationBusy;
+    QPointer<QWidget> configurationTab;
+    QPointer<FixedDiagnosticsTabs> tabs;
+    bool bindingConfiguration = false;
+    QPointer<ElaTableView> configurationTable;
+    QStandardItemModel* configurationModel = nullptr;
+    QPointer<QLabel> configurationSummary;
+    QPointer<QPushButton> configurationEnable, configurationDisable, configurationReconcile;
+    std::string configurationSelected;
+    /** @brief 仅绑定配置入口时创建第五个标签，未绑定的手动管理界面保持原结构。 */
+    void createConfigurationTab()
+    {
+        ViewAccess access(*this);
+        auto panel = new QWidget(tabs);
+        configurationTab = panel;
+        panel->setObjectName("CordisManagementConfiguration");
+        auto layout = new QVBoxLayout(panel);
+        auto configSummary = new ElaText(panel);
+        configSummary->setTextPixelSize(14);
+        configSummary->setTextFormat(Qt::PlainText);
+        configSummary->setWordWrap(true);
+        configSummary->setObjectName("CordisManagementConfigurationSummary");
+        configurationSummary = configSummary;
+        layout->addWidget(configSummary);
+        auto configTable = new ElaTableView(panel);
+        configurationTable = configTable;
+        configTable->setObjectName("CordisManagementConfigurationTable");
+        configurationModel = new QStandardItemModel(0, 5, configTable);
+        configTable->setModel(configurationModel);
+        configurationModel->setHorizontalHeaderLabels({QString::fromUtf8("配置路径"), QString::fromUtf8("插件"),
+                                                       QString::fromUtf8("期望"), QString::fromUtf8("实际状态"),
+                                                       QString::fromUtf8("实例")});
+        configTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+        configTable->setSelectionMode(QAbstractItemView::SingleSelection);
+        configTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        configTable->verticalHeader()->hide();
+        configTable->horizontalHeader()->setMinimumSectionSize(80);
+        configTable->horizontalHeader()->setStretchLastSection(true);
+        configTable->setColumnWidth(0, 220);
+        configTable->setColumnWidth(1, 160);
+        configTable->setColumnWidth(2, 100);
+        configTable->setColumnWidth(3, 130);
+        layout->addWidget(configTable, 1);
+        auto actions = new QHBoxLayout;
+        auto enable = new ElaPushButton(QString::fromUtf8("启用条目"), panel);
+        configurationEnable = enable;
+        enable->setObjectName("CordisManagementConfigurationEnable");
+        auto disable = new ElaPushButton(QString::fromUtf8("停用条目"), panel);
+        configurationDisable = disable;
+        disable->setObjectName("CordisManagementConfigurationDisable");
+        auto retry = new ElaPushButton(QString::fromUtf8("重新协调目标"), panel);
+        configurationReconcile = retry;
+        retry->setObjectName("CordisManagementConfigurationReconcile");
+        for (auto button : {enable, disable, retry}) {
+            button->setEnabled(false);
+            actions->addWidget(button);
+        }
+        actions->addStretch();
+        layout->addLayout(actions);
+        std::weak_ptr<ManagementControl> weak = shared_from_this();
+        QObject::connect(
+            configTable->selectionModel(), &QItemSelectionModel::currentChanged, panel,
+            [weak](const QModelIndex& index) {
+                if (auto self = weak.lock()) {
+                    self->configurationSelected =
+                        index.isValid()
+                            ? self->configurationModel->index(index.row(), 0).data().toString().toStdString()
+                            : std::string{};
+                    self->refreshFromSignal();
+                }
+            });
+        auto request = [weak](std::optional<bool> enabled) {
+            if (auto self = weak.lock()) {
+                ViewAccess access(*self);
+                if (!self->open || !self->displayed || !self->displayed->configuration)
+                    return;
+                const auto path = self->configurationSelected;
+                const auto revision = self->displayed->configuration->revision;
+                auto result = self->requestConfiguration(path, enabled, revision);
+                if (!result.hasValue() && self->open)
+                    self->status->setText(errorText(result.error()));
+            }
+        };
+        QObject::connect(enable, &QPushButton::clicked, panel, [request] { request(true); });
+        QObject::connect(disable, &QPushButton::clicked, panel, [request] { request(false); });
+        QObject::connect(retry, &QPushButton::clicked, panel, [request] { request({}); });
+        tabs->addTab(panel, QString::fromUtf8("配置条目"));
+        if (open)
+            tabs->setCurrentWidget(panel);
+    }
     /** @brief 只在 owner 读取非原子账目，关闭后可读取诊断但不可发起操作。 */
     Result<void> thread() const
     {
@@ -169,6 +295,8 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         if (!history.hasValue()) return Result<DiagnosticsSnapshot>::failure(history.error());
         DiagnosticsSnapshot output{open, core.value(), {}, bindings.value(), pageRows.value(), commandRows.value(), history.value(), {}};
         for (const auto& snapshot : core.value().instances) {
+            if (protectedRuntimes.count(snapshot.runtime))
+                continue;
             auto instance = target->findInstance(snapshot.instance);
             if (!instance.hasValue()) return Result<DiagnosticsSnapshot>::failure(instance.error());
             auto dependencies = instance.value().dependencies();
@@ -195,6 +323,8 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             auto snapshot = entry.second.snapshot();
             if (!snapshot.hasValue() || snapshot.value().state != InstanceState::Disposed)
                 continue;
+            if (protectedRuntimes.count(snapshot.value().runtime))
+                continue;
             std::string name;
             for (const auto& runtime : core.value().names)
                 if (runtime.id == snapshot.value().runtime)
@@ -208,7 +338,126 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
                           !snapshot.value().deliveryBlocked && !snapshot.value().resources.deliveryBlocked;
             output.instances.push_back(std::move(row));
         }
+        if (configurationAttached) {
+            auto source = readConfiguration();
+            if (source.hasValue())
+                lastConfiguration = source.value();
+            else
+                output.configurationError = source.error();
+            output.configuration = lastConfiguration.value_or(ConfigurationManagementSnapshot{});
+            auto& configured = *output.configuration;
+            configured.open =
+                configured.open && open && scheduler->isOpen() && !core.value().closing && source.hasValue();
+            for (auto& row : configured.entries) {
+                row.busy = row.busy || configurationBusy.count(row.path);
+                row.canSetEnabled = row.canSetEnabled && configured.open && !row.busy;
+                row.canReconcile = row.canReconcile && configured.open && !row.busy;
+            }
+        }
+        output.managementOpen = open;
+        if (!open)
+            for (auto& row : output.instances)
+                row.canStop = row.canRetry = row.canLoad = false;
         return Result<DiagnosticsSnapshot>::success(std::move(output));
+    }
+    /** @brief 外部宿主适配器可关闭/抛错，读取失败保留值缓存但不允许手动降级。 */
+    Result<ConfigurationManagementSnapshot> readConfiguration()
+    {
+        if (readingConfiguration)
+            return Result<ConfigurationManagementSnapshot>::failure(
+                makeError(ErrorCode::ConfigConflict, "configuration snapshot reentered"));
+        auto provider = configuration.lock();
+        if (!provider)
+            return Result<ConfigurationManagementSnapshot>::failure(
+                makeError(ErrorCode::ContextClosing, "configuration management expired"));
+        readingConfiguration = true;
+        struct Reset {
+            bool& value; /** @brief 异常路径恢复读取门禁。 */
+            ~Reset() { value = false; }
+        } reset{readingConfiguration};
+        try {
+            return provider->snapshot();
+        } catch (const std::exception& error) {
+            return Result<ConfigurationManagementSnapshot>::failure(makeError(ErrorCode::CallbackFailed, error.what()));
+        } catch (...) {
+            return Result<ConfigurationManagementSnapshot>::failure(
+                makeError(ErrorCode::CallbackFailed, "configuration snapshot threw"));
+        }
+    }
+    /** @brief 管理页和 Home 使用同一配置快照与权限，不根据是否有实例临时切换管理模式。 */
+    void renderConfiguration(const DiagnosticsSnapshot& data)
+    {
+        if (!open || !configurationTab)
+            return;
+        configurationEnable->setEnabled(false);
+        configurationDisable->setEnabled(false);
+        configurationReconcile->setEnabled(false);
+        if (!data.configuration)
+            return;
+        const auto& source = *data.configuration;
+        auto text =
+            QString::fromUtf8("配置目标修订 %1 · 已保存 %2 · %3")
+                .arg(source.revision)
+                .arg(source.persistedRevision ? QString::number(*source.persistedRevision) : QString::fromUtf8("无"))
+                .arg(source.dirty ? QString::fromUtf8("未保存") : QString::fromUtf8("已同步"));
+        if (source.writing)
+            text += QString::fromUtf8(" · 保存中");
+        if (data.configurationError)
+            text += "\n" + errorText(*data.configurationError);
+        else if (source.error)
+            text += "\n" + errorText(*source.error);
+        configurationSummary->setText(text);
+        QSignalBlocker blocker(configurationTable->selectionModel());
+        configurationModel->setRowCount(static_cast<int>(source.entries.size()));
+        if (!open)
+            return;
+        int selected = -1;
+        for (std::size_t i = 0; i < source.entries.size(); ++i) {
+            const auto& row = source.entries[i];
+            if (row.path == configurationSelected)
+                selected = static_cast<int>(i);
+            QString actual = data.configurationError || (!row.hasActual && row.error) ? QString::fromUtf8("状态不可用")
+                             : row.waitingForParent                                   ? QString::fromUtf8("等待父项")
+                             : row.hasActual                                          ? stateName(row.state)
+                                                                                      : QString::fromUtf8("未运行");
+            QStringList columns{QString::fromStdString(row.path), QString::fromStdString(row.plugin),
+                                !row.enabled            ? QString::fromUtf8("停用")
+                                : !row.effectiveEnabled ? QString::fromUtf8("父项停用")
+                                                        : QString::fromUtf8("启用"),
+                                actual, row.instance.valid() ? QString::number(row.instance.value()) : QString("—")};
+            for (int j = 0; j < columns.size(); ++j) {
+                auto item = configurationModel->item(static_cast<int>(i), j);
+                if (!item) {
+                    item = new QStandardItem(columns[j]);
+                    item->setToolTip(columns[j]);
+                    configurationModel->setItem(static_cast<int>(i), j, item);
+                } else if (item->text() != columns[j]) {
+                    configurationModel->setData(configurationModel->index(static_cast<int>(i), j), columns[j]);
+                    if (!open)
+                        return;
+                    configurationModel->setData(configurationModel->index(static_cast<int>(i), j), columns[j],
+                                                Qt::ToolTipRole);
+                }
+                if (!open)
+                    return;
+            }
+        }
+        if (selected >= 0) {
+            configurationTable->setCurrentIndex(configurationModel->index(selected, 0));
+            configurationTable->selectRow(selected);
+            const auto row = source.entries[static_cast<std::size_t>(selected)];
+            if (row.error)
+                configurationSummary->setText(text + "\n" + errorText(*row.error));
+            if (!open)
+                return;
+            configurationEnable->setEnabled(row.canSetEnabled && !row.enabled);
+            configurationDisable->setEnabled(row.canSetEnabled && row.enabled);
+            configurationReconcile->setEnabled(row.canReconcile);
+        } else {
+            configurationSelected.clear();
+            configurationTable->clearSelection();
+            configurationTable->setCurrentIndex({});
+        }
     }
     /** @brief 选择绑定的是不可变实例号，刷新/排序不把操作转移给另一行。 */
     InstanceId selected() const
@@ -277,6 +526,12 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             details->clear(); services->clear(); notices->clear(); operationsView->clear();
             summary->setText(QString::fromUtf8("管理页未连接可用内核"));
             status->setText(errorText(data.error()));
+            if (configurationTab) {
+                configurationEnable->setEnabled(false);
+                configurationDisable->setEnabled(false);
+                configurationReconcile->setEnabled(false);
+                configurationSummary->setText(errorText(data.error()));
+            }
             return Result<void>::failure(data.error());
         }
         if (!open) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "management closed during refresh"));
@@ -304,9 +559,21 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             if (chosen >= 0) table->selectRow(chosen);
             else { table->clearSelection(); table->setCurrentIndex({}); }
         }
-        summary->setText(QString::fromUtf8("顶层实例 %1  服务绑定 %2  页面 %3  命令 %4%5")
-            .arg(view.instances.size()).arg(view.bindings.size()).arg(view.pages.size()).arg(view.commands.size())
-            .arg(view.kernel.deliveryBlocked ? QString::fromUtf8("  内核投递受阻") : view.kernel.closing ? QString::fromUtf8("  内核正在关闭") : QString{}));
+        const bool manualVisible = !configurationAttached || !view.instances.empty();
+        table->setVisible(manualVisible);
+        stopButton->setVisible(manualVisible);
+        retryButton->setVisible(manualVisible);
+        if (!open)
+            return Result<void>::failure(makeError(ErrorCode::ContextClosing, "management closed during layout"));
+        summary->setText((configurationAttached ? QString::fromUtf8("手动实例 %1  服务绑定 %2  页面 %3  命令 %4%5")
+                                                : QString::fromUtf8("顶层实例 %1  服务绑定 %2  页面 %3  命令 %4%5"))
+                             .arg(view.instances.size())
+                             .arg(view.bindings.size())
+                             .arg(view.pages.size())
+                             .arg(view.commands.size())
+                             .arg(view.kernel.deliveryBlocked ? QString::fromUtf8("  内核投递受阻")
+                                  : view.kernel.closing       ? QString::fromUtf8("  内核正在关闭")
+                                                              : QString{}));
         QString serviceText;
         for (const auto& binding : view.bindings) serviceText += keyText(binding.key) + QString::fromUtf8("  状态=%1 调用=%2 租约=%3 投递受阻=%4\n")
             .arg(bindingName(binding.state)).arg(binding.activeCalls).arg(binding.committedLeases).arg(binding.deliveryBlocked);
@@ -324,6 +591,7 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         for (const auto& operation : view.operations) operationHistory += operationText(operation) + "\n";
         operationsView->setPlainText(operationHistory);
         renderSelection();
+        renderConfiguration(view);
         return Result<void>::success();
     }
     /** @brief 原生信号边界隔离刷新异常；错误不得穿越 Qt 事件循环。 */
@@ -357,8 +625,15 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             record->data.error = std::move(error);
         }
         record->data.pending = false;
-        auto found = busy.find(record->data.instance);
-        if (found != busy.end() && found->second == record->data.request) busy.erase(found);
+        if (!record->data.configurationPath.empty()) {
+            auto found = configurationBusy.find(record->data.configurationPath);
+            if (found != configurationBusy.end() && found->second == record->data.request)
+                configurationBusy.erase(found);
+        } else {
+            auto found = busy.find(record->data.instance);
+            if (found != busy.end() && found->second == record->data.request)
+                busy.erase(found);
+        }
         if (open && status) {
             status->setText(record->data.error ? errorText(*record->data.error) : QString::fromUtf8("管理操作已完成"));
             refreshFromSignal();
@@ -380,6 +655,12 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             auto found = stopped.find(record->data.instance);
             if (found == stopped.end()) {
                 record->data.error = makeError(ErrorCode::InstanceDisposed, "stopped instance unavailable");
+                finish(record);
+                return;
+            }
+            if (protectedRuntimes.count(found->second.snapshot().value().runtime)) {
+                record->data.error =
+                    makeError(ErrorCode::ContextClosing, "configuration runtime cannot be loaded manually");
                 finish(record);
                 return;
             }
@@ -411,6 +692,12 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             return;
         }
         if (!instance.hasValue()) { record->data.error = instance.error(); finish(record); return; }
+        if (protectedRuntimes.count(instance.value().snapshot().value().runtime)) {
+            record->data.error =
+                makeError(ErrorCode::ContextClosing, "configuration runtime requires desired-state management");
+            finish(record);
+            return;
+        }
         std::weak_ptr<ManagementControl> weak = shared_from_this();
         if (record->data.action == ManagementAction::Stop) {
             if (stopped.count(record->data.instance) == 0 && stopped.size() == ManagementController::historyLimit) {
@@ -449,11 +736,166 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             }), record);
         }
     }
+    /** @brief 手动及配置动作共用有界历史，全部在途时不丢弃旧回执。 */
+    Result<std::shared_ptr<ManagementRecord>> allocateRecord()
+    {
+        using Output = Result<std::shared_ptr<ManagementRecord>>;
+        if (sequence == std::numeric_limits<std::uint64_t>::max())
+            return Output::failure(makeError(ErrorCode::InvalidArgument, "management request ids exhausted"));
+        if (operations.size() == ManagementController::historyLimit) {
+            auto old =
+                std::find_if(operations.begin(), operations.end(), [](const auto& row) { return !row->data.pending; });
+            if (old == operations.end())
+                return Output::failure(
+                    makeError(ErrorCode::ContextClosing, "management history contains only pending operations"));
+            operations.erase(old);
+        }
+        auto record = std::make_shared<ManagementRecord>();
+        record->data.request = ++sequence;
+        operations.push_back(record);
+        return Output::success(record);
+    }
+    /** @brief 排队后仍检查来源、路径和修订，外部编辑不能使旧开关作用到新目标。 */
+    void runConfiguration(const std::shared_ptr<ManagementRecord>& record)
+    {
+        auto fail = [&](ErrorInfo error) {
+            record->data.error = std::move(error);
+            finish(record);
+        };
+        auto target = kernel.lock();
+        if (!open || !scheduler->isOpen() || !target || target->snapshot().value().closing) {
+            fail(makeError(ErrorCode::ContextClosing, "management closing before configuration dispatch"));
+            return;
+        }
+        auto source = readConfiguration();
+        if (!source.hasValue()) {
+            fail(source.error());
+            return;
+        }
+        if (source.value().revision != record->data.expectedDesiredRevision) {
+            fail(makeError(ErrorCode::ConfigConflict, "configuration changed before dispatch"));
+            return;
+        }
+        auto found = std::find_if(source.value().entries.begin(), source.value().entries.end(),
+                                  [&](const auto& row) { return row.path == record->data.configurationPath; });
+        if (!open || !source.value().open || found == source.value().entries.end() || found->busy ||
+            (record->data.desiredEnabled ? !found->canSetEnabled : !found->canReconcile)) {
+            fail(makeError(ErrorCode::ContextClosing, "configuration action unavailable"));
+            return;
+        }
+        auto provider = configuration.lock();
+        if (!provider || target->snapshot().value().closing) {
+            fail(makeError(ErrorCode::ContextClosing, "configuration management unavailable"));
+            return;
+        }
+        auto task = [&]() -> Result<Task<ConfigurationActionReport>> {
+            try {
+                if (record->data.desiredEnabled)
+                    return provider->setEnabled(record->data.configurationPath, *record->data.desiredEnabled,
+                                                record->data.expectedDesiredRevision);
+                return provider->reconcile(record->data.configurationPath, record->data.expectedDesiredRevision);
+            } catch (const std::exception& error) {
+                return Result<Task<ConfigurationActionReport>>::failure(
+                    makeError(ErrorCode::CallbackFailed, error.what()));
+            } catch (...) {
+                return Result<Task<ConfigurationActionReport>>::failure(
+                    makeError(ErrorCode::CallbackFailed, "configuration action threw"));
+            }
+        }();
+        if (!task.hasValue()) {
+            fail(task.error());
+            return;
+        }
+        std::weak_ptr<ManagementControl> weak = shared_from_this();
+        watch(task.value().thenOn(
+                  scheduler,
+                  [weak, record](const Result<ConfigurationActionReport>& result) {
+                      if (!result.hasValue())
+                          record->data.error = result.error();
+                      else {
+                          const auto& report = result.value();
+                          const bool valid = report.revision > record->data.expectedDesiredRevision &&
+                                             (report.outcome == ConfigurationOutcome::Applied ||
+                                              report.outcome == ConfigurationOutcome::Pending ||
+                                              report.outcome == ConfigurationOutcome::Failed ||
+                                              report.outcome == ConfigurationOutcome::Superseded ||
+                                              report.outcome == ConfigurationOutcome::Cancelled);
+                          record->data.configurationResult = report;
+                          record->data.error = report.error;
+                          if (!valid)
+                              record->data.error =
+                                  makeError(ErrorCode::CallbackFailed, "invalid configuration management receipt");
+                          if (result.value().outcome == ConfigurationOutcome::Failed && !record->data.error)
+                              record->data.error =
+                                  makeError(ErrorCode::ActivationFailed, "configuration execution failed");
+                      }
+                      if (auto self = weak.lock())
+                          self->finish(record);
+                  }),
+              record);
+    }
+    /** @brief 控制请求固定路径及当前 CAS，不把未挂载/禁用路径转换成虚构实例。 */
+    Result<std::uint64_t> requestConfiguration(const std::string& path, std::optional<bool> enabled,
+                                               std::uint64_t expected)
+    {
+        auto checked = thread();
+        if (!checked.hasValue())
+            return Result<std::uint64_t>::failure(checked.error());
+        if (path.empty())
+            return Result<std::uint64_t>::failure(makeError(ErrorCode::InvalidArgument, "configuration path is empty"));
+        if (!open || !scheduler->isOpen())
+            return Result<std::uint64_t>::failure(makeError(ErrorCode::ContextClosing, "management closing"));
+        auto data = capture();
+        if (!data.hasValue())
+            return Result<std::uint64_t>::failure(data.error());
+        if (!open || data.value().kernel.closing || !data.value().configuration || data.value().configurationError)
+            return Result<std::uint64_t>::failure(data.value().configurationError.value_or(
+                makeError(ErrorCode::ContextClosing, "configuration management unavailable")));
+        const auto& source = *data.value().configuration;
+        if (source.revision != expected)
+            return Result<std::uint64_t>::failure(
+                makeError(ErrorCode::ConfigConflict, "configuration revision changed"));
+        auto found = std::find_if(source.entries.begin(), source.entries.end(),
+                                  [&](const auto& row) { return row.path == path; });
+        if (!source.open || found == source.entries.end() || found->busy ||
+            (enabled ? !found->canSetEnabled : !found->canReconcile))
+            return Result<std::uint64_t>::failure(
+                makeError(ErrorCode::ContextClosing, "configuration action unavailable"));
+        auto allocated = allocateRecord();
+        if (!allocated.hasValue())
+            return Result<std::uint64_t>::failure(allocated.error());
+        auto record = allocated.value();
+        record->data.configurationPath = path;
+        record->data.expectedDesiredRevision = expected;
+        record->data.desiredEnabled = enabled;
+        record->data.instance = found->instance;
+        record->data.action = enabled ? ManagementAction::SetEnabled : ManagementAction::Reconcile;
+        configurationBusy.emplace(path, record->data.request);
+        std::weak_ptr<ManagementControl> weak = shared_from_this();
+        bool accepted = false;
+        try {
+            accepted = scheduler->post({[weak, record] {
+                                            if (auto self = weak.lock())
+                                                self->runConfiguration(record);
+                                        },
+                                        [record] { record->blocked.store(true); }});
+        } catch (...) {
+        }
+        if (!accepted) {
+            record->data.error = makeError(ErrorCode::SchedulerClosed, "configuration dispatch rejected");
+            finish(record);
+        } else if (open)
+            refreshFromSignal();
+        return Result<std::uint64_t>::success(record->data.request);
+    }
     /** @brief 先验证真实快照再锁定实例；历史满且全在途时拒绝，不丢失等待中的诊断。 */
     Result<std::uint64_t> request(InstanceId id, ManagementAction action)
     {
         auto checked = thread();
         if (!checked.hasValue()) return Result<std::uint64_t>::failure(checked.error());
+        if (bindingConfiguration)
+            return Result<std::uint64_t>::failure(
+                makeError(ErrorCode::ConfigConflict, "configuration binding in progress"));
         if (!open || !scheduler->isOpen()) return Result<std::uint64_t>::failure(makeError(ErrorCode::ContextClosing, "management closing"));
         auto data = capture();
         if (!data.hasValue()) return Result<std::uint64_t>::failure(data.error());
@@ -463,15 +905,12 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             (action == ManagementAction::Retry && !found->canRetry) ||
             (action == ManagementAction::Load && !found->canLoad))
             return Result<std::uint64_t>::failure(makeError(ErrorCode::ContextClosing, "instance busy or action unavailable"));
-        if (sequence == std::numeric_limits<std::uint64_t>::max()) return Result<std::uint64_t>::failure(makeError(ErrorCode::InvalidArgument, "management request ids exhausted"));
-        if (operations.size() == ManagementController::historyLimit) {
-            auto old = std::find_if(operations.begin(), operations.end(), [](const auto& record) { return !record->data.pending; });
-            if (old == operations.end()) return Result<std::uint64_t>::failure(makeError(ErrorCode::ContextClosing, "management history contains only pending operations"));
-            operations.erase(old);
-        }
-        auto record = std::make_shared<ManagementRecord>();
-        record->data.request = ++sequence; record->data.instance = id; record->data.action = action;
-        operations.push_back(record);
+        auto allocated = allocateRecord();
+        if (!allocated.hasValue())
+            return Result<std::uint64_t>::failure(allocated.error());
+        auto record = allocated.value();
+        record->data.instance = id;
+        record->data.action = action;
         busy.emplace(id, record->data.request);
         std::weak_ptr<ManagementControl> weak = shared_from_this();
         bool accepted = false;
@@ -510,7 +949,10 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
     auto stop = new ElaPushButton(QString::fromUtf8("停止实例"), root); stop->setObjectName("CordisManagementStop"); stop->setEnabled(false); actions->addWidget(stop); state->stopButton = stop;
     auto retry = new ElaPushButton(QString::fromUtf8("重试失败实例"), root); retry->setObjectName("CordisManagementRetry"); retry->setEnabled(false); actions->addWidget(retry); state->retryButton = retry;
     actions->addStretch(); layout->addLayout(actions);
-    auto tabs = new FixedDiagnosticsTabs(root); tabs->setObjectName("CordisManagementTabs"); layout->addWidget(tabs, 3);
+    auto tabs = new FixedDiagnosticsTabs(root);
+    state->tabs = tabs;
+    tabs->setObjectName("CordisManagementTabs");
+    layout->addWidget(tabs, 3);
     auto details = new ElaPlainTextEdit(tabs); details->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}"); details->setObjectName("CordisManagementDetails"); details->setReadOnly(true); tabs->addTab(details, QString::fromUtf8("实例详情")); state->details = details;
     auto services = new ElaPlainTextEdit(tabs); services->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}"); services->setObjectName("CordisManagementServices"); services->setReadOnly(true); tabs->addTab(services, QString::fromUtf8("服务与界面")); state->services = services;
     auto notices = new ElaPlainTextEdit(tabs); notices->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}"); notices->setObjectName("CordisManagementNotices"); notices->setReadOnly(true); tabs->addTab(notices, QString::fromUtf8("通知")); state->notices = notices;
@@ -561,6 +1003,30 @@ Result<void> setManagementEnabled(const std::shared_ptr<ManagementControl>& cont
                                                                : ManagementAction::Load);
     return result.hasValue() ? Result<void>::success() : Result<void>::failure(result.error());
 }
+/** @brief 配置路径动作与手动实例动作共享管理历史和关闭门禁。 */
+Result<void> setManagementConfigurationEnabled(const std::shared_ptr<ManagementControl>& control,
+                                               const std::string& path, bool enabled, std::uint64_t revision)
+{
+    auto result = control->requestConfiguration(path, enabled, revision);
+    return result.hasValue() ? Result<void>::success() : Result<void>::failure(result.error());
+}
+/** @brief 失效配置源不能通过贡献兜底重新获得手动操作。 */
+bool hideManagementContribution(const std::shared_ptr<ManagementControl>& control, InstanceId instance)
+{
+    if (!control->configurationAttached)
+        return false;
+    if (control->lastConfiguration)
+        for (const auto& row : control->lastConfiguration->entries)
+            if (row.instance == instance)
+                return true;
+    auto kernel = control->kernel.lock();
+    if (!kernel)
+        return true;
+    auto found = kernel->findInstance(instance);
+    if (found.hasValue())
+        return control->protectedRuntimes.count(found.value().snapshot().value().runtime) != 0;
+    return control->configuration.expired();
+}
 /** @brief 管理操作结果只持宿主记录；关闭等待当前 UI 写入栈返回，不取消已进入的内核操作。 */
 Task<void> closeManagement(const std::shared_ptr<ManagementControl>& control)
 {
@@ -594,6 +1060,89 @@ Result<void> ManagementController::attach(const std::shared_ptr<Kernel>& kernel)
     control->kernel = kernel; control->attached = true;
     control->timer->start();
     return control->refresh();
+}
+/** @brief 配置绑定不可替换，定义在真实 Kernel 中验证且不能接管在途手动请求。 */
+Result<void> ManagementController::attachConfiguration(const std::shared_ptr<IConfigurationManagement>& provider,
+                                                       std::vector<RuntimeId> runtimes) const
+{
+    auto state = control_.lock();
+    if (!state)
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "management expired"));
+    auto checked = state->thread();
+    if (!checked.hasValue())
+        return checked;
+    auto kernel = state->kernel.lock();
+    if (!state->open || !state->scheduler->isOpen() || !kernel || state->bindingConfiguration)
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "configuration binding unavailable"));
+    if (!provider || runtimes.empty())
+        return Result<void>::failure(
+            makeError(ErrorCode::InvalidArgument, "configuration binding requires provider and protected runtimes"));
+    std::set<RuntimeId> protectedIds(runtimes.begin(), runtimes.end());
+    if (protectedIds.size() != runtimes.size())
+        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "duplicate protected runtime"));
+    if (state->configurationAttached)
+        return state->configuration.lock() == provider && state->protectedRuntimes == protectedIds
+                   ? Result<void>::success()
+                   : Result<void>::failure(
+                         makeError(ErrorCode::ServiceConflict, "configuration management already attached"));
+    auto core = kernel->snapshot().value();
+    if (core.closing)
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "kernel closing"));
+    for (auto id : protectedIds)
+        if (!id.valid() ||
+            std::none_of(core.names.begin(), core.names.end(), [&](const auto& row) { return row.id == id; }))
+            return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "foreign protected runtime"));
+    for (const auto& row : state->operations)
+        if (row->data.pending) {
+            auto found = kernel->findInstance(row->data.instance);
+            auto old = state->stopped.find(row->data.instance);
+            if ((found.hasValue() && protectedIds.count(found.value().snapshot().value().runtime)) ||
+                (old != state->stopped.end() && protectedIds.count(old->second.snapshot().value().runtime)))
+                return Result<void>::failure(
+                    makeError(ErrorCode::ConfigConflict, "manual request still pending for protected runtime"));
+        }
+    state->bindingConfiguration = true;
+    struct Reset {
+        bool& flag; /** @brief 所有返回路径恢复绑定门禁。 */
+        ~Reset() { flag = false; }
+    } reset{state->bindingConfiguration};
+    auto initial = [&]() -> Result<ConfigurationManagementSnapshot> {
+        try {
+            return provider->snapshot();
+        } catch (const std::exception& error) {
+            return Result<ConfigurationManagementSnapshot>::failure(makeError(ErrorCode::CallbackFailed, error.what()));
+        } catch (...) {
+            return Result<ConfigurationManagementSnapshot>::failure(
+                makeError(ErrorCode::CallbackFailed, "configuration binding snapshot threw"));
+        }
+    }();
+    if (!initial.hasValue())
+        return Result<void>::failure(initial.error());
+    if (!state->open || kernel->snapshot().value().closing)
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "management closed during binding"));
+    detail::ManagementControl::ViewAccess access(*state);
+    state->protectedRuntimes = std::move(protectedIds);
+    state->configuration = provider;
+    state->configurationAttached = true;
+    state->lastConfiguration = initial.value();
+    state->createConfigurationTab();
+    return state->refresh();
+}
+/** @brief 配置启停不依赖是否存在有效 InstanceId。 */
+Result<std::uint64_t> ManagementController::setConfigurationEnabled(const std::string& path, bool enabled,
+                                                                    std::uint64_t revision) const
+{
+    auto state = control_.lock();
+    return state ? state->requestConfiguration(path, enabled, revision)
+                 : Result<std::uint64_t>::failure(makeError(ErrorCode::ContextClosing, "management expired"));
+}
+/** @brief 失败配置重试通过完整目标收敛，不使用手动实例重试。 */
+Result<std::uint64_t> ManagementController::reconcileConfiguration(const std::string& path,
+                                                                   std::uint64_t revision) const
+{
+    auto state = control_.lock();
+    return state ? state->requestConfiguration(path, {}, revision)
+                 : Result<std::uint64_t>::failure(makeError(ErrorCode::ContextClosing, "management expired"));
 }
 /** @brief 本地保留宿主控制块，Qt 信号重入释放 facade 也不会访问悬空对象。 */
 Result<void> ManagementController::refresh() const

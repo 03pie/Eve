@@ -4,6 +4,7 @@
 #pragma once
 #include <QString>
 #include <cordis/result.hpp>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -20,6 +21,9 @@ struct HomePlugin {
     QString id, title, subtitle;
     bool canStop = false, canLoad = false, canRetry = false, busy = false;
     bool enabled = false;
+    std::uint64_t revision = 0;
+    QString identity{};
+    bool configuration = false;
 };
 /** @brief 所有导航仍由 Shell 校验贡献及 epoch，刷新只调用宿主管理器。 */
 struct WorkbenchActions {
@@ -29,7 +33,9 @@ struct WorkbenchActions {
     std::function<std::vector<HomePlugin>()> plugins;
     /** @brief 在控件写入期间保留根窗口，关闭任务等访问栈返回后才允许销毁。 */
     std::function<void(const std::function<void()>&)> withWindowAccess;
-    std::function<Result<void>(const QString&, bool)> power;
+    std::function<Result<void>(const QString&, bool, std::uint64_t)> power;
+    /** @brief 已由配置目录或内部宿主覆盖的贡献不重复生成卡片。 */
+    std::function<bool(const QString&)> hideContribution;
 };
 /** @brief 创建 Example 风格滚动首页，入口在工作台构造时连接。 */
 QWidget* createWelcomePage();

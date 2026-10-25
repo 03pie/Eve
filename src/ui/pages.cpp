@@ -683,6 +683,60 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler)
                  }
                  plugins.push_back(std::move(item));
              }
+             if (snapshot.value().configuration) {
+                 const auto& source = *snapshot.value().configuration;
+                 for (const auto& row : source.entries) {
+                     QString status;
+                     if (snapshot.value().configurationError)
+                         status = QString::fromUtf8("配置状态不可用");
+                     else if (!row.hasActual && row.error)
+                         status = QString::fromUtf8("状态不可用");
+                     else if (!row.enabled)
+                         status = QString::fromUtf8("已停用");
+                     else if (!row.effectiveEnabled)
+                         status = QString::fromUtf8("父项停用");
+                     else if (row.waitingForParent)
+                         status = QString::fromUtf8("等待父项");
+                     else if (!row.hasActual)
+                         status = QString::fromUtf8("等待执行");
+                     else
+                         switch (row.state) {
+                         case InstanceState::Active:
+                             status = QString::fromUtf8("运行中");
+                             break;
+                         case InstanceState::Pending:
+                             status = QString::fromUtf8("等待依赖");
+                             break;
+                         case InstanceState::Loading:
+                             status = QString::fromUtf8("启动中");
+                             break;
+                         case InstanceState::Unloading:
+                             status = row.error ? QString::fromUtf8("清理受阻") : QString::fromUtf8("清理中");
+                             break;
+                         case InstanceState::Failed:
+                             status = QString::fromUtf8("失败");
+                             break;
+                         case InstanceState::Disposed:
+                             status = QString::fromUtf8("已停止");
+                             break;
+                         }
+                     detail::HomePlugin item{
+                         "configuration:" + QString::fromStdString(row.path),
+                         QString::fromStdString(row.plugin) + " · " + QString::fromStdString(row.path), status};
+                     item.configuration = true;
+                     item.revision = source.revision;
+                     item.enabled = row.enabled;
+                     item.busy = row.busy;
+                     item.canStop = row.canSetEnabled && row.enabled;
+                     item.canLoad = row.canSetEnabled && !row.enabled;
+                     item.identity =
+                         QString::fromUtf8("路径 %1 · %2")
+                             .arg(QString::fromStdString(row.path))
+                             .arg(row.instance.valid() ? QString::fromUtf8("实例 #%1").arg(row.instance.value())
+                                                       : QString::fromUtf8("无实例"));
+                     plugins.push_back(std::move(item));
+                 }
+             }
              return plugins;
          },
          [weak](const std::function<void()>& action) {
@@ -691,16 +745,25 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler)
                  action();
              }
          },
-         [weak](const QString& id, bool enabled) {
+         [weak](const QString& id, bool enabled, std::uint64_t revision) {
              auto state = weak.lock();
              if (!state || !state->open)
                  return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closing"));
              detail::ShellControl::NavigationAccess access(*state);
+             if (id.startsWith("configuration:"))
+                 return detail::setManagementConfigurationEnabled(state->management, id.mid(14).toStdString(), enabled,
+                                                                  revision);
              bool valid = false;
              const auto value = id.toULongLong(&valid);
              if (!valid || value == 0)
                  return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "invalid plugin instance"));
              return detail::setManagementEnabled(state->management, InstanceId(value), enabled);
+         },
+         [weak](const QString& id) {
+             auto state = weak.lock();
+             bool valid = false;
+             const auto value = id.toULongLong(&valid);
+             return state && valid && detail::hideManagementContribution(state->management, InstanceId(value));
          }});
     window->addFooterNode(QString::fromUtf8("设置"), detail::workbenchSettings(control_->workbench), control_->settingsKey, 0, ElaIconType::GearComplex);
     window->addFooterNode(QString::fromUtf8("关于"), detail::workbenchAbout(control_->workbench), control_->aboutKey, 0, ElaIconType::CircleInfo);
@@ -784,6 +847,17 @@ Result<void> ElaShell::onCloseRequested(std::function<void()> callback) const
     if (!control_->open) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closing"));
     if (!callback) return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "empty close handler"));
     control_->closeHandler = std::move(callback);
+    return Result<void>::success();
+}
+/** @brief 仅重置尚未进入销毁的关闭请求，允许保存冲突处理后再次正常退出。 */
+Result<void> ElaShell::cancelCloseRequest() const
+{
+    auto control = control_;
+    if (!control->scheduler->isCurrentThread())
+        return Result<void>::failure(makeError(ErrorCode::WrongThread, "cancel close requires owner thread"));
+    if (!control->open || control->closing)
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell already closing"));
+    control->closeRequested = false;
     return Result<void>::success();
 }
 /** @brief 关闭期间不停止 Qt 循环，等待贡献清理完成后才删除窗口树。 */

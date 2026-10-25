@@ -2,7 +2,7 @@
 
 基于 Cordis 思路设计的 C++17 插件内核，目标桌面环境为 Qt 5.15.2 + ElaWidgetTools。
 
-当前已完成 **W0–W7 首阶段内置内核与联合验收**。P3 的 Qt/Ela 工作台此前已获用户人工验收确认，配置校验、协调及文件/Store 已实现；Q4c2a/b 将顶层内置配置及宿主类型化的动态 inject 接入真实 Kernel，支持依赖排序/恢复、契约变更重建及完整退出。Q4c2c1 已补齐宿主观察父代上下文及创建类型化子实例的 Core 桥；显式配置子树协调、watcher、后台 I/O 和管理页保存装配仍待完成。
+当前已完成 **W0–W7 首阶段内置内核与联合验收**。P3 已有内置配置子树、类型化依赖、域继承、真实协调和文件/Store。新增可选配置工作台，连接预览、应用、期望启停及保存，明确区分运行和持久化状态。原工作台及配置工作台已获用户人工确认。Home/管理页统一配置路径启停也已获用户人工确认。配置工作台新增后台读写和文件监听，外部原文仅在显式操作后载入编辑区；本轮体验待专项复核。
 
 ## 从这里开始
 
@@ -26,9 +26,12 @@
 | `src/loader` | 独立 Cordis::Loader，配置结构校验与目标差异预览，无运行或文件副作用 |
 | `Cordis::ConfigYaml` | 独立受限 YAML 解析及内置定义/schema 校验层，SDK 不暴露 LibYAML 类型 |
 | `Cordis::ConfigCoordinator` | CAS 目标接受、最新目标/串行动作及关闭协议，宿主运行驱动单独适配 |
-| `Cordis::ConfigKernel` | 顶层内置配置的真实 Kernel 驱动，固定及宿主类型化的配置依赖、realm 映射、稳定操作/清理屏障 |
+| `Cordis::ConfigKernel` | 内置配置树的真实 Kernel 驱动，类型化依赖、realm 继承/覆盖、父恢复后的子树重建及稳定操作/清理屏障 |
 | `Cordis::ConfigFileQt` | 可选 Qt 配置文件事务，原文/hash 基线、冲突保留及临时文件提交 |
 | `Cordis::ConfigStore` / `Cordis::ConfigStoreQt` | 无 Qt 的保存状态/单写队列，以及可选真实 Qt 文件后端 |
+| `Cordis::ConfigSession` | 独占连接候选预览、CAS 接受、期望启停和 Store 跟踪/退出刷新，不依赖 Qt |
+| `Cordis::ConfigIoQt` | 可选配置后台串行读写、线程 join 与文件/目录监听，通知不自动应用目标 |
+| `Cordis::ConfigUi` | 可选 Ela 配置编辑页及 Home/管理适配器，弱持宿主会话；普通 Ui SDK 不依赖配置层 |
 | `src/qt` | 可选 Cordis::Qt，包含 QtScheduler、QtClock 与 QObjectResource |
 | `src/ui` | 可选 Cordis::Ui，包含 Ela 插件状态卡片及电源操作、单击直达的插件导航、菜单/搜索/前进后退、可全部关闭的中央页签、底部工作区、贡献服务和只读诊断；资源树属于具体插件页 |
 | `third_party/ela` | 项目内维护的 Ela 组件库及资源，保留上游基线、本地修改和 MIT 许可 |
@@ -48,7 +51,7 @@
 ./build/core-gcc-debug/examples/builtin/cordis_reconcile_demo.exe
 ```
 
-示例接受两份 YAML 目标，由 inject 声明建立真实消费者依赖，更新提供者配置并验证消费者恢复，最后确认全部自有实例静止。它不写配置文件；完整协议及本阶段能力限制见 [Kernel 配置驱动](docs/adr/0016-kernel-configuration-driver.md) 和 [实例级配置依赖](docs/adr/0017-instance-inject-contracts.md)。
+示例接受两份 YAML 父子目标，由 inject 声明建立消费者子项的真实依赖；更新提供者父配置后检查旧子终结、新子身份及最新服务值，最后确认全部自有实例静止。它不写配置文件；完整协议及范围见 [配置子树协调](docs/adr/0019-configuration-subtrees.md)。
 
 父代上下文/子实例的纯 Core 示例：
 
@@ -56,7 +59,17 @@
 ./build/core-gcc-debug/examples/builtin/cordis_child_epoch_demo.exe
 ```
 
-宿主通过 whenActiveAfter 观察父实例新代次，使用弱 Context 创建带类型化依赖的子实例；父更新等待旧子清理，再挂载新子。该示例验证 Core 桥接能力，Loader 的 YAML 显式 children 协调仍待实现，见 [跨代观察协议](docs/adr/0018-activation-context-bridge.md)。
+宿主通过 whenActiveAfter 观察父实例新代次，使用弱 Context 创建带类型化依赖的子实例；父更新等待旧子清理，再挂载新子。该示例单独验证 Core 桥接能力，见 [跨代观察协议](docs/adr/0018-activation-context-bridge.md)；YAML 自动协调由上面的 cordis_reconcile_demo 演示。
+
+运行新增配置工作台（沿用原 Release 目录）：
+
+```powershell
+$env:PATH = "E:/Qt/5.15.2/msvc2019_64/bin;$env:PATH"
+$env:QT_QPA_PLATFORM = 'windows'
+./build/ela-msvc-release/bin/cordis_config_workbench.exe
+```
+
+默认配置文件位于应用本地数据目录，界面显示确切路径；可用 --file 指定现有目录下的文件。读取原文不会自动应用或保存，先“检查差异”再“应用”，选择条目用左右开关修改期望启停，点击“保存”持久化。保存会规范化 YAML/JSON，未应用编辑不会写盘；退出刷新已应用修改，磁盘冲突先保留窗口供处理。此入口只使用配置目标管理实例，原 cordis_ela_demo 继续演示手动实例管理。明暗自动示例使用 --smoke/--smoke-dark，始终写临时文件。
 
 ## 设计及实施入口
 
@@ -74,6 +87,8 @@
 - [Kernel 配置驱动](docs/adr/0016-kernel-configuration-driver.md)：顶层内置配置的真实依赖/realm 映射、执行、退出及剩余范围。
 - [实例级配置依赖](docs/adr/0017-instance-inject-contracts.md)：动态 inject 的类型目录、契约联合、实际状态规划和重建边界。
 - [宿主跨代观察](docs/adr/0018-activation-context-bridge.md)：弱 Context、父重启后的子实例重建及类型化依赖桥。
+- [配置子树协调](docs/adr/0019-configuration-subtrees.md)：真实父子归属、继承域、等待父代、自动恢复及失败/关闭边界。
+- [配置会话与页面](docs/adr/0020-configuration-session-ui.md)：不可伪造候选、接受/跟踪顺序、期望启停、冲突决策及可选配置工作台。
 - [配置文件事务](docs/adr/0014-configuration-file-transactions.md)：Qt 原始字节版本、协作锁、冲突来源及临时文件提交的范围。
 - [配置 Store](docs/adr/0015-configuration-store.md)：已接受目标/历史保存、dirty、单写队列、显式 rebase 与退出刷新。
 - [P3 桌面验收单](tests/acceptance/p3-ui.md)：明暗主题、缩放、组件一致性、交互及正常退出；2026-10-25 用户确认完成。

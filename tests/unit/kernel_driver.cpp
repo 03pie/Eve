@@ -379,8 +379,7 @@ void support()
         return completedTask();
     });
     scene.start();
-    for (auto text : {"[{id: a, plugin: demo, children: [{id: child, plugin: demo}]}]",
-                      "[{id: a, plugin: demo, realms: {s: missing}}]", "[{id: a, plugin: demo, inject: [extra/v1]}]"}) {
+    for (auto text : {"[{id: a, plugin: demo, realms: {s: missing}}]", "[{id: a, plugin: demo, inject: [extra/v1]}]"}) {
         auto result = scene.coordinator->accept(scene.target(text), 0);
         CHECK(!result.hasValue());
     }
@@ -912,6 +911,492 @@ void internalDelivery()
     lateScheduler->queue.close();
 }
 
+/** @brief 按规范路径读取真实值快照，不依赖拓扑顺序或实例 id 排序。 */
+RunningEntry running(Scene& scene, const std::string& path)
+{
+    auto values = scene.driver->snapshot().value();
+    auto found =
+        std::find_if(values.begin(), values.end(), [&](const RunningEntry& value) { return value.path == path; });
+    CHECK(found != values.end());
+    return *found;
+}
+
+/** @brief 父与子独立更新，旧孙/子清理阻挡父新代；禁用与删除不重建子树。 */
+void treeLifecycle()
+{
+    Scene scene;
+    Promise<void> gate;
+    bool hold = true;
+    std::vector<std::string> cleaned;
+    scene.add("root", [&](Context context) {
+        context
+            .onCleanup([&](CleanupContext) {
+                cleaned.push_back("root");
+                return completedTask();
+            })
+            .value();
+        return completedTask();
+    });
+    scene.add("child", [&](Context context) {
+        context
+            .onCleanup([&](CleanupContext) {
+                cleaned.push_back("child");
+                return hold ? gate.task() : completedTask();
+            })
+            .value();
+        return completedTask();
+    });
+    scene.add("leaf", [&](Context context) {
+        context
+            .onCleanup([&](CleanupContext) {
+                cleaned.push_back("leaf");
+                return completedTask();
+            })
+            .value();
+        return completedTask();
+    });
+    scene.start();
+    const std::string children = ", children: [{id: c, plugin: child, children: [{id: l, plugin: leaf}]}]}]";
+    auto first = scene.accept("[{id: r, plugin: root, config: one" + children);
+    scene.pump();
+    CHECK(first.settled.tryResult()->value().outcome == PlanOutcome::Applied);
+    auto root = running(scene, "r"), child = running(scene, "r/c"), leaf = running(scene, "r/c/l");
+    CHECK(scene.kernel->snapshot().value().instances.size() == 1 && child.parentEpoch == root.epoch &&
+          leaf.parentEpoch == child.epoch);
+    auto changed = scene.accept("[{id: r, plugin: root, config: two" + children);
+    scene.pump();
+    CHECK(!changed.settled.isReady() && cleaned == std::vector<std::string>({"leaf", "child"}));
+    hold = false;
+    gate.resolve();
+    scene.pump();
+    CHECK(changed.settled.tryResult()->value().outcome == PlanOutcome::Applied);
+    auto nextRoot = running(scene, "r"), nextChild = running(scene, "r/c"), nextLeaf = running(scene, "r/c/l");
+    CHECK(nextRoot.instance == root.instance && nextRoot.epoch > root.epoch && nextChild.instance != child.instance &&
+          nextLeaf.instance != leaf.instance);
+    CHECK(cleaned == std::vector<std::string>({"leaf", "child", "root"}));
+    auto childUpdate = scene.accept("[{id: r, plugin: root, config: two, children: [{id: c, plugin: child, config: "
+                                    "changed, children: [{id: l, plugin: leaf}]}]}]");
+    scene.pump();
+    CHECK(childUpdate.settled.tryResult()->value().outcome == PlanOutcome::Applied);
+    CHECK(running(scene, "r").epoch == nextRoot.epoch && running(scene, "r/c").instance == nextChild.instance &&
+          running(scene, "r/c").epoch > nextChild.epoch);
+    CHECK(running(scene, "r/c/l").instance != nextLeaf.instance);
+    auto disabled = scene.accept("[{id: r, plugin: root, disabled: true" + children);
+    scene.pump();
+    CHECK(disabled.settled.tryResult()->value().outcome == PlanOutcome::Applied &&
+          scene.driver->snapshot().value().empty());
+    scene.accept("[{id: r, plugin: root" + children);
+    scene.pump();
+    CHECK(running(scene, "r").instance != root.instance);
+    scene.accept("[]");
+    scene.pump();
+    CHECK(scene.driver->snapshot().value().empty());
+    scene.close();
+}
+
+/** @brief 父 Pending 时显式等待，恢复及再次退役后自动重建；历史 Pending 保持。 */
+void treePending()
+{
+    Scene scene;
+    int childCalls = 0, leafCalls = 0;
+    scene.add("root", [](Context) { return completedTask(); }, {ServiceRequirement::of<int>({"trigger"})});
+    scene.add("child",
+              [&](Context) {
+                  ++childCalls;
+                  return completedTask();
+              },
+              {ServiceRequirement::of<int>({"store"})});
+    scene.add("leaf", [&](Context) {
+        ++leafCalls;
+        return completedTask();
+    });
+    scene.start();
+    auto first =
+        scene.accept("[{id: r, plugin: root, children: [{id: c, plugin: child, children: [{id: l, plugin: leaf}]}]}]");
+    scene.pump();
+    CHECK(first.settled.tryResult()->value().outcome == PlanOutcome::Pending);
+    CHECK(running(scene, "r/c").waitingForParent && !running(scene, "r/c").instance.valid() &&
+          running(scene, "r/c/l").waitingForParent);
+    auto trigger = scene.kernel->services().stage<int>({"trigger"}, std::make_shared<int>(1)).value();
+    trigger.publish().value();
+    scene.pump();
+    CHECK(!running(scene, "r/c").waitingForParent && running(scene, "r/c").state == InstanceState::Pending &&
+          childCalls == 0);
+    auto store = scene.kernel->services().stage<int>({"store"}, std::make_shared<int>(42)).value();
+    store.publish().value();
+    scene.pump();
+    CHECK(childCalls == 1 && leafCalls == 1 && running(scene, "r/c/l").state == InstanceState::Active);
+    auto child = running(scene, "r/c").instance;
+    trigger.retire().value();
+    scene.pump();
+    trigger.release().value();
+    CHECK(running(scene, "r/c").waitingForParent);
+    auto replacement = scene.kernel->services().stage<int>({"trigger"}, std::make_shared<int>(2)).value();
+    replacement.publish().value();
+    scene.pump();
+    CHECK(childCalls == 2 && leafCalls == 2 && running(scene, "r/c").instance != child);
+    CHECK(first.settled.tryResult()->value().outcome == PlanOutcome::Pending);
+    scene.close();
+}
+
+/** @brief 附加契约沿父域继承，局部覆盖仍精确匹配，不错误使用全局服务。 */
+void treeRealms()
+{
+    Scene scene;
+    auto privateRealm = scene.kernel->services().createRealm().value();
+    auto otherRealm = scene.kernel->services().createRealm().value();
+    auto thirdRealm = scene.kernel->services().createRealm().value();
+    std::vector<int> seen;
+    scene.add("root", [](Context) { return completedTask(); });
+    scene.add("provider",
+              [](Context context) {
+                  context.provide<int>({"store"}, std::make_shared<int>(11)).value();
+                  return completedTask();
+              },
+              {}, {ServiceOutput::of<int>({"store"}, true, {2, {"read"}})});
+    auto consumer = scene.add(
+        "consumer",
+        [&](Context context) {
+            context.consume<int>({"store"}).value().withService([&](int& value) { seen.push_back(value); }).value();
+            return completedTask();
+        },
+        {}, {}, {ServiceRequirement::of<int>({"store"})});
+    scene.start({{"private", privateRealm}, {"other", otherRealm}, {"third", thirdRealm}});
+    auto foreign = scene.kernel->services().stage<int>({"store"}, std::make_shared<int>(99)).value();
+    foreign.publish().value();
+    auto first =
+        scene.accept("[{id: r, plugin: root, realms: {store: private}, children: [{id: p, plugin: provider, children: "
+                     "[{id: c, plugin: consumer, inject: [{name: store, minimumMinor: 2, capabilities: [read]}]}]}, "
+                     "{id: x, plugin: consumer, realms: {store: other}, inject: [store/v1]}]}]");
+    scene.pump();
+    CHECK(first.settled.tryResult()->value().outcome == PlanOutcome::Pending && seen == std::vector<int>({11}));
+    CHECK(running(scene, "r/p/c").configuration.realms.at("store") == "private" &&
+          running(scene, "r/x").state == InstanceState::Pending);
+    auto other = scene.kernel->services().stage<int>({"store", 1, otherRealm}, std::make_shared<int>(22)).value();
+    other.publish().value();
+    scene.pump();
+    CHECK(seen == std::vector<int>({11, 22}) && consumer.requirements().empty());
+    auto root = running(scene, "r");
+    auto child = running(scene, "r/x");
+    auto changed = scene.accept("[{id: r, plugin: root, realms: {store: private}, children: [{id: p, plugin: provider, "
+                                "children: [{id: c, plugin: consumer, inject: [{name: store, minimumMinor: 2, "
+                                "capabilities: [read]}]}]}, {id: x, plugin: consumer, inject: [store/v1]}]}]");
+    scene.pump();
+    CHECK(changed.settled.tryResult()->value().outcome == PlanOutcome::Applied &&
+          running(scene, "r").epoch == root.epoch && running(scene, "r/x").instance != child.instance &&
+          seen.back() == 11);
+    const auto before = seen.size();
+    auto moved = scene.accept("[{id: r, plugin: root, realms: {store: third}, children: [{id: p, plugin: provider, "
+                              "children: [{id: c, plugin: consumer, inject: [{name: store, minimumMinor: 2, "
+                              "capabilities: [read]}]}]}, {id: x, plugin: consumer, inject: [store/v1]}]}]");
+    scene.pump();
+    CHECK(moved.settled.tryResult()->value().outcome == PlanOutcome::Applied &&
+          running(scene, "r").instance != root.instance && seen.size() == before + 2);
+    scene.close();
+}
+
+/** @brief 所有权与依赖联合检查拒绝父依赖后代、重复输出及禁用子项的未知域。 */
+void treeGraph()
+{
+    Scene scene;
+    scene.add("root", [](Context) { return completedTask(); });
+    scene.add("parent", [](Context) { return completedTask(); }, {ServiceRequirement::of<int>({"s"})});
+    scene.add("provider",
+              [](Context context) {
+                  context.provide<int>({"s"}, std::make_shared<int>(1)).value();
+                  return completedTask();
+              },
+              {}, {ServiceOutput::of<int>({"s"})});
+    scene.start();
+    auto cycle =
+        scene.coordinator->accept(scene.target("[{id: r, plugin: parent, children: [{id: p, plugin: provider}]}]"), 0);
+    CHECK(!cycle.hasValue() && cycle.error().code == ErrorCode::DependencyCycle);
+    auto duplicate = scene.coordinator->accept(
+        scene.target("[{id: r, plugin: root, children: [{id: a, plugin: provider}, {id: b, plugin: provider}]}]"), 0);
+    CHECK(!duplicate.hasValue());
+    auto disabled = scene.coordinator->accept(
+        scene.target(
+            "[{id: r, plugin: root, children: [{id: a, plugin: root, disabled: true, realms: {s: missing}}]}]"),
+        0);
+    CHECK(!disabled.hasValue() && scene.coordinator->snapshot().value().desiredRevision == 0 &&
+          scene.kernel->snapshot().value().instances.empty());
+    scene.close();
+}
+
+/** @brief 父清理中接受 B 再被 C 替代，尚未执行的 B 子项不挂载，删除项不复活。 */
+void treeLatest()
+{
+    Scene scene;
+    Promise<void> cleanup;
+    std::vector<std::string> children;
+    scene.add("root", [](Context) { return completedTask(); });
+    scene.add("child", [&](Context context) {
+        children.push_back(context.config());
+        if (context.config() == "\"old\"")
+            context.onCleanup([cleanup](CleanupContext) { return cleanup.task(); }).value();
+        return completedTask();
+    });
+    scene.start();
+    scene.accept("[{id: r, plugin: root, config: A, children: [{id: x, plugin: child, config: old}]}]");
+    scene.pump();
+    auto b = scene.accept("[{id: r, plugin: root, config: B, children: [{id: y, plugin: child, config: B}]}]");
+    scene.pump();
+    CHECK(!b.settled.isReady());
+    auto c = scene.accept("[{id: r, plugin: root, config: C, children: [{id: z, plugin: child, config: C}]}]");
+    cleanup.resolve();
+    scene.pump();
+    CHECK(b.settled.tryResult()->value().outcome == PlanOutcome::Superseded &&
+          c.settled.tryResult()->value().outcome == PlanOutcome::Applied);
+    CHECK(children == std::vector<std::string>({"\"old\"", "\"C\""}) && scene.driver->snapshot().value().size() == 2);
+    CHECK(running(scene, "r/z").state == InstanceState::Active);
+    scene.close();
+}
+
+/** @brief 父及子激活失败分别通过目标重试，不自动重复失败激活或增加 Runtime。 */
+void treeFailure()
+{
+    Scene scene;
+    int roots = 0, children = 0;
+    scene.add("root", [&](Context) {
+        return ++roots == 1 ? failedTask(makeError(ErrorCode::ActivationFailed, "root")) : completedTask();
+    });
+    scene.add("child", [&](Context) {
+        return ++children == 1 ? failedTask(makeError(ErrorCode::ActivationFailed, "child")) : completedTask();
+    });
+    scene.start();
+    const std::string value = "[{id: r, plugin: root, children: [{id: c, plugin: child}]}]";
+    auto a = scene.accept(value);
+    scene.pump();
+    CHECK(a.settled.tryResult()->value().outcome == PlanOutcome::Failed && children == 0);
+    auto b = scene.accept(value);
+    scene.pump();
+    CHECK(b.settled.tryResult()->value().outcome == PlanOutcome::Failed && running(scene, "r/c").failure.has_value());
+    auto child = running(scene, "r/c").instance;
+    auto c = scene.accept(value);
+    scene.pump();
+    CHECK(c.settled.tryResult()->value().outcome == PlanOutcome::Applied && roots == 2 && children == 2 &&
+          running(scene, "r/c").instance == child && scene.kernel->snapshot().value().runtimes == 2);
+    scene.close();
+}
+
+/** @brief 后台恢复的子正在激活时关闭，等待源任务并禁止再创建孙节点。 */
+void treeShutdown()
+{
+    Scene scene;
+    Promise<void> activation;
+    int leaves = 0;
+    scene.add("root", [](Context) { return completedTask(); }, {ServiceRequirement::of<int>({"trigger"})});
+    scene.add("child", [activation](Context) { return activation.task(); });
+    scene.add("leaf", [&](Context) {
+        ++leaves;
+        return completedTask();
+    });
+    scene.start();
+    scene.accept("[{id: r, plugin: root, children: [{id: c, plugin: child, children: [{id: l, plugin: leaf}]}]}]");
+    scene.pump();
+    auto trigger = scene.kernel->services().stage<int>({"trigger"}, std::make_shared<int>(1)).value();
+    trigger.publish().value();
+    scene.pump();
+    CHECK(running(scene, "r/c").state == InstanceState::Loading && leaves == 0);
+    auto closed = scene.coordinator->close();
+    scene.pump();
+    CHECK(!closed.isReady());
+    activation.resolve();
+    scene.pump();
+    CHECK(closed.tryResult()->value().quiescent && scene.driver->snapshot().value().empty() && leaves == 0);
+    auto all = scene.kernel->close();
+    scene.pump();
+    CHECK(all.tryResult()->value().quiescent);
+    scene.scheduler->close();
+}
+
+/** @brief 子清理残留阻挡父重启，关闭必须报告非静止并保留资源账目。 */
+void treeCleanupFailure()
+{
+    Scene scene;
+    int roots = 0;
+    scene.add("root", [&](Context) {
+        ++roots;
+        return completedTask();
+    });
+    scene.add("child", [](Context context) {
+        context
+            .onCleanup([](CleanupContext) { return failedTask(makeError(ErrorCode::CleanupFailed, "child retained")); })
+            .value();
+        return completedTask();
+    });
+    scene.start();
+    scene.accept("[{id: r, plugin: root, config: one, children: [{id: c, plugin: child}]}]");
+    scene.pump();
+    auto update = scene.accept("[{id: r, plugin: root, config: two, children: [{id: c, plugin: child}]}]");
+    scene.pump();
+    CHECK(update.settled.tryResult()->value().outcome == PlanOutcome::Failed &&
+          scene.coordinator->snapshot().value().unsafe && roots == 1);
+    auto closed = scene.coordinator->close();
+    scene.pump();
+    CHECK(!closed.tryResult()->value().quiescent && !scene.driver->snapshot().value().empty());
+    auto all = scene.kernel->close();
+    scene.pump();
+    CHECK(!all.tryResult()->value().quiescent);
+    scene.scheduler->close();
+}
+
+/** @brief 历史 Pending 后后台子激活清理失败，冻结新动作并保持历史报告。 */
+void treeBackgroundFailure()
+{
+    Scene scene;
+    scene.add("root", [](Context) { return completedTask(); }, {ServiceRequirement::of<int>({"trigger"})});
+    scene.add("child", [](Context context) {
+        context.onCleanup([](CleanupContext) { return failedTask(makeError(ErrorCode::CleanupFailed, "retained")); })
+            .value();
+        return failedTask(makeError(ErrorCode::ActivationFailed, "child"));
+    });
+    scene.start();
+    const std::string value = "[{id: r, plugin: root, children: [{id: c, plugin: child}]}]";
+    auto first = scene.accept(value);
+    scene.pump();
+    auto trigger = scene.kernel->services().stage<int>({"trigger"}, std::make_shared<int>(1)).value();
+    trigger.publish().value();
+    scene.pump();
+    CHECK(first.settled.tryResult()->value().outcome == PlanOutcome::Pending &&
+          running(scene, "r/c").failure.has_value());
+    auto rejected = scene.coordinator->accept(scene.target(value), scene.revision);
+    CHECK(!rejected.hasValue() && rejected.error().code == ErrorCode::CleanupFailed);
+    auto closed = scene.coordinator->close();
+    scene.pump();
+    CHECK(!closed.tryResult()->value().quiescent);
+    auto all = scene.kernel->close();
+    scene.pump();
+    CHECK(!all.tryResult()->value().quiescent);
+    scene.scheduler->close();
+}
+
+/** @brief 另一根消费配置子项的输出，父更新沿真实租约先清理消费者，再恢复两棵子树。 */
+void treeCrossDependency()
+{
+    Scene scene;
+    std::vector<int> values, cleaned;
+    scene.add("root", [](Context) { return completedTask(); });
+    scene.add("provider",
+              [](Context context) {
+                  context.provide<int>({"value"}, std::make_shared<int>(context.config() == "1" ? 1 : 2)).value();
+                  return completedTask();
+              },
+              {}, {ServiceOutput::of<int>({"value"})});
+    scene.add("consumer",
+              [&](Context context) {
+                  auto ref = context.consume<int>({"value"}).value();
+                  ref.withService([&](int& value) { values.push_back(value); }).value();
+                  context
+                      .onCleanup([&, ref](CleanupContext cleanup) {
+                          cleanup.withService(ref, [&](int& value) { cleaned.push_back(value); }).value();
+                          return completedTask();
+                      })
+                      .value();
+                  return completedTask();
+              },
+              {ServiceRequirement::of<int>({"value"})});
+    scene.add("leaf", [](Context) { return completedTask(); });
+    scene.start();
+    const std::string prefix =
+        "[{id: a, plugin: consumer, children: [{id: l, plugin: leaf}]}, {id: z, plugin: root, config: ";
+    scene.accept(prefix + "1, children: [{id: p, plugin: provider, config: 1}]}]");
+    scene.pump();
+    auto consumer = running(scene, "a"), child = running(scene, "a/l"), provider = running(scene, "z/p");
+    CHECK(values == std::vector<int>({1}) && scene.kernel->snapshot().value().instances.size() == 2);
+    auto changed = scene.accept(prefix + "2, children: [{id: p, plugin: provider, config: 2}]}]");
+    scene.pump();
+    CHECK(changed.settled.tryResult()->value().outcome == PlanOutcome::Applied && values == std::vector<int>({1, 2}) &&
+          cleaned == std::vector<int>({1}));
+    CHECK(running(scene, "a").instance == consumer.instance && running(scene, "a").epoch > consumer.epoch &&
+          running(scene, "a/l").instance != child.instance && running(scene, "z/p").instance != provider.instance);
+    scene.close();
+    CHECK(cleaned == std::vector<int>({1, 2}));
+}
+
+/** @brief 等待父代的条目无实例可退役，插件/域/契约变更直接替换等待意图。 */
+void treeDeferredChanges()
+{
+    Scene scene;
+    int oldCalls = 0, newCalls = 0;
+    auto privateRealm = scene.kernel->services().createRealm().value();
+    auto otherRealm = scene.kernel->services().createRealm().value();
+    scene.add("root", [](Context) { return completedTask(); }, {ServiceRequirement::of<int>({"trigger"})});
+    scene.add("old", [&](Context) {
+        ++oldCalls;
+        return completedTask();
+    });
+    scene.add("new",
+              [&](Context context) {
+                  context.consume<int>({"extra"})
+                      .value()
+                      .withService([&](int& value) {
+                          CHECK(value == 7);
+                          ++newCalls;
+                      })
+                      .value();
+                  return completedTask();
+              },
+              {}, {}, {ServiceRequirement::of<int>({"extra"})});
+    scene.start({{"private", privateRealm}, {"other", otherRealm}});
+    scene.accept("[{id: r, plugin: root, children: [{id: x, plugin: old}]}]");
+    scene.pump();
+    const auto replacement = std::make_shared<const ValidatedCandidate>(scene.target(
+        "[{id: r, plugin: root, children: [{id: x, plugin: new, realms: {extra: private}, inject: [extra/v1]}]}]"));
+    auto direct = scene.driver->apply({"r/x", ChangeKind::Add}, replacement, 2);
+    scene.pump();
+    CHECK(direct.tryResult()->hasValue() && direct.tryResult()->value().outcome == StepOutcome::Pending);
+    auto changed = scene.accept(
+        "[{id: r, plugin: root, children: [{id: x, plugin: new, realms: {extra: private}, inject: [extra/v1]}]}]");
+    scene.pump();
+    CHECK(changed.settled.tryResult()->value().outcome == PlanOutcome::Pending &&
+          running(scene, "r/x").configuration.plugin == "new" && running(scene, "r/x").waitingForParent);
+    const std::string inherited =
+        "[{id: r, plugin: root, realms: {extra: other}, children: [{id: x, plugin: new, inject: [extra/v1]}]}]";
+    auto remapped = scene.accept(inherited);
+    scene.pump();
+    CHECK(remapped.settled.tryResult()->value().outcome == PlanOutcome::Pending &&
+          running(scene, "r/x").configuration.realms.at("extra") == "other");
+    scene.accept("[]");
+    scene.pump();
+    CHECK(scene.driver->snapshot().value().empty());
+    scene.accept(inherited);
+    scene.pump();
+    auto trigger = scene.kernel->services().stage<int>({"trigger"}, std::make_shared<int>(1)).value();
+    auto extra = scene.kernel->services().stage<int>({"extra", 1, otherRealm}, std::make_shared<int>(7)).value();
+    trigger.publish().value();
+    extra.publish().value();
+    scene.pump();
+    CHECK(oldCalls == 0 && newCalls == 1 && running(scene, "r/x").state == InstanceState::Active);
+    scene.close();
+
+    Scene partial;
+    partial.add("root", [](Context) { return completedTask(); }, {ServiceRequirement::of<int>({"missing"})});
+    partial.add("provider",
+                [](Context context) {
+                    context.provide<int>({"s"}, std::make_shared<int>(1)).value();
+                    return completedTask();
+                },
+                {}, {ServiceOutput::of<int>({"s"})});
+    partial.start();
+    partial.accept("[{id: r, plugin: root, children: [{id: x, plugin: provider, children: [{id: g, plugin: root}]}]}]");
+    partial.pump();
+    auto target = std::make_shared<const ValidatedCandidate>(
+        partial.target("[{id: r, plugin: root, children: [{id: y, plugin: provider}]}]"));
+    auto added = partial.driver->apply({"r/y", ChangeKind::Add}, target, 2);
+    partial.pump();
+    CHECK(added.tryResult()->value().outcome == StepOutcome::Pending && partial.driver->plan(*target).hasValue());
+    auto removed = partial.driver->apply({"r/x", ChangeKind::Remove}, target, 2);
+    partial.pump();
+    CHECK(removed.tryResult()->value().outcome == StepOutcome::Applied &&
+          partial.driver->snapshot().value().size() == 2);
+    auto settled = partial.accept("[{id: r, plugin: root, children: [{id: y, plugin: provider}]}]");
+    partial.pump();
+    CHECK(settled.settled.tryResult()->value().outcome == PlanOutcome::Pending &&
+          partial.driver->snapshot().value().size() == 2);
+    partial.close();
+}
+
 /** @brief 各场景运行真实 Kernel，测试仅替换调度时间而不替换执行驱动。 */
 int main(int argc, char** argv)
 {
@@ -958,6 +1443,28 @@ int main(int argc, char** argv)
             injectGraph();
         else if (name == "inject_cleanup_failure")
             injectCleanupFailure();
+        else if (name == "tree_lifecycle")
+            treeLifecycle();
+        else if (name == "tree_pending")
+            treePending();
+        else if (name == "tree_realms")
+            treeRealms();
+        else if (name == "tree_graph")
+            treeGraph();
+        else if (name == "tree_latest")
+            treeLatest();
+        else if (name == "tree_failure")
+            treeFailure();
+        else if (name == "tree_shutdown")
+            treeShutdown();
+        else if (name == "tree_cleanup_failure")
+            treeCleanupFailure();
+        else if (name == "tree_background_failure")
+            treeBackgroundFailure();
+        else if (name == "tree_cross_dependency")
+            treeCrossDependency();
+        else if (name == "tree_deferred_changes")
+            treeDeferredChanges();
         else
             return EXIT_FAILURE;
     } catch (const std::exception& error) {

@@ -9,11 +9,12 @@
 #include <ElaScrollPageArea.h>
 #include <ElaText.h>
 #include <ElaToggleSwitch.h>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QImage>
-#include <QFontMetrics>
 #include <QLayout>
 #include <QLinearGradient>
+#include <QMetaObject>
 #include <QPainter>
 #include <QPen>
 #include <QPixmap>
@@ -138,9 +139,11 @@ HomePage::HomePage()
 }
 
 void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
-                          std::function<Result<void>(const QString&, bool)> power)
+                          std::function<Result<void>(const QString&, bool, std::uint64_t)> power,
+                          std::function<void(const std::function<void()>&)> access)
 {
     power_ = std::move(power);
+    access_ = std::move(access);
     bool layoutChanged = false;
     QSet<QString> retained;
     for (const auto& plugin : plugins) {
@@ -181,6 +184,7 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
             body->addLayout(header);
             auto footer = new QHBoxLayout;
             auto identity = new ElaText(QString::fromUtf8("实例 #%1").arg(plugin.id), 12, item);
+            identity->setObjectName("CordisPluginIdentity");
             footer->addWidget(identity, 1);
             auto button = new ElaToggleSwitch(item);
             button->setObjectName("CordisPluginPower");
@@ -188,32 +192,50 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
             body->addLayout(footer);
             flow_->addWidget(item);
             items_.insert(plugin.id, item);
-            // 排队执行，让原生开关的鼠标/动画处理先返回；控件撤销后不再使用旧指针。
-            connect(
-                button, &ElaToggleSwitch::toggled, this,
-                [this, button = QPointer<ElaToggleSwitch>(button), id = plugin.id](bool enabled) {
-                    if (!button || !button->isEnabled() || !power_)
-                        return;
-                    QPointer<HomePage> alive(this);
-                    auto invoke = power_;
-                    const auto key = id;
-                    button->setEnabled(false);
-                    if (!alive)
-                        return;
-                    auto result = invoke(key, enabled);
-                    if (!alive)
-                        return;
-                    QPointer<ElaText> message(error_);
-                    if (!result.hasValue())
-                        message->setText(QString::fromStdString(result.error().message));
-                    if (message)
-                        message->setVisible(!result.hasValue());
-                },
-                Qt::QueuedConnection);
+            // 发出时捕获修订，排队执行；刷新后的新修订不能覆盖旧点击的 CAS。
+            connect(button, &ElaToggleSwitch::toggled, this,
+                    [this, button = QPointer<ElaToggleSwitch>(button), id = plugin.id](bool enabled) {
+                        if (!button || !button->isEnabled() || !power_)
+                            return;
+                        auto invoke = power_;
+                        auto access = access_;
+                        const auto revision = button->property("CordisConfigurationRevision").toULongLong();
+                        auto execute = [this, button, id, revision, enabled, invoke] {
+                            if (!button || !button->isEnabled())
+                                return;
+                            QPointer<HomePage> alive(this);
+                            button->setEnabled(false);
+                            if (!alive)
+                                return;
+                            auto result = invoke(id, enabled, revision);
+                            if (!alive)
+                                return;
+                            QPointer<ElaText> message(error_);
+                            if (!result.hasValue())
+                                message->setText(QString::fromStdString(result.error().message));
+                            if (message)
+                                message->setVisible(!result.hasValue());
+                        };
+                        QMetaObject::invokeMethod(
+                            this,
+                            [execute, access] {
+                                if (access)
+                                    access(execute);
+                                else
+                                    execute();
+                            },
+                            Qt::QueuedConnection);
+                    });
         }
         auto title = item->findChild<ElaText*>("CordisPluginTitle");
         auto status = item->findChild<ElaText*>("CordisPluginStatus");
         auto button = item->findChild<ElaToggleSwitch*>("CordisPluginPower");
+        button->setProperty("CordisConfigurationRevision", QVariant::fromValue<qulonglong>(plugin.revision));
+        auto identity = item->findChild<ElaText*>("CordisPluginIdentity");
+        const auto identityText =
+            plugin.identity.isEmpty() ? QString::fromUtf8("实例 #%1").arg(plugin.id) : plugin.identity;
+        identity->setText(identity->fontMetrics().elidedText(identityText, Qt::ElideMiddle, 185));
+        identity->setToolTip(identityText);
         const auto name = title->fontMetrics().elidedText(plugin.title, Qt::ElideRight, 192);
         if (title->text() != name)
             title->setText(name);
@@ -227,9 +249,11 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
             const QSignalBlocker blocked(button);
             button->setIsToggled(plugin.enabled);
         }
-        const auto action = plugin.canStop    ? QString::fromUtf8("停止插件")
-                            : plugin.canRetry ? QString::fromUtf8("重试加载")
-                                              : QString::fromUtf8("加载插件");
+        const auto action = plugin.configuration ? (plugin.enabled ? QString::fromUtf8("停用配置条目")
+                                                                   : QString::fromUtf8("启用配置条目"))
+                            : plugin.canStop     ? QString::fromUtf8("停止插件")
+                            : plugin.canRetry    ? QString::fromUtf8("重试加载")
+                                                 : QString::fromUtf8("加载插件");
         button->setToolTip(plugin.busy ? QString::fromUtf8("正在处理，请稍候") : action);
         button->setAccessibleName(action);
         item->setToolTip(plugin.title.toHtmlEscaped() + "<br>" + plugin.subtitle.toHtmlEscaped());

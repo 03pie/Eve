@@ -1,5 +1,5 @@
 /** @file kernel_driver.cpp
- * @brief 以真实 Kernel 稳定操作执行顶层配置，运行账目与用户目标、保存状态分别维护。
+ * @brief 以真实 Kernel 及父代能力执行内置配置树，运行账目与目标、保存状态分别维护。
  */
 #include <cordis/loader/kernel_driver.hpp>
 
@@ -60,14 +60,37 @@ bool sameIdentity(const EntryValue& a, const EntryValue& b)
 {
     return a.plugin == b.plugin && a.module == b.module && a.realms == b.realms;
 }
+/** @brief 规范路径直接取真实父路径，不把相同前缀的其他条目算作祖先。 */
+std::string parentPath(const std::string& path)
+{
+    auto slash = path.rfind('/');
+    return slash == std::string::npos ? std::string{} : path.substr(0, slash);
+}
+/** @brief 物化继承的域别名，子项局部覆盖父视图；原校验候选保持不可变。 */
+std::map<std::string, EntryValue> runtimeValues(const ValidatedCandidate& target)
+{
+    auto result = target.source().structure().entries();
+    for (auto& entry : result) {
+        auto parent = parentPath(entry.first);
+        if (parent.empty())
+            continue;
+        auto local = std::move(entry.second.realms);
+        entry.second.realms = result.at(parent).realms;
+        for (auto& realm : local)
+            entry.second.realms.insert_or_assign(realm.first, std::move(realm.second));
+    }
+    return result;
+}
 } // namespace
 
 namespace detail {
-/** @brief 记录真正挂载/接受更新的值与实例；失败清理不会删除这份所有权账目。 */
+/** @brief 已执行条目保存真实实例或等待父代的意图；清理失败不会删除所有权账目。 */
 struct KernelRecord {
     EntryValue configuration;
-    Instance instance;
+    std::optional<Instance> instance;
     std::vector<ServiceRequirement> requirements;
+    Epoch parentEpoch = 0;
+    std::optional<ErrorInfo> failure{};
 };
 /** @brief 每次动作拥有独立 Promise，投递故障仅跨线程终结 Promise。 */
 struct KernelAction {
@@ -124,9 +147,12 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     std::shared_ptr<KernelDelivery> delivery = std::make_shared<KernelDelivery>();
     std::shared_ptr<KernelDriverControl> keepAlive;
     std::shared_ptr<KernelAction> active;
+    std::shared_ptr<const ValidatedCandidate> currentTarget;
+    std::optional<ErrorInfo> backgroundUnsafe;
     CleanupReport cleanup{true, {}};
     std::size_t pendingStops = 0, accesses = 0;
     bool closing = false, closePublished = false;
+    bool restoreScheduled = false;
     /** @brief 同步重入关闭时，外层实例操作返回前不能完成驱动关闭。 */
     struct Access {
         KernelDriverControl& state;
@@ -143,7 +169,9 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     Result<void> resourceHealth() const
     {
         for (const auto& entry : records) {
-            auto snapshot = entry.second.instance.snapshot();
+            if (!entry.second.instance)
+                continue;
+            auto snapshot = entry.second.instance->snapshot();
             if (!snapshot.hasValue())
                 return Result<void>::failure(snapshot.error());
             if (snapshot.value().state != InstanceState::Disposed &&
@@ -164,6 +192,8 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
             return Result<void>::failure(driverError(ErrorCode::ContextClosing, "kernel driver closing"));
         if (delivery->blocked.load() || !scheduler->isOpen())
             return Result<void>::failure(driverError(ErrorCode::SchedulerClosed, "kernel driver delivery unavailable"));
+        if (backgroundUnsafe)
+            return Result<void>::failure(*backgroundUnsafe);
         auto state = kernel->snapshot();
         if (!state.hasValue())
             return Result<void>::failure(state.error());
@@ -252,6 +282,9 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
         }
         for (const auto& entry : entries) {
             auto view = realmMap(entry.second);
+            auto parent = parentPath(entry.first);
+            if (!parent.empty() && entries.count(parent) && edges[parent].insert(entry.first).second)
+                ++degrees.at(entry.first);
             for (const auto& requirement : contracts.at(entry.first)) {
                 auto found = providers.find(view.resolve(requirement.key));
                 if (found == providers.end())
@@ -300,11 +333,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
             return Result<void>::failure(driverError(ErrorCode::ConfigInvalid, "candidate was moved from"));
         std::map<std::string, EntryValue> enabled;
         std::map<std::string, std::vector<ServiceRequirement>> contracts;
-        for (const auto& entry : target.source().structure().entries()) {
-            if (entry.first.find('/') != std::string::npos)
-                return Result<void>::failure(
-                    driverError(ErrorCode::ConfigInvalid,
-                                "explicit child configuration is not supported by top-level driver", entry.first));
+        for (const auto& entry : runtimeValues(target)) {
             auto plugin = plugins.find(entry.second.plugin);
             if (entry.second.module != "builtin" || plugin == plugins.end())
                 return Result<void>::failure(
@@ -340,7 +369,9 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
         // 路径唯一的单动作协议无法原子交换两个仍启用实例的输出所有权，先明确拒绝。
         std::map<ServiceKey, std::string> owned;
         for (const auto& record : records) {
-            auto snapshot = record.second.instance.snapshot();
+            if (!record.second.instance)
+                continue;
+            auto snapshot = record.second.instance->snapshot();
             if (!snapshot.hasValue())
                 return Result<void>::failure(snapshot.error());
             if (snapshot.value().state == InstanceState::Disposed || enabled.find(record.first) == enabled.end())
@@ -378,6 +409,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
         active.reset();
         delivery->untrack();
         action->done.resolve(std::move(result));
+        requestRestore();
         checkClosed();
     }
     /** @brief 失败仅在资源已清空且没有投递阻断时允许后续目标继续协调。 */
@@ -422,35 +454,228 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
                               }),
                 action);
     }
-    /** @brief 实例在 Kernel 登记后立即纳入本驱动账目，等待的是真实稳定操作。 */
+    /** @brief 顶层经 Kernel 挂载，子项只能使用真实父代能力；等待父代不创建虚构实例。 */
+    Result<KernelRecord> create(const std::string& path, const EntryValue& value,
+                                const std::vector<ServiceRequirement>& typed)
+    {
+        KernelRecord record{value, {}, typed};
+        const auto parent = parentPath(path);
+        if (parent.empty()) {
+            auto mounted = kernel->mount(plugins.at(value.plugin), value.config, realmMap(value), typed);
+            if (!mounted.hasValue())
+                return Result<KernelRecord>::failure(mounted.error());
+            record.instance.emplace(mounted.value());
+        } else {
+            auto found = records.find(parent);
+            if (found == records.end() || !found->second.instance ||
+                found->second.instance->snapshot().value().state != InstanceState::Active)
+                return Result<KernelRecord>::success(std::move(record));
+            auto available = found->second.instance->whenActiveAfter().tryResult();
+            if (!available)
+                return Result<KernelRecord>::success(std::move(record));
+            if (!available->hasValue())
+                return Result<KernelRecord>::failure(available->error());
+            auto context = available->value();
+            auto identity = context.identity();
+            if (!identity.hasValue())
+                return Result<KernelRecord>::success(std::move(record));
+            for (const auto& realm : value.realms) {
+                auto isolated = context.isolate(realm.first, realms.at(realm.second));
+                if (!isolated.hasValue())
+                    return Result<KernelRecord>::failure(isolated.error());
+                context = isolated.value();
+            }
+            auto mounted = context.inject(plugins.at(value.plugin), value.config, typed);
+            if (!mounted.hasValue())
+                return Result<KernelRecord>::failure(mounted.error());
+            record.instance.emplace(mounted.value());
+            record.parentEpoch = identity.value().epoch;
+        }
+        return Result<KernelRecord>::success(std::move(record));
+    }
+    /** @brief 每个实例只保持一个未来成功观察，旧身份通知不能操作替代实例。 */
+    void watchEpoch(const std::string& path, const Instance& instance, Epoch after = 0)
+    {
+        const auto id = instance.snapshot().value().instance;
+        std::weak_ptr<KernelDriverControl> weak = shared_from_this();
+        observe(instance.whenActiveAfter(after).thenOn(scheduler, [weak, path, id](const Result<Context>& result) {
+            auto self = weak.lock();
+            if (!self || self->closing)
+                return;
+            Access access(*self);
+            auto found = self->records.find(path);
+            if (found == self->records.end() || !found->second.instance ||
+                found->second.instance->snapshot().value().instance != id)
+                return;
+            if (!result.hasValue()) {
+                if (result.error().code == ErrorCode::SchedulerClosed)
+                    self->delivery->fail({}, result.error());
+                return;
+            }
+            auto identity = result.value().identity();
+            self->watchEpoch(path, *found->second.instance, identity.hasValue() ? identity.value().epoch : 0);
+            self->requestRestore();
+        }));
+    }
+    /** @brief 后台恢复不能把清理残留当作安全状态；历史 Pending 报告保持原值。 */
+    void observeRestored(const std::string& path, const Instance& instance)
+    {
+        auto operation = instance.operation().value();
+        std::weak_ptr<KernelDriverControl> weak = shared_from_this();
+        observe(operation.target.thenOn(scheduler, [weak, path, instance](const Result<StableReport>& result) {
+            auto self = weak.lock();
+            if (!self || self->closing)
+                return;
+            Access access(*self);
+            auto snapshot = instance.snapshot().value();
+            if (!result.hasValue() ||
+                (result.value().outcome == StableOutcome::Failed &&
+                 (!snapshot.resources.effects.empty() || snapshot.children || snapshot.committedLeases))) {
+                self->backgroundUnsafe.emplace(driverError(
+                    ErrorCode::CleanupFailed, "restored subtree did not establish a safe checkpoint", path));
+            }
+        }));
+    }
+    /** @brief 自动恢复只处理曾接受执行的子路径，不抢先创建计划尚未执行的新子项。 */
+    void restore()
+    {
+        if (closing || active || !currentTarget || backgroundUnsafe || delivery->blocked.load())
+            return;
+        const auto values = runtimeValues(*currentTarget);
+        std::map<std::string, EntryValue> enabled;
+        std::map<std::string, std::vector<ServiceRequirement>> contracts;
+        for (const auto& entry : values) {
+            if (entry.second.effectiveDisabled)
+                continue;
+            auto typed = requirements(entry.second, currentTarget->effectiveInject().at(entry.first), entry.first);
+            if (!typed.hasValue())
+                return;
+            enabled.emplace(entry);
+            contracts.emplace(entry.first, std::move(typed).value());
+        }
+        auto sorted = order(enabled, contracts);
+        if (!sorted.hasValue())
+            return;
+        for (const auto& path : sorted.value()) {
+            if (closing || active)
+                return;
+            auto found = records.find(path);
+            if (parentPath(path).empty() || found == records.end() || found->second.failure ||
+                (found->second.instance && found->second.instance->snapshot().value().state != InstanceState::Disposed))
+                continue;
+            auto made = create(path, enabled.at(path), contracts.at(path));
+            if (!made.hasValue()) {
+                found->second.failure.emplace(made.error());
+                if (made.error().code == ErrorCode::SchedulerClosed) {
+                    delivery->fail({}, made.error());
+                    return;
+                }
+                continue;
+            }
+            found->second = std::move(made).value();
+            if (!found->second.instance)
+                continue;
+            auto instance = *found->second.instance;
+            if (closing)
+                closeInstance(instance);
+            else {
+                watchEpoch(path, instance);
+                observeRestored(path, instance);
+            }
+            auto health = resourceHealth();
+            if (!health.hasValue()) {
+                delivery->fail({}, health.error());
+                return;
+            }
+        }
+    }
+    /** @brief 恢复使用独立 FIFO 工作项，活动配置动作结束后再从当前目标检查。 */
+    void requestRestore()
+    {
+        if (closing || restoreScheduled || !currentTarget)
+            return;
+        restoreScheduled = true;
+        std::weak_ptr<KernelDriverControl> weak = shared_from_this();
+        auto gate = delivery;
+        try {
+            if (scheduler->post({[weak] {
+                                     if (auto self = weak.lock()) {
+                                         Access access(*self);
+                                         self->restoreScheduled = false;
+                                         self->restore();
+                                     }
+                                 },
+                                 [gate] {
+                                     gate->fail(
+                                         {}, driverError(ErrorCode::SchedulerClosed, "subtree restoration discarded"));
+                                 }}))
+                return;
+        } catch (...) {
+        }
+        delivery->fail({}, driverError(ErrorCode::SchedulerClosed, "subtree restoration was not delivered"));
+    }
+    /** @brief 实例建立后立即记账并观察真实稳定操作；父尚未激活时返回明确 Pending。 */
     void mount(const std::shared_ptr<KernelAction>& action)
     {
-        const auto& value = action->target->source().structure().entries().at(action->operation.path);
-        auto typed =
-            requirements(value, action->target->effectiveInject().at(action->operation.path), action->operation.path);
+        auto values = runtimeValues(*action->target);
+        const auto& path = action->operation.path;
+        const auto& value = values.at(path);
+        auto typed = requirements(value, action->target->effectiveInject().at(path), path);
         if (!typed.hasValue()) {
             finish(action, {StepOutcome::Failed, true, typed.error()});
             return;
         }
-        auto mounted = kernel->mount(plugins.at(value.plugin), value.config, realmMap(value), typed.value());
-        if (!mounted.hasValue()) {
-            finish(action, {StepOutcome::Failed, true, mounted.error()});
+        auto made = create(path, value, typed.value());
+        if (!made.hasValue()) {
+            finish(action, {StepOutcome::Failed, true, made.error()});
             return;
         }
-        auto instance = mounted.value();
-        records.erase(action->operation.path);
-        records.emplace(action->operation.path, KernelRecord{value, instance, std::move(typed).value()});
+        records.insert_or_assign(path, std::move(made).value());
+        const auto& record = records.at(path);
+        if (!record.instance) {
+            finish(action, {StepOutcome::Pending, true, {}});
+            return;
+        }
+        auto instance = *record.instance;
+        if (closing)
+            closeInstance(instance);
+        else
+            watchEpoch(path, instance);
         auto health = resourceHealth();
         if (!health.hasValue()) {
             delivery->fail(action, health.error());
             return;
         }
-        auto operation = instance.operation();
-        if (!operation.hasValue()) {
-            finish(action, {StepOutcome::Failed, false, operation.error()});
+        observeTarget(action, instance, instance.operation().value().target);
+    }
+    /** @brief 关闭广播中接纳的实例同样等待完整 stop，重入挂载不能漏出关闭屏障。 */
+    void closeInstance(const Instance& instance)
+    {
+        ++pendingStops;
+        auto self = shared_from_this();
+        observe(instance.stop().thenOn(scheduler, [self](const Result<CleanupReport>& result) {
+            Access access(*self);
+            if (!result.hasValue()) {
+                self->cleanup.quiescent = false;
+                self->cleanup.errors.push_back(result.error());
+            } else {
+                self->cleanup.quiescent = self->cleanup.quiescent && result.value().quiescent;
+                self->cleanup.errors.insert(self->cleanup.errors.end(), result.value().errors.begin(),
+                                            result.value().errors.end());
+            }
+            --self->pendingStops;
+        }));
+    }
+    /** @brief 已证明静止或尚未挂载的路径才可忘记；删除父意图也删除全部等待后代。 */
+    void eraseRecords(const std::string& path, bool descendants)
+    {
+        records.erase(path);
+        if (!descendants)
             return;
-        }
-        observeTarget(action, instance, operation.value().target);
+        const auto prefix = path + "/";
+        for (auto it = records.lower_bound(prefix);
+             it != records.end() && it->first.compare(0, prefix.size(), prefix) == 0;)
+            it = records.erase(it);
     }
     /** @brief Recreate 不复用旧实例，必须等 stop 的完整清理证明后才挂载新实例。 */
     void remove(const std::shared_ptr<KernelAction>& action, const Instance& instance, bool recreate)
@@ -470,7 +695,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
                                                self->finish(action, {StepOutcome::Failed, false, std::move(error)});
                                                return;
                                            }
-                                           self->records.erase(action->operation.path);
+                                           self->eraseRecords(action->operation.path, !recreate);
                                            if (self->closing)
                                                self->finish(action,
                                                             {StepOutcome::Failed, true,
@@ -552,13 +777,12 @@ Result<std::vector<EntryOperation>> KernelReconcileDriver::plan(const ValidatedC
     std::map<std::string, EntryValue> actual, desired;
     std::map<std::string, std::vector<ServiceRequirement>> actualContracts, desiredContracts;
     for (const auto& entry : state->records) {
-        auto snapshot = entry.second.instance.snapshot();
-        if (!snapshot.hasValue())
-            return Result<std::vector<EntryOperation>>::failure(snapshot.error());
+        if (!entry.second.instance || entry.second.instance->snapshot().value().state == InstanceState::Disposed)
+            continue;
         actual.emplace(entry.first, entry.second.configuration);
         actualContracts.emplace(entry.first, entry.second.requirements);
     }
-    for (const auto& entry : target.source().structure().entries())
+    for (const auto& entry : runtimeValues(target))
         if (!entry.second.effectiveDisabled) {
             desired.emplace(entry.first, entry.second);
             auto typed = state->requirements(entry.second, target.effectiveInject().at(entry.first), entry.first);
@@ -574,6 +798,12 @@ Result<std::vector<EntryOperation>> KernelReconcileDriver::plan(const ValidatedC
     if (!newOrder.hasValue())
         return Result<std::vector<EntryOperation>>::failure(newOrder.error());
     std::vector<EntryOperation> operations;
+    // 等待意图没有输出或租约，不能当成真实提供者参与旧图，但仍要显式移除它的登记。
+    for (const auto& entry : state->records)
+        if (!actual.count(entry.first) && !desired.count(entry.first)) {
+            const bool retained = target.source().structure().entries().count(entry.first) != 0;
+            operations.push_back({entry.first, retained ? ChangeKind::Disable : ChangeKind::Remove});
+        }
     for (auto it = oldOrder.value().rbegin(); it != oldOrder.value().rend(); ++it)
         if (desired.find(*it) == desired.end()) {
             auto found = target.source().structure().entries().find(*it);
@@ -585,8 +815,8 @@ Result<std::vector<EntryOperation>> KernelReconcileDriver::plan(const ValidatedC
         auto found = state->records.find(path);
         auto kind = ChangeKind::Add;
         if (found != state->records.end()) {
-            auto snapshot = found->second.instance.snapshot().value();
-            if (snapshot.state != InstanceState::Disposed) {
+            if (found->second.instance && found->second.instance->snapshot().value().state != InstanceState::Disposed) {
+                auto snapshot = found->second.instance->snapshot().value();
                 if (!sameIdentity(found->second.configuration, value) ||
                     !sameRequirements(found->second.requirements, desiredContracts.at(path)))
                     kind = ChangeKind::Recreate;
@@ -608,7 +838,7 @@ Task<StepReport> KernelReconcileDriver::apply(EntryOperation operation,
     auto checked = state->check();
     if (!checked.hasValue())
         return failed<StepReport>(checked.error());
-    if (state->active)
+    if (state->active || state->accesses != 0)
         return failed<StepReport>(
             driverError(ErrorCode::ConfigConflict, "kernel driver already has an in-flight action"));
     if (!target || revision == 0)
@@ -617,11 +847,12 @@ Task<StepReport> KernelReconcileDriver::apply(EntryOperation operation,
     auto supported = state->preflight(*target);
     if (!supported.hasValue())
         return failed<StepReport>(supported.error());
-    auto desired = target->source().structure().entries().find(operation.path);
+    const auto values = runtimeValues(*target);
+    auto desired = values.find(operation.path);
     auto found = state->records.find(operation.path);
     const bool removing = operation.kind == ChangeKind::Remove || operation.kind == ChangeKind::Disable;
-    if ((removing && desired != target->source().structure().entries().end() && !desired->second.effectiveDisabled) ||
-        (!removing && (desired == target->source().structure().entries().end() || desired->second.effectiveDisabled)))
+    if ((removing && desired != values.end() && !desired->second.effectiveDisabled) ||
+        (!removing && (desired == values.end() || desired->second.effectiveDisabled)))
         return failed<StepReport>(
             driverError(ErrorCode::ConfigConflict, "operation does not match target entry", operation.path));
     switch (operation.kind) {
@@ -642,20 +873,25 @@ Task<StepReport> KernelReconcileDriver::apply(EntryOperation operation,
             return failed<StepReport>(typed.error());
         desiredRequirements = std::move(typed).value();
     }
-    if (!removing && found != state->records.end() && operation.kind != ChangeKind::Recreate &&
+    if (!removing && found != state->records.end() && found->second.instance &&
+        found->second.instance->snapshot().value().state != InstanceState::Disposed &&
+        operation.kind != ChangeKind::Recreate &&
         (!sameIdentity(found->second.configuration, desired->second) ||
          !sameRequirements(found->second.requirements, desiredRequirements)))
         return failed<StepReport>(
             driverError(ErrorCode::ConfigConflict, "runtime identity requires recreation", operation.path));
     if (!removing && found != state->records.end() && operation.kind == ChangeKind::Add &&
-        found->second.instance.snapshot().value().state != InstanceState::Disposed)
+        parentPath(operation.path).empty() && found->second.instance &&
+        found->second.instance->snapshot().value().state != InstanceState::Disposed)
         return failed<StepReport>(driverError(ErrorCode::ConfigConflict, "entry is already mounted", operation.path));
     if (!removing && found != state->records.end() && operation.kind == ChangeKind::NoOp &&
         found->second.configuration.config != desired->second.config)
         return failed<StepReport>(
             driverError(ErrorCode::ConfigConflict, "configuration change requires restart", operation.path));
     if ((operation.kind == ChangeKind::NoOp || operation.kind == ChangeKind::Restart) &&
-        (found == state->records.end() || found->second.instance.snapshot().value().state == InstanceState::Disposed))
+        (found == state->records.end() ||
+         (parentPath(operation.path).empty() &&
+          (!found->second.instance || found->second.instance->snapshot().value().state == InstanceState::Disposed))))
         return failed<StepReport>(
             driverError(ErrorCode::ConfigConflict, "entry must be mounted before restart or NoOp", operation.path));
     auto action = std::make_shared<detail::KernelAction>();
@@ -664,20 +900,26 @@ Task<StepReport> KernelReconcileDriver::apply(EntryOperation operation,
     if (!state->delivery->track(action->done))
         return failed<StepReport>(driverError(ErrorCode::SchedulerClosed, "driver delivery unavailable"));
     state->active = action;
+    state->currentTarget = action->target;
     state->keepAlive = state;
     detail::KernelDriverControl::Access access(*state);
     if (removing) {
-        if (found == state->records.end())
+        if (found == state->records.end() || !found->second.instance) {
+            state->eraseRecords(action->operation.path, true);
             state->finish(action, {StepOutcome::Applied, true, {}});
-        else
-            state->remove(action, found->second.instance, false);
-    } else if (found == state->records.end() ||
-               found->second.instance.snapshot().value().state == InstanceState::Disposed)
+        } else
+            state->remove(action, *found->second.instance, false);
+    } else if (found == state->records.end() || !found->second.instance ||
+               found->second.instance->snapshot().value().state == InstanceState::Disposed)
         state->mount(action);
-    else if (action->operation.kind == ChangeKind::Recreate)
-        state->remove(action, found->second.instance, true);
+    else if (action->operation.kind == ChangeKind::Recreate &&
+             (parentPath(action->operation.path).empty() ||
+              !sameIdentity(found->second.configuration, desired->second) ||
+              !sameRequirements(found->second.requirements, desiredRequirements) ||
+              found->second.configuration.config != desired->second.config))
+        state->remove(action, *found->second.instance, true);
     else {
-        auto instance = found->second.instance;
+        auto instance = *found->second.instance;
         auto result = [&] {
             if (found->second.configuration.config != desired->second.config)
                 return instance.update(desired->second.config, instance.snapshot().value().revision);
@@ -710,12 +952,22 @@ Result<std::vector<RunningEntry>> KernelReconcileDriver::snapshot() const
         return Result<std::vector<RunningEntry>>::failure(health.error());
     std::vector<RunningEntry> result;
     for (const auto& entry : state->records) {
-        auto snapshot = entry.second.instance.snapshot();
-        if (!snapshot.hasValue())
-            return Result<std::vector<RunningEntry>>::failure(snapshot.error());
-        if (snapshot.value().state != InstanceState::Disposed)
-            result.push_back({entry.first, entry.second.configuration, snapshot.value().state,
-                              snapshot.value().instance, snapshot.value().epoch});
+        const auto& record = entry.second;
+        if (!record.instance || record.instance->snapshot().value().state == InstanceState::Disposed) {
+            if (!parentPath(entry.first).empty() && !state->closing)
+                result.push_back({entry.first,
+                                  record.configuration,
+                                  record.failure ? InstanceState::Failed : InstanceState::Pending,
+                                  {},
+                                  0,
+                                  !record.failure,
+                                  0,
+                                  record.failure});
+            continue;
+        }
+        auto snapshot = record.instance->snapshot().value();
+        result.push_back({entry.first, record.configuration, snapshot.state, snapshot.instance, snapshot.epoch, false,
+                          record.parentEpoch, snapshot.failure});
     }
     return Result<std::vector<RunningEntry>>::success(std::move(result));
 }
@@ -741,24 +993,10 @@ Task<CleanupReport> KernelReconcileDriver::close()
     detail::KernelDriverControl::Access access(*state);
     std::vector<Instance> instances;
     for (const auto& entry : state->records)
-        instances.push_back(entry.second.instance);
-    state->pendingStops = instances.size();
-    std::vector<Task<CleanupReport>> tasks;
+        if (entry.second.instance)
+            instances.push_back(*entry.second.instance);
     for (const auto& instance : instances)
-        tasks.push_back(instance.stop());
-    for (const auto& task : tasks)
-        state->observe(task.thenOn(state->scheduler, [state](const Result<CleanupReport>& result) {
-            detail::KernelDriverControl::Access stopping(*state);
-            if (!result.hasValue()) {
-                state->cleanup.quiescent = false;
-                state->cleanup.errors.push_back(result.error());
-            } else {
-                state->cleanup.quiescent = state->cleanup.quiescent && result.value().quiescent;
-                state->cleanup.errors.insert(state->cleanup.errors.end(), result.value().errors.begin(),
-                                             result.value().errors.end());
-            }
-            --state->pendingStops;
-        }));
+        state->closeInstance(instance);
     auto health = state->resourceHealth();
     if (!health.hasValue())
         state->delivery->fail({}, health.error());

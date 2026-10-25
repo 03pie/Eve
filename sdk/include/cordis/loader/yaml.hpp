@@ -54,6 +54,9 @@ private:
 };
 /** @brief 解析单份 UTF-8 文档，拒绝 tag、锚点、别名、重复键和未知结构字段。 */
 Result<ParsedConfiguration> parseConfiguration(const std::string& text, YamlLimits limits = {});
+/** @brief 只改规范路径的本地启用标志，保留其他负载及子树，重新结构校验；不运行插件。 */
+Result<ParsedConfiguration> setEntryEnabled(const ParsedConfiguration& source, const std::string& path, bool enabled,
+                                            YamlLimits limits = {});
 /** @brief 宿主提供的内置插件定义；schema 必须无业务副作用，只检查规范 JSON config。 */
 struct PluginDefinition {
     std::string id;

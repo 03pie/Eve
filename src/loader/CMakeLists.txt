@@ -24,12 +24,22 @@ add_library(Cordis::ConfigStore ALIAS cordis_config_store)
 target_link_libraries(cordis_config_store PUBLIC Cordis::ConfigYaml Cordis::Core)
 cordis_target_defaults(cordis_config_store)
 
+add_library(cordis_config_session STATIC session.cpp)
+add_library(Cordis::ConfigSession ALIAS cordis_config_session)
+target_link_libraries(cordis_config_session PUBLIC Cordis::ConfigCoordinator Cordis::ConfigStore)
+cordis_target_defaults(cordis_config_session)
+
 if(CORDIS_REQUIRE_QT5152)
     add_library(cordis_config_file_qt STATIC qt_file.cpp)
     add_library(Cordis::ConfigFileQt ALIAS cordis_config_file_qt)
     target_link_libraries(cordis_config_file_qt PUBLIC Cordis::ConfigYaml Qt5::Core)
     target_compile_definitions(cordis_config_file_qt PUBLIC QT_NO_KEYWORDS)
     cordis_target_defaults(cordis_config_file_qt)
+
+    add_library(cordis_config_io_qt STATIC qt_io.cpp qt_watcher.cpp)
+    add_library(Cordis::ConfigIoQt ALIAS cordis_config_io_qt)
+    target_link_libraries(cordis_config_io_qt PUBLIC Cordis::ConfigStore Cordis::ConfigFileQt Cordis::Qt)
+    cordis_target_defaults(cordis_config_io_qt)
 
     add_library(cordis_config_store_qt STATIC qt_store.cpp)
     add_library(Cordis::ConfigStoreQt ALIAS cordis_config_store_qt)

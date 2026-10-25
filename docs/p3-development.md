@@ -1,6 +1,6 @@
 # P3 桌面适配开发记录
 
-最后更新：2026-10-25。状态：进行中；Q0–Q3c、Q4a/Q4b 校验、Q4c1 协调及 Q4d1/Q4d2 文件和 Store 已实现。用户已确认此前工作台的原生桌面人工验收完成；Q4c2a/b 已提交，Q4c2c1 补齐父代上下文/类型化子实例的 Core 桥，显式配置子树协调、watcher/后台 I/O 和管理页保存继续待办。
+最后更新：2026-10-25。状态：进行中；Q0–Q3c、Q4a/Q4b 校验、Q4c1 协调及 Q4d1/Q4d2 文件和 Store 已实现。此前工作台已获人工验收确认；Q4c2c2 已接内置配置子树，Q4e1 补齐配置会话与可选 Ela 配置工作台。Q4e1 已获用户人工确认；Q4e2 已接统一 Home/管理路由并获本次用户人工确认；Q4d3 已接配置专用后台 I/O、文件监听和显式载入，新增体验待复核。
 
 ## 已安装与验证
 
@@ -640,7 +640,7 @@ Context.inject 增加可选的类型化 additionalDependencies，沿用实例级
 
 专项 5/5 通过；原目录 Ela/MSVC Debug、Release 全量各 292/292，无 Qt GCC Debug、Release 各 188/188。MSVC ASan 相关回归 45/45，覆盖新增观察/示例、既有父子、服务契约、remount 和真实配置驱动；本轮修改单元插桩已核对，Qt 预编译库未插桩。instance.hpp 独立包含、Core 依赖隔离、第一方 UTF-8/LF、文档本地链接/锚点及差异空白检查通过。日志为 build/p3-q4c2c1-<core-gcc|ela-msvc>-<mode>.log、build/p3-q4c2c1-asan.log，构建沿用原有目录。
 
-上述为开发完成时的验证记录；本阶段连同下述审查修复纳入本次提交。KernelReconcileDriver 继续在 preflight 拒绝显式 children；下一步接入配置路径到父代/子实例的映射、父恢复后的自动子树重建和协调状态，不提前宣告完整显式配置子树完成。
+上述为开发完成时的验证记录；本阶段连同下述审查修复已提交为 02a2ed7。当时 KernelReconcileDriver 继续在 preflight 拒绝显式 children，后续在下面的 Q4c2c2 接入配置路径映射、自动重建与协调状态。
 
 ## Q4c2c1 提交前审查
 
@@ -648,6 +648,100 @@ Context.inject 增加可选的类型化 additionalDependencies，沿用实例级
 
 第一方改动行及新增文件格式、直接 include 和中文 Doxygen 已核对；公共头在 GCC/MSVC C++17 中独立包含通过。修复后原目录 Ela/MSVC Debug、Release 各 294/294，无 Qt GCC Debug、Release 各 190/190；MSVC ASan 相关回归 47/47 通过，含新增重入及现有父子、契约、remount、配置驱动。Core 依赖隔离、ASan 插桩、UTF-8/LF、文档本地链接/锚点及差异空白通过，预编译 Qt 未插桩。日志为 build/review-activation-<ela-msvc|core-gcc>-<mode>.log、build/review-activation-asan.log 和 build/review-activation-audit.log。审查保持 Core/Loader 边界，未修改 UI 或代填人工验收；Q4c2c1 连同修复随本次提交归档。
 
+## Q4c2c2 显式配置子树协调
+
+KernelReconcileDriver 解除对 builtin children 的统一拒绝。顶层经 Kernel.mount 挂载，子项只能经直接父实例当前有效的 Context.inject 创建，记录真实 parentEpoch；子配置更新不扩大父重启范围。物化父 realm 继承与局部覆盖，类型化 effectiveInject、输出索引和真实执行使用同一精确域视图，原候选保持不可变。预检加入父子/服务联合图，父依赖后代、重复输出、类型/能力或未知域明确拒绝，禁用子项同样检查能力。
+
+父尚未 Active 时，已执行到的子路径登记为 waitingForParent，instance 无效，不提前激活。父恢复或重启后，通过 whenActiveAfter 和独立 FIFO 恢复已登记的子路径，完整停止的旧子以新身份重建，旧身份迟到通知忽略。当前目标只在 apply 接纳，preflight/plan 不修改资源；后台恢复不抢先创建计划尚未执行的新子路径，子动作也不重复替换已被恢复到同一目标的实例。RunningEntry 增加 waitingForParent、parentEpoch、failure，历史 Pending/Failed 报告不改写。
+
+停止向全部真实实例广播并等待源激活和子清理；等待记录无虚构的 stop。后台重建清理失败冻结新动作，快照仍保留实际错误。Core 无 Loader/Qt/Ela 依赖，插件自己的动态子实例仍归 Core 管理。协议和边界见 [ADR-0019](adr/0019-configuration-subtrees.md)。
+
+新增 11 项真实 Kernel 场景：
+
+| 场景 | 主要证据 |
+|---|---|
+| tree_lifecycle | 三级归属、子异步清理 gate、父/子独立更新、禁用/重新启用及删除 |
+| tree_pending | 父/子缺依赖、明确等待父代、外部服务恢复及再次退役后的自动重建 |
+| tree_realms | 域继承/局部覆盖、附加依赖、父域变化及每代仅重建一次 |
+| tree_graph | 父依赖后代联合环、重复输出、禁用子项未知域的接受前拒绝 |
+| tree_latest | 清理中 B 被 C 替代，未执行的 B 子项不创建，旧路径不复活 |
+| tree_failure | 父/子激活失败分别显式重试、历史结果和 Runtime 数量保持 |
+| tree_shutdown | 后台子仍 Loading 时关闭，等待真实源任务，禁止创建孙项 |
+| tree_cleanup_failure | 子清理残留阻挡父重启，协调器 unsafe、关闭非静止 |
+| tree_background_failure | 历史 Pending 后后台激活/清理失败，冻结新动作并保留错误 |
+| tree_cross_dependency | 另一根消费子项输出，旧 committed 服务清理访问、两棵子树恢复 |
+| tree_deferred_changes | 单动作/协调器修改等待输入、部分状态再规划、删除等待父的全部后代 |
+
+开发中修正了等待意图被当作真实实例的问题：单动作入口在没有实例时仍要求 Recreate，回归修复前失败，见 build/subtree-deferred-before.log。现在无实例/Disposed 条目可直接采用新输入，旧运行拓扑只包含真实未终结实例，等待意图单独规划移除，不制造重复提供者；删除等待父项也会清除全部等待后代。最终驱动/示例专项 32/32 通过，见 build/subtree-final-tests.log。
+
+cordis_reconcile_demo 改为两份 YAML 父子目标，提供者父更新后检查消费者新身份、最新服务值以及仅有一个 Kernel 根记录，完整关闭仍确认 quiescent。
+
+最终原目录 Ela/MSVC Debug、Release 各 305/305，无 Qt GCC Debug、Release 各 201/201；MSVC ASan Loader 88/88，Core 父子/上下文/契约/remount 相关 27/27。日志为 build/p3-q4c2c2-final-<ela-msvc|core-gcc>-<mode>.log、build/p3-q4c2c2-final-asan-loader.log 及 build/p3-q4c2c2-asan-core.log。前一轮完整验证为 304/304、200/200 和 Loader 87/87；等待记录增补后的最终版本已重新完整验证。Core 实现及该 27 项测试在增补中未修改，不重复运行。公开 coordinator/kernel_driver 头在 GCC/MSVC C++17 独立包含通过；Core 依赖隔离、修改单元 ASan 插桩、第一方 UTF-8/LF、文档链接/锚点和差异空白检查通过，预编译 Qt 未插桩。
+
+本轮未提交。管理页候选/启停/保存装配、watcher/后台 I/O 及专用资源仍按后续工作推进，未修改 UI 或人工验收记录。
+
+## Q4e1 配置会话与 Ela 配置页
+
+新增 Cordis::ConfigSession，独占 Coordinator/Store 接受入口：文本预览只校验/schema/驱动预检和生成目标差异；私有构造的 ConfigurationDraft 绑定会话及基准修订，过期、跨会话及移动来源拒绝应用。接受成功后在同一 owner 栈 track 到 Store，关闭重入不能遗漏已线性化的目标。setEntryEnabled 复用受限值树精确改变本地 disabled，保留负载和子树；启停走配置目标，不直接调用实例 stop。
+
+新增可选 Cordis::ConfigUi 及 createConfigurationPage，普通 Ui SDK 不依赖 Loader。页面提供编辑、检查差异、应用、期望/实际条目表、Ela 左右开关、保存/dirty/已保存修订及原始冲突文本。编辑使候选失效，定时刷新不覆盖编辑；开关先捕获路径/修订再排队，程序同步屏蔽业务信号。显式采用冲突版本只改变基线，之后仍须保存。运行失败不回滚目标，保存旧目标也不掩盖新 dirty。协议见 [ADR-0020](adr/0020-configuration-session-ui.md)。
+
+新入口为原构建目录的 bin/cordis_config_workbench.exe。它将配置页贡献给既有 Ela 工作台，配置驱动实际控制笔记插件；不绑定手动 Stop/Load 管理器，避免绕过配置目标。默认原文进入编辑区，不自动接受/写盘；保存采用规范格式，不保留注释。默认路径在应用本地数据目录，--file 可指定目的地；--smoke/--smoke-dark 始终使用临时文件。关闭前先尝试保存，冲突时保留可编辑窗口并恢复关闭按钮；干净后按 Session、Kernel、Shell、scheduler 顺序退出。原 cordis_ela_demo 的手动管理入口保持独立。
+
+开发中修正了配置页改名后 Ela 默认选择器不匹配导致深色白底/文字不可见、ElaText 默认字号过大，以及过窄列截断路径的问题。使用原生组件、明确字号和类选择器、主题背景与可调列宽，布局测试检查实际页面合成像素的明暗背景，不以单独透明 viewport 的像素误判。模型信号可重入关闭并泵送 DeferredDelete：页面固定 UI 访问栈，最后一层退出后通过应用队列销毁，不能用再次 deleteLater 造成永久等待。
+
+验证范围：
+
+- 7 项无 Qt 会话场景：预览/CAS/候选来源、父子启停、旧写入与新 dirty、真实运行失败仍可保存、外部冲突/rebase、schema/写回调关闭重入、接受线性化后关闭仍跟踪目标、线程/投递门禁，以及保存成功但清理失败。写回执为受控后端，不冒充真实文件证据。
+- 7 项真实 Qt/文件 UI 场景：编辑/期望启停/保存、外部冲突原文及显式决策、过期候选/编辑保留、模型插入重入销毁、明暗布局与 150% 缩放、保存失败后恢复关闭请求。
+- 2 项工作台明暗示例：真实 ElaShell、配置插件、临时磁盘保存和完整退出；截图等待运行/保存状态确实显示后才抓取，不用延时猜测完成。
+
+最终原目录 Ela/MSVC Debug、Release 各 321/321，无 Qt GCC Debug、Release 各 208/208；MSVC ASan UI/Loader 168/168（73 项 UI、104 项 Loader，其中 9 项重叠）。日志为 build/p3-q4e1-<ela-msvc|core-gcc>-<mode>.log 和 build/p3-q4e1-asan.log。新增 Session/ConfigUi 头在 GCC/MSVC C++17 独立包含通过且不需要 Qt 头；Core 无 Loader/Qt/Ela 依赖，修改/新增单元 ASan 插桩、UTF-8/LF、文档链接/锚点及差异空白检查通过，预编译 Qt 未插桩。
+
+浅/深工作台和 150% 配置页截图已查看，位于原构建目录 bin/config-workbench-<light|dark>.png、bin/configuration-panel-<light|dark>.png。新增原生桌面检查另列于 [配置工作台补充验收](../tests/acceptance/p3-ui.md#q4e1-配置工作台补充验收)，保持待验，不覆盖此前人工结果。本轮连同前一轮子树开发尚未提交。
+
+## Q4e1 原生桌面确认
+
+2026-10-25 用户回复“ok，验证过了”。按该确认登记 Q4e1 配置工作台补充验收通过，不补造环境和逐项日志；此前各节“待验”为当时状态。随后新增的 Q4e2 路由不代填为人工通过。
+
+## Q4e2 Home 与管理页配置路由
+
+普通 Cordis::Ui 增加宿主专用 IConfigurationManagement 值协议，可选 ConfigUi 提供弱会话适配器。管理器一次性保留配置 Runtime 定义及内部控制台，配置实例不进入手动 Stop/Retry/Load 或终结缓存；来源失效/抛错时保留最近路径并禁用操作。普通插件 diagnostics 仍只有值快照，普通 Ui 不包含或链接 Loader，见 [ADR-0021](adr/0021-configuration-management-routing.md)。
+
+Home 按配置路径复用卡片，停用/重建后仍显示期望和当前实际身份；保留单个 Ela 左右开关，无点击跳页。信号发出时固定 CAS，排队后及派发前重新核对，不让后台刷新把旧点击变成新目标操作。管理页增加配置条目及启停/重新协调目标，历史记录真实修订和计划结果；没有手动实例时隐藏空表格。显式重试重新协调整个当前目标，不是单实例 retry。启停不自动保存、不覆盖配置页未应用编辑。
+
+真实 Qt/Kernel/Session/临时文件专项新增 13 项：Home 启停/新身份/去重、父禁用与子路径、页面按钮及失败协调并保留手动流程、排队 CAS、Home 旧点击、来源抛错/失效、会话释放、绑定线程/独占/在途手动请求、关门取消未派发操作、模型信号关闭重入、无效回执、明暗布局及 150% 缩放。Home 和管理模型写入保留原窗口访问屏障；外部适配器读取后重查关闭状态。
+
+最终 Ela/MSVC Debug、Release 各 334/334，无 Qt GCC Debug、Release 各 208/208；MSVC ASan UI/Loader 181/181（86 项 UI、117 项 Loader，22 项重叠）。日志为 build/p3-q4e2-verified-<debug|release|asan>.log 和 build/p3-q4e2-core-gcc-<mode>.log。ASan 确认本轮相关第一方单元插桩，预编译 Qt 未插桩。
+
+默认打开配置条目后，较慢的 Debug/ASan 调度暴露了测试辅助函数的时序假设：等待协调回执期间，定时刷新已触发预期关闭，随后 refresh 的 ContextClosing 却被辅助函数当成必定成功的 Result 取值。专项改为接受预期关闭错误，保留存活/销毁及静止断言。失败记录保留在 build/p3-q4e2-final-debug.log、build/p3-q4e2-final-asan.log；修正后 Debug 和 ASan 的该项各连续 8 次通过，再跑上述完整回归。
+
+管理/配置/Session 公共头在 GCC/MSVC C++17 独立包含通过，不需要 Qt 头路径。Core 7 个编译单元无 Qt/Ela/Loader 依赖，普通 Ui 无 Loader include/link；相关 11 个新增/修改单元 ASan 插桩、UTF-8/LF、参考/第三方只读边界、本地文档链接/锚点及差异空白通过，见 build/p3-q4e2-audit.log。已查看原目录 bin/configuration-home-<light|dark>.png、configuration-management-<light|dark>.png，包含 150% 布局，不代替原生桌面复核。
+
+原 Release 入口仍为 build/ela-msvc-release/bin/cordis_config_workbench.exe；示例已绑定统一路由，启动只读取编辑区，不自动接受或写盘。原 cordis_ela_demo 的手动模式保持。新增 [人工复核清单](../tests/acceptance/p3-ui.md#q4e2-home管理路由补充验收)，本轮未提交。
+
+## Q4e2 原生桌面确认
+
+2026-10-25 用户再次回复“ok，验证过了”，登记 Q4e2 Home/管理路由人工验收通过，不补造系统、缩放或逐项日志。新增 Q4d3 监听/后台读写另列待验。
+
+## Q4d3 配置后台 I/O 与文件监听
+
+新增可选 Cordis::ConfigIoQt，提供私有单线程后台文件执行器和原生 watcher；不改变 Core、Store/Session 的无 Qt 边界。固定路径的后台读写仍使用原文件事务，读取时配对自身提交序号，防止晚到 owner 回执误判自身写入。watcher 合并事件、恢复原子替换/父目录重建后的监听，按原文 hash/存在性消重，保留最新外部文本；不修改目标或保存基线，见 [ADR-0022](adr/0022-configuration-background-io-watcher.md)。
+
+配置页增加“将磁盘版本载入编辑区”，后台不覆盖编辑，显式载入仍不预览/应用，不跳过保存冲突。工作台启动读取与保存使用后台执行器。正常退出先可恢复地尝试保存，冲突时保留窗口及监听；确认退出后依次 watcher、Session、I/O join、Kernel、Shell、scheduler。线程结束通过私有 Qt 生命周期等待，不把值 Task 完成当成线程退出；初版线程池已在提交前审查中替换为专用长驻线程。
+
+新增 12 项真实 I/O/watcher 场景及 1 项配置 UI 场景；已有明暗工作台 smoke 改用真实后台后端。监听测试最初把瞬态“未读取”当作完成条件，原生后续通知可以在事件循环退出前再次开始读取；已改为等待 owner 已处理观察的单调计数，不靠 sleep 判断消重。最初失败证据保留于 build/p3-q4d3-targeted.log，修正后 22/22 相关场景通过，见 build/p3-q4d3-targeted-fixed.log。
+
+最终原目录 Ela/MSVC Debug、Release 各 347/347，无 Qt GCC Debug、Release 各 208/208，MSVC ASan UI/Loader 194/194（UI 87 项、Loader 130 项，其中 23 项重叠）。日志为 build/p3-q4d3-<ela-msvc|core-gcc>-<mode>.log 和 build/p3-q4d3-asan.log。公共头独立包含、Core/普通 Ui 依赖隔离、修改单元 ASan 插桩、UTF-8/LF 与文档链接/锚点检查另见 build/p3-q4d3-audit.log，预编译 Qt 未插桩。已查看 bin/configuration-disk-change.png 及原有明暗/布局截图；offscreen 不代替新增原生人工结论。12 项 I/O/watcher 在 Debug、ASan 中各重复 5 次通过，日志为 build/p3-q4d3-io-repeat-<debug|asan>.log；首次独立重复命令缺少 VS 运行库搜索路径，进程在入口前报 0xc0000135，补齐同一 Developer Shell 环境后通过，原记录保留于 build/p3-q4d3-io-repeat-environment.log。
+
+Q4d3 与前述后续开发仍未提交。新入口沿用原 Release 配置工作台和 [补充验收](../tests/acceptance/p3-ui.md#q4d3-文件监听与后台读写补充验收)。
+
+## Q4 配置集成提交前审查
+
+审查覆盖 Q4c2c2、Q4e1、Q4e2、Q4d3 全部未提交代码及新增文件。修复编辑重入旧候选/新输入覆盖、初始化监听误报、外部回退漏报、线程池退出隐式等待和目录重建漏读五项问题；新增三项回归在修复前真实失败，修复后通过。规范及质量整理包含只更新变化的配置表格单元、稳定值快照、共享测试等待门、头依赖、中文 Doxygen 与改动范围格式，详见 [审查记录](code-review.md#p3-配置子树会话与后台读写提交前审核)。
+
+审查后 Ela/MSVC Debug、Release 各 350/350，GCC Debug、Release 各 208/208，ASan UI/Loader 197/197。日志为 build/review-config-verified-ela-msvc-<mode>.log、build/review-config-core-gcc-<mode>.log 和 build/review-config-verified-asan.log；公共头、依赖边界、插桩及文档/格式检查见 build/review-config-audit.log。本次将此前各节尚未提交的配置集成与修复一并归档；原有“未提交”是当时状态。此前人工确认及新入口待验边界保持。
+
 ## 后续工作
 
-基于 Q4c2c1 的 Core 桥继续显式配置子树协调，再接管理页候选差异、配置拥有条目的启停、保存状态及 Store/驱动的应用装配。Q4d3 处理 watcher、重命名后恢复监听和自身写入 hash 消重，后台 I/O 随专用 worker 屏障接入。模块引用/驻留/卸载详情随 P4 接入；connection、worker 和 watcher 按对应集成资源补充专用屏障。此分解不表示完成了原设计中任何尚未运行的 L/Q/U 场景。
+配置专用 watcher/后台 I/O 已接入；任意插件 connection/worker 仍需各自资源屏障及联合退出验证。模块引用/驻留/卸载详情随 P4 接入，后续插件资源按各自集成场景补齐屏障。此分解不表示完成了原设计中任何尚未运行的 L/Q/U 场景。

@@ -17,6 +17,11 @@ QWidget* managementWidget(const std::shared_ptr<ManagementControl>& control);
 Result<void> refreshManagement(const std::shared_ptr<ManagementControl>& control);
 /** @brief 首页开关表达期望启停状态，按最新快照选择加载/重试/停止，不反转过时操作。 */
 Result<void> setManagementEnabled(const std::shared_ptr<ManagementControl>& control, InstanceId instance, bool enabled);
+/** @brief 首页配置动作保留发出时的修订，路径身份不随实例更换。 */
+Result<void> setManagementConfigurationEnabled(const std::shared_ptr<ManagementControl>& control,
+                                               const std::string& path, bool enabled, std::uint64_t revision);
+/** @brief 配置实例/内部宿主已有专属目录，不再由页面贡献重复生成首页卡片。 */
+bool hideManagementContribution(const std::shared_ptr<ManagementControl>& control, InstanceId instance);
 /** @brief 同步关门、停止刷新，晚到结果只更新值账目，不再操作窗口。 */
 Task<void> closeManagement(const std::shared_ptr<ManagementControl>& control);
 } // namespace cordis::ui::detail

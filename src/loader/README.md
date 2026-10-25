@@ -12,4 +12,8 @@ Q4d1 新增可选 Cordis::ConfigFileQt：有界读取原始文件、路径绑定
 
 Q4d2 新增无 Qt 的 Cordis::ConfigStore：跟踪已接受目标、独立历史保存修订与 dirty、有限 FIFO/同修订请求共享、失败停止/显式 rebase 及退出刷新。文件值类型移到 file.hpp；可选 Cordis::ConfigStoreQt 提供真实 QtConfigurationWriter，同步执行文件 I/O，回执由 Store 排队处理。见 [ADR-0015](../../docs/adr/0015-configuration-store.md)。
 
-尚无 Kernel 运行树驱动、真实依赖执行顺序、配置 UI、后台 I/O 或 watcher。当前协调测试的受控驱动不作为产品默认运行驱动；候选、目标、运行和保存状态继续分离。
+Q4c2 的 Cordis::ConfigKernel 已接入真实 Kernel：宿主类型目录、实例级依赖联合、精确服务排序及完整退出；显式 builtin children 经父代 Context.inject 创建，继承/覆盖 realm，父恢复后自动重建已登记子树。等待父代的记录不会伪造实例标识，后台失败通过实际快照报告，历史计划保持不变。见 [ADR-0019](../../docs/adr/0019-configuration-subtrees.md)。
+
+Q4e1 新增无 Qt 的 Cordis::ConfigSession，独占连接候选、Coordinator 和 Store：预览无副作用，候选绑定会话与基准修订，接受后同栈跟踪保存目标；期望启停修改配置路径，保存/退出明确区分运行和持久化。可选 Cordis::ConfigUi 和配置工作台在 UI 层消费此接口，普通 Ui SDK 不依赖 Loader。见 [ADR-0020](../../docs/adr/0020-configuration-session-ui.md)。
+
+Q4e2 已通过宿主协议统一 Home/管理路由，路径启停经 Session 而不直接停止配置实例，见 [ADR-0021](../../docs/adr/0021-configuration-management-routing.md)。Q4d3 已提供可选 Cordis::ConfigIoQt：私有串行后台读写、真实线程 join、文件/父目录监听恢复和自身版本消重；通知只提供外部原文，不自动接受目标。见 [ADR-0022](../../docs/adr/0022-configuration-background-io-watcher.md)。Q4c1 的受控驱动只验证协调协议，Q4c2 的真实 Kernel 场景单独验证资源/依赖闭环；候选、目标、运行和保存状态继续分离。

@@ -1,5 +1,5 @@
 /** @file kernel_driver.hpp
- * @brief 将顶层内置配置及宿主类型化的 inject 映射到真实 Kernel 实例。
+ * @brief 将内置配置树及类型化 inject 映射到真实 Kernel 与父代拥有的子实例。
  */
 #pragma once
 #include <cordis/kernel.hpp>
@@ -21,7 +21,7 @@ struct KernelPlugin {
 namespace detail {
 struct KernelDriverControl;
 }
-/** @brief 顶层内置条目支持固定依赖收紧、类型化附加依赖和宿主命名的 realm。 */
+/** @brief 内置条目树支持类型化依赖、域继承及父恢复后的自动子树重建。 */
 class KernelReconcileDriver final : public IReconcileDriver {
 public:
     /** @brief 校验 scheduler/Kernel/Runtime 归属；构造不挂载实例，不执行插件。 */

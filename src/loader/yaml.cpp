@@ -385,4 +385,45 @@ Result<ParsedConfiguration> parseConfiguration(const std::string& text, YamlLimi
         return Result<ParsedConfiguration>::failure(failure.error);
     }
 }
+/** @brief 在受限值树中精确定位路径，不用文本替换误改配置负载中的 id/disabled。 */
+Result<ParsedConfiguration> setEntryEnabled(const ParsedConfiguration& source, const std::string& path, bool enabled,
+                                            YamlLimits limits)
+{
+    if (!source.isValid() || !source.structure().entries().count(path))
+        return Result<ParsedConfiguration>::failure(
+            makeError(ErrorCode::InvalidArgument, "unknown configuration path"));
+    try {
+        limits.maximumInputBytes = limits.maximumNormalizedBytes;
+        if (!limits.maximumInputBytes || source.normalizedYaml().size() > limits.maximumInputBytes)
+            fail("normalized text byte limit exceeded", {}, path);
+        auto root = readTree(source.normalizedYaml(), limits);
+        Node* sequenceNode = root->mapping.at("plugins").get();
+        Node* selected = nullptr;
+        std::size_t begin = 0;
+        while (begin < path.size()) {
+            const auto end = path.find('/', begin);
+            const auto id = path.substr(begin, end == std::string::npos ? end : end - begin);
+            selected = nullptr;
+            for (auto& child : sequenceNode->sequence)
+                if (child->mapping.at("id")->scalar == id) {
+                    selected = child.get();
+                    break;
+                }
+            if (!selected)
+                fail("configuration path missing from source", {}, path);
+            if (end == std::string::npos)
+                break;
+            sequenceNode = selected->mapping.at("children").get();
+            begin = end + 1;
+        }
+        auto disabled = std::make_unique<Node>();
+        disabled->scalar = enabled ? "false" : "true";
+        selected->mapping.insert_or_assign("disabled", std::move(disabled));
+        std::string normalized;
+        encode(*root, normalized, limits.maximumNormalizedBytes);
+        return parseConfiguration(normalized, limits);
+    } catch (const ParseFailure& failure) {
+        return Result<ParsedConfiguration>::failure(failure.error);
+    }
+}
 } // namespace cordis::loader

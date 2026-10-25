@@ -38,6 +38,8 @@ public:
     Result<void> show() const;
     /** @brief owner 设置异步退出入口；窗口关闭请求先交宿主，不直接 quit。 */
     Result<void> onCloseRequested(std::function<void()> callback) const;
+    /** @brief 宿主保存失败而保留窗口时恢复关闭按钮；已经开始销毁后不能撤销关闭。 */
+    Result<void> cancelCloseRequest() const;
     /** @brief owner 关门，等待页面/命令 effects 与窗口完整销毁，清理失败保留资源。 */
     Task<void> close() const;
 private:

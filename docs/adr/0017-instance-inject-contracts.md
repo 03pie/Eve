@@ -1,6 +1,6 @@
 # ADR-0017：实例级类型化配置依赖
 
-日期：2026-10-25。范围：Q4c2b，承接 [顶层配置驱动](0016-kernel-configuration-driver.md)。本轮完成动态 inject 的真实执行；显式配置 children 仍由 preflight 拒绝。
+日期：2026-10-25。范围：Q4c2b，承接 [顶层配置驱动](0016-kernel-configuration-driver.md)。本文记录该阶段动态 inject 的真实执行，当时显式 children 仍由 preflight 拒绝；后续已按 [ADR-0019](0019-configuration-subtrees.md) 扩展。
 
 ## 不可变定义与实例契约
 

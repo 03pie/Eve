@@ -76,16 +76,17 @@ int main()
             std::vector<KernelPlugin>{{"demo.provider", provider},
                                       {"demo.consumer", consumer, {ServiceRequirement::of<int>({"counter"})}}});
         ConfigurationCoordinator coordinator(scheduler, driver);
-        // 消费者故意排在文件前面，实际启动顺序由精确依赖确定。
+        // 消费者归属提供者父代，父更新后旧子完整清理，再使用新代重建。
         const std::string prefix = "formatVersion: 1\nplugins:\n"
-                                   "  - {id: a-consumer, plugin: demo.consumer, inject: [counter/v1]}\n"
-                                   "  - {id: z-provider, plugin: demo.provider, config: ";
+                                   "  - {id: z-provider, plugin: demo.provider, children: ["
+                                   "{id: a-consumer, plugin: demo.consumer, inject: [counter/v1]}], config: ";
         auto first =
             coordinator.accept(validateCandidate(parseConfiguration(prefix + "1}\n").value(), catalog).value(), 0)
                 .value();
         settle(scheduler, first);
         if (observed != 1)
             throw std::runtime_error("consumer did not observe initial service");
+        const auto original = driver->snapshot().value().back().instance;
         std::cout << "desiredRevision=" << first.revision << ", running=" << driver->snapshot().value().size()
                   << ", service=" << observed << '\n';
         auto second =
@@ -95,6 +96,8 @@ int main()
         settle(scheduler, second);
         if (observed != 2)
             throw std::runtime_error("consumer did not recover after provider restart");
+        if (driver->snapshot().value().back().instance == original || kernel->snapshot().value().instances.size() != 1)
+            throw std::runtime_error("configuration child was not rebuilt under its parent");
         if (!consumer.requirements().empty() || kernel->snapshot().value().runtimes != 2)
             throw std::runtime_error("configuration changed immutable Runtime definitions");
         std::cout << "desiredRevision=" << second.revision << ", running=" << driver->snapshot().value().size()

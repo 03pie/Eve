@@ -18,7 +18,9 @@ public:
     /** @brief 复用 Ela 背景卡、流布局和区域组件创建首页。 */
     HomePage();
     /** @brief 增量更新卡片，未变化的实例保持悬停、布局和焦点。 */
-    void setPlugins(const std::vector<HomePlugin>& plugins, std::function<Result<void>(const QString&, bool)> power);
+    void setPlugins(const std::vector<HomePlugin>& plugins,
+                    std::function<Result<void>(const QString&, bool, std::uint64_t)> power,
+                    std::function<void(const std::function<void()>&)> access);
 
 private:
     QPointer<QWidget> cards_;
@@ -27,6 +29,7 @@ private:
     QPointer<ElaText> error_;
     ElaFlowLayout* flow_ = nullptr;
     QMap<QString, QPointer<ElaScrollPageArea>> items_;
-    std::function<Result<void>(const QString&, bool)> power_;
+    std::function<Result<void>(const QString&, bool, std::uint64_t)> power_;
+    std::function<void(const std::function<void()>&)> access_;
 };
 } // namespace cordis::ui::detail

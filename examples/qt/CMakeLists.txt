@@ -2,3 +2,8 @@ add_executable(cordis_ela_demo ela_demo.cpp)
 target_link_libraries(cordis_ela_demo PRIVATE Cordis::Ui Ela::WidgetTools)
 set_target_properties(cordis_ela_demo PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 cordis_target_defaults(cordis_ela_demo)
+
+add_executable(cordis_config_workbench config_workbench.cpp)
+target_link_libraries(cordis_config_workbench PRIVATE Cordis::ConfigUi Cordis::ConfigKernel Cordis::ConfigIoQt Ela::WidgetTools)
+set_target_properties(cordis_config_workbench PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+cordis_target_defaults(cordis_config_workbench)

@@ -222,18 +222,22 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
         if (!page)
             return;
         auto plugins = callbacks.plugins ? callbacks.plugins() : std::vector<HomePlugin>{};
+        if (!open || !window)
+            return;
         QSet<QString> ids;
         for (const auto& plugin : plugins)
             ids.insert(plugin.id);
         for (const auto& entry : entries) {
             if (entry.plugin.isEmpty() || ids.contains(entry.plugin))
                 continue;
+            if (callbacks.hideContribution && callbacks.hideContribution(entry.plugin))
+                continue;
             ids.insert(entry.plugin);
             HomePlugin value{entry.plugin, entry.title, QString::fromUtf8("界面已就绪")};
             value.enabled = true;
             plugins.push_back(std::move(value));
         }
-        page->setPlugins(plugins, callbacks.power);
+        page->setPlugins(plugins, callbacks.power, callbacks.withWindowAccess);
     }
     /** @brief 关闭页签仅关闭视图；再次从左侧打开时复用原页面和业务状态。 */
     void closeTab(int index)

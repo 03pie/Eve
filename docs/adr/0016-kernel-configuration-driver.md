@@ -1,6 +1,6 @@
 # ADR-0016：顶层内置配置的真实 Kernel 驱动
 
-日期：2026-10-25。范围：Q4c2a，本文保留该阶段固定依赖的交付边界；后续动态 inject 已按 [ADR-0017](0017-instance-inject-contracts.md) 扩展。用户已在本次会话确认桌面人工验收完成，登记于 [验收单](../../tests/acceptance/p3-ui.md)，解除接入真实运行驱动的前置条件。显式配置子树及管理入口继续待办。
+日期：2026-10-25。范围：Q4c2a，本文保留该阶段固定依赖的交付边界；后续动态 inject 已按 [ADR-0017](0017-instance-inject-contracts.md)、显式配置子树已按 [ADR-0019](0019-configuration-subtrees.md) 扩展。用户已确认桌面人工验收完成，登记于 [验收单](../../tests/acceptance/p3-ui.md)，解除接入真实运行驱动的前置条件。管理入口/保存装配继续待办。
 
 ## 模块与所有权
 

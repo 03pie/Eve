@@ -1,5 +1,28 @@
 # 提交前代码审查记录
 
+## P3 配置子树、会话与后台读写提交前审核
+
+日期：2026-10-25。范围：02a2ed7 之后全部未提交的 Q4c2c2 配置子树、Q4e1 会话/配置页、Q4e2 Home/管理路由、Q4d3 后台 I/O/监听、SDK、示例、构建、测试及文档，包含新增文件。sources/research 与第三方组件源码未修改。
+
+发现并修复五项 P2 问题：
+
+- 编辑重入错误采用旧候选：preview 的同步驱动预检重入编辑时，页面仍将旧输入的候选设置为可应用；apply 期间编辑被错误标记为已应用，启停期间编辑会被 useDesired 覆盖。现在各入口固定输入快照，预览期间变化则丢弃旧候选；应用/启停接受的目标保持真实结果，同时保留期间的新编辑并禁止基于它进行旧目标启停。局部候选副本保证不跨外部调用借用可被信号清除的 optional。
+- 监听注册窗口误报自身提交：初始原文读入后、watcher 构造前完成一次自身提交，构造时查询的最新提交序号会使首轮复读把自身保存当作外部编辑。watcher 初始参数收紧为同一后端 read 返回的 ConfigurationDiskObservation，直接使用与初次读取配对的提交游标；历史自身内容的外部回退仍须通知，不能用永久 hash 白名单。
+- 未观察提交的外部回退漏报：后台保存新内容后，外部在 watcher 复读前改回上次已观察的旧内容，原实现仅比较旧观察 hash，漏掉这次覆盖。现在新自身提交若与实际磁盘不符，即使磁盘等于旧观察，也发布外部通知。重复复读仍消重，不改变 Store 基线或目标。
+
+- 退出检查隐式阻塞：初版把 QThreadPool.waitForDone(0) 当作非阻塞 join 检查，但 [Qt 5.15.2 源码](https://github.com/qt/qtbase/blob/v5.15.2/src/corelib/thread/qthreadpool.cpp#L261) 的 reset 仍可能无超时等待线程。改为单个惰性启动、保持至关闭的 QThread，加显式 FIFO/条件变量和 wait(0) 检查；不反复启动线程，不使用全局池、terminate 或 detach。
+- 目录重建后丢失观察：读取期间父目录删除并重建，旧读取失败返回后虽然重新登记监听，却未再次读取已存在的新文件；若该修改发生在断连窗口，可能一直等不到下一次通知。现在维护检查同时核对实际存在性，重新登记后再复读。既有 directory 在重复/全量检查中真实失败，修正后 Debug 连续 100 次通过，见 build/review-config-directory-repeat.log。
+
+新增 editor_reentry、late_watch、own_revert 三项真实回归，修复前 0/3，见 build/review-config-before.log；三项初始修复后 3/3，见 build/review-config-fixed.log。编辑测试通过真实 Kernel 驱动预检窗口注入 owner 重入；文件测试以 worker 完成条件暂停 owner 泵送，确定性覆盖提交/观察间隙，不靠 sleep。测试等待门改为共享状态，超时退出后晚到观察也不借用已销毁栈。
+
+规范与质量：仅格式化第一方改动行和新增文件，核对参数对齐、直接 include、中文 Doxygen 与 UTF-8/LF。配置管理表复用原单元格，仅值变化时更新，减少周期性重建及模型信号；更新经模型接口，不跨信号保留可失效 item 指针。删除后台执行器未使用的头依赖。配置初始元数据、内容观察、外部通知和 Store 保存基线职责分开；普通 Ui/Core 不引入 Loader 依赖。复核父子清理、自动重建、CAS/关闭重入、弱来源、保护 Runtime、队列容量、读取/提交串行、线程 join、监听恢复与投递失败路径。
+
+第一次全量还曾发生一次 late_watch 超时，保留于 build/review-config-ela-msvc-debug.log；原执行器的三项新增回归随后连续 100 次通过，因此不把该超时根因单独认定为线程池问题。提交前仍依据上述实现不符修正执行器，随后继续完整回归与重复测试。目录恢复失败另保留于 build/review-config-worker-repeat.log 和 build/review-config-final-asan.log。
+
+审查后原目录 Ela/MSVC Debug、Release 各 350/350，无 Qt GCC Debug、Release 各 208/208，MSVC ASan UI/Loader 197/197（UI 88、Loader 133，其中 24 项重叠）。日志为 build/review-config-verified-ela-msvc-<mode>.log、build/review-config-core-gcc-<mode>.log 和 build/review-config-verified-asan.log。修正后的三个新增场景及目录恢复在 Debug/ASan 中各连续 20 次复核，另有目录恢复 Debug 100 次证据。
+
+5 个公共头在 GCC/MSVC C++17 独立包含通过，其中 3 个无需 Qt 头路径。47 个变更文件 UTF-8/LF、Core 7 个编译单元/普通 Ui 的依赖隔离、15 个相关单元 ASan 插桩、本地文档链接/锚点及差异空白通过，见 build/review-config-audit.log。预编译 Qt 未插桩。未发现其他阻止提交的问题。本次将上述四轮开发及审查修复一并提交。Q4e1/Q4e2 的用户人工确认保留；Q4d3 新增原生体验、任意插件 connection/worker、ABI 和物理卸载仍按各自计划验证，不由本轮自动化代填。
+
 ## P3 父代上下文与子实例桥提交前审核
 
 日期：2026-10-25。范围：8befcbd 之后全部未提交的 whenActiveAfter、类型化 Context.inject、示例、构建、测试及文档，包括新增文件。sources/research 和第三方组件源码未修改。
@@ -12,7 +35,7 @@
 
 修复后原目录 Ela/MSVC Debug、Release 各 294/294，无 Qt GCC Debug、Release 各 190/190，MSVC ASan 相关回归 47/47。日志为 build/review-activation-<ela-msvc|core-gcc>-<mode>.log、build/review-activation-asan.log。instance.hpp 在两套 C++17 编译器中独立包含通过；12 个改动/新增文件 UTF-8/LF、Core 的 7 个编译单元依赖隔离、新增/修改单元 ASan 插桩、文档本地链接/锚点及差异空白通过，见 build/review-activation-audit.log。预编译 Qt 未插桩。
 
-未发现其他阻止本次提交的问题。Q4c2c1、示例及上述修复随本次提交归档。显式配置子树协调、管理页保存装配和其余 P3 工作仍待完成，本次不修改 UI 交互或人工验收记录。
+未发现其他阻止本次提交的问题。Q4c2c1、示例及上述修复已提交为 02a2ed7。提交时显式配置子树协调、管理页保存装配和其余 P3 工作仍待完成，本次不修改 UI 交互或人工验收记录。
 
 ## P3 Kernel 配置驱动与 Home 生命周期操作提交前审核
 
