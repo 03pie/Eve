@@ -1,5 +1,23 @@
 # 提交前代码审查记录
 
+## P3 Q2c 托管 Qt 连接提交前审核
+
+日期：2026-10-26。范围：64c0a4f 之后全部未提交的 QtConnection、Core 友元/内部任务身份访问、Qt 示例、构建、测试与文档，包含新增文件；复核中补修既有 Home 测试。sources/research 及第三方源码未修改。
+
+发现并修复：
+
+- P2，断连重入提前释放捕获。Qt 5.15.2 在调用 disconnectNotify 前可能已经释放 slot functor；通知再次调用资源 close，原实现只检查 nativeRetired，即会在外层原生断连仍运行时释放业务捕获。如果捕获拥有发送者或其协作资源，会缩短这些资源的有效窗口。现在托管原生断连统一经过 owner 栈深度保护，嵌套关闭不能推进捕获/接收对象销毁，最后一个断连调用返回后才释放。[固定版本实现](https://github.com/qt/qtbase/blob/v5.15.2/src/corelib/kernel/qobject.cpp#L4679)
+- P3，正常取消误报投递故障。close 已撤销票据后，scheduler 清空宿主空通知仍设置 deliveryBlocked，导致正常取消呈现错误诊断。drop 现在仅在确实移除有效票据时记丢弃和故障；真实未取消投递失败保持原语义。
+- P2，既有 Home 启停测试使用失效控件。加载会以新身份重建卡片，原测试跨事件循环借用旧按钮裸指针并等待瞬态 disabled，完整 Debug 和单独重复均触发 SegFault。QPointer 诊断在同一位置真实确认旧按钮失效。改为守卫指针、同一输入窗口同步发送真实鼠标按下/释放，并等待新实例/新卡片稳定结果；原有 busy/gate 专项继续验证加载中的禁用状态，产品 Home 逻辑未修改。
+
+两项新增连接回归修复前 0/2（build/review-connection-before.log），修复后连接专项 17/17（build/review-connection-fixed.log）。Home 原始失败保留于 build/review-connection-verified-debug.log、build/review-connection-power-debug.log；守卫诊断见 build/review-connection-power-probe2.log（button at 467）。此前 ASan 单独重复 30 次通过，不把它误写成复现或排除依据。
+
+规范和质量：审查跨线程发射、所有权固定、注册期间关闭、旧代门禁、异步 Task 完成、回调/捕获析构重入、发送者销毁、容量、投递失败及应用提前退出；长快照聚合改为具名字段赋值，降低布尔/计数字段位置误配风险；用 exception 直接包含对应标准类型，补齐中文 Doxygen，只格式化第一方改动行及新增文件。Qt-only 示例不依赖 Ela，Core 不包含 Qt 头，连接资源屏障不代替 Kernel 总体静止。
+
+审查后原目录 Ela/MSVC Debug、Release 各 367/367，无 Qt GCC Debug、Release 各 208/208，MSVC ASan UI/Loader/connection 214/214；Qt-only Debug 连接专项 17/17。日志为 build/review-connection-final-<debug|release|asan>.log、build/review-connection-core-gcc-<mode>.log 和 build/review-connection-qt-only.log。三项问题回归在 Debug、ASan 中均各连续 20 次通过；见 build/review-connection-repeat-<debug|asan>.log。
+
+3 个公共头在 GCC/MSVC C++17 独立包含通过，其中 instance.hpp/task.hpp 不需要 Qt 头路径；GCC 对 connection.hpp 仅做语法检查，不声明与 MSVC Qt 库二进制兼容。17 个改动文件 UTF-8/LF、改动范围格式、Core 7 个单元/普通 Ui 依赖隔离、4 个相关实现/示例/测试单元 ASan 插桩、本地文档链接与差异空白通过，见 build/review-connection-audit.log。预编译 Qt 未插桩。信号仍限零参数触发，任意插件 worker、跨 ABI/物理卸载及 Q4d3 新增原生体验另验。本次将 Q2c 开发与本节审查修复一并提交。
+
 ## P3 配置子树、会话与后台读写提交前审核
 
 日期：2026-10-25。范围：02a2ed7 之后全部未提交的 Q4c2c2 配置子树、Q4e1 会话/配置页、Q4e2 Home/管理路由、Q4d3 后台 I/O/监听、SDK、示例、构建、测试及文档，包含新增文件。sources/research 与第三方组件源码未修改。

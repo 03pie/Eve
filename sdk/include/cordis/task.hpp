@@ -192,6 +192,11 @@ namespace detail {
  * 此接口不得用于调用插件或用户回调。
  */
 struct TaskAccess {
+    /** @brief 宿主识别同一任务状态，用于拒绝资源回调直接返回自身关闭屏障的等待环。 */
+    template <class T> static bool sameTask(const Task<T>& left, const Task<T>& right) noexcept
+    {
+        return left.state_ == right.state_;
+    }
     /**
      * @brief 在任务完成时调用内部观察者。
      * @tparam T 任务结果的值类型。

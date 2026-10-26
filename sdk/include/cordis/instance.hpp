@@ -53,6 +53,9 @@ struct ContextIdentity {
     Epoch epoch;
 };
 namespace ui { class UiPagesService; class CommandService; class NotificationService; }
+namespace qt {
+class QtConnection;
+}
 
 /** @brief 使用受限上下文执行清理，返回真实释放完成任务。 */
 using InstanceCleanup = std::function<Task<void>(CleanupContext)>;
@@ -94,8 +97,9 @@ private:
     friend class ui::UiPagesService;
     friend class ui::CommandService;
     friend class ui::NotificationService;
+    friend class qt::QtConnection;
     template<class T> friend class EventBus;
-    /** @brief 为事件/UI 适配器提供同 scheduler、本代业务门禁，不授予实例所有权。 */
+    /** @brief 为事件/UI/Qt 适配器提供同 scheduler、本代业务门禁，不授予实例所有权。 */
     Result<std::function<Result<void>()>> eventGuard(const std::shared_ptr<IScheduler>& scheduler) const;
     /** @brief 校验本代能力后登记并保存托管输出。 */
     Result<BindingId> provideErased(ServiceKey key, std::shared_ptr<void> object, std::type_index type) const;

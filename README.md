@@ -32,7 +32,7 @@
 | `Cordis::ConfigSession` | 独占连接候选预览、CAS 接受、期望启停和 Store 跟踪/退出刷新，不依赖 Qt |
 | `Cordis::ConfigIoQt` | 可选配置后台串行读写、线程 join 与文件/目录监听，通知不自动应用目标 |
 | `Cordis::ConfigUi` | 可选 Ela 配置编辑页及 Home/管理适配器，弱持宿主会话；普通 Ui SDK 不依赖配置层 |
-| `src/qt` | 可选 Cordis::Qt，包含 QtScheduler、QtClock 与 QObjectResource |
+| `src/qt` | 可选 Cordis::Qt，包含 QtScheduler、QtClock、QObjectResource 与托管 QtConnection |
 | `src/ui` | 可选 Cordis::Ui，包含 Ela 插件状态卡片及电源操作、单击直达的插件导航、菜单/搜索/前进后退、可全部关闭的中央页签、底部工作区、贡献服务和只读诊断；资源树属于具体插件页 |
 | `third_party/ela` | 项目内维护的 Ela 组件库及资源，保留上游基线、本地修改和 MIT 许可 |
 | `third_party/libyaml` | 固定 0.2.5 C 解析库和 MIT 许可，私有链接至配置文本层 |
@@ -70,6 +70,14 @@ $env:QT_QPA_PLATFORM = 'windows'
 ```
 
 默认配置文件位于应用本地数据目录，界面显示确切路径；可用 --file 指定现有目录下的文件。读取原文不会自动应用或保存，先“检查差异”再“应用”，选择条目用左右开关修改期望启停，点击“保存”持久化。保存会规范化 YAML/JSON，未应用编辑不会写盘；退出刷新已应用修改，磁盘冲突先保留窗口供处理。此入口只使用配置目标管理实例，原 cordis_ela_demo 继续演示手动实例管理。明暗自动示例使用 --smoke/--smoke-dark，始终写临时文件。
+
+Qt 信号连接与异步退出示例（只依赖 QtCore，Qt/Ela 预设均构建）：
+
+```powershell
+./build/ela-msvc-release/bin/cordis_qt_connection_demo.exe
+```
+
+信号作为零参数触发，业务在 owner 排队执行；示例等待真实异步任务、原生连接和时钟排空后退出，见 [托管连接协议](docs/adr/0023-managed-qt-connections.md)。
 
 ## 设计及实施入口
 

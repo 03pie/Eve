@@ -450,25 +450,39 @@ void homePower()
     scene.shell.management()->attach(scene.kernel).value();
     const auto original = scene.instance->snapshot().value().instance;
     auto home = scene.find<QWidget>("CordisWelcomePage");
-    auto button = scene.find<ElaToggleSwitch>("CordisPluginPower");
-    until([&] { return button->isEnabled() && button->getIsToggled(); });
+    QPointer<ElaToggleSwitch> button = scene.find<ElaToggleSwitch>("CordisPluginPower");
+    until([&] { return button && button->isEnabled() && button->getIsToggled(); });
+    // 同一输入窗口连续派发真实按下/释放，避免 QTest 内部 qWait 在点击间推进整个 remount。
+    auto click = [](const QPointer<ElaToggleSwitch>& target) {
+        CHECK(target && target->isEnabled());
+        const QPointF point(target->rect().center());
+        QMouseEvent press(QEvent::MouseButtonPress, point, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(target, &press);
+        CHECK(target);
+        QMouseEvent release(QEvent::MouseButtonRelease, point, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(target, &release);
+    };
     CHECK(scene.shell.diagnostics()->snapshot().value().operations.empty());
-    QTest::mouseClick(button, Qt::LeftButton);
-    QTest::mouseClick(button, Qt::LeftButton);
-    until([&] { return !button->isEnabled(); });
+    click(button);
+    click(button);
     CHECK(home->isVisible());
-    until([&] { return button->isEnabled() && !button->getIsToggled(); });
+    until([&] { return button && button->isEnabled() && !button->getIsToggled(); });
     CHECK(scene.shell.diagnostics()->snapshot().value().operations.size() == 1);
     CHECK(scene.instance->snapshot().value().state == InstanceState::Disposed &&
           button->accessibleName() == QString::fromUtf8("加载插件"));
-    QTest::mouseClick(button, Qt::LeftButton);
-    until([&] { return !button->isEnabled(); });
+    click(button);
     until([&] {
         const auto data = scene.shell.diagnostics()->snapshot().value();
         return data.instances.size() == 1 && data.instances.front().instance.instance != original &&
                data.instances.front().instance.state == InstanceState::Active;
     });
-    until([&] { return scene.find<ElaToggleSwitch>("CordisPluginPower")->isEnabled(); });
+    // 新身份重建卡片后旧按钮合法销毁，不能继续等待旧按钮的短暂禁用状态。
+    until([&] { return !button; });
+    until([&] {
+        auto current = scene.find<ElaToggleSwitch>("CordisPluginPower");
+        return current->isEnabled() && current->getIsToggled();
+    });
+    CHECK(scene.shell.diagnostics()->snapshot().value().operations.size() == 2);
     CHECK(home->isVisible() && scene.find<QTabBar>("CordisPageTabs")->count() == 1);
     int calls = 0;
     auto runtime =
@@ -491,7 +505,7 @@ void homePower()
         return retry && retry->isEnabled();
     });
     CHECK(retry->accessibleName() == QString::fromUtf8("重试加载"));
-    QTest::mouseClick(retry, Qt::LeftButton);
+    click(retry);
     until([&] { return failed.snapshot().value().state == InstanceState::Active; });
     CHECK(calls == 2 && home->isVisible());
     scene.close();

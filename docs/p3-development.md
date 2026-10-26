@@ -1,6 +1,6 @@
 # P3 桌面适配开发记录
 
-最后更新：2026-10-25。状态：进行中；Q0–Q3c、Q4a/Q4b 校验、Q4c1 协调及 Q4d1/Q4d2 文件和 Store 已实现。此前工作台已获人工验收确认；Q4c2c2 已接内置配置子树，Q4e1 补齐配置会话与可选 Ela 配置工作台。Q4e1 已获用户人工确认；Q4e2 已接统一 Home/管理路由并获本次用户人工确认；Q4d3 已接配置专用后台 I/O、文件监听和显式载入，新增体验待复核。
+最后更新：2026-10-26。状态：进行中；Q0–Q3c、Q4a/Q4b 校验、Q4c1 协调及 Q4d1/Q4d2 文件和 Store 已实现。此前工作台已获人工验收确认；Q4c2c2 已接内置配置子树，Q4e1 补齐配置会话与可选 Ela 配置工作台。Q4e1 已获用户人工确认；Q4e2 已接统一 Home/管理路由并获本次用户人工确认；Q4d3 已接配置专用后台 I/O、文件监听和显式载入，新增体验待复核；配置集成已提交为 64c0a4f。当前新增 Q2c 托管 Qt 信号连接。
 
 ## 已安装与验证
 
@@ -742,6 +742,30 @@ Q4d3 与前述后续开发仍未提交。新入口沿用原 Release 配置工作
 
 审查后 Ela/MSVC Debug、Release 各 350/350，GCC Debug、Release 各 208/208，ASan UI/Loader 197/197。日志为 build/review-config-verified-ela-msvc-<mode>.log、build/review-config-core-gcc-<mode>.log 和 build/review-config-verified-asan.log；公共头、依赖边界、插桩及文档/格式检查见 build/review-config-audit.log。本次将此前各节尚未提交的配置集成与修复一并归档；原有“未提交”是当时状态。此前人工确认及新入口待验边界保持。
 
+## Q2c 托管 Qt 信号连接
+
+2026-10-26 新增 QtConnection，接入所属 Context/epoch 的 effect。原生连接只持宿主租约和票据，信号参数忽略；业务始终经同一 QtScheduler 排队，进入前检查代次/取消。队列与异步在途共同计入预算，默认 256；snapshot 提供接收、执行、丢弃、拒绝和业务失败账目。Core 只增加无 Qt 的资源友元及内部任务身份比较，详见 [ADR-0023](adr/0023-managed-qt-connections.md)。
+
+清理先登记再安装原生连接，防止 connectNotify 重入停止漏记资源。关闭同步关门、撤销未进入通知，在锁外断连，然后等原生 functor 的最后一个调用快照、回调栈及返回 Task 完成；捕获在 owner 释放，析构重入也不能提前完成关闭。最终用 QObjectResource 确认私有接收对象完整 delete 返回。直接返回自身 close 任务记 CleanupCycle；不承诺识别间接任务等待环。
+
+资源 close 与 Kernel 的 CleanupReport 分开观察。即使业务 scheduler 已关，私有 Qt 通知仍可推进异步完成和捕获清理，但不据此报告 Core 整体静止。发送者正常销毁自动退役资源；丢弃 facade 不取消连接。正常退出须保留 Qt 事件循环，先等 Kernel 静止，再关 scheduler。
+
+14 项真实 Qt 场景覆盖同线程/worker 触发且负载零复制、异步任务、原生发射快照、关闭与捕获析构重入、旧代门禁、参数/线程检查、发送者销毁、句柄丢弃、业务失败、容量、scheduler 先关、安装期间停止及直接关闭等待环。新增 cordis_qt_connection_demo 用 QTimer 触发 QtClock 异步工作，回调内请求 Kernel 关闭，确认全部资源完成后退出。示例只链接 Cordis::Qt，Qt-only 构建无需 Ela。
+
+验证结果：原目录 Ela/MSVC Debug、Release 各 365/365，无 Qt GCC Debug、Release 各 208/208；MSVC ASan UI/Loader/connection 212/212。不带 Ela 的 Qt-only Debug 新增专项 15/15；15 项连接检查在 Debug、ASan 中均各连续 20 次通过。完整日志为 build/p3-q2c-verified-<debug|release>.log、build/p3-q2c-core-gcc-<mode>.log、build/p3-q2c-asan.log；专项见 build/p3-q2c-qt-only.log 及 build/p3-q2c-repeat-<debug|asan>.log。
+
+connection.hpp 在 MSVC/GCC C++17 独立包含通过；instance.hpp/task.hpp 检查不需要 Qt 头路径。GCC 对 Qt 头只做语法检查，不代表可混用 MSVC Qt 库。Core 7 个编译单元及普通 Ui 的依赖隔离、3 个新增实现/测试/示例单元 ASan 插桩、UTF-8/LF、只读参考/第三方边界、本地文档链接/锚点及差异空白检查通过，见 build/p3-q2c-audit.log；预编译 Qt 未插桩。并发检查中将 pending 到 active 的转移放在同一锁内，避免入口间隙被发射线程用于突破总预算。
+
+本轮尚未提交。前一轮配置集成已在 64c0a4f 归档；此前各节的未提交状态保留为历史。Q4d3 原生人工复核仍待确认。
+
+### Q2c 提交前审查
+
+审查修复两项连接问题：Qt 原生 functor 可能在 disconnectNotify 返回前释放，通知重入 close 会提前析构业务捕获，现以 owner 断连栈深度保护并在栈外推进；已取消票据的宿主空通知被 scheduler 清空时不再误报 deliveryBlocked。新增 disconnect_reentry、cancelled_delivery 两项回归，修复前 0/2、修复后连接专项 17/17（含示例），详见 [审查记录](code-review.md#p3-q2c-托管-qt-连接提交前审核)。
+
+完整 Debug 复核另暴露既有 workbench_power 偶发崩溃。QPointer 诊断真实确认加载重建后旧按钮已销毁，原测试仍查询其短暂禁用状态。测试改用守卫指针、真实输入事件的同步连续派发以及新实例/新卡片稳定状态；busy 禁用状态继续由现有受控 gate 场景验证，不修改产品 Home 行为。快照改为具名字段赋值，补齐标准头依赖，并按改动范围格式化。
+
+审查后 Ela/MSVC Debug、Release 各 367/367，无 Qt GCC Debug、Release 各 208/208，ASan UI/Loader/connection 214/214，Qt-only Debug 连接专项 17/17。三项问题回归在 Debug、ASan 中均各连续 20 次通过。完整日志为 build/review-connection-final-<debug|release|asan>.log、build/review-connection-core-gcc-<mode>.log 和 build/review-connection-qt-only.log；重复见 build/review-connection-repeat-<debug|asan>.log。公共头、依赖/插桩和文档/格式审计见 build/review-connection-audit.log。未发现其他阻止本次提交的问题；本轮 Q2c 开发与审查修复随本次一并归档，前文未提交为当时状态。Q4d3 原生人工复核及后续 worker/类型化参数/模块范围保持。
+
 ## 后续工作
 
-配置专用 watcher/后台 I/O 已接入；任意插件 connection/worker 仍需各自资源屏障及联合退出验证。模块引用/驻留/卸载详情随 P4 接入，后续插件资源按各自集成场景补齐屏障。此分解不表示完成了原设计中任何尚未运行的 L/Q/U 场景。
+配置专用 watcher/后台 I/O 和零参数 Qt 触发连接已接入；类型化信号参数转发及任意插件 worker 仍需各自资源屏障与联合退出验证。模块引用/驻留/卸载详情随 P4 接入，后续插件资源按各自集成场景补齐屏障。此分解不表示完成了原设计中任何尚未运行的 L/Q/U 场景。

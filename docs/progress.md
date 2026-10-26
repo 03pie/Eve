@@ -1,14 +1,16 @@
 # 开发进度
 
-最后更新：2026-10-25（北京时间）。当前工作区：`D:/01_C++/Eve`。
+最后更新：2026-10-26（北京时间）。当前工作区：`D:/01_C++/Eve`。
 
 本文件是项目进度的统一入口，记录实际状态；设计细节见说明书，任务完成条件见工作单，测试依据见验收规范和验证报告。代码行数、文档篇幅和测试数量不作为项目完成百分比。
 
 ## 当前状态
 
-**W0–W7 首阶段工作单已完成。P3 此前工作台已获用户原生桌面验收确认；Q4c2a/b 与 Home 已提交为 8befcbd，Q4c2c1 已提交为 02a2ed7。后续 Q4c2c2 内置配置子树、Q4e1 配置会话/可选 Ela 配置工作台、Q4e2 Home/管理路由及 Q4d3 配置后台 I/O/文件监听已实现，并随本次审查提交归档。Q4e1 和 Q4e2 已获用户人工确认；Q4d3 新增体验另待复核。**
+**W0–W7 首阶段工作单已完成。P3 此前工作台已获用户原生桌面验收确认；Q4c2a/b 与 Home 已提交为 8befcbd，Q4c2c1 已提交为 02a2ed7。后续 Q4c2c2 内置配置子树、Q4e1 配置会话/可选 Ela 配置工作台、Q4e2 Home/管理路由及 Q4d3 配置后台 I/O/文件监听已实现，提交为 64c0a4f。Q2c 零参数托管 Qt 信号连接及本次审查修复已完成，随本次提交归档。Q4e1 和 Q4e2 已获用户人工确认；Q4d3 新增体验另待复核。**
 
-最新完成 Q4d3：配置文件在私有线程串行读写，退出等待真实 join；原生 watcher 恢复原子替换/删除重建后的监听并按版本消重。配置页提供显式载入磁盘原文，不自动覆盖编辑或应用目标，保存继续检查冲突。新增 12 项 I/O/watcher 和 1 项 UI 场景，详见 [开发记录](p3-development.md#q4d3-配置后台-io-与文件监听)及 [ADR-0022](adr/0022-configuration-background-io-watcher.md)。Release 仍为 build/ela-msvc-release/bin/cordis_config_workbench.exe。 本次审查修复编辑重入、监听游标/回退/重连和退出等待五项问题；Ela 各 350/350，GCC 各 208/208，ASan UI/Loader 197/197，见 [审查记录](code-review.md#p3-配置子树会话与后台读写提交前审核)。
+本轮新增 Q2c：QtConnection 将信号作为零参数触发，业务排队到所属 Context/epoch；关闭等待原生调用快照、异步任务和捕获释放。已有 16 项真实 Qt 场景和 headless 联合退出示例；审查补修断连重入、取消误报及既有 Home 测试失效指针。Ela Debug/Release 各 367/367，GCC 各 208/208，ASan 相关 214/214，见 [审查记录](code-review.md#p3-q2c-托管-qt-连接提交前审核)及 [开发记录](p3-development.md#q2c-托管-qt-信号连接)。
+
+上一轮完成 Q4d3：配置文件在私有线程串行读写，退出等待真实 join；原生 watcher 恢复原子替换/删除重建后的监听并按版本消重。配置页提供显式载入磁盘原文，不自动覆盖编辑或应用目标，保存继续检查冲突。新增 12 项 I/O/watcher 和 1 项 UI 场景，详见 [开发记录](p3-development.md#q4d3-配置后台-io-与文件监听)及 [ADR-0022](adr/0022-configuration-background-io-watcher.md)。Release 仍为 build/ela-msvc-release/bin/cordis_config_workbench.exe。 上一轮审查修复编辑重入、监听游标/回退/重连和退出等待五项问题；Ela 各 350/350，GCC 各 208/208，ASan UI/Loader 197/197，见 [审查记录](code-review.md#p3-配置子树会话与后台读写提交前审核)。
 
 前一轮 Q4c2c2 已完成真实父子归属、域继承/覆盖、自动重建、失败及退出，新增 11 项驱动场景及 YAML 父子示例；当时完整回归为 Ela 各 305/305、GCC 各 201/201，ASan Loader 88/88、Core 相关 27/27，见 [子树记录](p3-development.md#q4c2c2-显式配置子树协调)。上述未提交状态为当时记录，后续开发与审查修复随本次一并归档。
 
@@ -18,7 +20,7 @@
 
 后续按用户要求将 Home 卡片改为状态展示和单个左右滑动开关，移除卡片打开跳转及浮层；支持停止、以新身份加载和失败重试，尺寸改为宽 280、最低高 144。电源操作初版完整回归为原目录 Ela/MSVC Debug/Release 各 276/276、GCC 各 173/173，UI ASan 63/63 和 Core remount ASan 1/1；左右开关的定向复核另见 [Home 记录](p3-development.md#home-状态卡片与电源操作)。此前桌面验收确认保留，本次 Home 变更单独待人工复核，不重新阻塞已开始的 Q4 工作。
 
-Qt 5.15.2 Core/Widgets/Test 已就绪，路径与当前 MSVC 组合见 [P3 记录](p3-development.md)。QtScheduler、Timer/QObject、贡献服务及基础管理页已通过真实循环/offscreen 测试，原生桌面交互已按用户确认验收。配置后台 I/O/watcher 及配置页保存已有证据；任意插件 connection/worker、模块管理及跨 ABI 仍待完成或验证。
+Qt 5.15.2 Core/Widgets/Test 已就绪，路径与当前 MSVC 组合见 [P3 记录](p3-development.md)。QtScheduler、Timer/QObject、贡献服务及基础管理页已通过真实循环/offscreen 测试，原生桌面交互已按用户确认验收。配置后台 I/O/watcher 及配置页保存已有证据；零参数 connection 已接入；类型化信号参数、任意插件 worker、模块管理及跨 ABI 仍待完成或验证。
 
 ## 状态规则
 
@@ -39,7 +41,7 @@ Qt 5.15.2 Core/Widgets/Test 已就绪，路径与当前 MSVC 组合见 [P3 记�
 | P0 研究、设计与编码准备 | 已完成（内核起步范围） | 设计说明书、契约、工程及环境检查齐备；桌面工具链在对应阶段前补齐 |
 | P1 内置插件与基础内核 | 已完成（首阶段内置范围） | W1–W3/W6/W7 与 A01–A10 内核证据；生产适配、全局事件 schema/post 另验 |
 | P2 响应式服务依赖 | 已完成（首阶段内置范围） | W4/W5/W7 联合闭环通过；跨 ABI、物理卸载及替换不在本轮 |
-| P3 Qt / Loader / Ela | 进行中 | Q0–Q3c 含此前人工验收、Q4a/Q4b 校验、Q4c1 协调、Q4c2 内置子树/动态依赖、Q4d1/Q4d2 文件/Store、Q4e1 会话/配置页、Q4e2 Home/管理路由及 Q4d3 配置 I/O/watcher 已实现；Q4e1/Q4e2 已获人工确认，新增 Q4d3 复核及其他资源适配待完成 |
+| P3 Qt / Loader / Ela | 进行中 | Q0–Q3c 含此前人工验收、Q4a/Q4b 校验、Q4c1 协调、Q4c2 内置子树/动态依赖、Q4d1/Q4d2 文件/Store、Q4e1 会话/配置页、Q4e2 Home/管理路由及 Q4d3 配置 I/O/watcher 已实现；Q4e1/Q4e2 已获人工确认；Q2c 零参数托管 Qt 连接已接入，新增 Q4d3 复核及其他资源适配待完成 |
 | P4 原生插件模块 | 未开始 | ABI、ModuleManager 和驻留账目待实现 |
 | P5 受控替换 | 未开始 | 新旧代替换、恢复和卸载专项验证待实现 |
 
@@ -118,6 +120,8 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | P3 Q4e2 Home/管理页配置路由 | 2026-10-25 | Ela Debug/Release 各 334/334，GCC 各 208/208，ASan UI/Loader 181/181；新增 13 项，重入场景 Debug/ASan 各连续 8 次通过 | [开发记录](p3-development.md#q4e2-home-与管理页配置路由)、[ADR-0021](adr/0021-configuration-management-routing.md)；本次用户确认人工验收通过 |
 | P3 Q4d3 配置后台 I/O 与监听 | 2026-10-25 | Ela Debug/Release 各 347/347，GCC 各 208/208，ASan UI/Loader 194/194；新增 13 项 | [开发记录](p3-development.md#q4d3-配置后台-io-与文件监听)、[ADR-0022](adr/0022-configuration-background-io-watcher.md)；新增体验人工复核待验 |
 | Q4 配置集成提交前审查 | 2026-10-25 | Ela Debug/Release 各 350/350，GCC 各 208/208，ASan UI/Loader 197/197；三项新回归修复前 0/3、修复后 3/3，目录恢复另有重复证据 | [审查记录](code-review.md#p3-配置子树会话与后台读写提交前审核)；随本次归档 |
+| P3 Q2c 托管 Qt 信号连接 | 2026-10-26 | Ela Debug/Release 各 365/365，GCC 各 208/208，ASan 相关 212/212；连接专项 Debug/ASan 各连续 20 次通过 | [开发记录](p3-development.md#q2c-托管-qt-信号连接)、[ADR-0023](adr/0023-managed-qt-connections.md) |
+| Q2c 提交前审查 | 2026-10-26 | Ela Debug/Release 各 367/367，GCC 各 208/208，ASan 214/214；新增两项连接回归修复前 0/2、修复后专项 17/17，Home 失效指针诊断确认并修正 | [审查记录](code-review.md#p3-q2c-托管-qt-连接提交前审核) |
 | Home 状态卡片、电源停止/加载/重试 | 2026-10-25 | Ela/MSVC Debug/Release 各 276/276，GCC 各 173/173；UI ASan 63/63、Core remount 1/1；明暗及 150% 布局通过 | [Home 记录](p3-development.md#home-状态卡片与电源操作)；本次 Home 专项人工复核待办 |
 | Home 左右滑动开关替换 | 2026-10-25 | 原目录 Ela/MSVC Debug/Release 专项各 34/34，ASan 同范围 34/34；同步位置不触发操作，连续点击去重通过 | [Home 记录](p3-development.md#home-状态卡片与电源操作)；仅私有 UI 接口变更 |
 | 完整配置管理 UI、ABI、物理卸载和替换 | — | 待实现或验证 | [设计说明书](../Cordis插件平台-软件设计说明书.md) |
@@ -192,8 +196,9 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | 2026-10-25 | Q4e1：独占配置会话、不可伪造预览/CAS、期望启停、Store/关闭跟踪及可选 Ela 配置页/真实文件工作台；冲突保留窗口、主题/重入销毁修正 | Ela/MSVC 各 321/321，GCC 各 208/208，ASan UI/Loader 168/168；新增 7 项会话、7 项真实 Qt/文件 UI、2 项明暗示例；[ADR-0020](adr/0020-configuration-session-ui.md) | 统一 Home/管理路由、新入口人工验收、watcher/后台 I/O | 本轮未提交 |
 | 2026-10-25 | 用户确认 Q4e1 配置工作台验证通过；Q4e2 接入 Home/管理页路径路由、期望启停及重新协调，隔离手动实例并补齐 CAS/失效/关闭防护 | Ela 各 334/334，GCC 各 208/208，ASan UI/Loader 181/181；完整证据见 [Q4e2](p3-development.md#q4e2-home-与管理页配置路由) | 新路由人工复核；Q4d3 watcher/后台 I/O | 本轮未提交 |
 | 2026-10-25 | 用户确认 Q4e2 路由验收通过；Q4d3 新增配置后台读写/线程 join、原生监听恢复及自身版本消重，UI 显式载入磁盘原文 | Ela 各 347/347，GCC 各 208/208，ASan UI/Loader 194/194；[ADR-0022](adr/0022-configuration-background-io-watcher.md) | 新增体验人工复核；任意插件 connection/worker 屏障与联合退出、P4 模块 | 本轮未提交 |
-| 2026-10-25 | 审查 Q4c2c2/Q4e1/Q4e2/Q4d3；修复编辑重入、监听初始化/回退/重连、退出隐式等待五项问题，整理格式、依赖和表格更新 | Ela 各 350/350，GCC 各 208/208，ASan UI/Loader 197/197；[审查记录](code-review.md#p3-配置子树会话与后台读写提交前审核) | Q4d3 原生体验、任意插件资源屏障及 P4 模块继续待验 | 随本次审查归档 |
-
+| 2026-10-25 | 审查 Q4c2c2/Q4e1/Q4e2/Q4d3；修复编辑重入、监听初始化/回退/重连、退出隐式等待五项问题，整理格式、依赖和表格更新 | Ela 各 350/350，GCC 各 208/208，ASan UI/Loader 197/197；[审查记录](code-review.md#p3-配置子树会话与后台读写提交前审核) | Q4d3 原生体验、任意插件资源屏障及 P4 模块继续待验 | 64c0a4f |
+| 2026-10-26 | Q2c：托管零参数 Qt 信号连接、Context/epoch 归属、异步业务/原生快照/捕获释放和独立关闭屏障；补齐联合退出示例 | Ela 各 365/365，GCC 各 208/208，ASan 212/212；[开发记录](p3-development.md#q2c-托管-qt-信号连接) | 类型化信号参数、通用插件 worker；Q4d3 人工复核及 P4 | 随本次审查归档 |
+| 2026-10-26 | Q2c 提交前审查：修复断连通知重入提前释放捕获、已取消通知误报故障和 Home 测试旧按钮失效，整理快照/头依赖/格式 | Ela 各 367/367，GCC 各 208/208，ASan 214/214；[审查记录](code-review.md#p3-q2c-托管-qt-连接提交前审核) | Q4d3 原生体验、worker/类型化参数和 P4 继续待验 | 随本次提交归档 |
 
 ## 更新约定
 
