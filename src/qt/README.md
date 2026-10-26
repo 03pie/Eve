@@ -8,7 +8,9 @@ Q2 已实现 QObjectResource 和 QtClock。前者接管无 parent 对象，在 Q
 
 Q2c 新增 QtConnection：将信号作为零参数触发通知，按 Context/epoch 登记 effect，业务始终排队到 owner。close 等待托管断连栈、原生调用快照、异步业务和捕获释放，再确认私有 QObject 完整删除；不代替 Kernel 整体关闭。信号参数不复制或转发，调用方负责业务数据的线程安全，见 [ADR-0023](../../docs/adr/0023-managed-qt-connections.md)。headless 示例为 bin/cordis_qt_connection_demo.exe，无需 Ela。
 
-任意插件 worker 仍待专用适配；配置专用后台 I/O/watcher 已在 ConfigIoQt 实现。QObject 删除屏障不能代替连接或线程的退出确认。调度契约见 [ADR-0004](../../docs/adr/0004-qt-scheduler.md)，资源契约见 [ADR-0005](../../docs/adr/0005-qt-resource-barriers.md)，证据见 [P3 开发记录](../../docs/p3-development.md)。
+Q2d 新增 QtWorker：在当前代登记一次同步工作，用 WorkerCancellation 查询代次/本地取消；Windows 后端以原生线程信号确认 TLS 退出，再在 owner 释放捕获。正常路径的 result 在全部资源及本 effect 账目确认后交付业务结果，退出协议失败不作静止证明；close 是资源屏障，Kernel 静止另验。见 [ADR-0024](../../docs/adr/0024-managed-workers.md)，自然完成会排队退役 effect，ready 延续先于本次清理窗口运行；资源 closed 和 Core retired 分别记账，退役投递受阻会终结结果失败；headless 示例为 bin/cordis_qt_worker_demo.exe。
+
+worker 内 Qt 事件循环、多任务队列及类型化结果仍待专用适配；配置专用后台 I/O/watcher 已在 ConfigIoQt 实现。QObject 删除屏障不能代替连接或线程的退出确认。调度契约见 [ADR-0004](../../docs/adr/0004-qt-scheduler.md)，资源契约见 [ADR-0005](../../docs/adr/0005-qt-resource-barriers.md)，证据见 [P3 开发记录](../../docs/p3-development.md)。
 
 QtConnection 的最小接入形式（在已有插件激活回调中）：
 
@@ -22,3 +24,21 @@ return connection.value().ready();
 ```
 
 句柄可选保留用于主动 close 或诊断；effect 已登记资源清理。实际业务返回的 Task 必须覆盖全部异步工作，不能把依赖本回调结束的整体退出任务作为业务结果返回。
+
+QtWorker 的最小接入形式（Windows，已有插件激活回调中）：
+
+```cpp
+auto worker = cordis::qt::QtWorker::start(
+    context, scheduler,
+    [](cordis::qt::WorkerCancellation stop) {
+        if (stop.isCancellationRequested())
+            return cordis::Result<void>::failure(cordis::makeError(
+                cordis::ErrorCode::OperationCancelled, "cancelled"));
+        return cordis::Result<void>::success();
+    });
+if (!worker.hasValue())
+    return cordis::failedTask(worker.error());
+return worker.value().result();
+```
+
+此处激活等待工作真实完成；也可返回 ready 仅等待初始化。长期工作必须主动检查取消，禁止等待 owner 关闭或借用普通 Context/GUI。正常退出保留 Qt 循环，先等待 Kernel，再关闭 scheduler 和应用。

@@ -3,6 +3,13 @@ target_link_libraries(cordis_qt_connection_demo PRIVATE Cordis::Qt)
 set_target_properties(cordis_qt_connection_demo PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 cordis_target_defaults(cordis_qt_connection_demo)
 
+if(WIN32)
+    add_executable(cordis_qt_worker_demo worker_demo.cpp)
+    target_link_libraries(cordis_qt_worker_demo PRIVATE Cordis::Qt)
+    set_target_properties(cordis_qt_worker_demo PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    cordis_target_defaults(cordis_qt_worker_demo)
+endif()
+
 if(TARGET cordis_ui)
     add_executable(cordis_ela_demo ela_demo.cpp)
     target_link_libraries(cordis_ela_demo PRIVATE Cordis::Ui Ela::WidgetTools)

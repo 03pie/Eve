@@ -1,5 +1,24 @@
 # 提交前代码审查记录
 
+## P3 Q2d 托管 worker 提交前审核
+
+日期：2026-10-26。范围：ef088eb 之后全部未提交的 QtWorker、取消/诊断 SDK、Core 友元、示例、构建、测试及文档，包含新增文件；sources/research 和第三方组件源码未修改。
+
+发现并修复两类 P2 时序问题：
+
+- 自动退役阻断业务延续。快速工作在当前 owner 任务内完成，原实现从初始化观察者直接调用 effect.close，Core 清理先于已登记的 ready 延续进入队列；已完成 result 的晚订阅延续也可能排在本次清理窗口内。两种延续使用仍有效的 Context 都得到 ContextClosing。现在资源完成后先排队宿主退役通知，Core 再排队清理，ready 延续先运行；正常业务结果等待本 effect 清理确认，消除自身清理窗口对结果消费的干扰。
+- 过早保留暂态门禁错误。原生完成时其他 effect 正在清理，原实现把此刻的 ContextClosing 固定为业务失败，即使真正交付结果前清理已经结束。现在原生完成只选定工作错误/协作取消，Context 门禁在真正发布时重新判断；旧代仍不能交付成功。
+
+ready_context/result_context 修复前 0/2（build/review-worker-before.log）；cleanup_overlap 在初版修复后的旧门禁选定路径仍真实失败（build/review-worker-overlap-before.log）。修正后新增场景与既有 worker 专项 22/22，见 build/review-worker-targeted.log。另增 retirement_delivery，确定性在资源已关闭、Core 退役尚未确认时关闭 scheduler，确认等待中的结果会失败终结。所有时序来自实际私有 Qt 循环和 owner FIFO，不依靠 sleep。
+
+资源和账目分别保留：close 继续是可独立于业务 scheduler 排空的物理资源屏障；正常 result 还等待本 effect 退役；retired/retirementBlocked 明确记录 Core 确认及交付故障。退役期间只保持一个可丢弃的宿主通知，投递失败不永久挂起结果，也不伪报 Kernel 静止。工作原有错误优先保留，Core 清理失败保留原因链。worker 内部通知不调用插件，原生线程/TLS、捕获 owner 析构、错误退出保留和 Core 无 Qt 边界保持。
+
+规范与质量：核对每个新增具名类型/函数的中文 Doxygen、直接标准头依赖、原生句柄不外泄、跨线程只读/锁下字段、初始化/关闭重入及最后句柄异线程释放；删除未使用的 cstdint，统一新增代码及第一方改动行格式。SDK 和 ADR 补齐 ready/result/close 及物理/账目状态的区别。Windows/MSVC、一次工作、void 结果的范围保持，不扩大到其他原生线程后端、跨 ABI 或物理卸载。
+
+审查后原目录 Ela/MSVC Debug、Release 各 389/389，无 Qt GCC Debug、Release 各 208/208，ASan UI/Loader/connection/worker 236/236；Qt-only Debug worker 专项 22/22，22 项 worker 检查在 Debug、ASan 中均各连续 20 次通过。完整日志为 build/review-worker-final-<debug|release|asan>.log、build/review-worker-core-gcc-<mode>.log 和 build/review-worker-qt-only.log；重复见 build/review-worker-repeat-<debug|asan>.log。
+
+2 个公共头在 GCC/MSVC C++17 独立包含通过，不需要 Qt 头路径。14 个改动文件 UTF-8/LF、第一方改动范围格式、Core 7 个单元/普通 Ui 依赖隔离、3 个相关实现/测试/示例单元 ASan 插桩、本地链接/锚点及差异空白检查通过，见 build/review-worker-audit.log。预编译 Qt/系统库未插桩。未发现其他阻止本次提交的问题，本次将 Q2d 与审查修复一并提交。Q4d3 新增原生人工体验、其他线程后端、类型化结果和跨 ABI/物理卸载保持后续范围。
+
 ## P3 Q2c 托管 Qt 连接提交前审核
 
 日期：2026-10-26。范围：64c0a4f 之后全部未提交的 QtConnection、Core 友元/内部任务身份访问、Qt 示例、构建、测试与文档，包含新增文件；复核中补修既有 Home 测试。sources/research 及第三方源码未修改。

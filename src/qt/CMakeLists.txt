@@ -1,4 +1,4 @@
-add_library(cordis_qt STATIC scheduler.cpp object.cpp clock.cpp connection.cpp)
+add_library(cordis_qt STATIC scheduler.cpp object.cpp clock.cpp connection.cpp worker.cpp)
 add_library(Cordis::Qt ALIAS cordis_qt)
 target_link_libraries(cordis_qt PUBLIC Cordis::Core Qt5::Core)
 target_compile_definitions(cordis_qt PUBLIC QT_NO_KEYWORDS)

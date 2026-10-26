@@ -32,7 +32,7 @@
 | `Cordis::ConfigSession` | 独占连接候选预览、CAS 接受、期望启停和 Store 跟踪/退出刷新，不依赖 Qt |
 | `Cordis::ConfigIoQt` | 可选配置后台串行读写、线程 join 与文件/目录监听，通知不自动应用目标 |
 | `Cordis::ConfigUi` | 可选 Ela 配置编辑页及 Home/管理适配器，弱持宿主会话；普通 Ui SDK 不依赖配置层 |
-| `src/qt` | 可选 Cordis::Qt，包含 QtScheduler、QtClock、QObjectResource 与托管 QtConnection |
+| `src/qt` | 可选 Cordis::Qt，包含 QtScheduler、QtClock、QObjectResource、托管 QtConnection 与 QtWorker |
 | `src/ui` | 可选 Cordis::Ui，包含 Ela 插件状态卡片及电源操作、单击直达的插件导航、菜单/搜索/前进后退、可全部关闭的中央页签、底部工作区、贡献服务和只读诊断；资源树属于具体插件页 |
 | `third_party/ela` | 项目内维护的 Ela 组件库及资源，保留上游基线、本地修改和 MIT 许可 |
 | `third_party/libyaml` | 固定 0.2.5 C 解析库和 MIT 许可，私有链接至配置文本层 |
@@ -78,6 +78,14 @@ Qt 信号连接与异步退出示例（只依赖 QtCore，Qt/Ela 预设均构建
 ```
 
 信号作为零参数触发，业务在 owner 排队执行；示例等待真实异步任务、原生连接和时钟排空后退出，见 [托管连接协议](docs/adr/0023-managed-qt-connections.md)。
+
+Windows 插件工作线程与信号联合退出示例（仍沿用原 Release 目录）：
+
+```powershell
+./build/ela-msvc-release/bin/cordis_qt_worker_demo.exe
+```
+
+QtWorker 支持协作取消，在原生线程和 TLS 退出后释放捕获，随后交付结果。该示例等待 worker、连接和 Kernel 各自确认后退出，见 [工作线程协议](docs/adr/0024-managed-workers.md)。
 
 ## 设计及实施入口
 
