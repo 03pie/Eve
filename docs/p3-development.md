@@ -1,6 +1,6 @@
 # P3 桌面适配开发记录
 
-最后更新：2026-10-27（北京时间）。状态：进行中（收口）；配置子树/会话/后台 I/O 与 Home/管理路由已实现并提交为 64c0a4f，Q4e1/Q4e2 已获用户确认。Q4d3 已原生代理复核，用户确认单独待办。环境恢复、Q2e 类型化 worker 结果和 Q2f 受限类型化 Qt 信号已完成审核，随本次提交归档；历史未提交记录按当时状态保留。原生模块 ABI/受控替换范围不变。
+最后更新：2026-10-27（北京时间）。状态：待验证（人工）；Q2g 已提交为 e3491ae，后续四项真实装配验收及自动化已收口，审核后随本阶段提交归档。配置子树/会话/后台 I/O 与 Home/管理路由已实现并提交为 64c0a4f，Q4e1/Q4e2 已获用户确认。Q4d3 已原生代理复核，用户确认单独待办。环境恢复、Q2e 类型化 worker 结果和 Q2f 受限类型化 Qt 信号已完成审核，随本次提交归档；历史未提交记录按当时状态保留。原生模块 ABI/受控替换范围不变。
 
 ## 已安装与验证
 
@@ -845,6 +845,20 @@ ASan 本轮同时对 C/C++ Debug 设置 /fsanitize=address，Core、Qt、Loader 
 GCC/MSVC C++17 工厂语法检查：原生 watcher 前缀通过；错误类型、空前缀、过长、选中指针、指针到 bool 的隐式转换、完整私有标记六类分别按预期诊断拒绝。日志为 build/native-signal-contract-<gcc|msvc>-<0..6>.log；这只证明模板约束，不代表 GCC 与 MSVC Qt kit 的 ABI/运行兼容。
 
 本轮代码复核、差异空白及新增文档链接检查通过。没有 UI 改动，Q4d3 用户确认和真实系统 DPI 仍待登记；P4/P5 未开始，本轮增量未提交。
+
+## P3 跨组件装配验收收口
+
+2026-10-27，在 e3491ae 后新增 tests/qt/p3_acceptance.cpp，用同一真实 Qt 应用装配 Kernel、配置会话、后台 I/O、watcher、配置页和 Ela 工作台。四项 CTest 为 p3.acceptance_invalid / identity / partial / shutdown；最后两项使用 Windows 原生句柄/worker 后端，只在 Windows 注册。
+
+invalid 在活动父子树已保存后，从 Session 和真实配置页分别提交语法/schema 错误；核对 entry 与字段错误、原实例/epoch/活动状态、页面和文件 hash 不变。identity 修改 title 显示名并重排数组，确认原 id/实例身份保持、无关项不重建、旧页面完整删除且旧句柄不可导航。
+
+partial 先使一项更新成功、另一项激活失败，核对部分报告及最终配置没有回滚；以真实文件句柄禁止共享删除，使后台原子替换确实失败。dirty/已保存修订/原文件保持，释放故障后保存目标成功，历史运行失败仍保留。shutdown 在一个活动项和一个缺依赖项共存时打开管理页，发出真实窗口关闭请求。worker 由显式 future gate 阻塞，Qt 回调观察取消并确认窗口/循环/文件执行器仍存活，再释放 gate；随后才确认 watcher、会话保存、文件线程、Kernel、业务页/配置页/窗口、连接及 worker 退出，最后关 scheduler 和应用。
+
+首轮 shutdown 的测试断言错误地从手动实例通道查找受保护的配置实例，3/4 通过；根据管理协议改为配置条目和其真实 Core 实例依赖查询，随后 4/4 通过。没有修改产品实现或弱化缺依赖断言，首次日志为 build/p3-acceptance-before.log。一次 ASan 重复调用遗漏 VS 开发环境，四项均在启动前返回 0xc0000135；Ela ASan DLL 依赖 clang_rt.asan_dynamic-x86_64.dll，恢复运行库搜索环境后重新执行，原记录保留为 build/p3-integrated-repeat-asan-missing-runtime.log。
+
+最终 Ela/MSVC Debug、Release 各 432/432；新四项 Debug/ASan 各连续 20 次通过。MSVC ASan 的 C/C++ Debug 插桩覆盖 Core、Loader、Qt、UI、Ela 和本验收目标，预编译 Qt/系统库未插桩。本轮没有 Core 实现变更，无 Qt GCC 的 210 项保持。日志为 build/p3-integrated-<debug|release|asan>.log、build/p3-integrated-repeat-<debug|asan>.log，最终构建见 build/p3-integrated-asan-final-build.log。
+
+审核核对测试中的真实输入、失败注入、任务/资源屏障、窗口关闭及退出码，补强部分失败后实际/期望配置仍为新值的断言，并补齐直接 Qt 头依赖；没有发现阻止提交的问题。验收映射现在区分完整自动化证据与人工结果；P3 实现/自动化收口，阶段保持待验证。Q4d3 用户确认和真实系统 DPI 仍未登记，P4/P5 未开始。本阶段按用户要求审核并提交后继续目标。
 
 ## 后续工作
 

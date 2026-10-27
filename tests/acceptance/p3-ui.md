@@ -7,7 +7,8 @@
 在仓库根目录 PowerShell 运行已构建的演示：
 
 ```powershell
-$env:PATH = "E:/Qt/5.15.2/msvc2019_64/bin;$env:PATH"
+$taskQtBin = (Resolve-Path ./build/Qt/5.15.2/msvc2019_64/bin).Path
+$env:PATH = "$taskQtBin;$env:PATH"
 $env:QT_QPA_PLATFORM = 'windows'
 & ./build/ela-msvc-debug/bin/cordis_ela_demo.exe
 $LASTEXITCODE
@@ -47,10 +48,7 @@ Debug 与 Release 各执行一次；Release 路径为 build/ela-msvc-release/bin
 状态：已通过（用户确认）。2026-10-25 用户明确回复“ok，验证过了”，按其确认登记本轮配置工作台通过，不补造逐项操作日志、Windows 版本或缩放明细。此前 Q3c 结果保持；本表只验证配置会话/页面入口。沿用原 Debug/Release 目录，原生 Windows 模式运行：
 
 ```powershell
-$env:PATH = "E:/Qt/5.15.2/msvc2019_64/bin;$env:PATH"
-$env:QT_QPA_PLATFORM = 'windows'
-& ./build/ela-msvc-release/bin/cordis_config_workbench.exe
-$LASTEXITCODE
+./tools/desktop.ps1 -Action run -Preset ela-msvc-release
 ```
 
 默认文件位于应用本地数据目录，页面显示确切路径；也可用 --file 指向现有目录下的指定文件。读取只进入编辑区，启动不自动接受或写盘。未应用的编辑不会保存，退出会刷新已应用目标。保存为规范 YAML/JSON，不保留原注释或排版。
