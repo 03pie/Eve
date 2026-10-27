@@ -2,7 +2,9 @@
 
 基于 Cordis 思路设计的 C++17 插件内核，目标桌面环境为 Qt 5.15.2 + ElaWidgetTools。
 
-当前已完成 **W0–W7 首阶段内置内核与联合验收**。P3 已有内置配置子树、类型化依赖、域继承、真实协调和文件/Store。新增可选配置工作台，连接预览、应用、期望启停及保存，明确区分运行和持久化状态。原工作台及配置工作台已获用户人工确认。Home/管理页统一配置路径启停也已获用户人工确认。配置工作台新增后台读写和文件监听，外部原文仅在显式操作后载入编辑区；本轮体验待专项复核。
+当前已完成 **W0–W7 首阶段内置内核与联合验收**。P3 已有内置配置子树、类型化依赖、域继承、真实协调和文件/Store。可选配置工作台连接预览、应用、期望启停及保存，明确区分运行和持久化状态。原工作台、配置工作台及 Home/管理页路由已获用户人工确认。后台读写/文件监听已完成原生代理复核，用户人工确认仍单独待办；外部原文仅在显式操作后载入编辑区。Windows 托管 worker 已支持类型化结果及完整退出屏障。
+
+当前工作区还已实现受限类型化 Qt 信号投递：数值、枚举与标准/Qt 字符串会在发射时冻结，参数保留至异步业务完成，并沿用 Context/epoch 及原生退出屏障。详情见 [类型化连接决策](docs/adr/0026-typed-qt-connections.md)，示例为 cordis_qt_value_connection_demo。
 
 ## 从这里开始
 
@@ -12,6 +14,15 @@
 ./tools/dev.ps1 -Action doctor
 ./tools/dev.ps1 -Action verify -Preset core-gcc-debug
 ```
+
+已安装 Qt 5.15.2 MSVC kit 后，可在普通 PowerShell 中构建和运行桌面工作台：
+
+```powershell
+./tools/desktop.ps1 -Action verify -Preset ela-msvc-release
+./tools/desktop.ps1 -Action run -Preset ela-msvc-release
+```
+
+入口自动加载本机 VS2022 x64 工具链，默认 kit 在 build/Qt/5.15.2/msvc2019_64；也可用 -QtRoot 指定。环境只在调用期间生效。恢复环境与依赖安装记录见 [开发环境](docs/development.md)。
 
 `verify` 依次配置、编译、运行 CTest。完整工程需要匹配的 C/C++ 编译器，以构建固定 LibYAML C 库和 C++17 模块。CMake 不在 PATH 时可设置进程内的 `CORDIS_CMAKE_BIN` 指向其 bin 目录。脚本不修改系统 PATH。核心及 Qt 预设不构建 Ela；Ela 和 LibYAML 均使用仓库内源码，构建不下载上游。
 
@@ -61,19 +72,18 @@
 
 宿主通过 whenActiveAfter 观察父实例新代次，使用弱 Context 创建带类型化依赖的子实例；父更新等待旧子清理，再挂载新子。该示例单独验证 Core 桥接能力，见 [跨代观察协议](docs/adr/0018-activation-context-bridge.md)；YAML 自动协调由上面的 cordis_reconcile_demo 演示。
 
-运行新增配置工作台（沿用原 Release 目录）：
+运行配置工作台（沿用原 Release 构建目录，入口隔离加载工具链和 Qt）：
 
 ```powershell
-$env:PATH = "E:/Qt/5.15.2/msvc2019_64/bin;$env:PATH"
-$env:QT_QPA_PLATFORM = 'windows'
-./build/ela-msvc-release/bin/cordis_config_workbench.exe
+./tools/desktop.ps1 -Action run -Preset ela-msvc-release
 ```
 
-默认配置文件位于应用本地数据目录，界面显示确切路径；可用 --file 指定现有目录下的文件。读取原文不会自动应用或保存，先“检查差异”再“应用”，选择条目用左右开关修改期望启停，点击“保存”持久化。保存会规范化 YAML/JSON，未应用编辑不会写盘；退出刷新已应用修改，磁盘冲突先保留窗口供处理。此入口只使用配置目标管理实例，原 cordis_ela_demo 继续演示手动实例管理。明暗自动示例使用 --smoke/--smoke-dark，始终写临时文件。
+默认配置文件位于应用本地数据目录，界面显示确切路径；入口可用 -ConfigurationFile 指定文件，直接执行 exe 时对应 --file。读取原文不会自动应用或保存，先“检查差异”再“应用”，选择条目用左右开关修改期望启停，点击“保存”持久化。保存会规范化 YAML/JSON，未应用编辑不会写盘；退出刷新已应用修改，磁盘冲突先保留窗口供处理。此入口只使用配置目标管理实例，原 cordis_ela_demo 继续演示手动实例管理。直接执行 exe 的明暗自动示例使用 --smoke/--smoke-dark，始终写临时文件。
 
-Qt 信号连接与异步退出示例（只依赖 QtCore，Qt/Ela 预设均构建）：
+Qt 信号连接与异步退出示例（只依赖 QtCore，Qt/Ela 预设均构建；直接执行 exe 需为当前 PowerShell 加入所用 kit 的 bin，下面采用本机默认位置）：
 
 ```powershell
+$env:PATH = "$PWD/build/Qt/5.15.2/msvc2019_64/bin;$env:PATH"
 ./build/ela-msvc-release/bin/cordis_qt_connection_demo.exe
 ```
 
@@ -86,6 +96,13 @@ Windows 插件工作线程与信号联合退出示例（仍沿用原 Release 目
 ```
 
 QtWorker 支持协作取消，在原生线程和 TLS 退出后释放捕获，随后交付结果。该示例等待 worker、连接和 Kernel 各自确认后退出，见 [工作线程协议](docs/adr/0024-managed-workers.md)。
+
+类型化数据示例（沿用上述当前进程 Qt PATH）：
+
+```powershell
+./build/ela-msvc-release/bin/cordis_qt_value_worker_demo.exe
+./build/ela-msvc-release/bin/cordis_qt_value_connection_demo.exe
+```
 
 ## 设计及实施入口
 

@@ -85,6 +85,8 @@ $LASTEXITCODE
 
 ## Q4d3 文件监听与后台读写补充验收
 
+2026-10-26 本机环境已恢复，新增启动入口 tools/desktop.ps1 -Action run -Preset ela-msvc-release，可用 -ConfigurationFile build/desktop-acceptance/manual.yaml 隔离验收文件。初次桌面授权超时，用户要求重试后成功；已完成文件变化、冲突、退出和进程 150% 明暗布局的[原生代理复核](../../docs/q4d3-desktop-verification.md)。用户本人操作/系统 DPI 的人工确认仍单独待办，不代填下表用户结论。
+
 状态：待人工复核，本轮不沿用前两轮人工结论。仍在原目录运行 build/ela-msvc-release/bin/cordis_config_workbench.exe，可用 --file 指定专属测试文件。
 
 | 项目 | 操作与通过标准 | 结果 |

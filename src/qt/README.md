@@ -8,7 +8,33 @@ Q2 已实现 QObjectResource 和 QtClock。前者接管无 parent 对象，在 Q
 
 Q2c 新增 QtConnection：将信号作为零参数触发通知，按 Context/epoch 登记 effect，业务始终排队到 owner。close 等待托管断连栈、原生调用快照、异步业务和捕获释放，再确认私有 QObject 完整删除；不代替 Kernel 整体关闭。信号参数不复制或转发，调用方负责业务数据的线程安全，见 [ADR-0023](../../docs/adr/0023-managed-qt-connections.md)。headless 示例为 bin/cordis_qt_connection_demo.exe，无需 Ela。
 
+Q2f 的 QtConnection::observeValues 支持数值/枚举、std::string、QString、QByteArray；发射时冻结独立数据，owner 接收 const 引用，资源保留数据至回调栈和返回 Task 完成。条数预算覆盖排队/复制中/在途票据，内容字节默认 1 MiB/份，上限 16 MiB。拒绝指针、借用视图和自定义类型；业务不得在 Task 完成后继续借用参数。关闭在 owner 释放数据并等待原有屏障，见 [ADR-0026](../../docs/adr/0026-typed-qt-connections.md)。headless 示例为 bin/cordis_qt_value_connection_demo.exe。
+
+```cpp
+auto connection = cordis::qt::QtConnection::observeValues(
+    context, scheduler, source, &Source::packet,
+    [](const QString& text, const QByteArray& bytes, int number) {
+        // 业务在 owner；返回的 Task 必须覆盖参数引用的全部异步使用。
+        return processPacket(text, bytes, number);
+    });
+```
+
 Q2d 新增 QtWorker：在当前代登记一次同步工作，用 WorkerCancellation 查询代次/本地取消；Windows 后端以原生线程信号确认 TLS 退出，再在 owner 释放捕获。正常路径的 result 在全部资源及本 effect 账目确认后交付业务结果，退出协议失败不作静止证明；close 是资源屏障，Kernel 静止另验。见 [ADR-0024](../../docs/adr/0024-managed-workers.md)，自然完成会排队退役 effect，ready 延续先于本次清理窗口运行；资源 closed 和 Core retired 分别记账，退役投递受阻会终结结果失败；headless 示例为 bin/cordis_qt_worker_demo.exe。
+
+Q2e 新增 `cordis/qt/value_worker.hpp` 的 QtValueWorker<T>，工作返回 Result<T>，result() 返回 Task<T>。成功数据沿用上述全部屏障，支持不可复制类型；发布只转发冻结快照。数据快照可以超过 Kernel 的寿命，最终析构线程由最后一个数据持有者决定，不能携带 GUI/Context 借用或模块资源。见 [ADR-0025](../../docs/adr/0025-typed-worker-results.md)，headless 示例为 bin/cordis_qt_value_worker_demo.exe。
+
+```cpp
+auto work = cordis::qt::QtValueWorker<std::string>::start(
+    context, scheduler,
+    [](cordis::qt::WorkerCancellation stop) {
+        if (stop.isCancellationRequested())
+            return cordis::Result<std::string>::failure(cordis::makeError(
+                cordis::ErrorCode::OperationCancelled, "cancelled"));
+        return cordis::Result<std::string>::success("computed data");
+    });
+```
+
+调用方检查 start 的 Result，使用 result().thenOn(scheduler, ...) 观察不可变数据；不通过共享变量提前读取工作结果。
 
 worker 内 Qt 事件循环、多任务队列及类型化结果仍待专用适配；配置专用后台 I/O/watcher 已在 ConfigIoQt 实现。QObject 删除屏障不能代替连接或线程的退出确认。调度契约见 [ADR-0004](../../docs/adr/0004-qt-scheduler.md)，资源契约见 [ADR-0005](../../docs/adr/0005-qt-resource-barriers.md)，证据见 [P3 开发记录](../../docs/p3-development.md)。
 

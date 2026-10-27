@@ -8,12 +8,14 @@
 #include <limits>
 #include <map>
 #include <mutex>
-#include <set>
+#include <vector>
 
 namespace cordis::qt::detail {
-/** @brief 在途记录仅包含宿主任务值，完成源可在任意线程写入 result。 */
-struct ConnectionInvocation {
-    bool returned = false;
+/** @brief 原生冻结与在途业务共享票据；数据在 owner 锁外释放，完成源只写宿主结果。 */
+struct ConnectionTicket {
+    std::uint64_t id = 0;
+    bool prepared = false, discarded = false, returned = false;
+    ConnectionPayload payload;
     Task<void>::Snapshot result;
 };
 /** @brief 原生线程只访问锁下的值；插件函数及捕获始终在 owner 调用/释放。 */
@@ -21,24 +23,56 @@ struct ConnectionControl : std::enable_shared_from_this<ConnectionControl> {
     std::shared_ptr<QtScheduler> scheduler;
     ContextIdentity owner;
     std::function<Result<void>()> guard;
-    std::shared_ptr<std::function<Task<void>()>> callback;
+    std::shared_ptr<ConnectionCallback> callback;
     std::optional<QObjectResource> resource;
     QMetaObject::Connection native;
     mutable std::mutex mutex;
     QObject* host = nullptr;
     CancellationToken cancellation;
-    std::set<std::uint64_t> pending;
-    std::map<std::uint64_t, std::shared_ptr<ConnectionInvocation>> active;
+    std::map<std::uint64_t, std::shared_ptr<ConnectionTicket>> pending, active;
     std::uint64_t sequence = 0;
     // 仅 owner 修改；原生通知可重入关闭，最后一个断连栈返回前不能释放插件捕获。
     std::size_t disconnectDepth = 0;
     std::size_t maximumPending = 256, accepted = 0, executed = 0, discarded = 0, rejected = 0, errors = 0;
+    std::size_t payloadErrors = 0;
+    std::size_t retiring = 0, retiringPayloads = 0;
     bool registering = true, attached = false, armed = false, closing = false, closed = false, nativeRetired = true;
     bool nativeDestroyed = false, deleting = false, draining = false, drainAgain = false, releasing = false,
          wakePending = false, blocked = false;
     std::optional<ErrorInfo> lastError;
     Promise<void> stopped;
     std::shared_ptr<ConnectionControl> retained;
+    /** @brief 释放批次在实际析构完成前继续占预算；所有数据在 mutex 锁外销毁。 */
+    struct Retirement {
+        ConnectionControl& state;
+        std::vector<ConnectionPayload> values;
+        std::size_t payloads = 0;
+        /** @brief 调用方持锁；记录转移与预算保留必须发生在同一临界区。 */
+        void take(ConnectionPayload& payload)
+        {
+            values.push_back(std::move(payload));
+            ++state.retiring;
+            if (values.back()) {
+                ++payloads;
+                ++state.retiringPayloads;
+            }
+        }
+        /** @brief 调用方不持锁；释放完数据才归还预算，并唤醒可能重入的关闭请求。 */
+        void release()
+        {
+            const auto count = values.size();
+            if (count == 0)
+                return;
+            values.clear();
+            std::lock_guard<std::mutex> lock(state.mutex);
+            state.retiring -= count;
+            state.retiringPayloads -= payloads;
+            payloads = 0;
+            state.wakeLocked();
+        }
+        /** @brief 异常或提前返回也遵守数据先释放、预算后归还的顺序。 */
+        ~Retirement() { release(); }
+    };
     /** @brief 调用方持锁；只投递宿主弱通知，不能内联用户逻辑或与 QObject 销毁竞争。 */
     void wakeLocked() noexcept
     {
@@ -64,45 +98,79 @@ struct ConnectionControl : std::enable_shared_from_this<ConnectionControl> {
     void drop(std::uint64_t id, bool deliveryFailure) noexcept
     {
         std::lock_guard<std::mutex> lock(mutex);
-        if (!pending.erase(id))
+        const auto found = pending.find(id);
+        if (found == pending.end() || found->second->discarded)
             return;
+        found->second->discarded = true;
         ++discarded;
         if (deliveryFailure)
             blocked = true;
         wakeLocked();
     }
-    /** @brief 原生调用永不进入插件；有界票据在 owner 再检查代次和取消。 */
-    void signal() noexcept
+    /** @brief 在任何数据复制之前占据预算；正在复制与待释放记录也占预算。 */
+    std::shared_ptr<ConnectionTicket> reserve() noexcept
     {
         try {
-            std::uint64_t id;
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                if (!armed || closing || cancellation.isCancellationRequested()) {
-                    ++rejected;
-                    return;
-                }
-                if (pending.size() + active.size() >= maximumPending ||
-                    sequence == std::numeric_limits<std::uint64_t>::max()) {
-                    ++rejected;
-                    return;
-                }
-                id = ++sequence;
-                pending.insert(id);
-                ++accepted;
+            std::lock_guard<std::mutex> lock(mutex);
+            if (!armed || closing || cancellation.isCancellationRequested() ||
+                pending.size() + active.size() + retiring >= maximumPending ||
+                sequence == std::numeric_limits<std::uint64_t>::max()) {
+                ++rejected;
+                return {};
             }
-            auto self = shared_from_this();
-            try {
-                if (scheduler->post({[self, id] { self->enter(id); }, [self, id] { self->drop(id, true); }}))
-                    return;
-            } catch (...) {
-            }
-            drop(id, true);
+            auto ticket = std::make_shared<ConnectionTicket>();
+            ticket->id = ++sequence;
+            pending.emplace(ticket->id, ticket);
+            ++accepted;
+            return ticket;
         } catch (...) {
             std::lock_guard<std::mutex> lock(mutex);
             blocked = true;
             wakeLocked();
+            return {};
         }
+    }
+    /** @brief 数据先交给资源账目；排队/丢弃通知只保留宿主及编号，不能在线程间释放数据。 */
+    void deliver(const std::shared_ptr<ConnectionTicket>& ticket, ConnectionPayload payload) noexcept
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            ticket->payload = std::move(payload);
+            ticket->prepared = true;
+            if (closing || cancellation.isCancellationRequested() || ticket->discarded) {
+                if (!ticket->discarded) {
+                    ticket->discarded = true;
+                    ++discarded;
+                }
+                wakeLocked();
+                return;
+            }
+        }
+        const auto id = ticket->id;
+        try {
+            auto self = shared_from_this();
+            if (scheduler->post({[self, id] { self->enter(id); }, [self, id] { self->drop(id, true); }}))
+                return;
+        } catch (...) {
+        }
+        drop(id, true);
+    }
+    /** @brief 失败票据仍由 owner 收尾，异常不穿过 Qt 原生激活栈。 */
+    void payloadFailed(const std::shared_ptr<ConnectionTicket>& ticket, bool oversized) noexcept
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        ticket->prepared = true;
+        if (!ticket->discarded) {
+            ticket->discarded = true;
+            ++discarded;
+        }
+        ++payloadErrors;
+        try {
+            lastError = makeError(oversized ? ErrorCode::InvalidArgument : ErrorCode::CallbackFailed,
+                                  oversized ? "Qt signal payload exceeds byte limit" : "Qt signal payload copy failed");
+        } catch (...) {
+        }
+        wakeLocked();
     }
     /** @brief 原生闭包最后一个快照释放后才允许删除接收宿主。 */
     void nativeEnded() noexcept
@@ -114,25 +182,33 @@ struct ConnectionControl : std::enable_shared_from_this<ConnectionControl> {
     /** @brief 业务入口只在 scheduler owner 运行，回调栈返回之前不发布在途完成。 */
     void enter(std::uint64_t id)
     {
-        auto invocation = std::make_shared<ConnectionInvocation>();
+        std::shared_ptr<ConnectionTicket> invocation;
         {
             std::lock_guard<std::mutex> lock(mutex);
-            if (!pending.erase(id))
+            const auto found = pending.find(id);
+            if (found == pending.end() || found->second->discarded)
                 return;
             if (closing || cancellation.isCancellationRequested()) {
+                found->second->discarded = true;
                 ++discarded;
+                wakeLocked();
                 return;
             }
-            // pending 转为 active 必须在同一锁内，发射线程不能利用入口间隙突破总预算。
-            active.emplace(id, invocation);
+            invocation = found->second;
+            // 相同类型的 map 节点转移不分配内存，也不留下可突破预算的入口间隙。
+            active.insert(pending.extract(found));
         }
         auto allowed = guard();
         if (!allowed.hasValue()) {
-            std::lock_guard<std::mutex> lock(mutex);
-            active.erase(id);
-            ++discarded;
-            lastError = allowed.error();
-            wakeLocked();
+            Retirement released{*this, {}, 0};
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                released.take(invocation->payload);
+                active.erase(id);
+                ++discarded;
+                lastError = allowed.error();
+                wakeLocked();
+            }
             return;
         }
         {
@@ -142,7 +218,7 @@ struct ConnectionControl : std::enable_shared_from_this<ConnectionControl> {
         auto function = callback;
         std::weak_ptr<ConnectionControl> weak = shared_from_this();
         try {
-            auto task = (*function)();
+            auto task = (*function)(invocation->payload);
             if (cordis::detail::TaskAccess::sameTask(task, stopped.task())) {
                 invocation->result = std::make_shared<const Result<void>>(Result<void>::failure(
                     makeError(ErrorCode::CleanupCycle, "connection callback returned its own close task")));
@@ -188,8 +264,11 @@ struct ConnectionControl : std::enable_shared_from_this<ConnectionControl> {
             std::lock_guard<std::mutex> lock(mutex);
             closing = true;
             armed = false;
-            discarded += pending.size();
-            pending.clear();
+            for (auto& item : pending)
+                if (!item.second->discarded) {
+                    item.second->discarded = true;
+                    ++discarded;
+                }
         }
         disconnectNative();
         drain();
@@ -220,10 +299,19 @@ struct ConnectionControl : std::enable_shared_from_this<ConnectionControl> {
             }
         } reset{*this};
         bool ended;
+        Retirement released{*this, {}, 0};
         {
             std::lock_guard<std::mutex> lock(mutex);
+            for (auto it = pending.begin(); it != pending.end();) {
+                if (!it->second->discarded || !it->second->prepared) {
+                    ++it;
+                    continue;
+                }
+                released.take(it->second->payload);
+                it = pending.erase(it);
+            }
             for (auto it = active.begin(); it != active.end();) {
-                const auto& invocation = *it->second;
+                auto& invocation = *it->second;
                 if (!invocation.returned || !invocation.result) {
                     ++it;
                     continue;
@@ -232,19 +320,22 @@ struct ConnectionControl : std::enable_shared_from_this<ConnectionControl> {
                     ++errors;
                     lastError = invocation.result->error();
                 }
+                released.take(invocation.payload);
                 it = active.erase(it);
             }
             ended = nativeRetired && !registering && attached;
             if (blocked && !lastError)
                 lastError = makeError(ErrorCode::SchedulerClosed, "Qt connection notification delivery blocked");
         }
+        released.release();
         if (ended && !closing) {
             stop();
         }
         bool dispose;
         {
             std::lock_guard<std::mutex> lock(mutex);
-            dispose = closing && !registering && disconnectDepth == 0 && active.empty() && nativeRetired && !deleting;
+            dispose = closing && !registering && disconnectDepth == 0 && pending.empty() && active.empty() && retiring == 0 &&
+                      nativeRetired && !deleting;
         }
         if (!dispose)
             return;
@@ -289,8 +380,11 @@ struct ConnectionControl : std::enable_shared_from_this<ConnectionControl> {
             std::lock_guard<std::mutex> lock(mutex);
             closing = true;
             armed = false;
-            discarded += pending.size();
-            pending.clear();
+            for (auto& item : pending)
+                if (!item.second->discarded) {
+                    item.second->discarded = true;
+                    ++discarded;
+                }
         }
         disconnectNative();
         retained = shared_from_this();
@@ -325,14 +419,27 @@ SignalBridge::SignalBridge(std::shared_ptr<ConnectionControl> control)
 }
 void SignalBridge::operator()() const noexcept
 {
-    lease_->control->signal();
+    if (auto ticket = reserve())
+        deliver(ticket, {});
+}
+std::shared_ptr<ConnectionTicket> SignalBridge::reserve() const noexcept
+{
+    return lease_->control->reserve();
+}
+void SignalBridge::deliver(const std::shared_ptr<ConnectionTicket>& ticket, ConnectionPayload payload) const noexcept
+{
+    lease_->control->deliver(ticket, std::move(payload));
+}
+void SignalBridge::payloadFailed(const std::shared_ptr<ConnectionTicket>& ticket, bool oversized) const noexcept
+{
+    lease_->control->payloadFailed(ticket, oversized);
 }
 } // namespace cordis::qt::detail
 
 namespace cordis::qt {
 /** @brief effect 清理先登记，外部 connectNotify 重入停止时也不会漏记资源。 */
 Result<QtConnection> QtConnection::create(const Context& owner, std::shared_ptr<QtScheduler> scheduler,
-                                          std::function<Task<void>()> callback, std::string label,
+                                          detail::ConnectionCallback callback, std::string label,
                                           std::size_t maximumPending, Installer install)
 {
     if (!scheduler || !scheduler->isCurrentThread())
@@ -348,7 +455,7 @@ Result<QtConnection> QtConnection::create(const Context& owner, std::shared_ptr<
     state->owner = owner.identity().value();
     state->guard = guard.value();
     state->maximumPending = maximumPending;
-    state->callback = std::make_shared<std::function<Task<void>()>>(std::move(callback));
+    state->callback = std::make_shared<detail::ConnectionCallback>(std::move(callback));
     std::unique_ptr<QObject> host = std::make_unique<detail::ConnectionHost>(state);
     state->host = host.get();
     state->resource.emplace(host, scheduler);
@@ -434,13 +541,20 @@ Result<ConnectionSnapshot> QtConnection::snapshot() const
     value.nativeRetired = state->nativeRetired;
     value.nativeDestroyed = state->nativeDestroyed;
     value.deliveryBlocked = state->blocked;
-    value.queued = state->pending.size();
-    value.running = state->active.size() + (state->releasing ? 1u : 0u);
+    value.payloads = state->retiringPayloads;
+    for (const auto& item : state->pending) {
+        value.queued += item.second->discarded ? 0u : 1u;
+        value.payloads += item.second->payload ? 1u : 0u;
+    }
+    for (const auto& item : state->active)
+        value.payloads += item.second->payload ? 1u : 0u;
+    value.running = state->active.size() + state->retiring + (state->releasing ? 1u : 0u);
     value.accepted = state->accepted;
     value.executed = state->executed;
     value.discarded = state->discarded;
     value.rejected = state->rejected;
     value.callbackErrors = state->errors;
+    value.payloadErrors = state->payloadErrors;
     value.lastError = state->lastError;
     return Result<ConnectionSnapshot>::success(std::move(value));
 }

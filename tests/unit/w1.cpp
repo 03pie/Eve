@@ -526,6 +526,31 @@ void schedulerDestructorGuard()
     }
 }
 
+/** @brief 冻结快照原样转发不可复制值，保留一次完成及始终排队的观察者语义。 */
+void taskSnapshotForwarding()
+{
+    using Value = std::unique_ptr<int>;
+    auto scheduler = std::make_shared<FakeScheduler>();
+    Promise<Value> promise;
+    auto task = promise.task();
+    auto frozen = std::make_shared<const Result<Value>>(Result<Value>::success(std::make_unique<int>(42)));
+    int observed = 0;
+    auto receipt = task.thenOn(scheduler, [&](const Result<Value>& value) { observed = *value.value(); });
+    CHECK(cordis::detail::TaskAccess::completeSnapshot(promise, frozen));
+    CHECK(task.tryResult() == frozen && observed == 0 && !receipt.isReady());
+    CHECK(!promise.reject(makeError(ErrorCode::CallbackFailed, "late failure")));
+    CHECK(!cordis::detail::TaskAccess::completeSnapshot(promise, frozen));
+    CHECK(scheduler->runUntilIdle().hasValue());
+    CHECK(receipt.tryResult()->hasValue() && observed == 42);
+    Promise<int> missing;
+    CHECK(cordis::detail::TaskAccess::completeSnapshot(missing, {}));
+    CHECK(missing.task().tryResult()->error().code == ErrorCode::InvalidArgument);
+    Promise<void> failed;
+    auto error = std::make_shared<const Result<void>>(Result<void>::failure(makeError(ErrorCode::CleanupFailed, "exit")));
+    CHECK(cordis::detail::TaskAccess::completeSnapshot(failed, error));
+    CHECK(failed.task().tryResult() == error);
+}
+
 /**
  * @brief 根据测试名称运行单个 W1 单元测试。
  * @param argc 命令行参数数量。
@@ -546,6 +571,7 @@ int main(int argc, char** argv)
         {"task_broken_promise", taskBrokenPromise}, {"task_receipt_chain", taskReceiptChain},
         {"task_invalid_observer", taskInvalidObserver}, {"cancellation_independent", cancellationIndependent},
         {"task_producer_copies", taskProducerCopies}, {"task_throwing_scheduler", taskThrowingScheduler},
+        {"task_snapshot_forwarding", taskSnapshotForwarding},
         {"scheduler_close_race", schedulerCloseRace}, {"scheduler_close_reentrant", schedulerCloseReentrant},
         {"scheduler_callable_reentry", schedulerCallableReentry}, {"scheduler_destructor_guard", schedulerDestructorGuard}
     };

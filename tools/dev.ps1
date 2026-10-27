@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 运行 Cordis 项目的配置、构建、测试或完整验证流程。
 
@@ -13,6 +13,9 @@
 
 .PARAMETER QtRoot
 Qt 5.15.2 kit 根目录；Qt/Ela 预设使用，默认读取 CORDIS_QT5152_ROOT。
+
+.PARAMETER ShowIncludesPrefix
+MSVC 依赖输出前缀；默认读取进程变量，用于编码无法自动识别的终端。
 #>
 [CmdletBinding()]
 param(
@@ -20,7 +23,8 @@ param(
     [string]$Action = 'verify',
     [ValidateSet('core-gcc-debug', 'core-gcc-release', 'core-msvc-debug', 'core-msvc-release', 'qt-msvc-debug', 'qt-msvc-release', 'ela-msvc-debug', 'ela-msvc-release')]
     [string]$Preset = 'core-gcc-debug',
-    [string]$QtRoot = $env:CORDIS_QT5152_ROOT
+    [string]$QtRoot = $env:CORDIS_QT5152_ROOT,
+    [string]$ShowIncludesPrefix = $env:CORDIS_MSVC_SHOWINCLUDES_PREFIX
 )
 
 $ErrorActionPreference = 'Stop'
@@ -64,8 +68,17 @@ function Find-CMake {
 外部程序返回非零退出码时抛出错误。
 #>
 function Invoke-Checked([string]$Executable, [string[]]$Arguments) {
-    & $Executable @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "Command failed with exit code $LASTEXITCODE : $Executable" }
+    # Windows PowerShell 将重定向的 stderr 包装为错误记录，警告不能代替进程退出码。
+    $taskInvocationPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $Executable @Arguments
+        $taskExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $taskInvocationPreference
+    }
+    if ($taskExitCode -ne 0) { throw "Command failed with exit code $taskExitCode : $Executable" }
 }
 
 $taskOriginalPath = $env:PATH
@@ -99,7 +112,11 @@ try {
         Write-Output 'Qt target: exactly 5.15.2; doctor does not certify installed Qt compatibility.'
     }
     if ($Action -in @('configure', 'verify')) {
-        Invoke-Checked $taskCmake @('--preset', $Preset)
+        $taskConfigureArguments = @('--preset', $Preset)
+        if ($Preset.Contains('msvc') -and $ShowIncludesPrefix) {
+            $taskConfigureArguments += "-DCORDIS_MSVC_SHOWINCLUDES_PREFIX=$ShowIncludesPrefix"
+        }
+        Invoke-Checked $taskCmake $taskConfigureArguments
     }
     if ($Action -in @('build', 'verify')) {
         Invoke-Checked $taskCmake @('--build', '--preset', $Preset)

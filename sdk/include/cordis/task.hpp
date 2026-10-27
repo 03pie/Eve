@@ -144,6 +144,7 @@ public:
     }
 
 private:
+    friend struct detail::TaskAccess;
     std::shared_ptr<detail::Producer<T>> producer_;
 };
 
@@ -192,6 +193,15 @@ namespace detail {
  * 此接口不得用于调用插件或用户回调。
  */
 struct TaskAccess {
+    /** @brief 宿主转发已冻结结果；不复制或移动业务值，沿用完成仲裁及观察者协议。
+     * @param result 非空不可变快照，发布后由任务及调用方共同管理其数据寿命。
+     */
+    template <class T> static bool completeSnapshot(const Promise<T>& promise, typename Task<T>::Snapshot result)
+    {
+        if (!result)
+            return promise.reject(makeError(ErrorCode::InvalidArgument, "task result snapshot is empty"));
+        return promise.producer_->state->finish(std::move(result));
+    }
     /** @brief 宿主识别同一任务状态，用于拒绝资源回调直接返回自身关闭屏障的等待环。 */
     template <class T> static bool sameTask(const Task<T>& left, const Task<T>& right) noexcept
     {

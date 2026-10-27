@@ -12,6 +12,7 @@
 #include <cordis/qt/clock.hpp>
 #include <cordis/qt/connection.hpp>
 #include <cordis/qt/worker.hpp>
+#include <cordis/qt/value_worker.hpp>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -651,6 +652,191 @@ void applicationExit(std::unique_ptr<QCoreApplication>& app, bool quit)
     CHECK(joined == WAIT_OBJECT_0);
     CHECK(!scene.worker->snapshot().value().joined && !weak.expired());
 }
+/** @brief 不可复制数据禁止在 owner 移动，验证发布只转移快照而不执行结果构造代码。 */
+struct FrozenData {
+    std::thread::id owner;
+    std::unique_ptr<int> number;
+    bool throwOnMove = false;
+    /** @brief 值只在 worker 构造，owner 标识仅用于检测非法后续移动。 */
+    FrozenData(std::thread::id ownerThread, int value) : owner(ownerThread), number(std::make_unique<int>(value)) {}
+    /** @brief 任意 owner 移动或显式注入的冻结失败都抛错。 */
+    FrozenData(FrozenData&& other) : owner(other.owner)
+    {
+        if (std::this_thread::get_id() == owner || other.throwOnMove)
+            throw std::runtime_error("result moved outside freeze boundary");
+        number = std::move(other.number);
+    }
+    /** @brief 不允许通过复制绕过不可变快照传递。 */
+    FrozenData(const FrozenData&) = delete;
+};
+/** @brief 不可复制结果通过共享快照交付，延续能使用已完成退役后的当前 Context。 */
+void typedValue()
+{
+    Scene scene;
+    const auto owner = std::this_thread::get_id();
+    auto value = QtValueWorker<FrozenData>::start(*scene.context, scene.scheduler, [owner](WorkerCancellation) {
+        return Result<FrozenData>::success(FrozenData(owner, 42));
+    }).value();
+    bool delivered = false;
+    auto continuation = value.result().thenOn(scene.scheduler, [&](const Result<FrozenData>& result) {
+        CHECK(result.hasValue() && *result.value().number == 42);
+        CHECK(scene.context->identity().hasValue());
+        const auto state = value.snapshot().value();
+        CHECK(state.joined && state.capturesReleased && state.hostDestroyed && state.retired);
+        delivered = true;
+    });
+    wait(continuation);
+    CHECK(delivered);
+    scene.close();
+    CHECK(*value.result().tryResult()->value().number == 42);
+}
+/** @brief 冻结结果时的移动异常转换为业务失败，不留下永不完成的数据任务。 */
+void typedFreezeFailure()
+{
+    Scene scene;
+    const auto owner = std::this_thread::get_id();
+    auto value = QtValueWorker<FrozenData>::start(*scene.context, scene.scheduler, [owner](WorkerCancellation) {
+        auto result = Result<FrozenData>::success(FrozenData(owner, 42));
+        result.value().throwOnMove = true;
+        return result;
+    }).value();
+    until([&] { return value.result().isReady(); });
+    CHECK(!value.result().tryResult()->hasValue());
+    CHECK(value.result().tryResult()->error().code == ErrorCode::CallbackFailed);
+    wait(value.close());
+    scene.close();
+}
+/** @brief 冻结的数据已经构造但 TLS 仍在析构时，不发布数据或成功关闭。 */
+void typedTls()
+{
+    Scene scene;
+    auto gate = std::make_shared<Gate>();
+    Release release{gate};
+    auto value = QtValueWorker<std::string>::start(*scene.context, scene.scheduler, [gate](WorkerCancellation) {
+        thread_local Tail tail;
+        tail.gate = gate;
+        return Result<std::string>::success("after TLS");
+    }).value();
+    wait(value.ready());
+    gate->waitEntered();
+    const auto state = value.snapshot().value();
+    CHECK(state.bodyReturned && !state.joined && !value.result().isReady());
+    gate->release();
+    wait(value.result());
+    CHECK(value.result().tryResult()->value() == "after TLS");
+    scene.close();
+}
+/** @brief 本地取消或旧代更新都覆盖后台返回的成功数据，且等待真实原生退出。 */
+void typedCancel(bool update)
+{
+    Scene scene;
+    auto gate = std::make_shared<Gate>();
+    Release release{gate};
+    auto value = QtValueWorker<int>::start(*scene.context, scene.scheduler, [gate](WorkerCancellation) {
+        gate->block();
+        return Result<int>::success(42);
+    }).value();
+    wait(value.ready());
+    gate->waitEntered();
+    std::optional<Task<StableReport>> target;
+    if (update) {
+        auto operation = scene.instance->update("new", scene.instance->snapshot().value().revision).value();
+        target.emplace(scene.instance->awaitTarget(operation));
+        CHECK(!target->isReady());
+    } else {
+        CHECK(value.requestCancel());
+        CHECK(!value.requestCancel());
+    }
+    CHECK(!value.result().isReady());
+    gate->release();
+    until([&] { return value.result().isReady(); });
+    CHECK(!value.result().tryResult()->hasValue());
+    if (target)
+        wait(*target);
+    else
+        CHECK(value.result().tryResult()->error().code == ErrorCode::OperationCancelled);
+    wait(value.close());
+    scene.close();
+}
+/** @brief 类型化失败与抛错均完成业务任务，已排空资源仍可正常关闭。 */
+void typedFailure(bool throws)
+{
+    Scene scene;
+    auto value = QtValueWorker<int>::start(*scene.context, scene.scheduler, [throws](WorkerCancellation) -> Result<int> {
+        if (throws)
+            throw std::runtime_error("typed body");
+        return Result<int>::failure(makeError(ErrorCode::InvalidArgument, "typed error"));
+    }).value();
+    until([&] { return value.result().isReady(); });
+    const auto result = value.result().tryResult();
+    CHECK(!result->hasValue());
+    CHECK(result->error().code == (throws ? ErrorCode::CallbackFailed : ErrorCode::InvalidArgument));
+    wait(value.close());
+    scene.close();
+}
+/** @brief facade 释放不取消工作；单独保留的 Task 在 Kernel 关闭后仍拥有数据。 */
+void typedDropped()
+{
+    Scene scene;
+    auto gate = std::make_shared<Gate>();
+    Release release{gate};
+    using ValueWorker = QtValueWorker<std::unique_ptr<int>>;
+    std::optional<ValueWorker> value(ValueWorker::start(*scene.context, scene.scheduler, [gate](WorkerCancellation) {
+        gate->block();
+        return Result<std::unique_ptr<int>>::success(std::make_unique<int>(73));
+    }).value());
+    auto result = value->result();
+    wait(value->ready());
+    gate->waitEntered();
+    value.reset();
+    gate->release();
+    wait(result);
+    scene.close();
+    CHECK(*result.tryResult()->value() == 73);
+}
+/** @brief scheduler 提前关闭时类型化任务也必须失败终结，资源退出另行确认。 */
+void typedDelivery()
+{
+    Scene scene;
+    auto gate = std::make_shared<Gate>();
+    Release release{gate};
+    auto value = QtValueWorker<int>::start(*scene.context, scene.scheduler, [gate](WorkerCancellation) {
+        gate->block();
+        return Result<int>::success(42);
+    }).value();
+    wait(value.ready());
+    gate->waitEntered();
+    scene.scheduler->close().value();
+    gate->release();
+    until([&] { return value.result().isReady(); });
+    CHECK(!value.result().tryResult()->hasValue());
+    wait(value.close());
+    CHECK(value.snapshot().value().joined && value.snapshot().value().retirementBlocked);
+}
+/** @brief 协议失败可先拒绝数据任务；后台后续写入仍有保留所有权，不发生并发读取。 */
+void typedApplicationExit(std::unique_ptr<QCoreApplication>& app)
+{
+    Scene scene;
+    auto gate = std::make_shared<Gate>();
+    Release release{gate};
+    auto id = std::make_shared<std::atomic<DWORD>>(0);
+    auto value = QtValueWorker<std::unique_ptr<int>>::start(*scene.context, scene.scheduler, [gate, id](WorkerCancellation) {
+        id->store(GetCurrentThreadId());
+        gate->block();
+        return Result<std::unique_ptr<int>>::success(std::make_unique<int>(42));
+    }).value();
+    wait(value.ready());
+    gate->waitEntered();
+    HANDLE native = OpenThread(SYNCHRONIZE, FALSE, id->load());
+    CHECK(native);
+    app.reset();
+    CHECK(value.result().isReady() && !value.result().tryResult()->hasValue());
+    CHECK(value.snapshot().value().quarantined && !value.snapshot().value().joined);
+    gate->release();
+    const auto joined = WaitForSingleObject(native, 5000);
+    CloseHandle(native);
+    CHECK(joined == WAIT_OBJECT_0 && !value.result().tryResult()->hasValue());
+}
 /** @brief 每项使用独立 Qt 应用，异常退出场景显式控制应用销毁时机。 */
 int main(int argc, char** argv)
 {
@@ -700,6 +886,26 @@ int main(int argc, char** argv)
             applicationExit(app, false);
         else if (name == "application_quit")
             applicationExit(app, true);
+        else if (name == "typed_value")
+            typedValue();
+        else if (name == "typed_tls")
+            typedTls();
+        else if (name == "typed_cancel")
+            typedCancel(false);
+        else if (name == "typed_epoch")
+            typedCancel(true);
+        else if (name == "typed_failure")
+            typedFailure(false);
+        else if (name == "typed_exception")
+            typedFailure(true);
+        else if (name == "typed_dropped")
+            typedDropped();
+        else if (name == "typed_delivery")
+            typedDelivery();
+        else if (name == "typed_application_exit")
+            typedApplicationExit(app);
+        else if (name == "typed_freeze_failure")
+            typedFreezeFailure();
         else
             return EXIT_FAILURE;
         return EXIT_SUCCESS;

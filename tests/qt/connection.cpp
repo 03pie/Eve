@@ -17,10 +17,12 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 using namespace cordis;
 using namespace cordis::qt;
 #define CHECK(x)                                                                                                       \
@@ -52,12 +54,20 @@ public:
 Q_SIGNALS:
     /** @brief 带引用负载的测试信号，适配器必须忽略参数。 */
     void tick(const Payload& payload);
+    /** @brief 不注册元类型的标准值与 Qt 字符串信号。 */
+    void values(const QString& text, const QByteArray& bytes, const std::string& standard, int number);
+    /** @brief 标量信号用于预算、取消和并发场景。 */
+    void scalar(int number);
+    /** @brief 验证 const 信号与枚举/浮点数据。 */
+    void qualified(bool flag, double number, Qt::ConnectionType kind) const;
+    /** @brief 无数据的类型化入口仍可作为触发器。 */
+    void ping();
 
 protected:
     /** @brief 一次性模拟连接建立期间的宿主停止，不在 Qt 内部锁中泵送事件。 */
     void connectNotify(const QMetaMethod& signal) override
     {
-        if (signal.name() == "tick") {
+        if (signal.name() == "tick" || signal.name() == "scalar") {
             auto hook = std::exchange(connecting, {});
             if (hook)
                 hook();
@@ -66,7 +76,7 @@ protected:
     /** @brief 断连通知仅重入宿主关闭，不在 Qt 通知中主动泵送事件。 */
     void disconnectNotify(const QMetaMethod& signal) override
     {
-        if (signal.name() == "tick") {
+        if (signal.name() == "tick" || signal.name() == "scalar") {
             auto hook = std::exchange(disconnecting, {});
             if (hook)
                 hook();
@@ -170,6 +180,18 @@ struct Scene {
             };
         auto value = QtConnection::observe(*context, scheduler, source.get(), &Source::tick, std::move(callback),
                                            "test.connection", limit);
+        CHECK(value.hasValue());
+        connection.emplace(value.value());
+        wait(connection->ready());
+    }
+    /** @brief 类型化资源使用与零参数连接相同的 Kernel/effect 和关闭检查。 */
+    template <class Signal, class Callback>
+    void connectValues(Signal signal, Callback callback, std::size_t limit = 256, std::size_t bytes = 1024 * 1024)
+    {
+        auto value = QtConnection::observeValues(*context, scheduler, source.get(), signal, std::move(callback),
+                                                 "test.values", limit, bytes);
+        if (!value.hasValue())
+            std::cerr << "typed connection registration: " << value.error().message << '\n';
         CHECK(value.hasValue());
         connection.emplace(value.value());
         wait(connection->ready());
@@ -503,6 +525,318 @@ void cancelledDelivery()
     auto core = scene.kernel->close();
     CHECK(!core.isReady() || !core.tryResult()->hasValue() || !core.tryResult()->value().quiescent);
 }
+/** @brief 借用 Qt 缓冲区与标准字符串在发射后立即失效，owner 仍收到独立完整数据。 */
+void typedFreeze()
+{
+    static_assert(cordis::qt::detail::signalValue<QString> && cordis::qt::detail::signalValue<QByteArray> &&
+                  cordis::qt::detail::signalValue<std::string>);
+    static_assert(!cordis::qt::detail::signalValue<Payload> && !cordis::qt::detail::signalValue<QObject*> &&
+                  !cordis::qt::detail::signalValue<const char*>);
+    Scene scene;
+    scene.connectValues(&Source::values, [&](const QString& text, const QByteArray& bytes, const std::string& standard,
+                                             int number) {
+        CHECK(scene.scheduler->isCurrentThread());
+        CHECK(text.size() == 3 && text.at(0) == QChar('A') && text.at(1).isNull() && text.at(2) == QChar('B'));
+        CHECK(bytes == QByteArray("C\0D", 3) && standard == std::string("E\0F", 3) && number == 42);
+        ++scene.calls;
+        return completedTask();
+    });
+    std::thread worker([&] {
+        QChar characters[] = {QChar('A'), QChar(0), QChar('B')};
+        char raw[] = {'C', 0, 'D'};
+        auto text = QString::fromRawData(characters, 3);
+        auto bytes = QByteArray::fromRawData(raw, 3);
+        std::string standard("E\0F", 3);
+        Q_EMIT scene.source->values(text, bytes, standard, 42);
+        characters[0] = QChar('X');
+        raw[0] = 'Y';
+        standard[0] = 'Z';
+    });
+    worker.join();
+    CHECK(scene.calls == 0 && scene.connection->snapshot().value().payloads == 1);
+    until([&] { return scene.calls == 1 && scene.connection->snapshot().value().payloads == 0; });
+    scene.close();
+}
+/** @brief 回调返回后其异步任务仍可读取参数；关闭不得提前释放参数存储。 */
+void typedAsync()
+{
+    Scene scene;
+    Promise<void> gate;
+    const int* borrowed = nullptr;
+    scene.connectValues(&Source::scalar, [&](const int& number) {
+        borrowed = &number;
+        ++scene.calls;
+        return gate.task();
+    });
+    Q_EMIT scene.source->scalar(73);
+    until([&] { return scene.connection->snapshot().value().running == 1; });
+    auto closed = scene.connection->close();
+    QCoreApplication::processEvents();
+    CHECK(!closed.isReady() && borrowed && *borrowed == 73 && scene.connection->snapshot().value().payloads == 1);
+    std::thread completer([gate] { gate.resolve(); });
+    completer.join();
+    wait(closed);
+    CHECK(scene.connection->snapshot().value().payloads == 0);
+    scene.close();
+}
+/** @brief 已取消的类型化通知只留下空宿主消息，scheduler 关闭也不误报业务投递失败。 */
+void typedCancelled()
+{
+    Scene scene;
+    scene.connectValues(&Source::scalar, [&](int) { ++scene.calls; return completedTask(); });
+    Q_EMIT scene.source->scalar(42);
+    auto closed = scene.connection->close();
+    scene.scheduler->close().value();
+    wait(closed);
+    const auto state = scene.connection->snapshot().value();
+    CHECK(scene.calls == 0 && state.payloads == 0 && state.discarded == 1 && !state.deliveryBlocked);
+}
+/** @brief 旧代未进入的参数被撤销，新代资源只收到自己的数据。 */
+void typedEpochs()
+{
+    Scene scene;
+    auto callback = [&](int number) { scene.calls += number; return completedTask(); };
+    scene.connectValues(&Source::scalar, callback);
+    auto previous = *scene.connection;
+    Q_EMIT scene.source->scalar(100);
+    auto operation = scene.instance->update("new", scene.instance->snapshot().value().revision).value();
+    wait(scene.instance->awaitTarget(operation));
+    CHECK(scene.calls == 0 && previous.snapshot().value().closed && previous.snapshot().value().payloads == 0);
+    scene.connectValues(&Source::scalar, callback);
+    Q_EMIT scene.source->scalar(2);
+    until([&] { return scene.calls == 2; });
+    scene.close();
+}
+/** @brief 排队和在途业务共同占预算，异步工作完成后才释放可用容量。 */
+void typedCapacity()
+{
+    Scene scene;
+    Promise<void> gate;
+    scene.connectValues(&Source::scalar, [&](int number) {
+        ++scene.calls;
+        return number < 3 ? gate.task() : completedTask();
+    }, 2);
+    Q_EMIT scene.source->scalar(1);
+    Q_EMIT scene.source->scalar(2);
+    Q_EMIT scene.source->scalar(3);
+    CHECK(scene.connection->snapshot().value().accepted == 2 && scene.connection->snapshot().value().rejected == 1);
+    until([&] { return scene.connection->snapshot().value().running == 2; });
+    Q_EMIT scene.source->scalar(4);
+    CHECK(scene.connection->snapshot().value().rejected == 2);
+    gate.resolve();
+    until([&] { return scene.connection->snapshot().value().payloads == 0; });
+    Q_EMIT scene.source->scalar(5);
+    until([&] { return scene.calls == 3; });
+    scene.close();
+}
+/** @brief 内容字节预算计算所有参数；超额不进入业务，下一份合法数据仍可投递。 */
+void typedBytes()
+{
+    Scene scene;
+    scene.connectValues(&Source::values, [&](const QString&, const QByteArray&, const std::string&, int) {
+        ++scene.calls;
+        return completedTask();
+    }, 2, 12);
+    Q_EMIT scene.source->values(QStringLiteral("ab"), QByteArray("cde"), std::string("fg"), 1);
+    until([&] { return scene.connection->snapshot().value().payloadErrors == 1; });
+    CHECK(scene.calls == 0 && scene.connection->snapshot().value().lastError->code == ErrorCode::InvalidArgument);
+    Q_EMIT scene.source->values(QString(), QByteArray(), std::string(), 2);
+    until([&] { return scene.calls == 1; });
+    scene.close();
+}
+/** @brief 冻结保留 null 与非 null 空字符串的区别，不将空值误当作关闭票据。 */
+void typedNull()
+{
+    Scene scene;
+    scene.connectValues(&Source::values, [&](const QString& text, const QByteArray& bytes, const std::string& standard,
+                                             int number) {
+        CHECK(text.isEmpty() && bytes.isEmpty() && standard.empty());
+        CHECK(text.isNull() == (number == 0) && bytes.isNull() == (number == 0));
+        ++scene.calls;
+        return completedTask();
+    });
+    Q_EMIT scene.source->values(QString(), QByteArray(), std::string(), 0);
+    Q_EMIT scene.source->values(QStringLiteral(""), QByteArray(""), std::string(), 1);
+    until([&] { return scene.calls == 2; });
+    scene.close();
+}
+/** @brief 发送者销毁不会撤销已进入异步业务所使用的数据；facade 丢弃也不取消资源。 */
+void typedSender()
+{
+    Scene scene;
+    Promise<void> gate;
+    const int* value = nullptr;
+    scene.connectValues(&Source::scalar, [&](const int& number) { value = &number; return gate.task(); });
+    Q_EMIT scene.source->scalar(42);
+    until([&] { return value != nullptr; });
+    auto connection = *scene.connection;
+    scene.connection.reset();
+    scene.source.reset();
+    QCoreApplication::processEvents();
+    CHECK(!connection.snapshot().value().closed && *value == 42 && connection.snapshot().value().payloads == 1);
+    gate.resolve();
+    until([&] { return connection.snapshot().value().closed; });
+    CHECK(connection.snapshot().value().payloads == 0);
+    scene.close();
+}
+/** @brief 业务抛错、失败任务和直接关闭等待环均计账，数据最终排空而不挂起。 */
+void typedErrors()
+{
+    Scene scene;
+    scene.connectValues(&Source::scalar, [&](int number) -> Task<void> {
+        if (number == 1)
+            throw std::runtime_error("typed callback");
+        if (number == 2)
+            return failedTask(makeError(ErrorCode::CallbackFailed, "typed task"));
+        return scene.connection->close();
+    });
+    Q_EMIT scene.source->scalar(1);
+    Q_EMIT scene.source->scalar(2);
+    Q_EMIT scene.source->scalar(3);
+    until([&] { return scene.connection->snapshot().value().closed; });
+    auto state = scene.connection->snapshot().value();
+    CHECK(state.callbackErrors == 3 && state.payloads == 0 && state.lastError->code == ErrorCode::CleanupCycle);
+    scene.close();
+}
+/** @brief 多个发射线程的独立数值全部到达 owner，无重复、丢失或 Qt 元类型注册。 */
+void typedThreads()
+{
+    Scene scene;
+    std::set<int> observed;
+    scene.connectValues(&Source::scalar, [&](int number) {
+        CHECK(scene.scheduler->isCurrentThread() && observed.insert(number).second);
+        return completedTask();
+    }, 512);
+    std::vector<std::thread> producers;
+    for (int producer = 0; producer < 4; ++producer)
+        producers.emplace_back([&, producer] {
+            for (int number = 0; number < 64; ++number)
+                Q_EMIT scene.source->scalar(producer * 64 + number);
+        });
+    for (auto& producer : producers)
+        producer.join();
+    until([&] { return observed.size() == 256 && scene.connection->snapshot().value().payloads == 0; });
+    CHECK(scene.connection->snapshot().value().rejected == 0);
+    scene.close();
+}
+/** @brief 类型化注册沿用 owner/预算/回调门禁，以及 connectNotify 重入停止的关闭屏障。 */
+void typedGuards()
+{
+    Scene scene;
+    const auto callback = [](int) { return completedTask(); };
+    CHECK(!QtConnection::observeValues(*scene.context, scene.scheduler, static_cast<Source*>(nullptr),
+                                       &Source::scalar, callback).hasValue());
+    CHECK(!QtConnection::observeValues(*scene.context, scene.scheduler, scene.source.get(),
+                                       &Source::scalar, std::function<Task<void>(const int&)>{}).hasValue());
+    for (auto bytes : {std::size_t{0}, std::size_t{16 * 1024 * 1024 + 1}})
+        CHECK(!QtConnection::observeValues(*scene.context, scene.scheduler, scene.source.get(),
+                                           &Source::scalar, callback, "invalid", 256, bytes).hasValue());
+    bool wrong = false;
+    std::thread worker([&] {
+        auto result = QtConnection::observeValues(*scene.context, scene.scheduler, scene.source.get(),
+                                                  &Source::scalar, callback);
+        wrong = !result.hasValue() && result.error().code == ErrorCode::WrongThread;
+    });
+    worker.join();
+    CHECK(wrong);
+    std::optional<Task<CleanupReport>> closed;
+    scene.source->connecting = [&] { closed.emplace(scene.kernel->close()); };
+    CHECK(!QtConnection::observeValues(*scene.context, scene.scheduler, scene.source.get(),
+                                       &Source::scalar, callback).hasValue());
+    CHECK(closed.has_value());
+    wait(*closed);
+    scene.close();
+}
+/** @brief 无参数、const 信号及浮点/枚举白名单都可经过同一类型化入口。 */
+void typedQualified()
+{
+    Scene scene;
+    scene.connectValues(&Source::qualified, [&](bool flag, double number, Qt::ConnectionType kind) {
+        CHECK(flag && number == 1.5 && kind == Qt::DirectConnection);
+        ++scene.calls;
+        return completedTask();
+    });
+    Q_EMIT scene.source->qualified(true, 1.5, Qt::DirectConnection);
+    until([&] { return scene.calls == 1; });
+    wait(scene.connection->close());
+    until([&] { return scene.context->identity().hasValue(); });
+    scene.connectValues(&Source::ping, [&] { ++scene.calls; return completedTask(); });
+    Q_EMIT scene.source->ping();
+    until([&] { return scene.calls == 2; });
+    scene.close();
+}
+/** @brief 关闭仍等待原生调用快照；撤销的数据在 owner 排空，不执行已取消回调。 */
+void typedSnapshot()
+{
+    Scene scene;
+    scene.connectValues(&Source::scalar, [&](int) { ++scene.calls; return completedTask(); });
+    auto gate = std::make_shared<Gate>();
+    auto raw = QObject::connect(scene.source.get(), &Source::scalar, scene.source.get(),
+                                [gate] { gate->block(); }, Qt::DirectConnection);
+    std::thread producer([&] { Q_EMIT scene.source->scalar(42); });
+    struct Join {
+        std::shared_ptr<Gate> gate;
+        std::thread& producer;
+        /** @brief 即使断言失败，也不让测试留下等待中的发射线程。 */
+        ~Join() { gate->release(); if (producer.joinable()) producer.join(); }
+    } join{gate, producer};
+    gate->waitEntered();
+    auto closed = scene.connection->close();
+    CHECK(!closed.isReady() && scene.connection->snapshot().value().payloads == 0);
+    gate->release();
+    producer.join();
+    QObject::disconnect(raw);
+    wait(closed);
+    CHECK(scene.calls == 0 && scene.connection->snapshot().value().nativeRetired);
+    scene.close();
+}
+/** @brief owner 关闭与持续跨线程深拷贝竞争，所有已接受数据最终释放。 */
+void typedConcurrentClose()
+{
+    Scene scene;
+    std::atomic_int emitted{0};
+    scene.connectValues(&Source::values, [&](const QString&, const QByteArray& bytes, const std::string&, int) {
+        CHECK(bytes.size() == 64 * 1024);
+        return completedTask();
+    });
+    std::thread producer([&] {
+        const QByteArray bytes(64 * 1024, 'x');
+        for (int i = 0; i < 256; ++i) {
+            Q_EMIT scene.source->values(QStringLiteral("race"), bytes, std::string(), i);
+            ++emitted;
+        }
+    });
+    struct Join {
+        std::thread& producer;
+        /** @brief 持有发送者直到发射线程真实返回，不把资源关闭等同于线程 join。 */
+        ~Join() { if (producer.joinable()) producer.join(); }
+    } join{producer};
+    until([&] { return emitted.load() > 0; });
+    auto closed = scene.connection->close();
+    producer.join();
+    wait(closed);
+    auto state = scene.connection->snapshot().value();
+    CHECK(state.payloads == 0 && state.nativeRetired && !state.deliveryBlocked);
+    scene.close();
+}
+/** @brief 应用过早退出时，拒绝资源证明并保留仍被异步业务使用的数据。 */
+void typedApplicationQuit()
+{
+    Scene scene;
+    Promise<void> gate;
+    const int* value = nullptr;
+    scene.connectValues(&Source::scalar, [&](const int& number) { value = &number; return gate.task(); });
+    Q_EMIT scene.source->scalar(42);
+    until([&] { return value != nullptr; });
+    QTimer::singleShot(0, QCoreApplication::instance(), &QCoreApplication::quit);
+    QCoreApplication::exec();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    auto closed = scene.connection->close();
+    CHECK(closed.isReady() && !closed.tryResult()->hasValue());
+    CHECK(closed.tryResult()->error().code == ErrorCode::CleanupFailed);
+    CHECK(!scene.connection->snapshot().value().closed && scene.connection->snapshot().value().payloads == 1 && *value == 42);
+    gate.resolve();
+}
 /** @brief 每项真实 Qt 应用独立，避免全局信号或资源污染。 */
 int main(int argc, char** argv)
 {
@@ -542,6 +876,36 @@ int main(int argc, char** argv)
             schedulerClosed();
         else if (name == "registration")
             registration();
+        else if (name == "typed_freeze")
+            typedFreeze();
+        else if (name == "typed_async")
+            typedAsync();
+        else if (name == "typed_cancelled")
+            typedCancelled();
+        else if (name == "typed_epochs")
+            typedEpochs();
+        else if (name == "typed_capacity")
+            typedCapacity();
+        else if (name == "typed_bytes")
+            typedBytes();
+        else if (name == "typed_null")
+            typedNull();
+        else if (name == "typed_sender")
+            typedSender();
+        else if (name == "typed_errors")
+            typedErrors();
+        else if (name == "typed_threads")
+            typedThreads();
+        else if (name == "typed_guards")
+            typedGuards();
+        else if (name == "typed_qualified")
+            typedQualified();
+        else if (name == "typed_snapshot")
+            typedSnapshot();
+        else if (name == "typed_concurrent_close")
+            typedConcurrentClose();
+        else if (name == "typed_application_quit")
+            typedApplicationQuit();
         else
             return EXIT_FAILURE;
         return EXIT_SUCCESS;

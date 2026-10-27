@@ -1,6 +1,6 @@
 # P3 桌面适配开发记录
 
-最后更新：2026-10-26。状态：进行中；Q0–Q3c、Q4a/Q4b 校验、Q4c1 协调及 Q4d1/Q4d2 文件和 Store 已实现。此前工作台已获人工验收确认；Q4c2c2 已接内置配置子树，Q4e1 补齐配置会话与可选 Ela 配置工作台。Q4e1 已获用户人工确认；Q4e2 已接统一 Home/管理路由并获本次用户人工确认；Q4d3 已接配置专用后台 I/O、文件监听和显式载入，新增体验待复核；配置集成已提交为 64c0a4f。Q2c 已提交为 ef088eb；当前新增 Q2d 托管工作线程。
+最后更新：2026-10-27（北京时间）。状态：进行中（收口）；配置子树/会话/后台 I/O 与 Home/管理路由已实现并提交为 64c0a4f，Q4e1/Q4e2 已获用户确认。Q4d3 已原生代理复核，用户确认单独待办。环境恢复、Q2e 类型化 worker 结果和 Q2f 受限类型化 Qt 信号已完成审核，随本次提交归档；历史未提交记录按当时状态保留。原生模块 ABI/受控替换范围不变。
 
 ## 已安装与验证
 
@@ -792,6 +792,42 @@ worker.hpp 和 instance.hpp 在 GCC/MSVC C++17 独立包含通过，不需要 Qt
 
 本轮 Q2d 与审查修复随本次一并归档；此前未提交状态保留为历史。Q4d3 新增体验及其他资源/模块阶段仍按计划验证。
 
+## Q2e 类型化 worker 结果
+
+2026-10-26，在当前镜像恢复 Qt 5.15.2 qtbase 与 VS2022/v143 桌面环境，入口为 tools/desktop.ps1，安装位置及重复构建命令见 [开发环境](development.md)。修复 Windows PowerShell 对原生 stderr 的误判、UTF-8 无 BOM 中文注释吞行，以及缺少英文 MSVC 资源时依赖前缀不匹配的问题。对此前头文件依赖数为 0 的对象执行干净重建，修复后实际记录头文件依赖。入口使用隔离子进程加载开发环境，doctor 成功和缺少 kit 失败时调用方环境（包括空值变量）完全保持。
+
+新增 QtValueWorker<T>，在已有 QtWorker 上冻结并转发数据快照，支持不可复制数据，不在 owner 发布过程中移动/复制 T。普通业务错误、取消、旧代、冻结异常和退出协议失败都转为类型化任务失败；协议失败时不读取仍在运行的后台数据。结果快照允许比 Kernel 存活更久，其最终析构线程由最后一个持有者决定，不能当作模块资源或 GUI 所有权，见 [ADR-0025](adr/0025-typed-worker-results.md)。
+
+新增 10 项真实线程场景：不可复制结果/发布禁止移动、TLS 阻塞、本地取消、旧代更新、业务失败、抛错、冻结移动失败、facade 释放、scheduler 先关和应用先销毁。新增无 Qt 的 w1.task_snapshot_forwarding，验证不可复制快照身份、一次完成、观察者排队和空/失败快照。新示例 cordis_qt_value_worker_demo 输出 sum(1..100)=5050，确认 worker 与 Kernel 完整关闭后退出。
+
+最终 Ela/MSVC Debug、Release 各 401/401，GCC Debug、Release 各 209/209；MSVC ASan 插桩 Core、Qt 与 worker 测试/示例，worker 和任务快照专项 34/34。预编译 Qt/系统库未插桩。本轮日志为 build/value-worker-<debug|release>.log、build/value-worker-core-<debug|release>.log、build/value-worker-asan-final.log。GCC C++17 无 Qt include 路径独立实例化新头与不可复制工厂通过。
+
+11 项新数据场景与示例在 Debug、ASan 中各连续 20 次通过，日志为 build/value-worker-repeat-<debug|asan>.log。初次原生桌面访问授权超时，用户要求重试后恢复；文件改写/原子替换/删除重建、编辑保护、显式载入/冲突恢复、自身保存消重及进程 150% 明暗布局均完成代理复核。同步 desktop.ps1 run 验证退出刷新及真实原生退出码 0，无残留工作台进程，见 [复核记录](q4d3-desktop-verification.md)。用户人工确认仍单独待办。
+
+初次桌面环境基线为 Ela 各 389/389，随后各 398/399/400 项结果仅为新增场景过程记录，最终版本以上述矩阵为准。开发及新增场景尚未提交，P4/P5 和其他资源范围不变。
+
+## Q2f 类型化 Qt 信号连接
+
+2026-10-27，新增 QtConnection::observeValues，继续返回同一 QtConnection facade。按成员指针推导参数，只允许数值、枚举、std::string、QString、QByteArray；原生桥先保留票据，再检查内容字节预算并冻结数据。Qt 字符串强制独立拷贝，保留 null/空值和嵌入零字符，避免继续借用 fromRawData 缓冲区。详细范围见 [ADR-0026](adr/0026-typed-qt-connections.md)。
+
+ConnectionTicket 统一覆盖复制中、排队和在途阶段，pending/active 用 map 节点转移避免额外入口分配和预算空隙。参数由账目保留至回调栈及 Task 完成；取消只做标记，owner 在锁外释放数据。原生消息和丢弃回调不持有数据。应用先退出仍拒绝资源证明并保留未知状态，不把错误终结解释为可卸载。新增 payloads/payloadErrors 诊断区分数据保留和业务错误。
+
+15 项真实 Qt 检查覆盖 raw-data 深拷贝、异步引用窗口、取消、旧代、条数/字节预算、null/空值、发送者/facade、错误/直接等待环、并发发射、门禁/注册重入、const/无参数入口、原生快照、并发关闭和应用先退出。新 headless 示例 cordis_qt_value_connection_demo 在原缓冲区已修改/失效后异步消费 Qt / ok / 42，联合确认连接、时钟与 Kernel 关闭。
+
+初版 12 项专项中的 qualified 场景曾失败：独立资源 close 已完成，但 effect 清理窗口尚未退出，立即登记新资源被门禁拒绝。测试现等待 Context 恢复，不将物理资源回执当作 Core 退役确认。独立 GCC 头检查另发现空参数包下 fits 未使用的严格警告，改为只在存在参数时实例化预算计算。
+
+最终 Ela/MSVC Debug、Release 各 417/417，GCC Debug、Release 各 209/209；MSVC ASan 的 connection/worker/快照专项 67/67。16 项新信号检查及示例在 Debug、ASan 中各连续 20 次通过。日志为 build/typed-signal-<debug|release>.log、build/typed-signal-core-<debug|release>.log、build/typed-signal-asan.log 和 build/typed-signal-repeat-<debug|asan>.log；Core/Qt 与相关测试/示例插桩，Qt/系统预编译库未插桩。
+
+GCC/MSVC C++17 单独包含 connection.hpp 并实例化允许的工厂/const noexcept 类型通过，传入 QObject* 的工厂在两编译器都以 unsupported managed signal value type 拒绝，日志为 build/typed-signal-<header|reject>-<gcc|msvc>.log。这只是头/模板语法检查，不把 MSVC kit 头的 GCC 语法检查记为 Qt/GCC ABI 或运行验证。
+
+本轮不更改 UI，不更新此前原生验收结论；Q4d3 用户确认仍单独待办。受限值投递已完成，不把自定义 Qt 元类型、任意转换器或插件模块驻留视为本轮已实现。当前工作区全部增量尚未提交。
+
+## Q2e/Q2f 提交前审核
+
+2026-10-27，按用户要求审核全部工作区增量。修复信号数据在实际释放完成前就归还预算的问题；新增 Retirement 批次在锁内保留条数/数据账目、锁外析构后归还，覆盖正常 drain 与入口门禁失败路径，snapshot/关闭判定包含释放栈。私有控制块回归修复前实际失败，修复后两条路径通过；不为测试扩展公开可接受的数据类型或生产钩子。
+
+最终 Ela Debug/Release 各 418/418，GCC 各 209/209，ASan connection/worker/快照专项 68/68；17 项信号/释放预算检查及示例 Debug/ASan 各连续 20 次通过。环境成功/失败隔离及原生警告/退出码检查通过。同步 README 的旧 Qt 路径和直接示例入口；本轮变更随审核提交归档。完整证据与限制见 [审核记录](code-review.md#q2eq2f-与桌面环境增量提交前审核)。
+
 ## 后续工作
 
-配置专用 watcher/后台 I/O、零参数 Qt 触发连接及 Windows 一次工作线程已接入；类型化信号/工作数据、多任务与其他原生后端仍需各自验证。模块引用/驻留/卸载详情随 P4 接入，后续插件资源按各自集成场景补齐屏障。此分解不表示完成了原设计中任何尚未运行的 L/Q/U 场景。
+配置专用 watcher/后台 I/O、零参数及受限类型化 Qt 连接、Windows 一次工作线程与类型化结果已接入；Q4d3 已原生代理复核，用户人工确认待登记。P3 的完整验收及其他资源适配按集成场景收口；自定义信号类型、多任务与其他原生后端未由本轮覆盖。模块引用/驻留/卸载详情随 P4 接入。此分解不表示完成了原设计中任何尚未运行的 L/Q/U 场景。

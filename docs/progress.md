@@ -1,12 +1,18 @@
 # 开发进度
 
-最后更新：2026-10-26（北京时间）。当前工作区：`D:/01_C++/Eve`。
+最后更新：2026-10-27（北京时间）。当前工作区：`D:/WorkSpace/code/cpp/Eve`。
 
 本文件是项目进度的统一入口，记录实际状态；设计细节见说明书，任务完成条件见工作单，测试依据见验收规范和验证报告。代码行数、文档篇幅和测试数量不作为项目完成百分比。
 
 ## 当前状态
 
-**W0–W7 首阶段工作单已完成。P3 此前工作台已获用户原生桌面验收确认；Q4c2a/b 与 Home 已提交为 8befcbd，Q4c2c1 已提交为 02a2ed7。后续 Q4c2c2 内置配置子树、Q4e1 配置会话/可选 Ela 配置工作台、Q4e2 Home/管理路由及 Q4d3 配置后台 I/O/文件监听已实现，提交为 64c0a4f。Q2c 零参数托管 Qt 信号连接及审查修复已提交为 ef088eb。Q2d Windows 一次工作线程与审查修复已完成，随本次提交归档。Q4e1 和 Q4e2 已获用户人工确认；Q4d3 新增体验另待复核。**
+**W0–W7 首阶段工作单已完成。P3 此前工作台已获用户原生桌面验收确认；配置子树、会话、Home/管理路由及后台 I/O/监听已提交为 64c0a4f。Q2c 零参数连接为 ef088eb，Q2d Windows 一次 worker 为 145c6c1。环境恢复、Q2e 类型化 worker 结果及 Q2f 受限类型化 Qt 信号已完成提交前审核，随本次提交归档；修复释放批次提前归还预算的问题。Q4e1/Q4e2 已获用户确认，Q4d3 已原生代理复核，用户人工确认仍单独待办。P3 处于集成收口，P4/P5 未开始。**
+
+本轮提交前审核：Ela Debug/Release 各 418/418，GCC 各 209/209，ASan 专项 68/68；17 项信号/释放预算检查及示例 Debug/ASan 各连续 20 次通过。预算回归修复前真实失败、修复后通过；完整范围见 [审核记录](code-review.md#q2eq2f-与桌面环境增量提交前审核)。下文 401/417 等数量及未提交状态保留为各轮历史。
+
+本轮 Q2f：QtConnection::observeValues 冻结数值/枚举及标准/Qt 字符串，参数寿命覆盖业务栈和返回 Task；复制中的票据与待释放数据也受预算及关闭屏障管理。新增 15 项真实 Qt 场景和 1 项联合退出示例。Ela/MSVC Debug、Release 各 417/417，GCC Debug、Release 各 209/209；ASan connection/worker/快照专项 67/67，16 项新检查 Debug/ASan 各连续 20 次通过。GCC/MSVC C++17 独立头/工厂语法检查通过，QObject* 数据在两编译器均按预期拒绝；不作为 GCC/Qt 二进制组合验收。见 [Q2f 记录](p3-development.md#q2f-类型化-qt-信号连接)、[ADR-0026](adr/0026-typed-qt-connections.md)。
+
+本轮新增 Q2e：QtValueWorker<T> 将后台数据冻结为不可变快照，成功结果继承原生线程/TLS、捕获/宿主与 effect 退役门禁，支持不可复制类型；结果数据寿命与资源关闭分别管理。新增 10 项线程场景、1 项计算示例及 1 项无 Qt 快照单测。Ela Debug/Release 各 401/401，GCC Debug/Release 各 209/209，ASan worker/快照专项 34/34；新场景与示例 Debug/ASan 各连续 20 次通过，见 [Q2e 记录](p3-development.md#q2e-类型化-worker-结果)和 [ADR-0025](adr/0025-typed-worker-results.md)。环境入口为 tools/desktop.ps1。初次桌面授权超时后按用户要求重试成功，完成文件监听/冲突/退出及进程 150% 明暗布局的[原生代理复核](q4d3-desktop-verification.md)，未代填用户人工确认。
 
 本轮新增 Q2d：QtWorker 将一次后台工作纳入所属 Context/epoch，提供协作取消、Windows 原生线程/TLS 退出证明、owner 捕获释放与独立资源关闭屏障。审查后共 21 项场景及 1 项联合退出示例，修复自动退役干扰延续和暂态门禁错误过早保留；Ela Debug/Release 各 389/389，GCC 各 208/208，ASan 相关 236/236，22 项 worker 检查 Debug/ASan 各连续 20 次通过，见 [审查记录](code-review.md#p3-q2d-托管-worker-提交前审核)及 [开发记录](p3-development.md#q2d-托管工作线程)。
 
@@ -22,7 +28,7 @@
 
 后续按用户要求将 Home 卡片改为状态展示和单个左右滑动开关，移除卡片打开跳转及浮层；支持停止、以新身份加载和失败重试，尺寸改为宽 280、最低高 144。电源操作初版完整回归为原目录 Ela/MSVC Debug/Release 各 276/276、GCC 各 173/173，UI ASan 63/63 和 Core remount ASan 1/1；左右开关的定向复核另见 [Home 记录](p3-development.md#home-状态卡片与电源操作)。此前桌面验收确认保留，本次 Home 变更单独待人工复核，不重新阻塞已开始的 Q4 工作。
 
-Qt 5.15.2 Core/Widgets/Test 已就绪，路径与当前 MSVC 组合见 [P3 记录](p3-development.md)。QtScheduler、Timer/QObject、贡献服务及基础管理页已通过真实循环/offscreen 测试，原生桌面交互已按用户确认验收。配置后台 I/O/watcher 及配置页保存已有证据；零参数 connection 已接入；Windows 一次插件 worker 已接入并验证；类型化信号/工作数据、其他 worker 后端、模块管理及跨 ABI 仍待完成或验证。
+Qt 5.15.2 Core/Widgets/Test 已就绪，本机入口见 [开发环境](development.md)，历史工具链见 [P3 记录](p3-development.md)。配置后台 I/O/watcher、零参数连接、类型化信号值、Windows 一次 worker 及类型化结果已接入。P3 完整验收与其他资源适配仍按场景收口；任意自定义信号值、其他 worker 后端/多任务、模块管理及跨 ABI 未由本轮实现或证明。
 
 ## 状态规则
 
@@ -43,7 +49,7 @@ Qt 5.15.2 Core/Widgets/Test 已就绪，路径与当前 MSVC 组合见 [P3 记�
 | P0 研究、设计与编码准备 | 已完成（内核起步范围） | 设计说明书、契约、工程及环境检查齐备；桌面工具链在对应阶段前补齐 |
 | P1 内置插件与基础内核 | 已完成（首阶段内置范围） | W1–W3/W6/W7 与 A01–A10 内核证据；生产适配、全局事件 schema/post 另验 |
 | P2 响应式服务依赖 | 已完成（首阶段内置范围） | W4/W5/W7 联合闭环通过；跨 ABI、物理卸载及替换不在本轮 |
-| P3 Qt / Loader / Ela | 进行中 | Q0–Q3c 含此前人工验收、Q4a/Q4b 校验、Q4c1 协调、Q4c2 内置子树/动态依赖、Q4d1/Q4d2 文件/Store、Q4e1 会话/配置页、Q4e2 Home/管理路由及 Q4d3 配置 I/O/watcher 已实现；Q4e1/Q4e2 已获人工确认；Q2c 零参数托管 Qt 连接已接入，Q2d Windows 一次 worker 已实现并验证；新增 Q4d3 复核及其他资源适配待完成 |
+| P3 Qt / Loader / Ela | 进行中（收口） | 配置、Qt/Ela、零参数/受限类型化连接及 Windows worker/类型化结果已实现；此前工作台及 Q4e1/Q4e2 已确认；Q4d3 已原生代理复核，用户确认与完整验收仍待收口 |
 | P4 原生插件模块 | 未开始 | ABI、ModuleManager 和驻留账目待实现 |
 | P5 受控替换 | 未开始 | 新旧代替换、恢复和卸载专项验证待实现 |
 
@@ -126,6 +132,9 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | Q2c 提交前审查 | 2026-10-26 | Ela Debug/Release 各 367/367，GCC 各 208/208，ASan 214/214；新增两项连接回归修复前 0/2、修复后专项 17/17，Home 失效指针诊断确认并修正 | [审查记录](code-review.md#p3-q2c-托管-qt-连接提交前审核) |
 | P3 Q2d 托管工作线程 | 2026-10-26 | Ela Debug/Release 各 385/385，GCC 各 208/208，ASan 相关 232/232；Qt-only 18/18，worker 检查 Debug/ASan 各连续 20 次通过 | [开发记录](p3-development.md#q2d-托管工作线程)、[ADR-0024](adr/0024-managed-workers.md) |
 | Q2d 提交前审查 | 2026-10-26 | Ela Debug/Release 各 389/389，GCC 各 208/208，ASan 236/236；worker 专项 22/22，Debug/ASan 各连续 20 次通过；新增三项门禁回归真实失败后修正 | [审查记录](code-review.md#p3-q2d-托管-worker-提交前审核) |
+| 本机桌面环境恢复及 Q2e 类型化 worker | 2026-10-26 | Ela Debug/Release 各 401/401，GCC Debug/Release 各 209/209；ASan worker/快照专项 34/34，新场景 Debug/ASan 各重复 20 次；Q4d3 原生代理复核及退出码 0 | [开发环境](development.md)、[Q2e](p3-development.md#q2e-类型化-worker-结果)、[桌面复核](q4d3-desktop-verification.md)；未提交，未补记用户人工确认 |
+| Q2f 类型化 Qt 信号 | 2026-10-27 | Ela Debug/Release 各 417/417，GCC 各 209/209；ASan 专项 67/67，新 16 项检查 Debug/ASan 各重复 20 次；编译期拒绝指针值 | [Q2f](p3-development.md#q2f-类型化-qt-信号连接)、[ADR-0026](adr/0026-typed-qt-connections.md)；未提交，未改变 P4/P5 状态 |
+| Q2e/Q2f 增量提交前审核 | 2026-10-27 | 修复释放中数据预算提前归还；Ela 各 418/418、GCC 各 209/209、ASan 专项 68/68，17 项 Debug/ASan 各重复 20 次 | [审核记录](code-review.md#q2eq2f-与桌面环境增量提交前审核)；随本次提交归档，P3/P4/P5 状态不变 |
 | Home 状态卡片、电源停止/加载/重试 | 2026-10-25 | Ela/MSVC Debug/Release 各 276/276，GCC 各 173/173；UI ASan 63/63、Core remount 1/1；明暗及 150% 布局通过 | [Home 记录](p3-development.md#home-状态卡片与电源操作)；本次 Home 专项人工复核待办 |
 | Home 左右滑动开关替换 | 2026-10-25 | 原目录 Ela/MSVC Debug/Release 专项各 34/34，ASan 同范围 34/34；同步位置不触发操作，连续点击去重通过 | [Home 记录](p3-development.md#home-状态卡片与电源操作)；仅私有 UI 接口变更 |
 | 完整配置管理 UI、ABI、物理卸载和替换 | — | 待实现或验证 | [设计说明书](../Cordis插件平台-软件设计说明书.md) |
@@ -139,7 +148,7 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | B01（已解除） | 原生桌面人工验收已获用户确认；缺 Qt kit 的旧条件此前已解除 | Q4 Kernel 运行树/管理入口可继续推进 | 2026-10-25 用户确认完成 | [验收单](../tests/acceptance/p3-ui.md) 按用户确认登记，不补造环境明细 |
 | B02 | 原 v142 组合未安装或验证 | 若坚持精确 v142 或进入插件 ABI，需另验 | 补齐原工具集或冻结经专项验证的选定组合 | 当前 Qt5 msvc2019_64 + MSVC19.44/v143 已通过 Debug/Release 探测；不构成 DLL ABI 验收 |
 
-首阶段无 Qt 内核工作已收口，Qt/Ela、配置子树、会话、文件/Store 及可选配置工作台已有证据。D8050 的 TEMP/TMP 与中文 showIncludes 覆盖沿用既有记录。配置工作台及统一路由已获人工确认，新增监听/后台读写待补充体验验收；任意插件资源屏障、外部模块产物/ABI 另验，Ela 全局对象仍按进程生命周期驻留。
+首阶段无 Qt 内核工作已收口，Qt/Ela、配置子树、会话、文件/Store 及可选配置工作台已有证据。本机 TEMP/TMP 与依赖前缀由 desktop.ps1 隔离设置，详见开发环境。配置工作台及统一路由已获人工确认；监听/后台读写已完成原生代理复核，用户确认待登记。其他插件资源适配、外部模块产物/ABI 另验，Ela 全局对象仍按进程生命周期驻留。
 
 ## 工作记录
 
@@ -205,6 +214,12 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | 2026-10-26 | Q2c 提交前审查：修复断连通知重入提前释放捕获、已取消通知误报故障和 Home 测试旧按钮失效，整理快照/头依赖/格式 | Ela 各 367/367，GCC 各 208/208，ASan 214/214；[审查记录](code-review.md#p3-q2c-托管-qt-连接提交前审核) | Q4d3 原生体验、worker/类型化参数和 P4 继续待验 | 随本次提交归档 |
 | 2026-10-26 | Q2d：一次插件工作线程、代次/本地协作取消、原生 TLS 退出证明、捕获/宿主释放和联合退出示例 | Ela 各 385/385，GCC 各 208/208，ASan 232/232；worker 检查 Debug/ASan 各连续 20 次通过 | 其他线程后端、类型化数据、多任务；Q4d3 人工复核及 P4 | 随本次审查归档 |
 | 2026-10-26 | 审查 Q2d：修复自动退役阻断 ready/result 延续及过早保留暂态门禁错误，补充 Core 退役确认和投递失败终结 | Ela 各 389/389，GCC 各 208/208，ASan 236/236；[审查记录](code-review.md#p3-q2d-托管-worker-提交前审核) | Q4d3 原生体验、其他线程后端/类型化结果及 P4 继续待验 | 随本次提交归档 |
+
+本轮补充工作记录：2026-10-26 / 按用户选择先收口 P3，恢复本机环境、完成 Q2e 类型化 worker 及 Q4d3 原生代理复核 / Ela 各 401/401、GCC 各 209/209、ASan 专项 34/34、新场景 Debug/ASan 各重复 20 次、原生退出码 0 / 用户人工确认、类型化信号与其他资源适配、P4/P5 / 未提交。
+
+本轮补充工作记录：2026-10-27 / Q2f 受限类型化信号、独立字符串冻结、复制/排队/在途统一预算及数据退出屏障 / Ela 各 417/417、GCC 各 209/209、ASan 专项 67/67、新 16 项检查 Debug/ASan 各重复 20 次 / P3 完整验收与用户确认、后续原生模块/ABI / 未提交。
+
+本轮补充工作记录：2026-10-27 / 按用户要求审核全部未提交增量并提交，修复释放批次提前归还预算、更新启动说明 / Ela 各 418/418、GCC 各 209/209、ASan 专项 68/68，预算修复前实际失败、修复后通过 / P3 完整验收及用户确认、后续模块/ABI / 随本次提交归档。
 
 ## 更新约定
 
