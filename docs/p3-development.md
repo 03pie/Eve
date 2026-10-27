@@ -828,6 +828,24 @@ GCC/MSVC C++17 单独包含 connection.hpp 并实例化允许的工厂/const noe
 
 最终 Ela Debug/Release 各 418/418，GCC 各 209/209，ASan connection/worker/快照专项 68/68；17 项信号/释放预算检查及示例 Debug/ASan 各连续 20 次通过。环境成功/失败隔离及原生警告/退出码检查通过。同步 README 的旧 Qt 路径和直接示例入口；本轮变更随审核提交归档。完整证据与限制见 [审核记录](code-review.md#q2eq2f-与桌面环境增量提交前审核)。
 
+## Q2g 原生 Qt 信号前缀与验收映射
+
+2026-10-27，真实接入 QFileSystemWatcher 时确认完整值入口按白名单拒绝 QPrivateSignal。新增 `QtConnection::observePrefixValues<Values...>`，显式选择前 N 项，仅允许精确类型前缀，沿用冻结白名单与全部注册/预算/关闭实现。未选尾参数不访问或冻结；完整入口继续严格检查全部参数。见 [ADR-0027](adr/0027-native-signal-prefix.md)。
+
+八项新增场景覆盖多线程 raw-data、忽略自定义尾参数、异步寿命与选中字节预算、真实 QObject 名称信号、真实文件/目录监听、错误参数/线程门禁/停止重入、旧代和 const 信号。新增 cordis_qt_native_watcher_demo 在临时目录修改真实文件，异步访问冻结路径并联合关闭 watcher、连接、时钟和 Kernel；不依赖 Ela，也不直接调用私有信号。
+
+新增 p3.kernel_driver_entry_identity 验证数组重排保留身份/代次、修改显式 id 只移除/新建对应项、无关实例不重建且无重复实例；增强 latest 检查最终 desired/实际配置为 C、同 id 身份保持且 epoch 推进，A/B 都有 Superseded 回执。当前 EntryPath 由 id 决定，没有独立显示名字段；改 id 不能冒称身份保持的改名。统一 [P3 验收映射](p3-acceptance.md) 对应真实 CTest 检查并保留人工/模块边界。
+
+最终 Ela/MSVC Debug、Release 各 428/428，GCC Debug、Release 各 210/210；MSVC ASan connection/worker/Task 快照及真实 Kernel 配置驱动专项 109/109。十一项新前缀/示例/配置身份与 latest 检查在 Debug、ASan 各连续 20 次通过。日志为 build/native-signal-<debug|release>.log、build/native-signal-gcc-<debug|release>.log、build/native-signal-asan.log、build/native-signal-repeat-<debug|asan>.log。
+
+ASan 本轮同时对 C/C++ Debug 设置 /fsanitize=address，Core、Qt、Loader 与相关测试/示例插桩；预编译 Qt/系统库未插桩。首次专项构建误用了不存在的 cordis_core_tests 目标，构建器拒绝后按实际 cordis_w1_tests 修正，再完成上述矩阵，没有把目标未构建当作通过。
+
+首次 Debug 重复运行中，原生文件测试及示例各出现一次通知超时，失败记录保留为 build/native-signal-repeat-debug-before.log。核查发现测试初始写入与后续写入可能位于同一毫秒；固定版本 Windows 后端按权限/属主/修改时间比较文件，没有比较内容或长度。此处将初始临时文件的修改时间显式设为一分钟前，再写入当前内容，保证输入在 Qt 可观测的元数据上发生变化；不靠延长等待、固定睡眠或重试掩盖问题。最终矩阵与重复记录均为修正后的版本。[Qt 5.15.2 比较实现](https://github.com/qt/qtbase/blob/v5.15.2/src/corelib/io/qfilesystemwatcher_win_p.h)，[通知分支](https://github.com/qt/qtbase/blob/v5.15.2/src/corelib/io/qfilesystemwatcher_win.cpp)。
+
+GCC/MSVC C++17 工厂语法检查：原生 watcher 前缀通过；错误类型、空前缀、过长、选中指针、指针到 bool 的隐式转换、完整私有标记六类分别按预期诊断拒绝。日志为 build/native-signal-contract-<gcc|msvc>-<0..6>.log；这只证明模板约束，不代表 GCC 与 MSVC Qt kit 的 ABI/运行兼容。
+
+本轮代码复核、差异空白及新增文档链接检查通过。没有 UI 改动，Q4d3 用户确认和真实系统 DPI 仍待登记；P4/P5 未开始，本轮增量未提交。
+
 ## 后续工作
 
 配置专用 watcher/后台 I/O、零参数及受限类型化 Qt 连接、Windows 一次工作线程与类型化结果已接入；Q4d3 已原生代理复核，用户人工确认待登记。P3 的完整验收及其他资源适配按集成场景收口；自定义信号类型、多任务与其他原生后端未由本轮覆盖。模块引用/驻留/卸载详情随 P4 接入。此分解不表示完成了原设计中任何尚未运行的 L/Q/U 场景。

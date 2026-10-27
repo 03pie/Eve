@@ -107,6 +107,7 @@ QtWorker 支持协作取消，在原生线程和 TLS 退出后释放捕获，随
 ## 设计及实施入口
 
 - [开发进度](docs/progress.md)：当前状态、工作包、验证台账及下一任务。
+- [P3 验收映射](docs/p3-acceptance.md)：L/Q/U 与联合场景的自动化证据、人工待验项及适用边界。
 - [W1 交付与验证](docs/w1-verification.md)：异步基础能力和四配置测试结果。
 - [W2 交付与验证](docs/w2-verification.md)：Effect 清理屏障、超时观察及四配置各 60/60 检查。
 - [W3 开发记录](docs/w3-development.md)：实例与清理上下文交付，四配置各 64/64 检查及后续边界。

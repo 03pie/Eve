@@ -4,13 +4,19 @@
 #include <QCoreApplication>
 #include <QEvent>
 #include <QEventLoop>
+#include <QFile>
+#include <QDateTime>
+#include <QFileSystemWatcher>
 #include <QMetaMethod>
+#include <QPointer>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cordis/kernel.hpp>
 #include <cordis/qt/connection.hpp>
+#include <cordis/qt/object.hpp>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -62,6 +68,8 @@ Q_SIGNALS:
     void qualified(bool flag, double number, Qt::ConnectionType kind) const;
     /** @brief 无数据的类型化入口仍可作为触发器。 */
     void ping();
+    /** @brief 未选择的自定义尾参数必须保持不复制。 */
+    void withTail(const QString& text, const Payload& ignored);
 
 protected:
     /** @brief 一次性模拟连接建立期间的宿主停止，不在 Qt 内部锁中泵送事件。 */
@@ -837,6 +845,197 @@ void typedApplicationQuit()
     CHECK(!scene.connection->snapshot().value().closed && scene.connection->snapshot().value().payloads == 1 && *value == 42);
     gate.resolve();
 }
+/** @brief 只复制所选前缀，借用字符串失效后仍可读取，不复制自定义尾参数。 */
+void prefixFreeze()
+{
+    Scene scene;
+    auto observed = QtConnection::observePrefixValues<QString>(*scene.context, scene.scheduler, scene.source.get(),
+        &Source::withTail, [&](const QString& text) {
+            CHECK(scene.scheduler->isCurrentThread() && text == QStringLiteral("AB"));
+            ++scene.calls;
+            return completedTask();
+        });
+    CHECK(observed.hasValue());
+    scene.connection.emplace(observed.value());
+    wait(scene.connection->ready());
+    std::thread worker([&] {
+        QChar storage[] = {QChar('A'), QChar('B')};
+        Payload ignored;
+        Q_EMIT scene.source->withTail(QString::fromRawData(storage, 2), ignored);
+        storage[0] = QChar('X');
+    });
+    worker.join();
+    CHECK(scene.calls == 0 && Payload::copies.load() == 0);
+    until([&] { return scene.calls == 1; });
+    scene.close();
+}
+/** @brief 多参数前缀仅按选中数据计字节预算，异步 Task 期间保留全部所选引用。 */
+void prefixAsync()
+{
+    Scene scene;
+    Promise<void> gate;
+    const QString* text = nullptr;
+    const QByteArray* bytes = nullptr;
+    auto observed = QtConnection::observePrefixValues<QString, QByteArray>(*scene.context, scene.scheduler,
+        scene.source.get(), &Source::values, [&](const QString& currentText, const QByteArray& currentBytes) {
+            text = &currentText;
+            bytes = &currentBytes;
+            return gate.task();
+        }, "test.prefix", 1, 6);
+    CHECK(observed.hasValue());
+    scene.connection.emplace(observed.value());
+    wait(scene.connection->ready());
+    Q_EMIT scene.source->values(QStringLiteral("ab"), QByteArray("cd"), std::string(2 * 1024 * 1024, 'x'), 42);
+    until([&] { return text && bytes; });
+    auto closed = scene.kernel->close();
+    QCoreApplication::processEvents();
+    CHECK(!closed.isReady() && *text == QStringLiteral("ab") && *bytes == QByteArray("cd"));
+    CHECK(scene.connection->snapshot().value().payloadErrors == 0);
+    gate.resolve();
+    wait(closed);
+    scene.close();
+}
+/** @brief 原生 QObject 的私有尾标记不进入数据桥，连续名称变化仍按原值排队。 */
+void prefixObjectName()
+{
+    Scene scene;
+    std::vector<QString> names;
+    auto observed = QtConnection::observePrefixValues<QString>(*scene.context, scene.scheduler, scene.source.get(),
+        &QObject::objectNameChanged, [&](const QString& name) {
+            names.push_back(name);
+            return completedTask();
+        });
+    CHECK(observed.hasValue());
+    scene.connection.emplace(observed.value());
+    wait(scene.connection->ready());
+    scene.source->setObjectName(QStringLiteral("first"));
+    scene.source->setObjectName(QStringLiteral("second"));
+    CHECK(names.empty());
+    until([&] { return names.size() == 2; });
+    CHECK(names == std::vector<QString>({QStringLiteral("first"), QStringLiteral("second")}));
+    scene.close();
+}
+/** @brief 测试通过真实外部写入触发 Qt 文件/目录监听，不直接调用其私有信号。 */
+void writeWatchedFile(const QString& path, const QByteArray& text, bool initial = false)
+{
+    QFile file(path);
+    CHECK(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    CHECK(file.write(text) == text.size());
+    // 显式区分初始修改时间，避免依赖 Windows watcher 的毫秒级时间变化。
+    if (initial)
+        CHECK(file.setFileTime(QDateTime::currentDateTimeUtc().addSecs(-60), QFileDevice::FileModificationTime));
+    file.close();
+}
+/** @brief 原生 watcher、异步参数及 Kernel 联合关闭；资源完整销毁后才报告静止。 */
+void prefixNativeWatcher(bool directory)
+{
+    QTemporaryDir temporary;
+    CHECK(temporary.isValid());
+    const auto file = temporary.filePath("watched.txt");
+    writeWatchedFile(file, "initial", true);
+    Scene scene;
+    auto native = std::make_unique<QFileSystemWatcher>();
+    const auto expected = directory ? temporary.path() : file;
+    CHECK(native->addPath(expected));
+    QPointer<QFileSystemWatcher> weak = native.get();
+    auto sender = native.get();
+    std::unique_ptr<QObject> object(std::move(native));
+    auto resource = std::make_shared<QObjectResource>(object, scene.scheduler);
+    CHECK(!object);
+    scene.context->onCleanup([resource](CleanupContext) { return resource->close(); }, "test.watcher").value();
+    Promise<void> gate;
+    const QString* borrowed = nullptr;
+    auto signal = directory ? &QFileSystemWatcher::directoryChanged : &QFileSystemWatcher::fileChanged;
+    auto observed = QtConnection::observePrefixValues<QString>(*scene.context, scene.scheduler, sender, signal,
+        [&](const QString& path) {
+            CHECK(scene.scheduler->isCurrentThread() && path == expected);
+            borrowed = &path;
+            return gate.task();
+        });
+    CHECK(observed.hasValue());
+    scene.connection.emplace(observed.value());
+    wait(scene.connection->ready());
+    writeWatchedFile(directory ? temporary.filePath("created.txt") : file, "changed native notification");
+    until([&] { return borrowed != nullptr; });
+    auto closed = scene.kernel->close();
+    QCoreApplication::processEvents();
+    CHECK(!closed.isReady() && *borrowed == expected);
+    gate.resolve();
+    wait(closed);
+    CHECK(closed.tryResult()->value().quiescent && weak.isNull() && resource->snapshot().value().confirmed);
+    CHECK(scene.connection->snapshot().value().payloads == 0);
+    scene.close();
+}
+/** @brief 前缀入口共享原有注册门禁，不绕过线程、容量或 connectNotify 重入停止。 */
+void prefixGuards()
+{
+    Scene scene;
+    auto callback = [](const QString&) { return completedTask(); };
+    CHECK(!QtConnection::observePrefixValues<QString>(*scene.context, scene.scheduler, static_cast<Source*>(nullptr),
+        &QObject::objectNameChanged, callback).hasValue());
+    CHECK(!QtConnection::observePrefixValues<QString>(*scene.context, scene.scheduler, scene.source.get(),
+        &QObject::objectNameChanged, std::function<Task<void>(const QString&)>{}).hasValue());
+    CHECK(!QtConnection::observePrefixValues<QString>(*scene.context, scene.scheduler, scene.source.get(),
+        &QObject::objectNameChanged, callback, "invalid", 0).hasValue());
+    CHECK(!QtConnection::observePrefixValues<QString>(*scene.context, scene.scheduler, scene.source.get(),
+        &QObject::objectNameChanged, callback, "invalid", 1, 0).hasValue());
+    bool wrong = false;
+    std::thread worker([&] {
+        auto value = QtConnection::observePrefixValues<QString>(*scene.context, scene.scheduler, scene.source.get(),
+            &QObject::objectNameChanged, callback);
+        wrong = !value.hasValue() && value.error().code == ErrorCode::WrongThread;
+    });
+    worker.join();
+    CHECK(wrong);
+    std::optional<Task<CleanupReport>> closed;
+    scene.source->connecting = [&] { closed.emplace(scene.kernel->close()); };
+    auto value = QtConnection::observePrefixValues<int>(*scene.context, scene.scheduler, scene.source.get(),
+        &Source::scalar, [](int) { return completedTask(); });
+    CHECK(!value.hasValue() && closed);
+    wait(*closed);
+    scene.close();
+}
+/** @brief 原生私有尾标记信号的旧代通知同样撤销，新代从自身前缀连接接收数据。 */
+void prefixEpochs()
+{
+    Scene scene;
+    std::vector<QString> names;
+    auto connect = [&] {
+        auto value = QtConnection::observePrefixValues<QString>(*scene.context, scene.scheduler, scene.source.get(),
+            &QObject::objectNameChanged, [&](const QString& name) { names.push_back(name); return completedTask(); });
+        CHECK(value.hasValue());
+        scene.connection.emplace(value.value());
+        wait(scene.connection->ready());
+    };
+    connect();
+    auto old = *scene.connection;
+    scene.source->setObjectName(QStringLiteral("old"));
+    auto operation = scene.instance->update("new", scene.instance->snapshot().value().revision).value();
+    wait(scene.instance->awaitTarget(operation));
+    CHECK(names.empty() && old.snapshot().value().closed && old.snapshot().value().payloads == 0);
+    connect();
+    scene.source->setObjectName(QStringLiteral("new"));
+    until([&] { return names.size() == 1; });
+    CHECK(names.front() == QStringLiteral("new"));
+    scene.close();
+}
+/** @brief const 信号的多项前缀保持精确类型顺序，未选枚举不计数据预算。 */
+void prefixQualified()
+{
+    Scene scene;
+    auto value = QtConnection::observePrefixValues<bool, double>(*scene.context, scene.scheduler, scene.source.get(),
+        &Source::qualified, [&](bool flag, double number) {
+            CHECK(flag && number == 1.5);
+            ++scene.calls;
+            return completedTask();
+        }, "test.prefix", 1, sizeof(bool) + sizeof(double));
+    CHECK(value.hasValue());
+    scene.connection.emplace(value.value());
+    wait(scene.connection->ready());
+    Q_EMIT scene.source->qualified(true, 1.5, Qt::DirectConnection);
+    until([&] { return scene.calls == 1; });
+    scene.close();
+}
 /** @brief 每项真实 Qt 应用独立，避免全局信号或资源污染。 */
 int main(int argc, char** argv)
 {
@@ -906,6 +1105,22 @@ int main(int argc, char** argv)
             typedConcurrentClose();
         else if (name == "typed_application_quit")
             typedApplicationQuit();
+        else if (name == "prefix_freeze")
+            prefixFreeze();
+        else if (name == "prefix_async")
+            prefixAsync();
+        else if (name == "prefix_object_name")
+            prefixObjectName();
+        else if (name == "prefix_file")
+            prefixNativeWatcher(false);
+        else if (name == "prefix_directory")
+            prefixNativeWatcher(true);
+        else if (name == "prefix_guards")
+            prefixGuards();
+        else if (name == "prefix_epochs")
+            prefixEpochs();
+        else if (name == "prefix_qualified")
+            prefixQualified();
         else
             return EXIT_FAILURE;
         return EXIT_SUCCESS;

@@ -36,7 +36,20 @@ auto work = cordis::qt::QtValueWorker<std::string>::start(
 
 调用方检查 start 的 Result，使用 result().thenOn(scheduler, ...) 观察不可变数据；不通过共享变量提前读取工作结果。
 
-worker 内 Qt 事件循环、多任务队列及类型化结果仍待专用适配；配置专用后台 I/O/watcher 已在 ConfigIoQt 实现。QObject 删除屏障不能代替连接或线程的退出确认。调度契约见 [ADR-0004](../../docs/adr/0004-qt-scheduler.md)，资源契约见 [ADR-0005](../../docs/adr/0005-qt-resource-barriers.md)，证据见 [P3 开发记录](../../docs/p3-development.md)。
+worker 内 Qt 事件循环、多任务队列及其他原生后端仍待专用适配；配置专用后台 I/O/watcher 已在 ConfigIoQt 实现。QObject 删除屏障不能代替连接或线程的退出确认。调度契约见 [ADR-0004](../../docs/adr/0004-qt-scheduler.md)，资源契约见 [ADR-0005](../../docs/adr/0005-qt-resource-barriers.md)，证据见 [P3 开发记录](../../docs/p3-development.md)。
+
+Q2g 的 `observePrefixValues<Values...>` 可显式选择前 N 项，接入带私有尾参数的原生 Qt 信号。选中类型去除 cv/ref 后必须与信号前缀完全相同，沿用白名单、预算及关闭屏障；未选尾参数不访问、不冻结。无需选择数据时继续使用 observe。见 [ADR-0027](../../docs/adr/0027-native-signal-prefix.md)。
+
+```cpp
+auto connection = cordis::qt::QtConnection::observePrefixValues<QString>(
+    context, scheduler, watcher, &QFileSystemWatcher::fileChanged,
+    [](const QString& path) {
+        // path 可以借用至本次返回的 Task 完成。
+        return processChangedFile(path);
+    });
+```
+
+`bin/cordis_qt_native_watcher_demo.exe` 在专属临时目录修改真实文件，以原生通知驱动异步回调，等待 watcher、连接、时钟与 Kernel 完整关闭。该示例只展示资源接入；原子替换后的监听恢复由配置专用 ConfigIoQt 实现。
 
 QtConnection 的最小接入形式（在已有插件激活回调中）：
 

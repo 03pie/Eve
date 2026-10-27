@@ -102,10 +102,9 @@ private:
     SignalBridge bridge_;
     std::size_t maximumBytes_;
 };
-/** @brief 从信号成员指针提取数据桥和 owner 回调参数，支持普通及 const/noexcept 信号。 */
-template <class Signal> struct SignalValues;
-/** @brief 非 const 信号冻结为不含引用的 tuple，在 owner 以 const 引用调用业务。 */
-template <class C, class... Args> struct SignalValues<void (C::*)(Args...)> {
+/** @brief 被明确选择的数据参数共用冻结桥、tuple 及 owner 回调，不为未选参数创建存储。 */
+template <class... Args> struct SelectedSignalValues {
+    using Arguments = std::tuple<std::decay_t<Args>...>;
     using Bridge = ValueSignalBridge<Args...>;
     using Callback = std::function<Task<void>(const std::decay_t<Args>&...)>;
     /** @brief 本次调用的参数由连接在途账目保留至业务 Task 及调用栈都已完成。 */
@@ -117,12 +116,30 @@ template <class C, class... Args> struct SignalValues<void (C::*)(Args...)> {
         };
     }
 };
+/** @brief 从信号成员指针提取数据参数，支持普通及 const/noexcept 信号。 */
+template <class Signal> struct SignalValues;
+/** @brief 完整信号沿用全部参数；前缀入口仅借助 Arguments 检查原始类型顺序。 */
+template <class C, class... Args> struct SignalValues<void (C::*)(Args...)> : SelectedSignalValues<Args...> {};
 /** @brief const 信号沿用相同的值冻结与投递规则。 */
 template <class C, class... Args> struct SignalValues<void (C::*)(Args...) const> : SignalValues<void (C::*)(Args...)> {};
 /** @brief noexcept 信号的复制异常仍由桥接层隔离。 */
 template <class C, class... Args> struct SignalValues<void (C::*)(Args...) noexcept> : SignalValues<void (C::*)(Args...)> {};
 /** @brief const noexcept 信号沿用相同的值冻结与投递规则。 */
 template <class C, class... Args> struct SignalValues<void (C::*)(Args...) const noexcept> : SignalValues<void (C::*)(Args...)> {};
+/** @brief 比较选中参数的精确值类型，不能以 Qt 允许隐式转换为依据执行发射端转换。 */
+template <class Full, class Selected, std::size_t... I>
+constexpr bool signalPrefixMatches(std::index_sequence<I...>)
+{
+    return (std::is_same_v<std::tuple_element_t<I, Full>, std::tuple_element_t<I, Selected>> && ...);
+}
+/** @brief 长度先检查再访问 tuple，过长前缀产生明确的约束诊断。 */
+template <class Full, class Selected> constexpr bool signalPrefixMatches()
+{
+    if constexpr (std::tuple_size_v<Selected> > std::tuple_size_v<Full>)
+        return false;
+    else
+        return signalPrefixMatches<Full, Selected>(std::make_index_sequence<std::tuple_size_v<Selected>>{});
+}
 } // namespace detail
 /** @brief 只读连接账目；running 覆盖业务、Task 与释放栈，queued 排除已取消票据。
  * accepted 统计已保留票据，payloads 统计仍持有的数据份数，payloadErrors 统计冻结/字节预算错误。
@@ -172,7 +189,46 @@ public:
                                               std::size_t maximumPending = 256,
                                               std::size_t maximumPayloadBytes = 1024 * 1024)
     {
-        using Traits = detail::SignalValues<Signal>;
+        return observeSelectedValues<detail::SignalValues<Signal>>(
+            owner, std::move(scheduler), sender, signal, std::forward<Callback>(callback),
+            std::move(label), maximumPending, maximumPayloadBytes);
+    }
+    /** @brief 只冻结显式选择的前 N 个数据参数，忽略 Qt 私有尾标记等未选参数。
+     * @tparam Values 非空连续前缀，去除 cv/ref 后须与原信号前 N 项类型完全相同；仍遵守数据白名单。
+     * @param callback 参数寿命和所有关闭/预算语义与 observeValues 相同。
+     * 不按名称识别或构造 QPrivateSignal，不允许隐式类型转换，也不访问或复制未选参数。
+     */
+    template <class... Values, class Sender, class Signal, class Callback>
+    static Result<QtConnection> observePrefixValues(const Context& owner, std::shared_ptr<QtScheduler> scheduler,
+                                                    Sender* sender, Signal signal, Callback&& callback,
+                                                    std::string label = "qt.connection.prefix",
+                                                    std::size_t maximumPending = 256,
+                                                    std::size_t maximumPayloadBytes = 1024 * 1024)
+    {
+        using Traits = detail::SelectedSignalValues<Values...>;
+        static_assert(sizeof...(Values) > 0, "managed signal prefix must select at least one value");
+        static_assert(detail::signalPrefixMatches<typename detail::SignalValues<Signal>::Arguments,
+                                                   typename Traits::Arguments>(),
+                      "managed signal prefix must match the leading signal values");
+        return observeSelectedValues<Traits>(owner, std::move(scheduler), sender, signal,
+                                             std::forward<Callback>(callback), std::move(label),
+                                             maximumPending, maximumPayloadBytes);
+    }
+    /** @brief effect 初始化回执，和所属插件激活结果分别观察。 */
+    Task<void> ready() const;
+    /** @brief owner 同步关门并请求 effect 退役，等待资源排空；Kernel 的整体清理由其自身屏障确认。 */
+    Task<void> close() const;
+    /** @brief owner 查询诊断，不获取插件回调或 QObject 所有权。 */
+    Result<ConnectionSnapshot> snapshot() const;
+
+private:
+    /** @brief 完整与前缀入口共享运行门禁、预算及资源登记，唯一差异是被选中的参数列表。 */
+    template <class Traits, class Sender, class Signal, class Callback>
+    static Result<QtConnection> observeSelectedValues(const Context& owner, std::shared_ptr<QtScheduler> scheduler,
+                                                      Sender* sender, Signal signal, Callback&& callback,
+                                                      std::string label, std::size_t maximumPending,
+                                                      std::size_t maximumPayloadBytes)
+    {
         typename Traits::Callback function(std::forward<Callback>(callback));
         if (!sender || !signal || !function || maximumPayloadBytes == 0 || maximumPayloadBytes > 16 * 1024 * 1024)
             return Result<QtConnection>::failure(makeError(ErrorCode::InvalidArgument, "invalid typed connection"));
@@ -183,14 +239,6 @@ public:
                                                   Qt::DirectConnection);
                       });
     }
-    /** @brief effect 初始化回执，和所属插件激活结果分别观察。 */
-    Task<void> ready() const;
-    /** @brief owner 同步关门并请求 effect 退役，等待资源排空；Kernel 的整体清理由其自身屏障确认。 */
-    Task<void> close() const;
-    /** @brief owner 查询诊断，不获取插件回调或 QObject 所有权。 */
-    Result<ConnectionSnapshot> snapshot() const;
-
-private:
     using Installer = std::function<QMetaObject::Connection(QObject*, detail::SignalBridge)>;
     /** @brief 构造只交付已注册清理的托管资源。 */
     QtConnection(std::shared_ptr<detail::ConnectionControl> control, EffectToken effect)

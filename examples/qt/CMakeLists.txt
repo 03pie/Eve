@@ -1,3 +1,8 @@
+add_executable(cordis_qt_native_watcher_demo native_watcher_demo.cpp)
+target_link_libraries(cordis_qt_native_watcher_demo PRIVATE Cordis::Qt)
+set_target_properties(cordis_qt_native_watcher_demo PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+cordis_target_defaults(cordis_qt_native_watcher_demo)
+
 add_executable(cordis_qt_connection_demo connection_demo.cpp)
 add_executable(cordis_qt_value_connection_demo value_connection_demo.cpp)
 target_link_libraries(cordis_qt_value_connection_demo PRIVATE Cordis::Qt)

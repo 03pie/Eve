@@ -6,7 +6,9 @@
 
 ## 当前状态
 
-**W0–W7 首阶段工作单已完成。P3 此前工作台已获用户原生桌面验收确认；配置子树、会话、Home/管理路由及后台 I/O/监听已提交为 64c0a4f。Q2c 零参数连接为 ef088eb，Q2d Windows 一次 worker 为 145c6c1。环境恢复、Q2e 类型化 worker 结果及 Q2f 受限类型化 Qt 信号已完成提交前审核，随本次提交归档；修复释放批次提前归还预算的问题。Q4e1/Q4e2 已获用户确认，Q4d3 已原生代理复核，用户人工确认仍单独待办。P3 处于集成收口，P4/P5 未开始。**
+**W0–W7 首阶段工作单已完成。P3 配置子树、会话、Home/管理路由及后台 I/O/监听为 64c0a4f；Q2c 零参数连接为 ef088eb，Q2d Windows 一次 worker 为 145c6c1。环境恢复、Q2e/Q2f 及预算审查修复已提交为 179aca9。本轮 Q2g 增加原生 Qt 信号值前缀、真实 watcher 联合退出示例和配置身份验收，已完成代码审核，随本阶段提交归档。Q4e1/Q4e2 已获用户确认，Q4d3 已原生代理复核，用户人工确认仍单独待办。P3 处于集成收口，P4/P5 未开始。**
+
+本轮最终回归：Ela/MSVC Debug、Release 各 428/428，GCC Debug、Release 各 210/210，ASan connection/worker/快照及真实配置驱动专项 109/109；11 项前缀/原生 watcher/配置身份与最新目标检查在 Debug、ASan 各连续 20 次通过。两编译器均接受原生前缀，按预期诊断拒绝六类非法契约。见 [Q2g 记录](p3-development.md#q2g-原生-qt-信号前缀与验收映射)、[ADR-0027](adr/0027-native-signal-prefix.md)及 [P3 验收映射](p3-acceptance.md)。验收映射区分自动化证据、id 变更语义和人工待验，没有将 P3 整包标为完成。
 
 本轮提交前审核：Ela Debug/Release 各 418/418，GCC 各 209/209，ASan 专项 68/68；17 项信号/释放预算检查及示例 Debug/ASan 各连续 20 次通过。预算回归修复前真实失败、修复后通过；完整范围见 [审核记录](code-review.md#q2eq2f-与桌面环境增量提交前审核)。下文 401/417 等数量及未提交状态保留为各轮历史。
 
@@ -135,6 +137,7 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | 本机桌面环境恢复及 Q2e 类型化 worker | 2026-10-26 | Ela Debug/Release 各 401/401，GCC Debug/Release 各 209/209；ASan worker/快照专项 34/34，新场景 Debug/ASan 各重复 20 次；Q4d3 原生代理复核及退出码 0 | [开发环境](development.md)、[Q2e](p3-development.md#q2e-类型化-worker-结果)、[桌面复核](q4d3-desktop-verification.md)；未提交，未补记用户人工确认 |
 | Q2f 类型化 Qt 信号 | 2026-10-27 | Ela Debug/Release 各 417/417，GCC 各 209/209；ASan 专项 67/67，新 16 项检查 Debug/ASan 各重复 20 次；编译期拒绝指针值 | [Q2f](p3-development.md#q2f-类型化-qt-信号连接)、[ADR-0026](adr/0026-typed-qt-connections.md)；未提交，未改变 P4/P5 状态 |
 | Q2e/Q2f 增量提交前审核 | 2026-10-27 | 修复释放中数据预算提前归还；Ela 各 418/418、GCC 各 209/209、ASan 专项 68/68，17 项 Debug/ASan 各重复 20 次 | [审核记录](code-review.md#q2eq2f-与桌面环境增量提交前审核)；随本次提交归档，P3/P4/P5 状态不变 |
+| Q2g 原生 Qt 信号前缀与验收映射 | 2026-10-27 | Ela 各 428/428、GCC 各 210/210、ASan 专项 109/109，11 项 Debug/ASan 各重复 20 次；GCC/MSVC 正向及六类拒绝检查 | [Q2g](p3-development.md#q2g-原生-qt-信号前缀与验收映射)、[P3 验收映射](p3-acceptance.md)；本轮未提交，人工确认待登记 |
 | Home 状态卡片、电源停止/加载/重试 | 2026-10-25 | Ela/MSVC Debug/Release 各 276/276，GCC 各 173/173；UI ASan 63/63、Core remount 1/1；明暗及 150% 布局通过 | [Home 记录](p3-development.md#home-状态卡片与电源操作)；本次 Home 专项人工复核待办 |
 | Home 左右滑动开关替换 | 2026-10-25 | 原目录 Ela/MSVC Debug/Release 专项各 34/34，ASan 同范围 34/34；同步位置不触发操作，连续点击去重通过 | [Home 记录](p3-development.md#home-状态卡片与电源操作)；仅私有 UI 接口变更 |
 | 完整配置管理 UI、ABI、物理卸载和替换 | — | 待实现或验证 | [设计说明书](../Cordis插件平台-软件设计说明书.md) |
@@ -220,6 +223,8 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 本轮补充工作记录：2026-10-27 / Q2f 受限类型化信号、独立字符串冻结、复制/排队/在途统一预算及数据退出屏障 / Ela 各 417/417、GCC 各 209/209、ASan 专项 67/67、新 16 项检查 Debug/ASan 各重复 20 次 / P3 完整验收与用户确认、后续原生模块/ABI / 未提交。
 
 本轮补充工作记录：2026-10-27 / 按用户要求审核全部未提交增量并提交，修复释放批次提前归还预算、更新启动说明 / Ela 各 418/418、GCC 各 209/209、ASan 专项 68/68，预算修复前实际失败、修复后通过 / P3 完整验收及用户确认、后续模块/ABI / 随本次提交归档。
+
+本轮补充工作记录：2026-10-27 / Q2g 显式 Qt 信号值前缀、真实 watcher 联合退出、配置重排/改 id 身份与 A/B/C 最终值断言、P3 验收映射 / Ela 各 428/428、GCC 各 210/210、ASan 专项 109/109，11 项 Debug/ASan 各重复 20 次，双编译器契约检查通过 / Q4d3 用户确认、真实 DPI 与后续模块/ABI / 未提交。
 
 ## 更新约定
 

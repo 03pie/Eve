@@ -15,7 +15,7 @@ endforeach()
 add_executable(cordis_kernel_driver_tests unit/kernel_driver.cpp)
 target_link_libraries(cordis_kernel_driver_tests PRIVATE Cordis::ConfigKernel)
 cordis_target_defaults(cordis_kernel_driver_tests)
-foreach(case IN ITEMS lifecycle dependencies pending latest retry cleanup_failure shutdown realms support ownership ownership_boundary guards delivery
+foreach(case IN ITEMS lifecycle dependencies pending latest entry_identity retry cleanup_failure shutdown realms support ownership ownership_boundary guards delivery
     inject_order inject_recovery inject_recreate inject_guards inject_graph inject_cleanup_failure internal_delivery
     tree_lifecycle tree_pending tree_realms tree_graph tree_latest tree_failure tree_shutdown tree_cleanup_failure tree_background_failure tree_cross_dependency tree_deferred_changes)
     add_test(NAME p3.kernel_driver_${case} COMMAND cordis_kernel_driver_tests ${case})
@@ -165,6 +165,10 @@ if(CORDIS_BUILD_ELA_UI)
 endif()
 
 if(CORDIS_REQUIRE_QT5152)
+    if(TARGET cordis_qt_native_watcher_demo)
+        add_test(NAME p3.qt_native_watcher_demo COMMAND cordis_qt_native_watcher_demo)
+        set_tests_properties(p3.qt_native_watcher_demo PROPERTIES LABELS "p3;qt;resources;connection;watcher;example" TIMEOUT 15)
+    endif()
     if(TARGET cordis_qt_value_connection_demo)
         add_test(NAME p3.qt_value_connection_demo COMMAND cordis_qt_value_connection_demo)
         set_tests_properties(p3.qt_value_connection_demo PROPERTIES LABELS "p3;qt;resources;connection;example" TIMEOUT 15)
@@ -226,7 +230,8 @@ if(CORDIS_REQUIRE_QT5152)
     set_target_properties(cordis_qt_connection_tests PROPERTIES AUTOMOC ON)
     foreach(case IN ITEMS queued async native_snapshot reentry captures epochs guards sender_destroyed dropped exceptions capacity scheduler_closed registration close_cycle disconnect_reentry cancelled_delivery
         typed_freeze typed_async typed_cancelled typed_epochs typed_capacity typed_bytes typed_null typed_sender
-        typed_errors typed_threads typed_guards typed_qualified typed_snapshot typed_concurrent_close typed_application_quit)
+        typed_errors typed_threads typed_guards typed_qualified typed_snapshot typed_concurrent_close typed_application_quit
+        prefix_freeze prefix_async prefix_object_name prefix_file prefix_directory prefix_guards prefix_epochs prefix_qualified)
         add_test(NAME p3.qt_connection_${case} COMMAND cordis_qt_connection_tests ${case})
         set_tests_properties(p3.qt_connection_${case} PROPERTIES LABELS "p3;qt;resources;connection" TIMEOUT 20)
     endforeach()

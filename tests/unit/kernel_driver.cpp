@@ -227,6 +227,7 @@ void latest()
     auto a = scene.accept("[{id: a, plugin: demo, config: A}]");
     scene.pump();
     CHECK(!a.settled.isReady());
+    const auto original = scene.driver->snapshot().value().front();
     auto b = scene.accept("[{id: a, plugin: demo, config: B}]");
     auto c = scene.accept("[{id: a, plugin: demo, config: C}]");
     scene.pump();
@@ -236,7 +237,62 @@ void latest()
     CHECK(a.settled.tryResult()->value().outcome == PlanOutcome::Superseded &&
           c.settled.tryResult()->value().outcome == PlanOutcome::Applied);
     CHECK(configs == std::vector<std::string>({"\"A\"", "\"C\""}));
+    const auto final = scene.coordinator->snapshot().value();
+    CHECK(final.desiredRevision == c.revision && !final.activeRevision && final.running.size() == 1);
+    CHECK(final.running.front().instance == original.instance && final.running.front().epoch > original.epoch &&
+          final.running.front().state == InstanceState::Active && final.running.front().configuration.config == "\"C\"");
+    CHECK(final.desired->source().structure().entries().at("a").config == "\"C\"");
     scene.close();
+}
+
+/** @brief 数组重排保留条目身份与代次；修改显式 id 按移除/新增处理，不重建无关实例。 */
+void entryIdentity()
+{
+    Scene scene;
+    int activated = 0, cleaned = 0;
+    scene.add("demo", [&](Context context) {
+        ++activated;
+        context.onCleanup([&](CleanupContext) { ++cleaned; return completedTask(); }).value();
+        return completedTask();
+    });
+    scene.start();
+    auto first = scene.accept("[{id: a, plugin: demo}, {id: b, plugin: demo}]");
+    scene.pump();
+    CHECK(first.settled.tryResult()->value().outcome == PlanOutcome::Applied);
+    const auto before = scene.driver->snapshot().value();
+    CHECK(before.size() == 2 && activated == 2 && cleaned == 0);
+    auto reordered = scene.accept("[{id: b, plugin: demo}, {id: a, plugin: demo}]");
+    scene.pump();
+    CHECK(reordered.settled.tryResult()->value().outcome == PlanOutcome::Applied);
+    const auto after = scene.driver->snapshot().value();
+    CHECK(after.size() == 2 && activated == 2 && cleaned == 0);
+    for (const auto& entry : before) {
+        auto found = std::find_if(after.begin(), after.end(), [&](const RunningEntry& value) {
+            return value.path == entry.path;
+        });
+        CHECK(found != after.end() && found->instance == entry.instance && found->epoch == entry.epoch);
+    }
+    auto renamed = scene.accept("[{id: b, plugin: demo}, {id: c, plugin: demo}]");
+    scene.pump();
+    CHECK(renamed.settled.tryResult()->value().outcome == PlanOutcome::Applied);
+    const auto current = scene.driver->snapshot().value();
+    CHECK(current.size() == 2 && activated == 3 && cleaned == 1);
+    CHECK(std::count_if(current.begin(), current.end(), [](const RunningEntry& value) { return value.path == "b"; }) == 1);
+    CHECK(std::count_if(current.begin(), current.end(), [](const RunningEntry& value) { return value.path == "c"; }) == 1);
+    for (const auto& entry : current) {
+        auto found = std::find_if(before.begin(), before.end(), [&](const RunningEntry& value) {
+            return value.path == entry.path;
+        });
+        if (found != before.end())
+            CHECK(entry.instance == found->instance && entry.epoch == found->epoch);
+        else
+            CHECK(std::none_of(before.begin(), before.end(), [&](const RunningEntry& value) {
+                return value.instance == entry.instance;
+            }));
+    }
+    CHECK(scene.kernel->snapshot().value().instances.size() == 2);
+    scene.close();
+    CHECK(cleaned == activated);
 }
 
 /** @brief 失败激活不回滚目标，重新接受相同目标走真实 retry 并保留实例身份。 */
@@ -1411,6 +1467,8 @@ int main(int argc, char** argv)
             pending();
         else if (name == "latest")
             latest();
+        else if (name == "entry_identity")
+            entryIdentity();
         else if (name == "retry")
             retry();
         else if (name == "cleanup_failure")
