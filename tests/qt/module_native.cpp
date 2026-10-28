@@ -17,6 +17,8 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include "../../src/module/abi_p.hpp"
+#include "../abi/business_flow.hpp"
 #include <Windows.h>
 
 using namespace cordis;
@@ -96,6 +98,28 @@ void duplicate()
     const auto again = second.load(root.toStdString(), manifest.toStdString()).value();
     CHECK(first.generation == again.generation && again.reused);
     CHECK(manager.snapshot().value().size() == 1 && queryCount(manager.snapshot().value()[0]) == 1);
+}
+void business()
+{
+    const auto path = install("business");
+    ModuleManager manager;
+    BIZ_CHECK(manager.load(root.toStdString(), path.toStdString()).hasValue());
+    const auto value = manager.snapshot().value()[0];
+    const auto native = QDir::toNativeSeparators(QString::fromUtf8(value.libraryPath.c_str())).toStdWString();
+    const auto image = GetModuleHandleW(native.c_str());
+    BIZ_CHECK(image && value.nativePinned);
+    const auto entry = GetProcAddress(image, "cordis_query_v1");
+    const auto finishEntry = GetProcAddress(image, "cordis_business_fixture_finish");
+    CordisQueryFnV1 query = nullptr;
+    business_test::Finish finish = nullptr;
+    static_assert(sizeof(query) == sizeof(entry) && sizeof(finish) == sizeof(finishEntry), "entry pointers");
+    std::memcpy(&query, &entry, sizeof(query));
+    std::memcpy(&finish, &finishEntry, sizeof(finish));
+    BIZ_CHECK(query && finish);
+    const auto api = cordis::module::detail::queryBusiness(query, business_test::fullHost, value.manifest).value();
+    business_test::exercise(api.table, finish);
+    BIZ_CHECK(manager.drain(value.generation).hasValue());
+    BIZ_CHECK(manager.snapshot().value()[0].state == ModuleState::Resident);
 }
 void publication()
 {
@@ -348,6 +372,8 @@ int main(int argc, char** argv)
         fixtures = arguments[3];
         if (name == "loaded")
             loaded();
+        else if (name == "business")
+            business();
         else if (name == "publication")
             publication();
         else if (name == "duplicate")

@@ -1,6 +1,6 @@
 # P4 原生模块验收
 
-本单随 P4 逐包补齐。M1/M2a 在当前支持矩阵已验收；不将这些检查计为完整 P4、业务 ABI 或 DLL 卸载验收。最新执行结果见 [P4 开发记录](../../docs/p4-development.md)及 [M2 记录](../../docs/p4-m2-development.md)。
+本单随 P4 逐包补齐。M1/M2 装载与 ABI 协商层在当前支持矩阵已验收；不将这些检查计为完整 P4、生产业务桥或 DLL 卸载验收。最新执行结果见 [P4 开发记录](../../docs/p4-development.md)、[M2a](../../docs/p4-m2-development.md)及 [M2b](../../docs/p4-m2b-development.md)。
 
 | 编号 | 场景 | 当前自动化依据 |
 |---|---|---|
@@ -39,4 +39,14 @@ M1 的文件可使用合成字节；摘要正确不代表有效 PE 或合规插�
 | M2a-14 | 真实 query 阻塞期间保持 Validated 和 Call 账目，拒绝重复/排空，返回后才发布 Loaded | p4.native_publication |
 | M2a-15 | 异常选项只处理完整 token，保留 /EHsc-；覆盖标准/自定义配置且不越过调用目录 | p4.exception_flags |
 
-M2b–M4 待补：业务 HostTable、重复/晚到 completion、请求取消后完成、回调捕获及析构的 ModuleLease、清理失败驻留、服务及同工具链 UI DLL、退出链和 A/S06/S07 映射。上述项目尚未验收，不计入 M1/M2a 测试通过数量。
+| 编号 | M2b 场景 | 自动化依据 |
+|---|---|---|
+| M2b-01 | 独立 C11/C++17 完整字段尺寸/对齐/偏移与固定线码 | p4.business_layout |
+| M2b-02 | 基础/可选/必需能力与同 major 新 minor/尾部 | p4.business_negotiation |
+| M2b-03 | 宿主版本、保留位、能力依赖及函数族不完整时不调用模块 | p4.business_hosts |
+| M2b-04 | 插件表、身份、目录、未知状态和违规 query 异常拒绝 | p4.business_plugins |
+| M2b-05 | 精确容量、短前缀、长容量尾部不被写入 | p4.business_capacity |
+| M2b-06 | 纯 C 自有实例/复制配置，取消不提前完成、销毁门禁及跨线程复制完成 | p4.business_lifecycle |
+| M2b-07 | 已固定/PIN 的真实 DLL 业务 query、echo 与正常清理 | p4.native_business |
+
+M3–M4 待补：真实 HostTable/Kernel 桥、生产重复/晚到 completion 与返回竞态、请求取消后完成、回调捕获及析构的 ModuleLease、清理失败驻留、真实服务/effect 及同工具链 UI DLL、退出链和 A/S06/S07 映射。M2b 的测试宿主只验证协议边界与复制值，不冒充这些生产行为；上述项目尚未验收。

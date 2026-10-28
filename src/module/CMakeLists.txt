@@ -5,6 +5,11 @@ add_library(Cordis::Module ALIAS cordis_module)
 target_link_libraries(cordis_module PUBLIC Cordis::Core)
 cordis_target_defaults(cordis_module)
 
+add_library(cordis_module_abi STATIC abi.cpp)
+add_library(Cordis::ModuleAbi ALIAS cordis_module_abi)
+target_link_libraries(cordis_module_abi PUBLIC Cordis::Module)
+cordis_target_defaults(cordis_module_abi)
+
 if(WIN32 AND CORDIS_REQUIRE_QT5152)
     add_library(cordis_module_preflight STATIC manifest.cpp)
     add_library(Cordis::ModulePreflight ALIAS cordis_module_preflight)

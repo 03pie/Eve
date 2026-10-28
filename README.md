@@ -4,7 +4,7 @@
 
 当前已完成 **P1/P2/P3 及第一方 Windows UI 专项**，P3 收口及用户确认见 [阶段审计](docs/p3-closeout.md)。配置工作台支持预览、应用、期望启停、保存和磁盘冲突处理；Home 卡片可打开管理/配置窗口，顶部菜单可添加已注册插件的配置实例。Windows 托管 worker 支持类型化结果及完整退出屏障。
 
-**P4 进行中**：M1 的 manifest/路径/摘要预检及驻留账目已提交；M2a 的真实 DLL 装载和独立只读描述 ABI 已完成，详见 [M2 记录](docs/p4-m2-development.md)。业务 ABI、Kernel 注册及 UI DLL 尚未实现，P5 受控替换未开始；当前 C++ 源码 SDK 不构成稳定二进制 ABI。
+**P4 进行中**：M1 预检/账目、M2a 原生装载/发现已提交；M2b 完整业务 C ABI、能力/所有权协议和协商层已实现，见 [M2b 记录](docs/p4-m2b-development.md)和 [ABI V1](docs/abi-v1.md)。M3 生产请求/服务/effect 与 Kernel 桥、M4 UI DLL 尚未实现，P5 受控替换未开始；当前 C++ 源码 SDK 不构成稳定二进制 ABI。
 
 当前工作区还已实现受限类型化 Qt 信号投递：数值、枚举与标准/Qt 字符串会在发射时冻结，参数保留至异步业务完成，并沿用 Context/epoch 及原生退出屏障。详情见 [类型化连接决策](docs/adr/0026-typed-qt-connections.md)，示例为 cordis_qt_value_connection_demo。
 

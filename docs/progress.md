@@ -6,7 +6,9 @@
 
 ## 当前状态
 
-**P1/P2/P3 及 UI 专项已完成（当前内置插件/Windows 支持矩阵）。P4-M1 已提交为 59b7c76。M2a 的真实 DLL 装载、独立只读描述 ABI、进程目录与默认驻留已完成；下一步为 M2b 业务 ABI，M3 Kernel/请求桥、M4 UI DLL 尚未实现，P5 未开始。**
+**P1/P2/P3 及 UI 专项已完成（当前内置插件/Windows 支持矩阵）。P4-M1 为 59b7c76、M2a 为 249a425；本轮 M2b 完整业务 ABI/能力/所有权和协商层已实现，经审查随本提交归档。下一步 M3 生产 Kernel/请求/服务/effect 桥，M4 UI DLL 尚未实现，P5 未开始。**
+
+2026-10-28 本轮见 [M2b 开发记录](p4-m2b-development.md)、[ABI V1](abi-v1.md)及 [ADR-0031](adr/0031-business-abi.md)。最终串行 MSVC Debug/Release 各 497/497、GCC 223/223，ASan 与关闭示例的 P4 专项各 38/38；独立 C/C++ 头、12 项源快照和依赖/文档审计通过。首轮既有 UI 超时及原样复核记录保留。M2 装载/协商层完成不代表业务插件已接入 Kernel；ModuleManager.load 仍只读发现，测试宿主不是生产请求状态机。下列 M2a 及更早数量保留为提交历史。
 
 2026-10-28 当前增量见 [M2 开发记录](p4-m2-development.md)及 [ADR-0030](adr/0030-native-module-discovery.md)。提交前审查修复过早发布 Loaded 及异常选项处理；MSVC Debug/Release 各 490/490、GCC 217/217，ASan 与关闭示例的 P4 专项各 31/31；CLI、22 项源快照及边界审计通过，按用户要求随本提交归档。不把只读描述握手当作外部业务插件已激活，也不提前冻结不完整的 HostTable。下列 M1 及更早验证保留为各提交的历史。
 

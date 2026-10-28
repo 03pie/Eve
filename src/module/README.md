@@ -8,4 +8,6 @@ GenerationLedger 排空不等于允许卸载，永久 pin 独立保留；租约�
 
 M2a 新增 Cordis::ModuleNative / ModuleManager：固定并重验产物、PE/平台检查、受限搜索及真实 DLL 只读描述握手。模块目录进程共享，同 ID 相同内容复用，失败和 drain 不自动卸载；原生 PIN 与主产物只读保护保留至进程退出。默认诊断仍为预检，显式 --load 才执行 DLL。
 
-业务 HostTable、真实业务资源租约集成及 QPluginLoader 尚未实现。M2a 已完成，M2 整包仍进行中；阶段与验证见 [M2 记录](../../docs/p4-m2-development.md)、[ADR-0030](../../docs/adr/0030-native-module-discovery.md)及 [M1 决策](../../docs/adr/0029-module-preflight-ledger.md)。
+M2b 新增独立 plugin.h、完整业务表协议和 Cordis::ModuleAbi 私有协商器，见 [ABI V1](../../docs/abi-v1.md)及 [M2b 记录](../../docs/p4-m2b-development.md)。ModuleManager 仍只做 M2a；业务表不从公共管理器泄露，真实请求/服务/effect 与 ModuleLease 集成留给 M3，QPluginLoader 留给 M4。
+
+M2 装载/协商层已完成，不代表整个 P4 或物理卸载完成；M2a 历史见 [发现记录](../../docs/p4-m2-development.md)及 [ADR-0030](../../docs/adr/0030-native-module-discovery.md)。
