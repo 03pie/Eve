@@ -1,6 +1,7 @@
 /** @file manifest.cpp
  * @brief 严格声明、规范路径和流式 SHA256 预检；不打开任何动态装载器。
  */
+#include "native_file_p.hpp"
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
@@ -15,16 +16,10 @@
 #include <initializer_list>
 #include <limits>
 #include <set>
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <Windows.h>
 
 namespace cordis::module {
 namespace {
+using detail::OpenedPath;
 ErrorInfo failure(std::string phase, std::string message, ErrorCode code = ErrorCode::ConfigInvalid)
 {
     auto error = makeError(code, std::move(message));
@@ -134,86 +129,6 @@ bool inside(const QString& root, const QString& path)
     // 句柄给出的最终路径必须匹配目录边界；精确匹配也保守支持启用大小写敏感的 NTFS 目录。
     return path.startsWith(prefix, Qt::CaseSensitive);
 }
-/** @brief 一次预检持续持有同一原生句柄；路径、元数据和字节不能在重开文件时脱节。 */
-class OpenedPath {
-public:
-    explicit OpenedPath(const QString& path, bool directory)
-    {
-        const auto native = QDir::toNativeSeparators(path).toStdWString();
-        handle_ = CreateFileW(native.c_str(), directory ? FILE_READ_ATTRIBUTES : GENERIC_READ, FILE_SHARE_READ, nullptr,
-                              OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-        if (handle_ == INVALID_HANDLE_VALUE) {
-            error_ = GetLastError();
-            return;
-        }
-        if (GetFileType(handle_) != FILE_TYPE_DISK) {
-            error_ = ERROR_INVALID_DATA;
-            return;
-        }
-        if (!GetFileInformationByHandle(handle_, &initial_)) {
-            error_ = GetLastError();
-            return;
-        }
-        if (((initial_.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) != directory) {
-            error_ = ERROR_DIRECTORY;
-            return;
-        }
-        valid_ = true;
-    }
-    OpenedPath(const OpenedPath&) = delete;
-    OpenedPath& operator=(const OpenedPath&) = delete;
-    ~OpenedPath()
-    {
-        if (handle_ != INVALID_HANDLE_VALUE)
-            CloseHandle(handle_);
-    }
-    bool valid() const noexcept { return valid_; }
-    DWORD error() const noexcept { return error_; }
-    std::uint64_t size() const noexcept
-    {
-        return (static_cast<std::uint64_t>(initial_.nFileSizeHigh) << 32) | initial_.nFileSizeLow;
-    }
-    /** @brief Qt 的规范路径不保证展开 junction，查询必须针对稍后实际读取的句柄。 */
-    QString finalPath() const
-    {
-        if (!valid_)
-            return {};
-        const auto required = GetFinalPathNameByHandleW(handle_, nullptr, 0, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
-        if (required == 0 || required > 32768)
-            return {};
-        std::wstring buffer(required, L'\0');
-        const auto written =
-            GetFinalPathNameByHandleW(handle_, buffer.data(), required, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
-        if (written == 0 || written >= required)
-            return {};
-        auto resolved = QString::fromWCharArray(buffer.data(), static_cast<int>(written));
-        if (resolved.startsWith(QStringLiteral("\\\\?\\UNC\\")))
-            resolved = QStringLiteral("\\\\") + resolved.mid(8);
-        else if (resolved.startsWith(QStringLiteral("\\\\?\\")))
-            resolved = resolved.mid(4);
-        return QDir::fromNativeSeparators(resolved);
-    }
-    bool read(char* buffer, DWORD capacity, DWORD& bytes) const noexcept
-    {
-        return ReadFile(handle_, buffer, capacity, &bytes, nullptr) != FALSE;
-    }
-    bool unchanged() const noexcept
-    {
-        BY_HANDLE_FILE_INFORMATION current{};
-        return GetFileInformationByHandle(handle_, &current) &&
-               current.dwVolumeSerialNumber == initial_.dwVolumeSerialNumber &&
-               current.nFileIndexHigh == initial_.nFileIndexHigh && current.nFileIndexLow == initial_.nFileIndexLow &&
-               current.nFileSizeHigh == initial_.nFileSizeHigh && current.nFileSizeLow == initial_.nFileSizeLow &&
-               CompareFileTime(&current.ftLastWriteTime, &initial_.ftLastWriteTime) == 0;
-    }
-
-private:
-    HANDLE handle_ = INVALID_HANDLE_VALUE;
-    BY_HANDLE_FILE_INFORMATION initial_{};
-    DWORD error_ = ERROR_SUCCESS;
-    bool valid_ = false;
-};
-
 /** @brief Windows 的 /path 与 C:path 仍依赖当前驱动器/目录，不能作为显式根目录。 */
 bool fullyQualified(QString path)
 {

@@ -1,6 +1,6 @@
 if(TARGET cordis_module_preflight)
     add_executable(cordis_module_inspect module_inspect.cpp)
-    target_link_libraries(cordis_module_inspect PRIVATE Cordis::ModulePreflight Qt5::Core)
+    target_link_libraries(cordis_module_inspect PRIVATE Cordis::ModuleNative Qt5::Core)
     set_target_properties(cordis_module_inspect PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     cordis_target_defaults(cordis_module_inspect)
 endif()

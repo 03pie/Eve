@@ -4,7 +4,7 @@
 
 当前已完成 **P1/P2/P3 及第一方 Windows UI 专项**，P3 收口及用户确认见 [阶段审计](docs/p3-closeout.md)。配置工作台支持预览、应用、期望启停、保存和磁盘冲突处理；Home 卡片可打开管理/配置窗口，顶部菜单可添加已注册插件的配置实例。Windows 托管 worker 支持类型化结果及完整退出屏障。
 
-**P4 已开始**：本轮接入模块 manifest/路径/摘要预检和独立驻留账目，详见 [P4 开发记录](docs/p4-development.md)。原生 DLL 装载、ABI 桥及 UI DLL 尚未实现，P5 受控替换未开始；当前源码 SDK 不构成稳定二进制 ABI。
+**P4 进行中**：M1 的 manifest/路径/摘要预检及驻留账目已提交；M2a 的真实 DLL 装载和独立只读描述 ABI 已完成，详见 [M2 记录](docs/p4-m2-development.md)。业务 ABI、Kernel 注册及 UI DLL 尚未实现，P5 受控替换未开始；当前 C++ 源码 SDK 不构成稳定二进制 ABI。
 
 当前工作区还已实现受限类型化 Qt 信号投递：数值、枚举与标准/Qt 字符串会在发射时冻结，参数保留至异步业务完成，并沿用 Context/epoch 及原生退出屏障。详情见 [类型化连接决策](docs/adr/0026-typed-qt-connections.md)，示例为 cordis_qt_value_connection_demo。
 
@@ -46,7 +46,7 @@
 | `Cordis::ConfigIoQt` | 可选配置后台串行读写、线程 join 与文件/目录监听，通知不自动应用目标 |
 | `Cordis::ConfigUi` | 可选 Ela 配置编辑页及 Home/管理适配器，弱持宿主会话；普通 Ui SDK 不依赖配置层 |
 | `src/qt` | 可选 Cordis::Qt，包含 QtScheduler、QtClock、QObjectResource、托管 QtConnection 与 QtWorker |
-| `src/module` | Cordis::Module 宿主引用账目，以及 Windows 可选 Cordis::ModulePreflight 声明/路径/SHA256 预检；尚不加载 DLL |
+| `src/module` | Cordis::Module 账目、ModulePreflight 预检及 Windows ModuleNative 只读描述装载；尚不激活外部业务插件 |
 | `src/ui` | 可选 Cordis::Ui，包含 Ela 插件状态卡片及电源操作、单击直达的插件导航、菜单/搜索/前进后退、可全部关闭的中央页签、底部工作区、贡献服务和只读诊断；资源树属于具体插件页 |
 | `third_party/ela` | 项目内维护的 Ela 组件库及资源，保留上游基线、本地修改和 MIT 许可 |
 | `third_party/libyaml` | 固定 0.2.5 C 解析库和 MIT 许可，私有链接至配置文本层 |
