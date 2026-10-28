@@ -1,0 +1,12 @@
+add_library(cordis_module STATIC ledger.cpp)
+add_library(Cordis::Module ALIAS cordis_module)
+target_link_libraries(cordis_module PUBLIC Cordis::Core)
+cordis_target_defaults(cordis_module)
+
+if(WIN32 AND CORDIS_REQUIRE_QT5152)
+    add_library(cordis_module_preflight STATIC manifest.cpp)
+    add_library(Cordis::ModulePreflight ALIAS cordis_module_preflight)
+    target_link_libraries(cordis_module_preflight PUBLIC Cordis::Module PRIVATE Qt5::Core)
+    target_compile_definitions(cordis_module_preflight PRIVATE QT_NO_KEYWORDS)
+    cordis_target_defaults(cordis_module_preflight)
+endif()
