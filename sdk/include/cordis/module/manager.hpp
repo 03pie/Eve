@@ -8,8 +8,8 @@
 #include <thread>
 
 namespace cordis::module {
-/** @brief Loaded 只表示映射且描述通过，不表示 Runtime 已注册或插件已激活。 */
-enum class ModuleState { Validated, Loaded, Draining, Resident, Failed };
+/** @brief Loaded 为发现通过，Serving 为业务宿主会话开放；均不表示 Kernel 已注册或插件已激活。 */
+enum class ModuleState { Validated, Loaded, Serving, Draining, Resident, Failed };
 /** @brief 装载完成回执；相同模块内容重复请求复用一代，不再次调用 DLL。 */
 struct ModuleLoadReport {
     GenerationId generation;
@@ -29,6 +29,8 @@ struct ModuleGenerationSnapshot {
     bool descriptorAccepted;
     std::optional<ErrorInfo> failure;
     LedgerSnapshot resources;
+    bool businessAccepted = false;
+    std::optional<ErrorInfo> businessFailure;
 };
 /** @brief 每个句柄绑定创建线程；进程内共享唯一驻留目录，最多 64 个已保留代次。
  * 默认驻留至进程退出，析构不调用 DLL 或 FreeLibrary；不提供业务或物理卸载能力。

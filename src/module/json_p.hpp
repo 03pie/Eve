@@ -9,4 +9,6 @@ namespace cordis::module::detail {
  * 保留重复成员名及原始文本；业务 schema 在其所属桥中另验。空文本不属于 JSON。
  */
 bool validAbiJson(std::string_view text) noexcept;
+/** @brief 验证原始 UTF-8 文本的 Unicode 标量；ASCII 控制字符按长度保留。 */
+bool validAbiUtf8(std::string_view text) noexcept;
 } // namespace cordis::module::detail

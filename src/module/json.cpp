@@ -6,6 +6,35 @@
 
 namespace cordis::module::detail {
 namespace {
+bool readUnicode(std::string_view text, std::size_t& at) noexcept
+{
+    const auto lead = static_cast<unsigned char>(text[at++]);
+    unsigned extra;
+    std::uint32_t code, minimum;
+    if (lead >= 0xc2 && lead <= 0xdf) {
+        extra = 1;
+        code = lead & 0x1f;
+        minimum = 0x80;
+    } else if (lead >= 0xe0 && lead <= 0xef) {
+        extra = 2;
+        code = lead & 0x0f;
+        minimum = 0x800;
+    } else if (lead >= 0xf0 && lead <= 0xf4) {
+        extra = 3;
+        code = lead & 0x07;
+        minimum = 0x10000;
+    } else
+        return false;
+    for (unsigned i = 0; i < extra; ++i) {
+        if (at == text.size())
+            return false;
+        const auto byte = static_cast<unsigned char>(text[at++]);
+        if ((byte & 0xc0) != 0x80)
+            return false;
+        code = (code << 6) | (byte & 0x3f);
+    }
+    return code >= minimum && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff);
+}
 class Scanner {
 public:
     explicit Scanner(std::string_view input) : input_(input) {}
@@ -51,35 +80,6 @@ private:
         }
         return true;
     }
-    bool unicode() noexcept
-    {
-        const auto lead = static_cast<unsigned char>(input_[at_++]);
-        unsigned extra;
-        std::uint32_t code, minimum;
-        if (lead >= 0xc2 && lead <= 0xdf) {
-            extra = 1;
-            code = lead & 0x1f;
-            minimum = 0x80;
-        } else if (lead >= 0xe0 && lead <= 0xef) {
-            extra = 2;
-            code = lead & 0x0f;
-            minimum = 0x800;
-        } else if (lead >= 0xf0 && lead <= 0xf4) {
-            extra = 3;
-            code = lead & 0x07;
-            minimum = 0x10000;
-        } else
-            return false;
-        for (unsigned i = 0; i < extra; ++i) {
-            if (at_ == input_.size())
-                return false;
-            const auto c = static_cast<unsigned char>(input_[at_++]);
-            if ((c & 0xc0) != 0x80)
-                return false;
-            code = (code << 6) | (c & 0x3f);
-        }
-        return code >= minimum && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff);
-    }
     bool string() noexcept
     {
         if (!take('"'))
@@ -93,7 +93,7 @@ private:
             if (c < 0x20)
                 return false;
             if (c >= 0x80) {
-                if (!unicode())
+                if (!readUnicode(input_, at_))
                     return false;
                 continue;
             }
@@ -194,5 +194,16 @@ private:
 bool validAbiJson(std::string_view text) noexcept
 {
     return Scanner(text).scan();
+}
+bool validAbiUtf8(std::string_view text) noexcept
+{
+    std::size_t at = 0;
+    while (at < text.size()) {
+        if (static_cast<unsigned char>(text[at]) < 0x80)
+            ++at;
+        else if (!readUnicode(text, at))
+            return false;
+    }
+    return true;
 }
 } // namespace cordis::module::detail

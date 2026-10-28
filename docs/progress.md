@@ -1,14 +1,14 @@
 # 开发进度
 
-最后更新：2026-10-28（北京时间）。当前工作区：`D:/01_C++/Eve`。
+最后更新：2026-10-29（北京时间）。当前工作区：`D:/01_C++/Eve`。
 
 本文件是项目进度的统一入口，记录实际状态；设计细节见说明书，任务完成条件见工作单，测试依据见验收规范和验证报告。代码行数、文档篇幅和测试数量不作为项目完成百分比。
 
 ## 当前状态
 
-**P1/P2/P3 及 UI 专项已完成（当前内置插件/Windows 支持矩阵）。P4-M1 为 59b7c76、M2a 为 249a425、M2b 为 fed5a51，均已审核提交。当前 M3 进行中：M3a 请求组件已审核修复并验证，随本提交归档；M3b–M3d 生产生命周期/资源与 Kernel 桥、M4 UI DLL 待实施，P5 未开始。**
+**P1/P2/P3 及 UI 专项已完成（当前内置插件/Windows 支持矩阵）。P4-M1 为 59b7c76、M2a 为 249a425、M2b 为 fed5a51，均已审核提交。当前 M3 进行中：M3a 已提交（1ffa0ff），M3b 基础生命周期已审核修复并验证，随本提交归档；M3c/M3d 资源与 Kernel 桥、M4 UI DLL 待实施，P5 未开始。**
 
-本轮按“实现→审核修复→验证无未解决问题→提交→下一段”推进。M3a 修复提前排空及已发布结果重复取消；最终 Release 全量 515/515、GCC 全量 241/241，Debug/ASan/关闭示例 P4 各 56/56，7 项源快照与依赖/文档审计通过，见 [M3 记录](p4-m3-development.md)和 [ADR-0032](adr/0032-native-request-arbitration.md)。M3a 不作为生产 DLL/Kernel 联合验收或完整 P4 完成证明。
+本轮按“实现→审核修复→验证无未解决问题→提交→下一段”推进。M3b 提供真实 DLL 生命周期与稳定基础 HostTable，修复迟到日志假静止和已退役启动请求误取消两项 P2；最终 Release 536/536、GCC 241/241，Debug/ASan/关闭示例 P4 各 77/77，16 项源码哈希和 9 个 ASan 编译行及依赖/文档审计通过，见 [M3b 记录](p4-m3b-development.md)和 [ADR-0033](adr/0033-native-host-lifecycle.md)。基础能力为 0，服务/effect、Kernel/Session 和 UI DLL 按后续阶段实施，未提前计为整个 P4 完成。M3a 的请求组件历史见 [M3 记录](p4-m3-development.md)。
 
 2026-10-28 本轮见 [M2b 开发记录](p4-m2b-development.md)、[ABI V1](abi-v1.md)及 [ADR-0031](adr/0031-business-abi.md)。最终串行 MSVC Debug/Release 各 497/497、GCC 223/223，ASan 与关闭示例的 P4 专项各 38/38；独立 C/C++ 头、12 项源快照和依赖/文档审计通过。首轮既有 UI 超时及原样复核记录保留。M2 装载/协商层完成不代表业务插件已接入 Kernel；ModuleManager.load 仍只读发现，测试宿主不是生产请求状态机。下列 M2a 及更早数量保留为提交历史。
 
@@ -67,7 +67,7 @@ Qt 5.15.2 Core/Widgets/Test 已就绪，本机入口见 [开发环境](developme
 | P2 响应式服务依赖 | 已完成（首阶段内置范围） | W4/W5/W7 联合闭环通过；跨 ABI、物理卸载及替换不在本轮 |
 | P3 Qt / Loader / Ela | 已完成（当前支持矩阵） | L01–L04/Q01/U01/S05/S08/S10 及真实装配检查通过；Q4d3 已获本次用户确认，Home 手动路径/原生 150% 代理复核通过，见 [收口审计](p3-closeout.md)；不补造系统 DPI/跨屏证据 |
 | UI 设计与优化（独立专项） | 已完成（当前支持矩阵） | UI-S0–S4 与 UI-00–07 已完成，原生 32/32、三次用户确认和最终审计归档；跨屏未覆盖，见 [阶段计划](ui-special-stages.md)及[增量验证](ui-structure-verification.md) |
-| P4 原生插件模块 | 进行中 | M1/M2a 已完成；M2b 业务 ABI、M3 请求与 Kernel 集成、M4 UI DLL 待实施，见 [阶段记录](p4-development.md) |
+| P4 原生插件模块 | 进行中 | M1/M2、M3a 请求组件与 M3b 基础生命周期已完成；M3c/M3d 资源与 Kernel 联合桥、M4 UI DLL 待实施，见 [阶段记录](p4-development.md) |
 | P5 受控替换 | 未开始 | 新旧代替换、恢复和卸载专项验证待实现 |
 
 ## UI 设计与优化专项

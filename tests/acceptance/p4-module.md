@@ -63,3 +63,17 @@ M3–M4 待补联合验收：真实 HostTable/Kernel 桥中重复/晚到 complet
 | M3a-08 | JSON 标量/容器/数字原文、UTF-8/转义及深度边界 | p4.request_json_valid / json_invalid |
 
 M3a 的组件证据不替代后续真实 DLL/HostTable/Kernel 桥；该联合验收及 M4 仍待完成，见 [M3 记录](../../docs/p4-m3-development.md)。
+
+
+| 编号 | M3b 真实 DLL/Host 场景 | 自动化依据 |
+|---|---|---|
+| M3b-01 | 同步/异步/早到启动、取消后完成，多实例/epoch 隔离 | p4.native_host_sync / async / early / multi |
+| M3b-02 | 正常启动业务失败可清理，复制异步错误在销毁后保留 | p4.native_host_start_failure |
+| M3b-03 | 停止/销毁失败保留实例、模块和资源引用 | p4.native_host_stop_failure / destroy_failure |
+| M3b-04 | create 空句柄/PENDING/失败非空句柄协议拒绝 | p4.native_host_create_null / create_pending / create_live_error |
+| M3b-05 | 重复/同步混合完成及真实 C++ 违规异常不假静止 | p4.native_host_duplicate / sync_protocol / exception |
+| M3b-06 | 缺业务 query、无效输入、非 owner、调度关闭与已接受表复用 | p4.native_host_missing / guards / closed_scheduler / reuse |
+| M3b-07 | 结果已发布仍等待宿主 Call；复制投递捕获亦须退役 | p4.native_host_callback / callback_copy |
+| M3b-08 | 关闭门禁后迟到日志必须隔离，完成后观察器排队时关闭不能误取消 | p4.native_host_late_log / close_queued |
+
+M3b 只协商基础能力，真实服务/effect、Kernel/Session 和 UI DLL 仍按 M3c/M3d/M4 验收，不将上表当作整个 P4 完成。审查红绿证据及最终矩阵见 [M3b 记录](../../docs/p4-m3b-development.md)。

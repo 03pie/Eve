@@ -2,6 +2,7 @@
  * @brief 固定产物、受限搜索、只读 C 握手及进程级默认驻留；不创建业务实例。
  */
 #include "native_file_p.hpp"
+#include "native_source_p.hpp"
 #include <QFileInfo>
 #include <algorithm>
 #include <cordis/module/manager.hpp>
@@ -57,9 +58,17 @@ struct Generation {
             data.state = ModuleState::Resident;
         auto value = data;
         value.resources = std::move(resources);
+        {
+            std::lock_guard<std::mutex> signalLock(businessSignal->mutex);
+            if (businessSignal->error) {
+                value.state = ModuleState::Failed;
+                value.businessFailure = businessSignal->error;
+            }
+        }
         return value;
     }
     GenerationLedger ledger;
+    std::shared_ptr<detail::NativeFailureSignal> businessSignal = std::make_shared<detail::NativeFailureSignal>();
     std::mutex mutex;
     ModuleGenerationSnapshot data;
     const std::unique_ptr<OpenedPath> artifactFile;
@@ -254,7 +263,12 @@ Result<ModuleLoadReport> ModuleManager::load(const std::string& pluginRoot, cons
                 error(ErrorCode::ModuleLoad, "module.load", "generation load is already in progress"));
         if (generation->data.failure)
             return Result<ModuleLoadReport>::failure(*generation->data.failure);
-        if (generation->data.state != ModuleState::Loaded)
+        {
+            std::lock_guard<std::mutex> signalLock(generation->businessSignal->mutex);
+            if (generation->businessSignal->error)
+                return Result<ModuleLoadReport>::failure(*generation->businessSignal->error);
+        }
+        if (generation->data.state != ModuleState::Loaded && generation->data.state != ModuleState::Serving)
             return Result<ModuleLoadReport>::failure(
                 error(ErrorCode::ModulePinned, "module.load", "generation no longer accepts activation references"));
         return Result<ModuleLoadReport>::success({generation->data.generation, true});
@@ -341,7 +355,10 @@ Result<void> ModuleManager::drain(GenerationId id)
         if (generation->loading)
             return Result<void>::failure(
                 error(ErrorCode::ContextClosing, "module.drain", "module is still negotiating"));
-        if (generation->data.state == ModuleState::Loaded)
+        if (!generation->ledger.snapshot().records.empty())
+            return Result<void>::failure(error(ErrorCode::ContextClosing, "module.drain",
+                                               "close native sessions and resources before draining generation"));
+        if (generation->data.state == ModuleState::Loaded || generation->data.state == ModuleState::Serving)
             generation->data.state = ModuleState::Draining;
     }
     generation->ledger.beginDraining();
@@ -349,3 +366,93 @@ Result<void> ModuleManager::drain(GenerationId id)
     return Result<void>::success();
 }
 } // namespace cordis::module
+
+namespace cordis::module::detail {
+Result<NativeSource> acquireNativeSource(GenerationId id)
+{
+    std::shared_ptr<Generation> generation;
+    {
+        auto& catalog = registry();
+        std::lock_guard<std::mutex> lock(catalog.mutex);
+        for (const auto& value : catalog.generations)
+            if (value->data.generation == id) {
+                generation = value;
+                break;
+            }
+    }
+    if (!generation)
+        return Result<NativeSource>::failure(
+            error(ErrorCode::InvalidArgument, "module.business", "unknown generation"));
+    std::lock_guard<std::mutex> lock(generation->mutex);
+    if (generation->loading ||
+        (generation->data.state != ModuleState::Loaded && generation->data.state != ModuleState::Serving) ||
+        generation->data.failure)
+        return Result<NativeSource>::failure(
+            error(ErrorCode::ModulePinned, "module.business", "generation is not available"));
+    if (generation->data.businessFailure)
+        return Result<NativeSource>::failure(*generation->data.businessFailure);
+    {
+        std::lock_guard<std::mutex> signalLock(generation->businessSignal->mutex);
+        if (generation->businessSignal->error)
+            return Result<NativeSource>::failure(*generation->businessSignal->error);
+    }
+    auto session = generation->ledger.acquire(ResourceKind::ExternalHandle, "native.host");
+    if (!session.hasValue())
+        return Result<NativeSource>::failure(session.error());
+    const auto address = GetProcAddress(generation->image, "cordis_query_v1");
+    CordisQueryFnV1 query = nullptr;
+    static_assert(sizeof(query) == sizeof(address), "business entry pointer");
+    std::memcpy(&query, &address, sizeof(query));
+    return Result<NativeSource>::success({id, generation->data.manifest, generation->ledger, generation->businessSignal,
+                                          query, std::move(session.value())});
+}
+void recordNativeBusiness(GenerationId id, const std::optional<ErrorInfo>& failure)
+{
+    std::shared_ptr<Generation> generation;
+    {
+        auto& catalog = registry();
+        std::lock_guard<std::mutex> lock(catalog.mutex);
+        for (const auto& value : catalog.generations)
+            if (value->data.generation == id) {
+                generation = value;
+                break;
+            }
+    }
+    if (!generation)
+        return;
+    std::lock_guard<std::mutex> lock(generation->mutex);
+    generation->data.businessAccepted = !failure;
+    generation->data.businessFailure = failure;
+    if (failure)
+        (void)generation->ledger.pin("businessRejected");
+}
+void recordNativePhase(GenerationId id, ModuleState phase, const std::optional<ErrorInfo>& failure)
+{
+    std::shared_ptr<Generation> generation;
+    {
+        auto& catalog = registry();
+        std::lock_guard<std::mutex> lock(catalog.mutex);
+        for (const auto& value : catalog.generations)
+            if (value->data.generation == id) {
+                generation = value;
+                break;
+            }
+    }
+    if (!generation)
+        return;
+    std::lock_guard<std::mutex> lock(generation->mutex);
+    if (generation->data.state == ModuleState::Resident || generation->data.state == ModuleState::Failed)
+        return;
+    {
+        std::lock_guard<std::mutex> signalLock(generation->businessSignal->mutex);
+        if (generation->businessSignal->error) {
+            generation->data.state = ModuleState::Failed;
+            generation->data.businessFailure = generation->businessSignal->error;
+            return;
+        }
+    }
+    generation->data.state = phase;
+    if (failure)
+        generation->data.businessFailure = failure;
+}
+} // namespace cordis::module::detail

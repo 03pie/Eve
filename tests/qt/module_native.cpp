@@ -76,6 +76,7 @@ int queryCount(const ModuleGenerationSnapshot& value)
     std::memcpy(&function, &address, sizeof(function));
     return function();
 }
+#include "native_host_cases.hpp"
 void loaded()
 {
     const auto manifest = install("good", QString::fromUtf8("插件"));
@@ -370,7 +371,8 @@ int main(int argc, char** argv)
         const auto name = arguments[1];
         root = arguments[2];
         fixtures = arguments[3];
-        if (name == "loaded")
+        if (native_host_test::run(name)) {
+        } else if (name == "loaded")
             loaded();
         else if (name == "business")
             business();

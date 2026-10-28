@@ -378,6 +378,13 @@ void json(bool valid)
     for (const auto& value : valid ? accepted : rejected)
         CHECK(validAbiJson(value) == valid);
 }
+void utf8()
+{
+    CHECK(validAbiUtf8("") && validAbiUtf8(std::string("a\0\n\t", 4)));
+    CHECK(validAbiUtf8("\xe4\xb8\xad\xf0\x9f\x98\x80"));
+    for (const auto& value : {"\x80", "\xc0\xaf", "\xe4\xb8", "\xed\xa0\x80", "\xf4\x90\x80\x80"})
+        CHECK(!validAbiUtf8(value));
+}
 int main(int argc, char** argv)
 {
     try {
@@ -415,9 +422,10 @@ int main(int argc, char** argv)
             abandoned();
         else if (name == "threads")
             threads();
-        else if (name == "json_valid")
+        else if (name == "json_valid") {
             json(true);
-        else if (name == "json_invalid")
+            utf8();
+        } else if (name == "json_invalid")
             json(false);
         else
             throw std::runtime_error("unknown request case");

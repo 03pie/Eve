@@ -1,5 +1,5 @@
 add_subdirectory(abi)
-add_executable(cordis_module_ledger_tests unit/module_ledger.cpp unit/module_manifest_header.cpp unit/module_manager_header.cpp)
+add_executable(cordis_module_ledger_tests unit/module_ledger.cpp unit/module_manifest_header.cpp unit/module_manager_header.cpp unit/module_native_header.cpp)
 target_link_libraries(cordis_module_ledger_tests PRIVATE Cordis::Module)
 cordis_target_defaults(cordis_module_ledger_tests)
 foreach(case IN ITEMS categories ownership pins guards threads)

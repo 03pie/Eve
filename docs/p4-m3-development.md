@@ -1,6 +1,6 @@
 # P4-M3 请求与资源桥
 
-日期：2026-10-28。基线 fed5a51（M2b 已审核提交）。M3 进行中；M3a 请求组件已实现，经审核修复及验证后随本提交归档。M3b–M3d 和 M4 尚未完成，不将单个组件等同于整包或整个 P4。
+日期：2026-10-29。M3 进行中；M3a 请求组件已审核提交（1ffa0ff），M3b 基础生命周期已实现、审核修复并完成最终矩阵，随本提交归档。M3c/M3d 和 M4 尚未完成，不将单个组件等同于整包或整个 P4。
 
 ## 分段与提交门槛
 
@@ -8,8 +8,8 @@
 
 | 子阶段 | 内容 | 状态 |
 |---|---|---|
-| M3a | 生产请求控制块、复制/一次仲裁、取消、投递与租约退役 | 已完成；审查修复 seal 屏障及晚到取消，随本提交归档 |
-| M3b | 稳定 HostTable/模块业务表、真实 create/start/stop/destroy 与 ModuleGeneration | 待实施 |
+| M3a | 生产请求控制块、复制/一次仲裁、取消、投递与租约退役 | 已完成；1ffa0ff，审查修复 seal 屏障及晚到取消 |
+| M3b | 稳定 HostTable/模块业务表、真实 create/start/stop/destroy 与 ModuleGeneration | 已完成；审查修复及最终矩阵见 [M3b 记录](p4-m3b-development.md) |
 | M3c | 生产 dispatch/service/effect 桥及真实资源租约 | 待实施 |
 | M3d | Kernel/Session、两个服务 DLL、多实例、失败驻留及退出联合验收 | 待实施 |
 
