@@ -1,29 +1,30 @@
 /** @file ela_demo.cpp
  * @brief 展示页面、命令及纯值通知，关闭窗口前等待 Kernel 与外壳完整清理。
  */
-#include <cordis/ui/ela_shell.hpp>
-#include <cordis/kernel.hpp>
-#include <QApplication>
-#include <QAction>
-#include <QFontDatabase>
-#include <ElaText.h>
-#include <ElaPushButton.h>
 #include <ElaPlainTextEdit.h>
+#include <ElaPushButton.h>
 #include <ElaScrollPage.h>
 #include <ElaScrollPageArea.h>
+#include <ElaText.h>
 #include <ElaTheme.h>
 #include <ElaTreeView.h>
+#include <QAction>
+#include <QApplication>
+#include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QItemSelectionModel>
+#include <QPixmap>
+#include <QPointer>
+#include <QPushButton>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStandardItemModel>
-#include <QPushButton>
-#include <QPixmap>
-#include <QPointer>
+#include <QStandardPaths>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <cordis/kernel.hpp>
+#include <cordis/ui/ela_shell.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -53,6 +54,7 @@ std::unique_ptr<QWidget> createNotesPage()
     sidebarLayout->addWidget(tree, 1);
     auto stack = new QStackedWidget(splitter);
     auto notes = new ElaScrollPage(stack); notes->setWindowTitle(QString::fromUtf8("临时笔记"));
+    notes->setPageTitlePixelSize(24);
     auto content = new QWidget; content->setWindowTitle(notes->windowTitle()); auto layout = new QVBoxLayout(content);
     layout->setSizeConstraint(QLayout::SetMinimumSize);
     auto area = new ElaScrollPageArea(content); auto body = new QVBoxLayout(area);
@@ -73,6 +75,7 @@ std::unique_ptr<QWidget> createNotesPage()
     editor->setMinimumHeight(180); layout->addWidget(editor); layout->addStretch();
     notes->addCentralWidget(content); stack->addWidget(notes);
     auto guide = new ElaScrollPage(stack); guide->setWindowTitle(QString::fromUtf8("使用说明"));
+    guide->setPageTitlePixelSize(24);
     auto guideContent = new QWidget; guideContent->setWindowTitle(guide->windowTitle()); auto guideLayout = new QVBoxLayout(guideContent);
     guideLayout->setSizeConstraint(QLayout::SetMinimumSize);
     auto guideArea = new ElaScrollPageArea(guideContent); auto guideBody = new QVBoxLayout(guideArea);
@@ -95,6 +98,8 @@ struct Application : std::enable_shared_from_this<Application> {
     std::shared_ptr<qt::QtScheduler> scheduler = std::make_shared<qt::QtScheduler>();
     std::shared_ptr<Kernel> kernel = std::make_shared<Kernel>(scheduler);
     ElaShell shell{scheduler};
+    /** @brief 自动示例禁用本机偏好，交互入口显式使用独立宿主文件。 */
+    explicit Application(const std::string& preferences) : shell(scheduler, preferences) {}
     std::optional<Instance> provider;
     std::optional<Instance> notes;
     std::optional<PageHandle> page;
@@ -235,6 +240,7 @@ int main(int argc, char** argv)
     try {
         QApplication app(argc, argv);
         app.setQuitOnLastWindowClosed(false);
+        app.setApplicationName("CordisElaWorkbench");
         const bool dark = argc == 2 && std::string(argv[1]) == "--smoke-dark";
         const bool smoke = dark || (argc == 2 && std::string(argv[1]) == "--smoke");
         eTheme->setThemeMode(dark ? ElaThemeType::Dark : ElaThemeType::Light);
@@ -243,7 +249,12 @@ int main(int argc, char** argv)
         if (smoke && QApplication::platformName() == "offscreen")
             QFontDatabase::addApplicationFont(qEnvironmentVariable("WINDIR") + "/Fonts/msyh.ttc");
 #endif
-        auto state = std::make_shared<Application>();
+        const auto preferences =
+            smoke ? std::string{}
+                  : (QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/ui-preferences.json")
+                        .toUtf8()
+                        .toStdString();
+        auto state = std::make_shared<Application>(preferences);
         state->start(smoke);
         if (smoke) QTimer::singleShot(10000, &app, [] { QCoreApplication::exit(EXIT_FAILURE); });
         const int result = app.exec();

@@ -1,6 +1,7 @@
 /** @file configuration_management.cpp
  * @brief 可选配置适配器；普通 UI 不包含 Loader，所有动作经过 Session 的 CAS。
  */
+#include <algorithm>
 #include <cordis/ui/configuration.hpp>
 #include <map>
 #include <stdexcept>
@@ -34,6 +35,11 @@ public:
                       !state.store.deliveryBlocked && !state.coordinator.unsafe && !state.coordinator.runningError;
         result.dirty = state.store.dirty;
         result.writing = state.store.writing;
+        auto names = session->registeredPlugins();
+        if (!names.hasValue())
+            return Result<ConfigurationManagementSnapshot>::failure(names.error());
+        result.availablePlugins = names.value();
+        result.canEdit = result.open;
         result.error = state.coordinator.runningError ? state.coordinator.runningError : state.store.lastError;
         std::map<std::string, loader::RunningEntry> actual;
         for (const auto& entry : state.coordinator.running) {
@@ -46,6 +52,7 @@ public:
                 ManagedConfigurationEntry row;
                 row.path = entry.first;
                 row.plugin = entry.second.plugin;
+                row.configuration = entry.second.config;
                 row.enabled = !entry.second.disabled;
                 row.effectiveEnabled = !entry.second.effectiveDisabled;
                 auto found = actual.find(entry.first);
@@ -105,7 +112,95 @@ public:
         return convert(session->apply(draft.value()));
     }
 
+    /** @brief 新实例仅追加到顶层；重复身份由完整结构校验拒绝，不覆盖已有实例。 */
+    Result<Task<ConfigurationActionReport>> addInstance(const std::string& id, const std::string& plugin,
+                                                        const std::string& json, std::uint64_t expected) override
+    {
+        return mutate({}, id, plugin, json, expected);
+    }
+    /** @brief 路径定位后只替换 config 字段，完整预览再次检查 schema 和当前修订。 */
+    Result<Task<ConfigurationActionReport>> updateConfiguration(const std::string& path, const std::string& json,
+                                                                std::uint64_t expected) override
+    {
+        if (path.empty())
+            return Result<Task<ConfigurationActionReport>>::failure(
+                makeError(ErrorCode::InvalidArgument, "configuration path is empty"));
+        return mutate(path, {}, {}, json, expected);
+    }
+    /** @brief 保存报告失败继续作为失败，不把应用成功当作已保存。 */
+    Result<Task<void>> saveConfiguration(std::uint64_t expected) override
+    {
+        auto session = session_.lock();
+        if (!session)
+            return Result<Task<void>>::failure(makeError(ErrorCode::ContextClosing, "configuration session expired"));
+        auto saving = session->save(expected);
+        if (!saving.hasValue())
+            return Result<Task<void>>::failure(saving.error());
+        Promise<void> done;
+        auto receipt = saving.value().thenOn(scheduler_, [done](const Result<loader::SaveReport>& result) {
+            if (!result.hasValue())
+                done.reject(result.error());
+            else if (result.value().error)
+                done.reject(*result.value().error);
+            else if (result.value().outcome == loader::SaveOutcome::Written ||
+                     result.value().outcome == loader::SaveOutcome::Unchanged)
+                done.resolve();
+            else
+                done.reject(makeError(ErrorCode::ConfigConflict, "configuration was not saved"));
+        });
+        cordis::detail::TaskAccess::observe(receipt, [done](Task<void>::Snapshot result) {
+            if (!result->hasValue())
+                done.reject(result->error());
+        });
+        return Result<Task<void>>::success(done.task());
+    }
+
 private:
+    /** @brief 从已接受目标构造新文档；编辑文本不做字符串拼接，避免身份/配置注入。 */
+    Result<Task<ConfigurationActionReport>> mutate(const std::string& path, const std::string& id,
+                                                   const std::string& plugin, const std::string& json,
+                                                   std::uint64_t expected)
+    {
+        const auto fail = [](ErrorInfo error) {
+            return Result<Task<ConfigurationActionReport>>::failure(std::move(error));
+        };
+        auto session = session_.lock();
+        if (!session)
+            return fail(makeError(ErrorCode::ContextClosing, "configuration session expired"));
+        auto snapshot = session->snapshot();
+        if (!snapshot.hasValue())
+            return fail(snapshot.error());
+        if (snapshot.value().coordinator.desiredRevision != expected || snapshot.value().closing)
+            return fail(makeError(ErrorCode::ConfigConflict, "configuration revision changed; reload before applying"));
+        if (path.empty() && !snapshot.value().coordinator.desired && snapshot.value().store.baseline &&
+            snapshot.value().store.baseline->version.exists)
+            return fail(makeError(ErrorCode::ConfigConflict,
+                                  "磁盘中已有配置尚未应用，请先通过“配置文件”窗口检查并应用现有目标，再添加实例。"));
+        if (json.size() > 1024 * 1024)
+            return fail(makeError(ErrorCode::InvalidArgument, "configuration JSON exceeds input budget"));
+        if (path.empty()) {
+            auto names = session->registeredPlugins();
+            if (!names.hasValue())
+                return fail(names.error());
+            if (std::find(names.value().begin(), names.value().end(), plugin) == names.value().end())
+                return fail(makeError(ErrorCode::InvalidArgument, "plugin is not registered"));
+        }
+        auto source = snapshot.value().coordinator.desired
+                          ? Result<loader::ParsedConfiguration>::success(snapshot.value().coordinator.desired->source())
+                          : loader::parseConfiguration("formatVersion: 1\nplugins: []\n");
+        if (!source.hasValue())
+            return fail(source.error());
+        auto parsed = path.empty() ? loader::addConfigurationEntry(source.value(), id, plugin, json)
+                                   : loader::setEntryConfiguration(source.value(), path, json);
+        if (!parsed.hasValue())
+            return fail(parsed.error());
+        auto draft = session->preview(parsed.value().normalizedYaml());
+        if (!draft.hasValue())
+            return fail(draft.error());
+        if (draft.value().baseRevision() != expected)
+            return fail(makeError(ErrorCode::ConfigConflict, "configuration changed during validation"));
+        return convert(session->apply(draft.value()));
+    }
     /** @brief 转换仍等待真实计划稳定；投递失败不能留下永远 pending 的管理回执。 */
     Result<Task<ConfigurationActionReport>> convert(Result<loader::AcceptedTarget> accepted)
     {

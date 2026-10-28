@@ -32,6 +32,8 @@ struct Workbench : std::enable_shared_from_this<Workbench> {
     std::shared_ptr<qt::QtScheduler> scheduler = std::make_shared<qt::QtScheduler>();
     std::shared_ptr<Kernel> kernel = std::make_shared<Kernel>(scheduler);
     ElaShell shell{scheduler};
+    /** @brief 界面偏好独立于配置 Session；smoke 使用空路径，不写本机设置。 */
+    explicit Workbench(const std::string& preferences) : shell(scheduler, preferences) {}
     std::shared_ptr<ConfigurationSession> session;
     std::shared_ptr<QtConfigurationIo> io;
     std::shared_ptr<QtConfigurationWatcher> watcher;
@@ -207,7 +209,8 @@ struct Workbench : std::enable_shared_from_this<Workbench> {
                                                                              state->session, initial, state->watcher);
                                                                          state->configurationWidget = widget.get();
                                                                          return widget;
-                                                                     }})
+                                                                     },
+                                                                     PagePresentation::Dialog})
                                                      .value();
                                      self->configurationPage.emplace(page);
                                      return page.ready();
@@ -217,6 +220,15 @@ struct Workbench : std::enable_shared_from_this<Workbench> {
         configurationManagement = createConfigurationManagement(session, scheduler);
         shell.management()->attach(kernel).value();
         shell.management()->attachConfiguration(configurationManagement, {notes.id(), host.id()}).value();
+        shell
+            .onConfigurationRequested([weak] {
+                auto state = weak.lock();
+                return state && state->configurationPage
+                           ? state->configurationPage->navigate()
+                           : Result<void>::failure(
+                                 makeError(ErrorCode::ContextClosing, "configuration editor unavailable"));
+            })
+            .value();
         auto instance = kernel->mount(host).value();
         auto self = shared_from_this();
         shell
@@ -231,7 +243,8 @@ struct Workbench : std::enable_shared_from_this<Workbench> {
                 return;
             }
             self->shell.show().value();
-            self->configurationPage->navigate().value();
+            if (smoke)
+                self->configurationPage->navigate().value();
             if (smoke) {
                 auto timer = new QTimer(self->configurationWidget);
                 timer->setInterval(10);
@@ -251,8 +264,10 @@ struct Workbench : std::enable_shared_from_this<Workbench> {
                         self->configurationWidget->findChild<QPushButton*>("CordisConfigSave")->click();
                         ++self->smokeStage;
                     } else if (!self->session->snapshot().value().store.dirty) {
-                        auto summary = self->configurationWidget->findChild<QLabel*>("CordisConfigSummary");
-                        if (!summary || !summary->text().contains(QString::fromUtf8("已保存 1")))
+                        const auto store = self->session->snapshot().value().store;
+                        auto summary = self->configurationWidget->findChild<QLabel*>("CordisConfigSaveStatus");
+                        if (store.persistedRevision != 1 || store.writing || !summary ||
+                            !summary->text().contains(QString::fromUtf8("已保存")))
                             return;
                         timer->stop();
                         auto name = eTheme->getThemeMode() == ElaThemeType::Dark ? "/config-workbench-dark.png"
@@ -262,7 +277,7 @@ struct Workbench : std::enable_shared_from_this<Workbench> {
                             self->fail("configuration screenshot failed");
                             return;
                         }
-                        self->configurationWidget->window()->close();
+                        self->configurationWidget->window()->parentWidget()->close();
                     }
                 });
                 timer->start();
@@ -308,7 +323,12 @@ int main(int argc, char** argv)
         if (smoke && QApplication::platformName() == "offscreen")
             QFontDatabase::addApplicationFont(qEnvironmentVariable("WINDIR") + "/Fonts/msyh.ttc");
 #endif
-        auto state = std::make_shared<Workbench>();
+        const auto preferences =
+            smoke ? std::string{}
+                  : (QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/ui-preferences.json")
+                        .toUtf8()
+                        .toStdString();
+        auto state = std::make_shared<Workbench>(preferences);
         state->start(path, smoke);
         if (smoke)
             QTimer::singleShot(15000, &app, [] { QCoreApplication::exit(EXIT_FAILURE); });

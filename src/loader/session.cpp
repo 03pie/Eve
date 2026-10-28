@@ -276,6 +276,17 @@ Result<SessionSnapshot> ConfigurationSession::snapshot() const
         }
     return Result<SessionSnapshot>::success(std::move(output));
 }
+/** @brief 仅复制定义名称，管理界面不能调用或保留插件 schema。 */
+Result<std::vector<std::string>> ConfigurationSession::registeredPlugins() const
+{
+    auto checked = control_->check(false);
+    if (!checked.hasValue())
+        return Result<std::vector<std::string>>::failure(checked.error());
+    std::vector<std::string> names;
+    for (const auto& definition : control_->definitions)
+        names.push_back(definition.id);
+    return Result<std::vector<std::string>>::success(std::move(names));
+}
 /** @brief 先关闭接受门禁，再等业务栈结束并关闭 Store，最后汇合两个回执。 */
 Task<void> ConfigurationSession::close()
 {

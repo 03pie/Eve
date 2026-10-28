@@ -286,6 +286,11 @@ void partialFailure()
     CHECK(state.latestPlan->outcome == PlanOutcome::Failed && state.coordinator.desiredRevision == 2);
     CHECK(state.coordinator.running.size() == 2 && state.coordinator.running[0].state == InstanceState::Active &&
           state.coordinator.running[1].state == InstanceState::Failed);
+    until([&] {
+        return scene.editorPage->findChild<QLabel*>("CordisConfigSummary")
+            ->text()
+            .contains(QString::fromUtf8("执行失败"));
+    });
     CHECK(state.coordinator.running[0].configuration.config == "{\"title\":\"second\"}" &&
           state.coordinator.desired->source().structure().entries().at("a").config == "{\"title\":\"second\"}");
     CHECK(std::any_of(state.latestPlan->entries.begin(), state.latestPlan->entries.end(), [](const EntryExecution& entry) {
@@ -295,12 +300,22 @@ void partialFailure()
         CommitBlock block(scene.path());
         const auto failed = scene.save();
         CHECK(failed.outcome == SaveOutcome::Failed && failed.error && failed.error->code == ErrorCode::ConfigIo);
+        until([&] {
+            return scene.editorPage->findChild<QLabel*>("CordisConfigSaveStatus")
+                ->text()
+                .contains(QString::fromUtf8("保存失败"));
+        });
         state = scene.session->snapshot().value();
         CHECK(state.store.dirty && state.store.persistedRevision == 1 && state.coordinator.desiredRevision == 2 &&
               state.latestPlan->outcome == PlanOutcome::Failed);
         CHECK(readConfigurationFile(scene.path()).value().version.sha256 == original.version.sha256);
     }
     CHECK(scene.save().outcome == SaveOutcome::Written);
+    until([&] {
+        return scene.editorPage->findChild<QLabel*>("CordisConfigSaveStatus")
+            ->text()
+            .contains(QString::fromUtf8("已保存 R2"));
+    });
     state = scene.session->snapshot().value();
     CHECK(state.store.persistedRevision == 2 && !state.store.dirty && state.latestPlan->outcome == PlanOutcome::Failed);
     CHECK(readConfigurationFile(scene.path()).value().text == state.coordinator.desired->source().normalizedYaml());

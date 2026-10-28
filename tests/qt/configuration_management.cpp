@@ -1,18 +1,24 @@
 /** @file configuration_management.cpp
  * @brief 真实 Session/Kernel 验证配置管理路由、Home 身份、CAS 和关闭屏障。
  */
+#include <ElaDialog.h>
 #include <ElaTheme.h>
 #include <ElaToggleSwitch.h>
 #include <ElaWindow.h>
 #include <QAbstractItemModel>
 #include <QAction>
 #include <QApplication>
+#include <QComboBox>
 #include <QEvent>
 #include <QEventLoop>
+#include <QFile>
 #include <QFontDatabase>
 #include <QLabel>
+#include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTableView>
 #include <QTemporaryDir>
@@ -460,6 +466,195 @@ void layout()
     }
     scene.close();
 }
+/** @brief 管理与配置通过卡片进入同一宿主窗口，不增加中央页签，关闭不停止实例。 */
+void cardWindows()
+{
+    Scene scene;
+    scene.apply();
+    scene.toggle();
+    auto tabs = scene.find<QTabBar>("CordisPageTabs");
+    const auto navigation = scene.window->getCurrentNavigationPageKey();
+    auto before = scene.route->snapshot().value().entries.front();
+    scene.card()->findChild<QPushButton*>("CordisPluginManage")->click();
+    QPointer<ElaDialog> dialog = scene.find<ElaDialog>("CordisManagement");
+    CHECK(dialog->isVisible() && dialog->parentWidget() == scene.window);
+    CHECK(tabs->count() == 1 && scene.window->getCurrentNavigationPageKey() == navigation);
+    CHECK(dialog->windowTitle().contains("r") && !scene.find<QTableView>("CordisInstanceTable")->isVisible());
+    dialog->close();
+    CHECK(dialog->isHidden() && scene.route->snapshot().value().entries.front().instance == before.instance);
+    scene.card()->findChild<QPushButton*>("CordisPluginConfigure")->click();
+    CHECK(dialog->isVisible());
+    CHECK(scene.find<QTabWidget>("CordisManagementTabs")->currentWidget() ==
+          scene.find<QWidget>("CordisManagementConfiguration"));
+    CHECK(scene.find<QPlainTextEdit>("CordisPluginConfigurationEditor")->toPlainText() == "{}");
+    for (auto theme : {ElaThemeType::Light, ElaThemeType::Dark}) {
+        eTheme->setThemeMode(theme);
+        QTest::qWait(30);
+        const auto suffix = theme == ElaThemeType::Light ? "light" : "dark";
+        auto editor = scene.find<QPlainTextEdit>("CordisPluginConfigurationEditor");
+        const auto point = editor->viewport()->mapTo(
+            dialog, QPoint(editor->viewport()->width() - 20, editor->viewport()->height() - 20));
+        const auto background = dialog->grab().toImage().pixelColor(point);
+        CHECK(theme == ElaThemeType::Dark ? background.lightness() < 100 : background.lightness() > 180);
+        CHECK(dialog->grab().save(QCoreApplication::applicationDirPath() + "/card-management-" + suffix + ".png"));
+    }
+    scene.apply("formatVersion: 1\nplugins: []\n");
+    CHECK(!scene.find<QPushButton>("CordisPluginConfigurationApply")->isEnabled());
+    scene.find<QAction>("CordisOpenNotifications")->trigger();
+    CHECK(scene.find<QTabWidget>("CordisManagementTabs")->currentWidget() ==
+          scene.find<QPlainTextEdit>("CordisManagementNotices"));
+    scene.close();
+    CHECK(!dialog);
+}
+/** @brief 平台菜单从已注册目录创建配置实例，无中央导航、重复添加或隐式即时保存。 */
+void addInstance()
+{
+    Scene scene;
+    CHECK(scene.session->registeredPlugins().value() == std::vector<std::string>{"demo"});
+    until([&] { return scene.find<QAction>("CordisAddPlugin")->isEnabled(); });
+    scene.find<QAction>("CordisAddPlugin")->trigger();
+    auto dialog = scene.find<ElaDialog>("CordisAddPluginDialog");
+    CHECK(dialog->isVisible());
+    auto types = scene.find<QComboBox>("CordisAddPluginType");
+    CHECK(types->count() == 1 && types->currentText() == "demo");
+    scene.find<QLineEdit>("CordisAddPluginId")->setText("added");
+    scene.find<QPlainTextEdit>("CordisAddPluginConfiguration")->setPlainText("{\"title\":\"added\"}");
+    for (auto theme : {ElaThemeType::Light, ElaThemeType::Dark}) {
+        eTheme->setThemeMode(theme);
+        QTest::qWait(30);
+        const auto suffix = theme == ElaThemeType::Light ? "light" : "dark";
+        CHECK(dialog->grab().save(QCoreApplication::applicationDirPath() + "/add-plugin-" + suffix + ".png"));
+    }
+    scene.find<QPushButton>("CordisAddPluginSubmit")->click();
+    until([&] { return dialog->isHidden(); });
+    auto state = scene.route->snapshot().value();
+    CHECK(state.revision == 1 && state.dirty && state.entries.size() == 1 && state.entries[0].path == "added");
+    CHECK(!QFile::exists(scene.directory.filePath("cordis.yaml")));
+    until([&] { return scene.card("added") != nullptr; });
+    CHECK(scene.find<QTabBar>("CordisPageTabs")->count() == 1);
+    auto duplicate = scene.route->addInstance("added", "demo", "{}", state.revision);
+    CHECK(!duplicate.hasValue() && scene.route->snapshot().value().revision == state.revision);
+    scene.close();
+    Scene baseline(false);
+    wait(baseline.session->close());
+    const auto path = baseline.directory.filePath("cordis.yaml");
+    QFile file(path);
+    CHECK(file.open(QIODevice::WriteOnly));
+    CHECK(file.write("formatVersion: 1\nplugins: [{id: existing, plugin: demo}]\n") > 0);
+    file.close();
+    auto driver = std::make_shared<KernelReconcileDriver>(
+        baseline.scheduler, baseline.kernel, std::vector<KernelPlugin>{{"demo", *baseline.pluginDefinition}});
+    baseline.session = std::make_shared<ConfigurationSession>(
+        baseline.scheduler, driver,
+        std::vector<PluginDefinition>{{"demo", {}, [](const std::string&) { return Result<void>::success(); }}},
+        std::make_shared<QtConfigurationWriter>(path), readConfigurationFile(path).value());
+    baseline.route = createConfigurationManagement(baseline.session, baseline.scheduler);
+    CHECK(!baseline.route->addInstance("new", "demo", "{}", 0).hasValue());
+    CHECK(baseline.route->snapshot().value().revision == 0 && baseline.activations == 0);
+    CHECK(readConfigurationFile(path).value().text.find("existing") != std::string::npos);
+    baseline.close();
+}
+/** @brief 子树编辑只修改指定 config，CAS、未知插件、重复身份与非法 JSON 都不接受新目标。 */
+void editInstance()
+{
+    Scene scene;
+    scene.apply(
+        "formatVersion: 1\nplugins: [{id: r, plugin: demo, config: {keep: yes}, children: [{id: c, plugin: "
+        "demo}]}, {id: sibling, plugin: demo, config: {big: 9007199254740993, decimal: 1.2345678901234567890}}]\n");
+    auto edited = scene.route->updateConfiguration("r/c", "{\"title\":\"child\"}", 1).value();
+    wait(edited);
+    auto state = scene.session->snapshot().value();
+    const auto& entries = state.coordinator.desired->source().structure().entries();
+    CHECK(entries.size() == 3 && entries.at("r/c").config == "{\"title\":\"child\"}" &&
+          entries.at("sibling").config == "{\"big\":9007199254740993,\"decimal\":1.2345678901234567890}");
+    CHECK(entries.at("r").config.find("keep") != std::string::npos && state.coordinator.desiredRevision == 2);
+    CHECK(!scene.route->updateConfiguration("r/c", "{}", 1).hasValue());
+    CHECK(!scene.route->updateConfiguration("missing", "{}", 2).hasValue());
+    CHECK(!scene.route->addInstance("unknown", "other", "{}", 2).hasValue());
+    CHECK(!scene.route->addInstance("broken", "demo", "{broken:", 2).hasValue());
+    CHECK(scene.route->snapshot().value().revision == 2);
+    scene.toggle();
+    scene.card()->findChild<QPushButton*>("CordisPluginConfigure")->click();
+    auto editor = scene.find<QPlainTextEdit>("CordisPluginConfigurationEditor");
+    editor->setPlainText("{\"draft\":true}");
+    auto change = scene.route->setEnabled("sibling", false, 2).value();
+    wait(change);
+    scene.find<QPushButton>("CordisPluginConfigurationApply")->click();
+    CHECK(editor->toPlainText() == "{\"draft\":true}" && scene.route->snapshot().value().revision == 3);
+    scene.find<QPushButton>("CordisPluginConfigurationReload")->click();
+    CHECK(editor->toPlainText().contains("keep") && !editor->toPlainText().contains("draft"));
+    editor->setPlainText("{\"new\":true}");
+    scene.find<QPushButton>("CordisPluginConfigurationApply")->click();
+    until([&] { return scene.find<QPushButton>("CordisPluginConfigurationReload")->isEnabled(); });
+    CHECK(scene.route->snapshot().value().revision == 4 && scene.route->snapshot().value().dirty);
+    scene.find<QPushButton>("CordisPluginConfigurationSave")->click();
+    until([&] { return !scene.route->snapshot().value().dirty; });
+    scene.close();
+}
+/** @brief 保存冲突不回报成功，只有显式采用磁盘基线后才允许重新保存。 */
+void saveConflict()
+{
+    Scene scene;
+    wait(scene.route->addInstance("a", "demo", "{}", 0).value());
+    QFile file(scene.directory.filePath("cordis.yaml"));
+    CHECK(file.open(QIODevice::WriteOnly));
+    CHECK(file.write("formatVersion: 1\nplugins: []\n") > 0);
+    file.close();
+    auto saving = scene.route->saveConfiguration(1).value();
+    until([&] { return saving.isReady(); });
+    CHECK(!saving.tryResult()->hasValue() && scene.session->snapshot().value().store.dirty);
+    scene.session->rebaseExternal(1).value();
+    wait(scene.route->saveConfiguration(1).value());
+    CHECK(!scene.session->snapshot().value().store.dirty);
+    scene.close();
+}
+/** @brief 弹窗贡献仍属于 epoch/effect，关闭只隐藏，停用完整删除窗口与内容。 */
+void dialogLifetime()
+{
+    Scene scene;
+    std::optional<PageHandle> page;
+    QPointer<QWidget> body;
+    auto runtime = scene.kernel
+                       ->registerPlugin("dialog-owner",
+                                        [&](Context context) {
+                                            page = scene.shell.pages()
+                                                       ->add(context, {"dialog", "Configuration", "",
+                                                                       [&] {
+                                                                           auto widget = std::make_unique<QWidget>();
+                                                                           body = widget.get();
+                                                                           return widget;
+                                                                       },
+                                                                       PagePresentation::Dialog})
+                                                       .value();
+                                            return page->ready();
+                                        })
+                       .value();
+    auto instance = scene.kernel->mount(runtime).value();
+    wait(instance.ready());
+    CHECK(!page->snapshot().value().navigationPresent && scene.find<QTabBar>("CordisPageTabs")->count() == 1);
+    page->navigate().value();
+    QPointer<QWidget> dialog = body->window();
+    CHECK(dialog->isVisible() && page->snapshot().value().current);
+    dialog->close();
+    CHECK(!page->snapshot().value().current && page->snapshot().value().widgetAlive);
+    page->navigate().value();
+    const auto id = QString::number(instance.snapshot().value().instance.value());
+    QPointer<QWidget> card;
+    until([&] {
+        for (auto item : scene.window->findChildren<QWidget*>("CordisPluginCard"))
+            if (item->property("CordisPluginId").toString() == id)
+                card = item;
+        return !card.isNull();
+    });
+    CHECK(!card->findChild<QPushButton*>("CordisPluginConfigure")->isEnabled());
+    card->findChild<QPushButton*>("CordisPluginManage")->click();
+    auto stop = scene.find<QPushButton>("CordisManagementStop");
+    CHECK(stop->isVisible() && stop->isEnabled());
+    stop->click();
+    until([&] { return instance.snapshot().value().state == InstanceState::Disposed && !body && !dialog; });
+    CHECK(!body && !dialog && !page->navigate().hasValue());
+    scene.close();
+}
 /** @brief 独立进程避免 Ela 全局主题或路由残留污染其他场景。 */
 int main(int argc, char** argv)
 {
@@ -496,6 +691,16 @@ int main(int argc, char** argv)
             malformed();
         else if (name == "layout")
             layout();
+        else if (name == "card_windows")
+            cardWindows();
+        else if (name == "add_instance")
+            addInstance();
+        else if (name == "edit_instance")
+            editInstance();
+        else if (name == "save_conflict")
+            saveConflict();
+        else if (name == "dialog_lifetime")
+            dialogLifetime();
         else
             return EXIT_FAILURE;
         return EXIT_SUCCESS;

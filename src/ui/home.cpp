@@ -1,6 +1,7 @@
 /** @file home.cpp
  * @brief 以 Ela 背景卡和紧凑状态卡展示插件，卡片不参与页面导航。
  */
+#include "appearance_p.hpp"
 #include "home_p.hpp"
 #include <ElaFlowLayout.h>
 #include <ElaIcon.h>
@@ -74,23 +75,24 @@ HomePage::HomePage()
     setObjectName("CordisWelcomePage");
     setWindowTitle(QString::fromUtf8("Cordis 插件工作台"));
     setTitleVisible(false);
-    setContentsMargins(12, 8, 12, 8);
+    setContentsMargins(16, 12, 16, 12);
     auto content = new QWidget;
     content->setWindowTitle(windowTitle());
     auto layout = new QVBoxLayout(content);
     layout->setContentsMargins(8, 8, 8, 20);
-    layout->setSpacing(18);
+    layout->setSpacing(16);
     layout->setSizeConstraint(QLayout::SetMinimumSize);
     auto hero = new ElaImageCard(content);
     hero->setObjectName("CordisHomeBanner");
     hero->setCardImage(banner());
     hero->setBorderRadius(14);
-    hero->setFixedHeight(260);
+    hero->setMinimumHeight(220);
+    hero->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     auto body = new QVBoxLayout(hero);
     body->setContentsMargins(30, 24, 30, 24);
-    body->setSpacing(12);
+    body->setSpacing(8);
     auto eyebrow = new ElaText("CORDIS  /  PLUGIN WORKBENCH", 13, hero);
-    auto title = new ElaText(QString::fromUtf8("把灵感，连接成工作台。"), 32, hero);
+    auto title = new ElaText(QString::fromUtf8("把灵感，连接成工作台。"), 30, hero);
     title->setIsBold(true);
     auto subtitle = new ElaText(QString::fromUtf8("你的插件、工具与创作空间，从这里出发。"), 15, hero);
     for (auto text : {eyebrow, title, subtitle}) {
@@ -101,25 +103,30 @@ HomePage::HomePage()
     auto actions = new QHBoxLayout;
     actions->setSpacing(10);
     for (const auto& entry :
-         {std::make_pair("CordisWelcomePlugins", "管理插件"), std::make_pair("CordisWelcomeSettings", "个性化设置"),
+         {std::make_pair("CordisWelcomePlugins", "添加插件"), std::make_pair("CordisWelcomeSettings", "个性化设置"),
           std::make_pair("CordisWelcomeCommands", "打开命令")}) {
-        auto button = new ElaPushButton(QString::fromUtf8(entry.second), hero);
+        auto button = new ActionButton(QString::fromUtf8(entry.second), hero);
         button->setObjectName(QString::fromLatin1(entry.first));
         button->setMinimumHeight(34);
+        if (button->objectName() == "CordisWelcomePlugins")
+            primaryButton(button);
         actions->addWidget(button);
     }
     actions->addStretch();
     body->addLayout(actions);
     layout->addWidget(hero);
     auto heading = new QHBoxLayout;
-    auto label = new ElaText(QString::fromUtf8("插件状态"), 22, content);
+    auto label = new ElaText(QString::fromUtf8("插件状态"), 20, content);
     label->setIsBold(true);
     heading->addWidget(label);
     heading->addStretch();
     count_ = new ElaText(QString::fromUtf8("0 个插件"), 13, content);
+    secondaryText(count_);
     heading->addWidget(count_);
     layout->addLayout(heading);
-    auto help = new ElaText(QString::fromUtf8("查看插件当前状态，使用左右开关加载或停止插件。"), 13, content);
+    auto help = new ElaText(
+        QString::fromUtf8("使用左右开关启停；从卡片打开管理与配置窗口。添加插件位于顶部“文件”菜单。"), 13, content);
+    secondaryText(help);
     layout->addWidget(help);
     error_ = new ElaText(content);
     error_->setObjectName("CordisHomeError");
@@ -132,7 +139,10 @@ HomePage::HomePage()
     flow_ = new ElaFlowLayout(cards_, 0, 12, 12);
     flow_->setIsAnimation(false);
     layout->addWidget(cards_);
-    empty_ = new ElaText(QString::fromUtf8("插件就绪后会显示在这里，也可以先到插件管理中查看。"), 14, content);
+    empty_ =
+        new ElaText(QString::fromUtf8("暂无插件。通过“文件 → 添加插件配置…”添加已注册插件的配置实例。"), 14, content);
+    empty_->setObjectName("CordisHomeEmpty");
+    secondaryText(empty_);
     layout->addWidget(empty_);
     layout->addStretch();
     addCentralWidget(content);
@@ -140,10 +150,12 @@ HomePage::HomePage()
 
 void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
                           std::function<Result<void>(const QString&, bool, std::uint64_t)> power,
-                          std::function<void(const std::function<void()>&)> access)
+                          std::function<void(const std::function<void()>&)> access,
+                          std::function<Result<void>(const QString&, bool)> manage)
 {
     power_ = std::move(power);
     access_ = std::move(access);
+    manage_ = std::move(manage);
     bool layoutChanged = false;
     QSet<QString> retained;
     for (const auto& plugin : plugins) {
@@ -179,17 +191,57 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
             status->setTextFormat(Qt::PlainText);
             status->setTextPixelSize(13);
             text->addWidget(title);
-            text->addWidget(status);
+            auto statusRow = new QHBoxLayout;
+            statusRow->setSpacing(6);
+            auto stateIcon = new ElaText(item);
+            stateIcon->setObjectName("CordisPluginStateIcon");
+            stateIcon->setFixedSize(16, 16);
+            statusRow->addWidget(stateIcon);
+            statusRow->addWidget(status, 1);
+            text->addLayout(statusRow);
             header->addLayout(text, 1);
             body->addLayout(header);
             auto footer = new QHBoxLayout;
             auto identity = new ElaText(QString::fromUtf8("实例 #%1").arg(plugin.id), 12, item);
             identity->setObjectName("CordisPluginIdentity");
+            secondaryText(identity);
             footer->addWidget(identity, 1);
-            auto button = new ElaToggleSwitch(item);
+            auto button = new KeyboardToggleSwitch(item);
             button->setObjectName("CordisPluginPower");
             footer->addWidget(button, 0, Qt::AlignVCenter);
             body->addLayout(footer);
+            auto tools = new QHBoxLayout;
+            for (const auto& entry :
+                 {std::make_pair("CordisPluginManage", "管理"), std::make_pair("CordisPluginConfigure", "配置")}) {
+                auto action = new ActionButton(QString::fromUtf8(entry.second), item);
+                action->setObjectName(QString::fromLatin1(entry.first));
+                action->setMinimumHeight(30);
+                action->setAccessibleName(plugin.title + " · " + action->text());
+                const bool configuration = action->objectName() == "CordisPluginConfigure";
+                action->setEnabled(!configuration || plugin.configuration);
+                if (configuration)
+                    action->setToolTip(plugin.configuration
+                                           ? QString::fromUtf8("编辑此条目的配置并显式保存")
+                                           : QString::fromUtf8("此实例由宿主手动创建，未接入配置会话"));
+                tools->addWidget(action);
+                connect(action, &QPushButton::clicked, this, [this, id = plugin.id, configuration] {
+                    if (!manage_ || !access_)
+                        return;
+                    auto manage = manage_;
+                    auto access = access_;
+                    access([this, id, configuration, manage] {
+                        QPointer<HomePage> alive(this);
+                        auto result = manage(id, configuration);
+                        if (!alive)
+                            return;
+                        if (!result.hasValue())
+                            error_->setText(QString::fromStdString(result.error().message));
+                        if (alive)
+                            error_->setVisible(!result.hasValue());
+                    });
+                });
+            }
+            body->addLayout(tools);
             flow_->addWidget(item);
             items_.insert(plugin.id, item);
             // 发出时捕获修订，排队执行；刷新后的新修订不能覆盖旧点击的 CAS。
@@ -243,6 +295,13 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
         const auto state = plugin.busy ? QString::fromUtf8("操作中 · %1").arg(plugin.subtitle) : plugin.subtitle;
         if (status->text() != state)
             status->setText(state);
+        status->setWordWrap(true);
+        auto stateIcon = item->findChild<ElaText*>("CordisPluginStateIcon");
+        auto presentation = plugin.status;
+        if (plugin.busy)
+            presentation.icon = ElaIconType::ArrowsRotate;
+        stateIcon->setPixmap(statusIcon(presentation).pixmap(16, 16));
+        stateIcon->setAccessibleName(state);
         button->setEnabled(static_cast<bool>(power_) && !plugin.busy &&
                            (plugin.canStop || plugin.canLoad || plugin.canRetry));
         if (button->getIsToggled() != plugin.enabled) {
@@ -254,7 +313,13 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
                             : plugin.canStop     ? QString::fromUtf8("停止插件")
                             : plugin.canRetry    ? QString::fromUtf8("重试加载")
                                                  : QString::fromUtf8("加载插件");
-        button->setToolTip(plugin.busy ? QString::fromUtf8("正在处理，请稍候") : action);
+        const auto hint = !power_       ? QString::fromUtf8("此入口仅展示状态；请使用所属插件的管理入口。")
+                          : plugin.busy ? QString::fromUtf8("正在处理，请稍候，不会重复提交操作。")
+                          : !(plugin.canStop || plugin.canLoad || plugin.canRetry)
+                              ? QString::fromUtf8("当前状态不允许修改；会话可能已关闭或资源仍在清理，请查看插件管理。")
+                              : action;
+        button->setToolTip(hint);
+        button->setAccessibleDescription(hint);
         button->setAccessibleName(action);
         item->setToolTip(plugin.title.toHtmlEscaped() + "<br>" + plugin.subtitle.toHtmlEscaped());
     }

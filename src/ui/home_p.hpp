@@ -20,7 +20,8 @@ public:
     /** @brief 增量更新卡片，未变化的实例保持悬停、布局和焦点。 */
     void setPlugins(const std::vector<HomePlugin>& plugins,
                     std::function<Result<void>(const QString&, bool, std::uint64_t)> power,
-                    std::function<void(const std::function<void()>&)> access);
+                    std::function<void(const std::function<void()>&)> access,
+                    std::function<Result<void>(const QString&, bool)> manage);
 
 private:
     QPointer<QWidget> cards_;
@@ -31,5 +32,6 @@ private:
     QMap<QString, QPointer<ElaScrollPageArea>> items_;
     std::function<Result<void>(const QString&, bool, std::uint64_t)> power_;
     std::function<void(const std::function<void()>&)> access_;
+    std::function<Result<void>(const QString&, bool)> manage_;
 };
 } // namespace cordis::ui::detail

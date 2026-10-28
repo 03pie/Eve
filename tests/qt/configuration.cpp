@@ -1,12 +1,15 @@
 /** @file configuration.cpp
  * @brief 真实 Qt、Kernel 和文件事务验证 Ela 配置页，不用控件状态冒充目标/保存成功。
  */
+#include <ElaText.h>
 #include <ElaTheme.h>
 #include <QAbstractItemModel>
 #include <QApplication>
 #include <QEventLoop>
 #include <QFile>
 #include <QFontDatabase>
+#include <QIcon>
+#include <QImage>
 #include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPointer>
@@ -387,6 +390,53 @@ void editorReentry()
     CHECK(editor->toPlainText() == "edited during toggle" && !enabled->isEnabled());
     scene.close();
 }
+/** @brief 编辑、真实运行和保存反馈必须分开，未应用文本不能被保存。 */
+void feedback()
+{
+    Scene scene;
+    auto edit = scene.child<ElaText>("CordisConfigEditStatus");
+    auto runtime = scene.child<ElaText>("CordisConfigSummary");
+    auto disk = scene.child<ElaText>("CordisConfigSaveStatus");
+    auto editor = scene.child<QPlainTextEdit>("CordisConfigEditor");
+    CHECK(editor->font().family() == QApplication::font().family());
+    CHECK(runtime->text().contains(QString::fromUtf8("尚未应用")));
+    scene.apply();
+    until([&] { return runtime->text().contains(QString::fromUtf8("已应用")); });
+    CHECK(edit->text().contains(QString::fromUtf8("已应用")));
+    CHECK(disk->text().contains(QString::fromUtf8("未保存")));
+    const auto ink = [&] {
+        auto table = scene.child<QTableView>("CordisConfigEntries");
+        const auto icon = table->model()->index(0, 2).data(Qt::DecorationRole).value<QIcon>();
+        const auto image = icon.pixmap(14, 14).toImage();
+        QColor strongest(0, 0, 0, 0);
+        for (int y = 0; y < image.height(); ++y)
+            for (int x = 0; x < image.width(); ++x)
+                if (image.pixelColor(x, y).alpha() > strongest.alpha())
+                    strongest = image.pixelColor(x, y);
+        return strongest;
+    };
+    eTheme->setThemeMode(ElaThemeType::Dark);
+    CHECK(ink().red() > 150);
+    eTheme->setThemeMode(ElaThemeType::Light);
+    CHECK(ink().red() < 100 && scene.activations == 2);
+    editor->setPlainText("UNAPPLIED_DRAFT");
+    until([&] { return edit->text().contains(QString::fromUtf8("尚未应用")); });
+    CHECK(runtime->text().contains(QString::fromUtf8("已应用")));
+    scene.child<QPushButton>("CordisConfigSave")->click();
+    until([&] { return disk->text().contains(QString::fromUtf8("已保存")); });
+    CHECK(editor->toPlainText() == "UNAPPLIED_DRAFT");
+    QFile file(scene.path());
+    CHECK(file.open(QIODevice::ReadOnly) && !file.readAll().contains("UNAPPLIED_DRAFT"));
+    file.close();
+    CHECK(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    CHECK(file.write("external: true\n") > 0);
+    file.close();
+    scene.child<QPushButton>("CordisConfigSave")->click();
+    until([&] { return disk->text().contains(QString::fromUtf8("冲突")); });
+    CHECK(runtime->text().contains(QString::fromUtf8("已应用")) && editor->toPlainText() == "UNAPPLIED_DRAFT");
+    scene.session->rebaseExternal(1).value();
+    scene.close();
+}
 /** @brief 每项使用独立 QApplication，offscreen 下显式加载中文字体。 */
 int main(int argc, char** argv)
 {
@@ -399,7 +449,9 @@ int main(int argc, char** argv)
             QFontDatabase::addApplicationFont(qEnvironmentVariable("WINDIR") + "/Fonts/msyh.ttc");
 #endif
         const std::string name = argv[1];
-        if (name == "editor_reentry")
+        if (name == "feedback")
+            feedback();
+        else if (name == "editor_reentry")
             editorReentry();
         else if (name == "disk_changes")
             diskChanges();

@@ -115,6 +115,8 @@ struct ServicesControl : std::enable_shared_from_this<ServicesControl> {
             latest.level == NotificationLevel::Warning ? QString::fromUtf8("提示：") : QString::fromUtf8("消息：");
         const auto text = prefix + QString::fromStdString(latest.text);
         notification->setText(text);
+        if (notification)
+            notification->setToolTip(text);
         if (output) output->appendPlainText(text);
         return Result<std::uint64_t>::success(submittedSequence);
     }

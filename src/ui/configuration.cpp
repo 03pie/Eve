@@ -1,6 +1,8 @@
 /** @file configuration.cpp
  * @brief Ela 配置编辑、差异、期望启停及保存页面；所有运行操作通过宿主会话。
  */
+#include "appearance_p.hpp"
+#include "status_p.hpp"
 #include <ElaPlainTextEdit.h>
 #include <ElaPushButton.h>
 #include <ElaTableView.h>
@@ -9,6 +11,7 @@
 #include <ElaToggleSwitch.h>
 #include <QApplication>
 #include <QEvent>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QItemSelectionModel>
@@ -101,49 +104,75 @@ public:
         applyTheme(eTheme->getThemeMode());
         QObject::connect(eTheme, &ElaTheme::themeModeChanged, this, applyTheme);
         auto layout = new QVBoxLayout(this);
-        layout->setContentsMargins(16, 12, 16, 12);
+        layout->setContentsMargins(24, 20, 24, 16);
+        layout->setSpacing(8);
         auto title = new ElaText(QString::fromUtf8("配置管理"), 24, this);
+        title->setIsBold(true);
         layout->addWidget(title);
-        auto help = new ElaText(
-            QString::fromUtf8(
-                "检查差异后应用；启停修改期望配置。保存会规范化 YAML（不保留注释），退出会刷新已应用的修改。"),
-            this);
+        auto help = new ElaText(QString::fromUtf8("编辑配置 → 检查差异 → 应用到工作台 → 保存到磁盘"), this);
         help->setWordWrap(true);
-        help->setTextPixelSize(14);
+        help->setTextPixelSize(13);
         help->setTextFormat(Qt::PlainText);
+        help->setToolTip(
+            QString::fromUtf8("保存会规范化 YAML，不保留注释；退出会刷新已应用的修改，未应用编辑不会写盘。"));
+        detail::secondaryText(help);
         layout->addWidget(help);
         summary_ = new ElaText(this);
         summary_->setObjectName("CordisConfigSummary");
         summary_->setWordWrap(true);
-        summary_->setTextPixelSize(14);
+        summary_->setTextPixelSize(13);
         summary_->setTextFormat(Qt::PlainText);
-        layout->addWidget(summary_);
+        auto states = new QHBoxLayout;
+        states->setSpacing(16);
+        editStatus_ = new ElaText(this);
+        editStatus_->setObjectName("CordisConfigEditStatus");
+        saveStatus_ = new ElaText(this);
+        saveStatus_->setObjectName("CordisConfigSaveStatus");
+        for (auto statusLabel : {editStatus_, summary_, saveStatus_}) {
+            statusLabel->setTextPixelSize(13);
+            statusLabel->setTextFormat(Qt::PlainText);
+            statusLabel->setWordWrap(true);
+            states->addWidget(statusLabel, 1);
+        }
+        layout->addLayout(states);
         auto buttons = new QHBoxLayout;
-        preview_ = new ElaPushButton(QString::fromUtf8("检查差异"), this);
+        buttons->setSpacing(8);
+        preview_ = new detail::ActionButton(QString::fromUtf8("检查差异"), this);
         preview_->setObjectName("CordisConfigPreview");
-        apply_ = new ElaPushButton(QString::fromUtf8("应用"), this);
+        apply_ = new detail::ActionButton(QString::fromUtf8("应用"), this);
         apply_->setObjectName("CordisConfigApply");
-        save_ = new ElaPushButton(QString::fromUtf8("保存"), this);
+        detail::primaryButton(apply_);
+        apply_->setToolTip(QString::fromUtf8("将已检查的配置应用到工作台；保存到磁盘需另行操作。"));
+        save_ = new detail::ActionButton(QString::fromUtf8("保存"), this);
         save_->setObjectName("CordisConfigSave");
-        reset_ = new ElaPushButton(QString::fromUtf8("使用已应用目标"), this);
+        reset_ = new detail::ActionButton(QString::fromUtf8("还原编辑"), this);
         reset_->setObjectName("CordisConfigReset");
-        rebase_ = new ElaPushButton(QString::fromUtf8("以冲突版本为基线"), this);
+        reset_->setToolTip(QString::fromUtf8("使用已应用目标替换编辑区，放弃尚未应用的编辑。"));
+        rebase_ = new detail::ActionButton(QString::fromUtf8("采用冲突基线"), this);
         rebase_->setObjectName("CordisConfigRebase");
         rebase_->setToolTip(QString::fromUtf8("保留当前目标，只采用下方展示的磁盘版本为新基线；之后仍需点击保存。"));
-        for (auto button : {preview_, apply_, save_, reset_, rebase_})
+        for (auto button : {preview_, apply_, save_}) {
+            button->setMinimumHeight(32);
             buttons->addWidget(button);
+        }
         buttons->addStretch();
+        for (auto button : {reset_, rebase_}) {
+            button->setMinimumHeight(32);
+            buttons->addWidget(button);
+        }
         layout->addLayout(buttons);
         diskRow_ = new QWidget(this);
         auto diskLayout = new QHBoxLayout(diskRow_);
         diskLayout->setContentsMargins(0, 0, 0, 0);
         diskStatus_ = new ElaText(diskRow_);
-        diskStatus_->setTextPixelSize(14);
+        diskStatus_->setTextPixelSize(12);
         diskStatus_->setTextFormat(Qt::PlainText);
         diskStatus_->setWordWrap(true);
         diskStatus_->setObjectName("CordisConfigDiskStatus");
-        diskLoad_ = new ElaPushButton(QString::fromUtf8("将磁盘版本载入编辑区"), diskRow_);
+        detail::secondaryText(diskStatus_);
+        diskLoad_ = new detail::ActionButton(QString::fromUtf8("载入磁盘版本"), diskRow_);
         diskLoad_->setObjectName("CordisConfigDiskLoad");
+        diskLoad_->setToolTip(QString::fromUtf8("将通知中的磁盘原文载入编辑区；不会自动应用或改变保存基线。"));
         diskLayout->addWidget(diskStatus_, 1);
         diskLayout->addWidget(diskLoad_);
         diskRow_->setVisible(static_cast<bool>(watcher));
@@ -170,17 +199,44 @@ public:
             });
         });
         auto split = new QSplitter(Qt::Horizontal, this);
+        split->setChildrenCollapsible(false);
+        split->setHandleWidth(8);
         layout->addWidget(split, 3);
-        editor_ = new ElaPlainTextEdit(split);
+        auto source = new QWidget(split);
+        auto sourceLayout = new QVBoxLayout(source);
+        sourceLayout->setContentsMargins(0, 0, 0, 0);
+        sourceLayout->setSpacing(8);
+        auto sourceTitle = new ElaText(QString::fromUtf8("配置源文件"), 14, source);
+        sourceTitle->setIsBold(true);
+        sourceLayout->addWidget(sourceTitle);
+        filePath_ = new ElaText(source);
+        filePath_->setObjectName("CordisConfigFilePath");
+        filePath_->setTextPixelSize(12);
+        filePath_->setTextFormat(Qt::PlainText);
+        filePath_->setWordWrap(false);
+        filePath_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        detail::secondaryText(filePath_);
+        sourceLayout->addWidget(filePath_);
+        editor_ = new ElaPlainTextEdit(source);
         editor_->setObjectName("CordisConfigEditor");
         editor_->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}");
-        auto textFont = editor_->font();
+        auto textFont = QApplication::font();
         textFont.setPixelSize(14);
         editor_->setFont(textFont);
+        editor_->setLineWrapMode(QPlainTextEdit::NoWrap);
+        editor_->setTabStopDistance(QFontMetrics(textFont).horizontalAdvance(QLatin1Char(' ')) * 4);
         editor_->setMinimumSize(180, 120);
+        sourceLayout->addWidget(editor_, 1);
         auto side = new QWidget(split);
         auto sideLayout = new QVBoxLayout(side);
         sideLayout->setContentsMargins(0, 0, 0, 0);
+        sideLayout->setSpacing(8);
+        auto runningTitle = new ElaText(QString::fromUtf8("期望与运行状态"), 14, side);
+        runningTitle->setIsBold(true);
+        sideLayout->addWidget(runningTitle);
+        auto runningHelp = new ElaText(QString::fromUtf8("应用后显示条目；选择条目可调整启用状态。"), 12, side);
+        detail::secondaryText(runningHelp);
+        sideLayout->addWidget(runningHelp);
         table_ = new ElaTableView(side);
         table_->setObjectName("CordisConfigEntries");
         model_ = new QStandardItemModel(table_);
@@ -191,6 +247,8 @@ public:
         table_->setSelectionMode(QAbstractItemView::SingleSelection);
         table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
         table_->verticalHeader()->hide();
+        table_->verticalHeader()->setDefaultSectionSize(34);
+        table_->setShowGrid(false);
         table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
         table_->horizontalHeader()->setMinimumSectionSize(80);
         table_->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
@@ -205,18 +263,23 @@ public:
         selected_->setWordWrap(true);
         selected_->setTextPixelSize(14);
         selected_->setTextFormat(Qt::PlainText);
-        enabled_ = new ElaToggleSwitch(side);
+        enabled_ = new detail::KeyboardToggleSwitch(side);
         enabled_->setObjectName("CordisConfigEnabled");
         selected->addWidget(selected_, 1);
         selected->addWidget(enabled_);
         sideLayout->addLayout(selected);
         split->setStretchFactor(0, 2);
         split->setStretchFactor(1, 3);
+        auto resultTitle = new ElaText(QString::fromUtf8("差异与执行结果"), 14, this);
+        resultTitle->setIsBold(true);
+        layout->addWidget(resultTitle);
         details_ = new ElaPlainTextEdit(this);
         details_->setObjectName("CordisConfigDetails");
         details_->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}");
         details_->setFont(textFont);
         details_->setReadOnly(true);
+        details_->setPlaceholderText(
+            QString::fromUtf8("检查差异后在此查看变更；应用、保存及磁盘冲突的结果也会显示在这里。"));
         details_->setMinimumHeight(90);
         layout->addWidget(details_, 1);
         auto snapshot = session->snapshot().value();
@@ -333,6 +396,10 @@ public:
         timer_->setInterval(100);
         QObject::connect(timer_, &QTimer::timeout, this, [this] { action([](ConfigurationSession&) {}); });
         timer_->start();
+        QObject::connect(eTheme, &ElaTheme::themeModeChanged, this, [this] {
+            fingerprint_.clear();
+            action([](ConfigurationSession&) {});
+        });
         refresh();
     }
 
@@ -418,6 +485,9 @@ private:
             for (auto button : {preview_, apply_, save_, reset_, rebase_, diskLoad_})
                 button->setEnabled(false);
             enabled_->setEnabled(false);
+            editor_->setReadOnly(true);
+            summary_->setText(QString::fromUtf8("运行：会话不可用"));
+            saveStatus_->setText(QString::fromUtf8("磁盘：无法保存"));
             return;
         }
         auto result = session->snapshot();
@@ -439,15 +509,51 @@ private:
                                                                        : describe(saved->error());
                 saving_.reset();
             }
-        QString summary =
-            QString::fromUtf8("目标修订 %1 · 已保存 %2 · %3%4\n%5")
-                .arg(displayedRevision_)
-                .arg(state.store.persistedRevision ? QString::number(*state.store.persistedRevision)
-                                                   : QString::fromUtf8("无"))
-                .arg(state.store.dirty ? QString::fromUtf8("未保存") : QString::fromUtf8("已同步"))
-                .arg(state.store.writing ? QString::fromUtf8(" · 保存中") : QString{})
-                .arg(state.store.baseline ? QString::fromStdString(state.store.baseline->version.path) : QString{});
-        summary_->setText(summary);
+        editStatus_->setText(matches_ && state.coordinator.desired ? QString::fromUtf8("编辑：已应用")
+                             : draft_ && draft_->baseRevision() == displayedRevision_
+                                 ? QString::fromUtf8("编辑：差异已检查")
+                                 : QString::fromUtf8("编辑：尚未应用"));
+        auto runtime = QString::fromUtf8("执行中");
+        if (!state.coordinator.desired)
+            runtime = QString::fromUtf8("尚未应用");
+        else if (state.coordinator.runningError)
+            runtime = QString::fromUtf8("状态不可用");
+        else if (state.latestPlan && state.latestPlan->revision == displayedRevision_) {
+            switch (state.latestPlan->outcome) {
+            case PlanOutcome::Applied:
+                runtime = QString::fromUtf8("已应用");
+                break;
+            case PlanOutcome::Pending:
+                runtime = QString::fromUtf8("等待依赖/父项");
+                break;
+            case PlanOutcome::Failed:
+                runtime = QString::fromUtf8("执行失败");
+                break;
+            case PlanOutcome::Superseded:
+                runtime = QString::fromUtf8("已替换");
+                break;
+            case PlanOutcome::Cancelled:
+                runtime = QString::fromUtf8("已取消");
+                break;
+            }
+        }
+        summary_->setText(QString::fromUtf8("运行：%1 · R%2").arg(runtime).arg(displayedRevision_));
+        auto persisted = state.store.external    ? QString::fromUtf8("保存冲突")
+                         : state.store.writing   ? QString::fromUtf8("保存中")
+                         : state.store.lastError ? QString::fromUtf8("保存失败")
+                         : state.store.dirty     ? QString::fromUtf8("未保存")
+                         : state.store.persistedRevision
+                             ? QString::fromUtf8("已保存 R%1").arg(*state.store.persistedRevision)
+                             : QString::fromUtf8("尚未保存");
+        saveStatus_->setText(QString::fromUtf8("磁盘：%1").arg(persisted));
+        saveStatus_->setToolTip(
+            state.store.external
+                ? QString::fromUtf8("审阅磁盘原文后可采用冲突基线，再显式保存；当前目标和编辑仍被保留。")
+                : QString::fromUtf8("保存仅写入已接受的配置目标；尚未应用的编辑不会写盘。"));
+        const auto file = state.store.baseline ? QString::fromStdString(state.store.baseline->version.path) : QString{};
+        filePath_->setText(filePath_->fontMetrics().elidedText(file, Qt::ElideMiddle, filePath_->width()));
+        filePath_->setToolTip(file);
+        filePath_->setAccessibleName(file);
         std::map<std::string, RunningEntry> running;
         for (const auto& row : state.coordinator.running)
             running.emplace(row.path, row);
@@ -475,6 +581,10 @@ private:
                                             : QString::number(actual->second.instance.value())};
                     for (int column = 0; column < columns.size(); ++column) {
                         auto item = new QStandardItem(columns[column]);
+                        if (column == 2 && actual != running.end())
+                            detail::decorateStatus(item,
+                                                   detail::instanceStatus(actual->second.state,
+                                                                          static_cast<bool>(actual->second.failure)));
                         if (!column)
                             item->setData(columns[0], Qt::UserRole);
                         item->setToolTip(columns[column]);
@@ -553,6 +663,8 @@ private:
             }
         } else
             diskStatus_->setText(QString::fromUtf8("文件监听不可用。"));
+        if (detail.isEmpty())
+            detail = QString::fromUtf8("先检查配置差异，再应用到工作台；运行结果和磁盘保存分别反馈。");
         if (details_->toPlainText() != detail)
             details_->setPlainText(detail);
         auto current = session->snapshot();
@@ -565,6 +677,12 @@ private:
         reset_->setEnabled(open && desired);
         rebase_->setEnabled(open && state.store.external && !state.store.writing && !state.store.queuedWrites);
         enabled_->setEnabled(open && selected && matches_ && !togglePending_);
+        enabled_->setAccessibleName(QString::fromUtf8("启用所选配置条目"));
+        enabled_->setToolTip(!selected   ? QString::fromUtf8("请选择一个配置条目。")
+                             : !matches_ ? QString::fromUtf8("请先应用编辑，或还原到已应用目标，再调整启用状态。")
+                             : !open || togglePending_
+                                 ? QString::fromUtf8("当前操作在途或会话已关闭，请等待状态稳定。")
+                                 : QString::fromUtf8("修改所选条目的期望启用状态，保存需另行操作。"));
         diskLoad_->setEnabled(open && diskLoad_->isEnabled());
     }
     std::weak_ptr<ConfigurationSession> session_;
@@ -573,7 +691,7 @@ private:
     ElaText* diskStatus_;
     ElaPushButton* diskLoad_;
     std::uint64_t displayedDiskSequence_ = 0;
-    ElaText *summary_, *selected_;
+    ElaText *summary_, *selected_, *filePath_, *editStatus_, *saveStatus_;
     ElaPushButton *preview_, *apply_, *save_, *reset_, *rebase_;
     ElaPlainTextEdit *editor_, *details_;
     ElaTableView* table_;

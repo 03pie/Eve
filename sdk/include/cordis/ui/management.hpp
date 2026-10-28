@@ -36,6 +36,8 @@ struct ManagedConfigurationEntry {
     bool hasActual = false, enabled = true, effectiveEnabled = true;
     bool waitingForParent = false, busy = false, canSetEnabled = false, canReconcile = false;
     std::optional<ErrorInfo> error{};
+    /** @brief 条目自己的规范 JSON 配置；不包含其他条目或插件对象。 */
+    std::string configuration{};
 };
 /** @brief 配置期望、真实条目和保存状态的宿主值快照。 */
 struct ConfigurationManagementSnapshot {
@@ -44,6 +46,8 @@ struct ConfigurationManagementSnapshot {
     bool open = false, dirty = false, writing = false;
     std::vector<ManagedConfigurationEntry> entries;
     std::optional<ErrorInfo> error{};
+    std::vector<std::string> availablePlugins{};
+    bool canEdit = false;
 };
 /** @brief 宿主适配能力，不注册为普通插件可消费服务；快照无业务副作用。 */
 class IConfigurationManagement {
@@ -58,6 +62,25 @@ public:
     /** @brief 显式重新协调完整配置目标；path 用于权限及失败选择校验。 */
     virtual Result<Task<ConfigurationActionReport>> reconcile(const std::string& path,
                                                               std::uint64_t expectedRevision) = 0;
+    /** @brief 添加顶层配置实例，完整校验及 CAS 后接受；不会隐式保存。 */
+    virtual Result<Task<ConfigurationActionReport>> addInstance(const std::string&, const std::string&,
+                                                                const std::string&, std::uint64_t)
+    {
+        return Result<Task<ConfigurationActionReport>>::failure(
+            makeError(ErrorCode::InvalidArgument, "adding configuration unsupported"));
+    }
+    /** @brief 修改指定路径自己的配置，保留其他字段、子树和其他实例。 */
+    virtual Result<Task<ConfigurationActionReport>> updateConfiguration(const std::string&, const std::string&,
+                                                                        std::uint64_t)
+    {
+        return Result<Task<ConfigurationActionReport>>::failure(
+            makeError(ErrorCode::InvalidArgument, "editing configuration unsupported"));
+    }
+    /** @brief 显式保存当前已接受目标，不保存未应用的编辑内容。 */
+    virtual Result<Task<void>> saveConfiguration(std::uint64_t)
+    {
+        return Result<Task<void>>::failure(makeError(ErrorCode::InvalidArgument, "saving configuration unsupported"));
+    }
 };
 /** @brief 不含 Task 或闭包的操作记录；request 是管理请求号，operation 是内核真实操作号。 */
 struct ManagementOperation {

@@ -107,6 +107,11 @@ QtWorker 支持协作取消，在原生线程和 TLS 退出后释放捕获，随
 ## 设计及实施入口
 
 - [开发进度](docs/progress.md)：当前状态、工作包、验证台账及下一任务。
+- [UI 设计与优化专项](docs/ui-optimization-plan.md)：P3 收口后的工作台/页面/状态/偏好优化、工作包和完成条件。
+- [Home 管理窗口与平台添加](docs/home-management-development.md)：卡片管理/配置窗口、顶部添加已注册配置实例及验证记录。
+- [UI 专项阶段](docs/ui-special-stages.md)：Ela 基线、VS Code 全结构分析、框架、宿主页和联合验收五个阶段。
+- [VS Code UI 对照](docs/vscode-ui-structure.md)：逐结构职责、当前实现、适配决定及后续修改清单。
+- [UI 专项验收](tests/acceptance/ui-optimization.md)：明暗主题、窗口/缩放、交互与新增状态/偏好的验收矩阵。
 - [P3 验收映射](docs/p3-acceptance.md)：L/Q/U 与联合场景的自动化证据、人工确认及适用边界。
 - [P3 收口审计](docs/p3-closeout.md)：完成条件、最终验证、用户确认和原生代理补验。
 - [W1 交付与验证](docs/w1-verification.md)：异步基础能力和四配置测试结果。

@@ -15,12 +15,15 @@ namespace detail { struct PageControl; struct ShellControl; }
 class ElaShell;
 /** @brief 工厂须在应用线程返回无 parent、未启用自动删除的 QWidget；只调用一次。 */
 using PageFactory = std::function<std::unique_ptr<QWidget>()>;
+/** @brief 窗口贡献仍由外壳和本代 effect 托管，不加入活动栏或中央页签。 */
+enum class PagePresentation { Tab, Dialog };
 /** @brief id/category 限定在实例与 epoch 内；同 category 聚合为插件入口，入口标题取首个页面，空 category 放在根导航。 */
 struct PageSpec {
     std::string id;
     std::string title;
     std::string category;
     PageFactory factory;
+    PagePresentation presentation = PagePresentation::Tab;
 };
 /** @brief 不含裸页面或 Ela key 的宿主贡献诊断。 */
 struct PageSnapshot {

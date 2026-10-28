@@ -2,6 +2,7 @@
  * @brief 宿主工作台复用 Ela Example 的菜单、搜索、设置和窗口内路由，不授予插件窗口能力。
  */
 #pragma once
+#include "status_p.hpp"
 #include <QString>
 #include <cordis/result.hpp>
 #include <cstdint>
@@ -24,6 +25,7 @@ struct HomePlugin {
     std::uint64_t revision = 0;
     QString identity{};
     bool configuration = false;
+    StatusPresentation status{};
 };
 /** @brief 所有导航仍由 Shell 校验贡献及 epoch，刷新只调用宿主管理器。 */
 struct WorkbenchActions {
@@ -36,6 +38,13 @@ struct WorkbenchActions {
     std::function<Result<void>(const QString&, bool, std::uint64_t)> power;
     /** @brief 已由配置目录或内部宿主覆盖的贡献不重复生成卡片。 */
     std::function<bool(const QString&)> hideContribution;
+    /** @brief 宿主提供通知历史视图入口，只有用户显式操作时打开。 */
+    std::function<Result<void>()> showNotifications{};
+    std::function<Result<void>(const QString&, bool)> managePlugin{};
+    std::function<Result<void>()> addPlugin{};
+    std::function<Result<void>()> configurationFile{};
+    std::function<bool()> canAddPlugin{};
+    std::function<bool()> hasConfigurationFile{};
 };
 /** @brief 创建 Example 风格滚动首页，入口在工作台构造时连接。 */
 QWidget* createWelcomePage();
@@ -43,7 +52,7 @@ QWidget* createWelcomePage();
 std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* tabs, QTabWidget* panel,
                                                   QPlainTextEdit* output, QToolButton* togglePanel,
                                                   const QString& homeKey, const QString& managementKey,
-                                                  WorkbenchActions actions);
+                                                  WorkbenchActions actions, const QString& preferencesFile = {});
 /** @brief 永久宿主页由 ElaWindow 接管，页面通过 key 加入同一导航。 */
 QWidget* workbenchSettings(const std::shared_ptr<WorkbenchControl>& control);
 /** @brief 关于页保留在中央工作区，不创建不受控独立窗口。 */

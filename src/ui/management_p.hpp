@@ -2,8 +2,9 @@
  * @brief 管理页的宿主私有创建/关闭桥，Qt 控件不进入公开 SDK。
  */
 #pragma once
-#include <cordis/ui/management.hpp>
+#include <QString>
 #include <cordis/qt/scheduler.hpp>
+#include <cordis/ui/management.hpp>
 #include <memory>
 class QWidget;
 namespace cordis::ui::detail {
@@ -15,6 +16,13 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
 QWidget* managementWidget(const std::shared_ptr<ManagementControl>& control);
 /** @brief 工作台菜单刷新沿用管理页同一状态门禁。 */
 Result<void> refreshManagement(const std::shared_ptr<ManagementControl>& control);
+/** @brief 显式查看宿主通知历史，无 Kernel 时也不伪造运行快照。 */
+Result<void> showManagementNotifications(const std::shared_ptr<ManagementControl>& control);
+/** @brief 单个宿主 Ela 窗口按稳定卡片身份定位，关闭窗口只隐藏，不停止插件。 */
+Result<void> showManagementDialog(const std::shared_ptr<ManagementControl>& control, const QString& id = {},
+                                  bool configuration = false);
+/** @brief 平台表单只添加已注册的配置实例，不安装外部模块。 */
+Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& control);
 /** @brief 首页开关表达期望启停状态，按最新快照选择加载/重试/停止，不反转过时操作。 */
 Result<void> setManagementEnabled(const std::shared_ptr<ManagementControl>& control, InstanceId instance, bool enabled);
 /** @brief 首页配置动作保留发出时的修订，路径身份不随实例更换。 */

@@ -293,17 +293,28 @@ void navigationReentry()
 {
     Scenario scene;
     QPointer<QWidget> page = scene.widget<QWidget>("CordisManagement");
-    auto stack = qobject_cast<QStackedWidget*>(page->parentWidget());
-    CHECK(stack);
     std::optional<Task<void>> closed;
     bool heldInside = false;
-    auto connection = QObject::connect(stack, &QStackedWidget::currentChanged, stack, [&](int) {
+    struct Probe : QObject {
+        std::function<void()> callback;
+        bool eventFilter(QObject*, QEvent* event) override
+        {
+            if (event->type() == QEvent::Show)
+                callback();
+            return false;
+        }
+    } probe;
+    probe.callback = [&] {
+        if (closed)
+            return;
         closed = scene.shell.close();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         heldInside = page && !closed->isReady();
-    });
+    };
+    page->installEventFilter(&probe);
     auto shown = scene.shell.showManagement();
-    QObject::disconnect(connection);
+    if (page)
+        page->removeEventFilter(&probe);
     CHECK(!shown.hasValue() && shown.error().code == ErrorCode::ContextClosing && closed && heldInside);
     wait(*closed, scene.scheduler); CHECK(page.isNull());
     scene.close();
@@ -397,17 +408,20 @@ void workbench()
     auto tabs = scene.widget<QTabBar>("CordisPageTabs");
     auto panel = scene.widget<QTabWidget>("CordisWorkbenchPanel");
     CHECK(scene.widget<QSplitter>("ElaWorkbenchContainer") && scene.widget<QSplitter>("ElaWorkbenchPanelSplitter"));
-    CHECK(tabs && tabs->count() == 2 && tabs->currentIndex() == 1);
-    page->navigate().value(); CHECK(tabs->count() == 3);
+    CHECK(tabs && tabs->count() == 1 && scene.widget<QWidget>("CordisManagement")->isVisible());
+    page->navigate().value();
+    CHECK(tabs->count() == 2);
     scene.shell.showManagement().value();
-    tabs->setCurrentIndex(2); CHECK(page->snapshot().value().current);
-    scene.shell.showManagement().value(); CHECK(tabs->currentIndex() == 1 && !page->snapshot().value().current);
+    tabs->setCurrentIndex(1);
+    CHECK(page->snapshot().value().current);
+    scene.shell.showManagement().value();
+    CHECK(tabs->currentIndex() == 1 && page->snapshot().value().current);
     auto togglePanel = scene.widget<QToolButton>("CordisTogglePanel");
     CHECK(panel->isHidden());
     togglePanel->click(); CHECK(!panel->isHidden()); togglePanel->click(); CHECK(panel->isHidden());
     CHECK(scene.widget<QPlainTextEdit>("CordisWorkbenchOutput")->toPlainText().contains("<b>output</b>"));
     auto closed = instance.stop(); wait(closed, scene.scheduler);
-    CHECK(tabs->count() == 2 && !page->snapshot().value().widgetAlive);
+    CHECK(tabs->count() == 1 && !page->snapshot().value().widgetAlive);
     scene.close();
 }
 /** @brief 控制器保留已停止输入，加载分配新身份并对新旧实例锁定去重。 */

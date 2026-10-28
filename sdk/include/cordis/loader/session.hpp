@@ -82,6 +82,8 @@ public:
     Result<void> rebaseExternal(std::uint64_t expectedRevision);
     /** @brief owner 值快照允许在关闭后读取。 */
     Result<SessionSnapshot> snapshot() const;
+    /** @brief owner 读取已注册定义的标识，不返回 schema 回调或运行句柄。 */
+    Result<std::vector<std::string>> registeredPlugins() const;
     /** @brief 宿主装配只读检查调度器身份，不转移会话能力。 */
     bool usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const noexcept;
     /** @brief 同步关门，排空真实驱动并刷新已接受目标；失败不宣称静止或保存成功。 */

@@ -426,4 +426,80 @@ Result<ParsedConfiguration> setEntryEnabled(const ParsedConfiguration& source, c
         return Result<ParsedConfiguration>::failure(failure.error);
     }
 }
+namespace {
+/** @brief 受限值树修改不经过浮点 JSON DOM，其他负载中的大整数与小数原文保持。 */
+Result<ParsedConfiguration> changeEntryConfiguration(const ParsedConfiguration& source, const std::string& path,
+                                                     const std::string& id, const std::string& plugin,
+                                                     const std::string& configuration, YamlLimits limits)
+{
+    if (!source.isValid() || (!path.empty() && !source.structure().entries().count(path)))
+        return Result<ParsedConfiguration>::failure(
+            makeError(ErrorCode::InvalidArgument, "unknown configuration path"));
+    try {
+        if (!limits.maximumInputBytes || configuration.size() > limits.maximumInputBytes || !limits.maximumNodes ||
+            !limits.maximumDepth || limits.maximumDepth > 128 || !limits.maximumScalarBytes ||
+            !limits.maximumNormalizedBytes)
+            fail("configuration fragment exceeds input budget", {}, path);
+        auto payload = readTree(configuration, limits);
+        limits.maximumInputBytes = limits.maximumNormalizedBytes;
+        if (source.normalizedYaml().size() > limits.maximumInputBytes)
+            fail("normalized text byte limit exceeded", {}, path);
+        auto root = readTree(source.normalizedYaml(), limits);
+        auto sequenceNode = root->mapping.at("plugins").get();
+        Node* selected = nullptr;
+        if (path.empty()) {
+            auto entry = std::make_unique<Node>();
+            entry->kind = Node::Kind::Mapping;
+            for (const auto& value : {std::make_pair("id", id), std::make_pair("plugin", plugin)}) {
+                auto text = std::make_unique<Node>();
+                text->plain = false;
+                text->scalar = value.second;
+                entry->mapping.emplace(value.first, std::move(text));
+            }
+            selected = entry.get();
+            sequenceNode->sequence.push_back(std::move(entry));
+        } else {
+            std::size_t begin = 0;
+            while (begin < path.size()) {
+                const auto end = path.find('/', begin);
+                const auto part = path.substr(begin, end == std::string::npos ? end : end - begin);
+                selected = nullptr;
+                for (auto& child : sequenceNode->sequence)
+                    if (child->mapping.at("id")->scalar == part) {
+                        selected = child.get();
+                        break;
+                    }
+                if (!selected)
+                    fail("configuration path missing from source", {}, path);
+                if (end == std::string::npos)
+                    break;
+                sequenceNode = selected->mapping.at("children").get();
+                begin = end + 1;
+            }
+        }
+        selected->mapping.insert_or_assign("config", std::move(payload));
+        std::string normalized;
+        encode(*root, normalized, limits.maximumNormalizedBytes);
+        return parseConfiguration(normalized, limits);
+    } catch (const ParseFailure& failure) {
+        return Result<ParsedConfiguration>::failure(failure.error);
+    }
+}
+} // namespace
+/** @brief 路径必须存在，不能借空路径把编辑误作追加。 */
+Result<ParsedConfiguration> setEntryConfiguration(const ParsedConfiguration& source, const std::string& path,
+                                                  const std::string& configuration, YamlLimits limits)
+{
+    if (path.empty())
+        return Result<ParsedConfiguration>::failure(
+            makeError(ErrorCode::InvalidArgument, "configuration path is empty"));
+    return changeEntryConfiguration(source, path, {}, {}, configuration, limits);
+}
+/** @brief 追加后复用完整解析、结构和调用方的 schema/CAS 校验。 */
+Result<ParsedConfiguration> addConfigurationEntry(const ParsedConfiguration& source, const std::string& id,
+                                                  const std::string& plugin, const std::string& configuration,
+                                                  YamlLimits limits)
+{
+    return changeEntryConfiguration(source, {}, id, plugin, configuration, limits);
+}
 } // namespace cordis::loader

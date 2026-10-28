@@ -3,12 +3,16 @@
  */
 #include "workbench_p.hpp"
 
+#include "appearance_p.hpp"
 #include "home_p.hpp"
+#include "preferences_p.hpp"
 #include <ElaComboBox.h>
+#include <ElaLineEdit.h>
 #include <ElaMenu.h>
 #include <ElaMenuBar.h>
 #include <ElaScrollPage.h>
 #include <ElaScrollPageArea.h>
+#include <ElaSpinBox.h>
 #include <ElaSuggestBox.h>
 #include <ElaText.h>
 #include <ElaTheme.h>
@@ -18,13 +22,16 @@
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>
+#include <QDebug>
 #include <QEvent>
 #include <QHBoxLayout>
+#include <QHash>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QScopedValueRollback>
 #include <QSet>
 #include <QSignalBlocker>
+#include <QSplitter>
 #include <QStatusBar>
 #include <QTabBar>
 #include <QTabWidget>
@@ -38,13 +45,43 @@
 
 namespace cordis::ui::detail {
 namespace {
+/** @brief 窄窗口缩短搜索框，给菜单和系统窗口按钮保留空间，快捷键入口始终可用。 */
+class CommandCenter final : public QWidget {
+public:
+    /** @brief 只观察宿主尺寸，过滤器随窗口内的命令中心一起释放。 */
+    explicit CommandCenter(QWidget* host) : QWidget(host) { host->installEventFilter(this); }
+    /** @brief 绑定 Ela 搜索框，不接管其建议模型和键盘交互。 */
+    void setSearch(ElaSuggestBox* search)
+    {
+        search_ = search;
+        updateWidth();
+    }
+
+protected:
+    /** @brief 窗口缩放只调整几何，不改变用户输入或建议列表。 */
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (event->type() == QEvent::Resize)
+            updateWidth();
+        return QWidget::eventFilter(watched, event);
+    }
+
+private:
+    /** @brief 宽屏给予搜索更多空间，窄屏优先保留完整菜单和前进后退。 */
+    void updateWidth()
+    {
+        if (search_)
+            search_->setFixedWidth(std::clamp(window()->width() - 820, 160, 360));
+    }
+    QPointer<ElaSuggestBox> search_;
+};
 /** @brief Example 风格的带留白滚动页，避免使用固定高度挤压缩放后的内容。 */
 ElaScrollPage* scrollPage(const QString& title, QWidget* parent = nullptr)
 {
     auto page = new ElaScrollPage(parent);
     page->setWindowTitle(title);
-    page->setPageTitlePixelSize(26);
-    page->setContentsMargins(20, 5, 15, 10);
+    page->setPageTitlePixelSize(24);
+    page->setContentsMargins(20, 12, 20, 16);
     return page;
 }
 /** @brief 多行卡片解除 Ela 默认单行设置项的 75px 固定高度，由内容布局决定高度。 */
@@ -63,6 +100,7 @@ QVBoxLayout* card(QVBoxLayout* layout, const QString& title, const QString& desc
     auto text = new ElaText(description, 14, area);
     text->setWordWrap(true);
     text->setTextFormat(Qt::PlainText);
+    secondaryText(text);
     body->addWidget(text);
     layout->addWidget(area);
     return body;
@@ -113,10 +151,30 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
     QPointer<ElaSuggestBox> search;
     QPointer<ElaToolButton> back, forward;
     QPointer<QAction> backAction, forwardAction;
+    QPointer<QAction> addPluginAction, configurationFileAction;
     QPointer<ElaMenuBar> menuBar;
     QPointer<QWidget> settings, about;
     QPointer<ElaText> location;
     QPointer<QTimer> homeTimer;
+    QPointer<WorkbenchPreferences> preferences;
+    QPointer<ElaLineEdit> settingsSearch;
+    QPointer<ElaText> settingsEmpty;
+    /** @brief 检索索引只含宿主文字，不保存设置值或插件对象。 */
+    struct SettingsGroup {
+        QPointer<QWidget> widget;
+        QString keywords;
+    };
+    std::vector<SettingsGroup> settingsGroups;
+    bool filteringSettings = false;
+    QPointer<ElaMenu> tabContextMenu;
+    std::uint64_t tabMenuGeneration = 0;
+    std::uint64_t nextTabVersion = 0;
+    QHash<QString, std::uint64_t> tabVersions;
+    /** @brief 每次重开页签都有新代次，旧菜单不能操作重开的同名视图。 */
+    struct TabReference {
+        QString key;
+        std::uint64_t version;
+    };
     std::vector<QPointer<QAction>> actions;
     std::vector<Entry> entries;
     std::vector<QString> history;
@@ -221,6 +279,14 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
         auto page = dynamic_cast<HomePage*>(window->findChild<QWidget*>("CordisWelcomePage"));
         if (!page)
             return;
+        if (addPluginAction)
+            addPluginAction->setEnabled(callbacks.canAddPlugin && callbacks.canAddPlugin());
+        if (!open)
+            return;
+        if (configurationFileAction)
+            configurationFileAction->setEnabled(callbacks.hasConfigurationFile && callbacks.hasConfigurationFile());
+        if (!open)
+            return;
         auto plugins = callbacks.plugins ? callbacks.plugins() : std::vector<HomePlugin>{};
         if (!open || !window)
             return;
@@ -235,9 +301,10 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
             ids.insert(entry.plugin);
             HomePlugin value{entry.plugin, entry.title, QString::fromUtf8("界面已就绪")};
             value.enabled = true;
+            value.status = instanceStatus(InstanceState::Active);
             plugins.push_back(std::move(value));
         }
-        page->setPlugins(plugins, callbacks.power, callbacks.withWindowAccess);
+        page->setPlugins(plugins, callbacks.power, callbacks.withWindowAccess, callbacks.managePlugin);
     }
     /** @brief 关闭页签仅关闭视图；再次从左侧打开时复用原页面和业务状态。 */
     void closeTab(int index)
@@ -269,8 +336,75 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
         for (int i = 0; i < tabs->count(); ++i)
             if (tabs->tabData(i).toString() == key) {
                 tabs->removeTab(i);
+                tabVersions.remove(key);
                 break;
             }
+    }
+    /** @brief 按稳定键查找当前页签；菜单打开后行号可能因撤销而变化。 */
+    int tabIndex(const QString& key) const
+    {
+        if (tabs)
+            for (int index = 0; index < tabs->count(); ++index)
+                if (tabs->tabData(index).toString() == key)
+                    return index;
+        return -1;
+    }
+    /** @brief 菜单只保存打开时的键快照，新插入或重新创建的页面不受旧菜单影响。 */
+    void showTabMenu(int index, const QPoint& globalPosition)
+    {
+        if (!open || !tabs || index < 0 || index >= tabs->count())
+            return;
+        if (tabContextMenu)
+            tabContextMenu->close();
+        const auto generation = ++tabMenuGeneration;
+        const auto anchorKey = tabs->tabData(index).toString();
+        const TabReference anchor{anchorKey, tabVersions.value(anchorKey)};
+        std::vector<TabReference> all, others, right;
+        for (int row = 0; row < tabs->count(); ++row) {
+            const auto key = tabs->tabData(row).toString();
+            const TabReference reference{key, tabVersions.value(key)};
+            all.push_back(reference);
+            if (row != index)
+                others.push_back(reference);
+            if (row > index)
+                right.push_back(reference);
+        }
+        auto menu = new ElaMenu(window);
+        tabContextMenu = menu;
+        menu->setObjectName("CordisTabContextMenu");
+        menu->setAttribute(Qt::WA_DeleteOnClose);
+        const auto add = [&](const QString& text, const char* name, std::vector<TabReference> keys, bool keepAnchor) {
+            auto item = menu->addAction(text);
+            item->setObjectName(QString::fromLatin1(name));
+            item->setEnabled(!keys.empty());
+            std::weak_ptr<WorkbenchControl> weak = shared_from_this();
+            QObject::connect(
+                item, &QAction::triggered, window, [weak, anchor, keys = std::move(keys), keepAnchor, generation] {
+                    if (auto self = weak.lock(); self && self->open && self->tabMenuGeneration == generation)
+                        self->withWindowAccess([self, anchor, keys, keepAnchor] {
+                            if (self->tabVersions.value(anchor.key) != anchor.version || self->tabIndex(anchor.key) < 0)
+                                return;
+                            if (keepAnchor) {
+                                self->navigate(anchor.key, false);
+                                if (!self->open || self->current != anchor.key)
+                                    return;
+                            }
+                            for (auto it = keys.rbegin(); it != keys.rend() && self->open; ++it) {
+                                if (self->tabVersions.value(it->key) != it->version)
+                                    continue;
+                                const auto row = self->tabIndex(it->key);
+                                if (row >= 0)
+                                    self->closeTab(row);
+                            }
+                        });
+                });
+        };
+        add(QString::fromUtf8("关闭页签"), "CordisTabClose", {anchor}, false);
+        menu->addSeparator();
+        add(QString::fromUtf8("关闭其他页签"), "CordisTabCloseOthers", std::move(others), true);
+        add(QString::fromUtf8("关闭右侧页签"), "CordisTabCloseRight", std::move(right), false);
+        add(QString::fromUtf8("关闭全部页签"), "CordisTabCloseAll", std::move(all), false);
+        menu->popup(globalPosition);
     }
     /** @brief 菜单命令和快捷键使用同一个开放门禁；根窗口自动销毁 QAction。 */
     QAction* action(ElaMenu* menu, const QString& text, const char* name, const QKeySequence& shortcut,
@@ -302,18 +436,33 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
         auto layout = new QVBoxLayout(content);
         layout->setSpacing(16);
         layout->setSizeConstraint(QLayout::SetMinimumSize);
+        settingsSearch = new ElaLineEdit(content);
+        settingsSearch->setObjectName("CordisSettingsSearch");
+        settingsSearch->setAccessibleName(QString::fromUtf8("搜索工作台设置"));
+        settingsSearch->setPlaceholderText(QString::fromUtf8("搜索设置：主题、导航、底部工作区…（Ctrl+F）"));
+        settingsSearch->setClearButtonEnabled(true);
+        settingsSearch->setMinimumHeight(32);
+        layout->addWidget(settingsSearch);
+        settingsEmpty = new ElaText(QString::fromUtf8("没有匹配的设置。清空搜索可显示全部设置。"), 13, content);
+        settingsEmpty->setObjectName("CordisSettingsSearchEmpty");
+        secondaryText(settingsEmpty);
+        settingsEmpty->hide();
+        layout->addWidget(settingsEmpty);
         auto appearance =
             card(layout, QString::fromUtf8("外观"), QString::fromUtf8("使用 Ela 主题与组件，调整工作台显示方式。"));
         auto theme = new ElaComboBox(content);
+        theme->setAccessibleName(QString::fromUtf8("工作台主题"));
         theme->setObjectName("CordisSettingsTheme");
         theme->addItem(QString::fromUtf8("浅色"));
         theme->addItem(QString::fromUtf8("深色"));
         theme->setCurrentIndex(eTheme->getThemeMode() == ElaThemeType::Dark ? 1 : 0);
+        theme->setMaximumWidth(240);
         appearance->addWidget(theme);
         std::weak_ptr<WorkbenchControl> weak = shared_from_this();
         QObject::connect(theme, QOverload<int>::of(&QComboBox::currentIndexChanged), page, [weak](int index) {
             if (auto self = weak.lock(); self && self->open)
-                eTheme->setThemeMode(index == 1 ? ElaThemeType::Dark : ElaThemeType::Light);
+                self->withWindowAccess(
+                    [index] { eTheme->setThemeMode(index == 1 ? ElaThemeType::Dark : ElaThemeType::Light); });
         });
         QObject::connect(eTheme, &ElaTheme::themeModeChanged, theme, [theme](ElaThemeType::ThemeMode mode) {
             QSignalBlocker blocked(theme);
@@ -324,20 +473,136 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
         auto row = new QHBoxLayout;
         row->addWidget(new ElaText(QString::fromUtf8("显示底部工作区"), 14, content));
         row->addStretch();
-        auto toggle = new ElaToggleSwitch(content);
+        auto toggle = new KeyboardToggleSwitch(content);
         toggle->setObjectName("CordisSettingsPanel");
         row->addWidget(toggle);
         panels->addLayout(row);
         new VisibilityBinding(panel, toggle);
         QObject::connect(toggle, &ElaToggleSwitch::toggled, page, [weak](bool checked) {
             if (auto self = weak.lock(); self && self->open && self->panel)
-                self->panel->setVisible(checked);
+                self->withWindowAccess([self, checked] { self->panel->setVisible(checked); });
+        });
+        toggle->setAccessibleName(QString::fromUtf8("显示底部工作区"));
+        auto navigationRow = new QHBoxLayout;
+        navigationRow->addWidget(new ElaText(QString::fromUtf8("插件导航"), 14, content));
+        navigationRow->addStretch();
+        auto navigationMode = new ElaComboBox(content);
+        navigationMode->setObjectName("CordisSettingsNavigationMode");
+        navigationMode->setAccessibleName(QString::fromUtf8("插件导航显示方式"));
+        navigationMode->addItems({QString::fromUtf8("紧凑图标"), QString::fromUtf8("展开名称")});
+        navigationMode->setCurrentIndex(window->getNavigationBarDisplayMode() == ElaNavigationType::Maximal ? 1 : 0);
+        navigationRow->addWidget(navigationMode);
+        panels->addLayout(navigationRow);
+        QObject::connect(navigationMode, QOverload<int>::of(&QComboBox::currentIndexChanged), page, [weak](int index) {
+            if (auto self = weak.lock(); self && self->open)
+                self->withWindowAccess([self, index] {
+                    self->window->setNavigationBarDisplayMode(index ? ElaNavigationType::Maximal
+                                                                    : ElaNavigationType::Compact);
+                });
+        });
+        QObject::connect(window, &ElaWindow::pNavigationBarDisplayModeChanged, navigationMode, [this, navigationMode] {
+            const QSignalBlocker blocker(navigationMode);
+            navigationMode->setCurrentIndex(window->getNavigationBarDisplayMode() == ElaNavigationType::Maximal ? 1
+                                                                                                                : 0);
+        });
+        const auto spinRow = [&](const QString& text, const char* name, int low, int high, int value) {
+            auto rowLayout = new QHBoxLayout;
+            rowLayout->addWidget(new ElaText(text, 14, content));
+            rowLayout->addStretch();
+            auto spin = new ElaSpinBox(content);
+            spin->setObjectName(QString::fromLatin1(name));
+            spin->setAccessibleName(text);
+            spin->setRange(low, high);
+            spin->setSuffix(" px");
+            spin->setValue(value);
+            spin->setFixedWidth(140);
+            rowLayout->addWidget(spin);
+            panels->addLayout(rowLayout);
+            return spin;
+        };
+        auto navigationWidth = spinRow(QString::fromUtf8("展开导航宽度"), "CordisSettingsNavigationWidth", 180, 360,
+                                       window->getNavigationBarWidth());
+        QObject::connect(navigationWidth, QOverload<int>::of(&QSpinBox::valueChanged), page, [weak](int value) {
+            if (auto self = weak.lock(); self && self->open)
+                self->withWindowAccess([self, value] { self->window->setNavigationBarWidth(value); });
+        });
+        QObject::connect(window, &ElaWindow::pNavigationBarWidthChanged, navigationWidth, [this, navigationWidth] {
+            const QSignalBlocker blocker(navigationWidth);
+            navigationWidth->setValue(window->getNavigationBarWidth());
+        });
+        auto panelHeight = spinRow(QString::fromUtf8("底部工作区高度"), "CordisSettingsPanelHeight", 120, 480,
+                                   preferences->panelHeight());
+        QObject::connect(panelHeight, QOverload<int>::of(&QSpinBox::valueChanged), page, [weak](int value) {
+            if (auto self = weak.lock(); self && self->open)
+                self->withWindowAccess([self, value] { self->preferences->setPanelHeight(value); });
+        });
+        if (auto splitter = window->findChild<QSplitter*>("ElaWorkbenchPanelSplitter"))
+            QObject::connect(splitter, &QSplitter::splitterMoved, panelHeight, [this, panelHeight] {
+                const QSignalBlocker blocker(panelHeight);
+                panelHeight->setValue(preferences->panelHeight());
+            });
+        auto preferenceStatus = new ElaText(content);
+        preferenceStatus->setObjectName("CordisPreferencesStatus");
+        preferenceStatus->setTextPixelSize(12);
+        preferenceStatus->setTextFormat(Qt::PlainText);
+        secondaryText(preferenceStatus);
+        panels->addWidget(preferenceStatus);
+        preferences->setReporter([weak, label = QPointer<ElaText>(preferenceStatus)](const QString& text) {
+            if (auto self = weak.lock(); self && self->open && label)
+                self->withWindowAccess([label, text] {
+                    if (label)
+                        label->setText(text);
+                });
+        });
+        auto reset = new ActionButton(QString::fromUtf8("恢复默认外观与布局"), content);
+        reset->setObjectName("CordisSettingsReset");
+        reset->setToolTip(QString::fromUtf8("恢复浅色、紧凑导航和默认尺寸；不会更改插件配置或运行状态。"));
+        panels->addWidget(reset, 0, Qt::AlignLeft);
+        QObject::connect(reset, &QPushButton::clicked, page, [weak, panelHeight] {
+            if (auto self = weak.lock(); self && self->open)
+                self->withWindowAccess([self, panelHeight] {
+                    self->preferences->reset();
+                    panelHeight->setValue(self->preferences->panelHeight());
+                });
         });
         auto shortcuts =
             card(layout, QString::fromUtf8("快捷键"),
                  QString::fromUtf8("Alt+← / Alt+→  前进后退\nCtrl+P  搜索页面\nCtrl+Shift+P  打开命令面板\nCtrl+B / "
                                    "Ctrl+J  展开插件导航 / 切换底部工作区\nCtrl+W  关闭当前页签"));
-        Q_UNUSED(shortcuts);
+        appearance->parentWidget()->setObjectName("CordisSettingsAppearanceSection");
+        panels->parentWidget()->setObjectName("CordisSettingsLayoutSection");
+        shortcuts->parentWidget()->setObjectName("CordisSettingsShortcutsSection");
+        settingsGroups = {
+            {appearance->parentWidget(), QString::fromUtf8("外观 主题 浅色 深色 appearance theme light dark")},
+            {panels->parentWidget(),
+             QString::fromUtf8("布局 工作区 底部 导航 高度 宽度 默认 偏好 layout panel navigation size preferences")},
+            {shortcuts->parentWidget(),
+             QString::fromUtf8("快捷键 搜索 命令 页签 导航 前进 后退 keyboard shortcuts search command")}};
+        QObject::connect(settingsSearch, &QLineEdit::textChanged, page, [weak] {
+            if (auto self = weak.lock())
+                self->filterSettings();
+        });
+        const auto searchAction = [&](const char* name, const QKeySequence& shortcut, bool clear) {
+            auto action = new QAction(page);
+            action->setObjectName(QString::fromLatin1(name));
+            action->setShortcut(shortcut);
+            action->setShortcutContext(clear ? Qt::WidgetShortcut : Qt::WidgetWithChildrenShortcut);
+            (clear ? static_cast<QWidget*>(settingsSearch.data()) : static_cast<QWidget*>(page))->addAction(action);
+            actions.emplace_back(action);
+            QObject::connect(action, &QAction::triggered, page, [weak, clear] {
+                if (auto self = weak.lock(); self && self->open)
+                    self->withWindowAccess([self, clear] {
+                        if (clear)
+                            self->settingsSearch->clear();
+                        else {
+                            self->settingsSearch->setFocus(Qt::ShortcutFocusReason);
+                            self->settingsSearch->selectAll();
+                        }
+                    });
+            });
+        };
+        searchAction("CordisFindSettings", QKeySequence("Ctrl+F"), false);
+        searchAction("CordisClearSettingsSearch", QKeySequence(Qt::Key_Escape), true);
         layout->addStretch();
         content->setWindowTitle(page->windowTitle());
         page->addCentralWidget(content);
@@ -358,6 +623,40 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
         infoContent->setWindowTitle(info->windowTitle());
         info->addCentralWidget(infoContent);
     }
+    /** @brief 搜索仅过滤卡片；可见性事件重入搜索时排队收敛到最新文字。 */
+    void filterSettings()
+    {
+        if (!open || !settingsSearch || filteringSettings)
+            return;
+        auto self = shared_from_this();
+        withWindowAccess([self] {
+            if (!self->open || !self->settingsSearch)
+                return;
+            QScopedValueRollback<bool> filtering(self->filteringSettings, true);
+            const auto query = self->settingsSearch->text().trimmed();
+            const auto groups = self->settingsGroups;
+            bool any = false;
+            for (const auto& group : groups) {
+                if (!self->open || !group.widget)
+                    return;
+                const bool matches = query.isEmpty() || group.keywords.contains(query, Qt::CaseInsensitive);
+                any = any || matches;
+                group.widget->setVisible(matches);
+            }
+            if (!self->open)
+                return;
+            self->settingsEmpty->setVisible(!any);
+            if (!self->open)
+                return;
+            if (self->settingsSearch->text().trimmed() != query) {
+                std::weak_ptr<WorkbenchControl> weak = self;
+                QTimer::singleShot(0, self->window, [weak] {
+                    if (auto value = weak.lock())
+                        value->filterSettings();
+                });
+            }
+        });
+    }
 };
 
 QWidget* createWelcomePage()
@@ -368,7 +667,7 @@ QWidget* createWelcomePage()
 std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* tabs, QTabWidget* panel,
                                                   QPlainTextEdit* output, QToolButton* togglePanel,
                                                   const QString& homeKey, const QString& managementKey,
-                                                  WorkbenchActions callbacks)
+                                                  WorkbenchActions callbacks, const QString& preferencesFile)
 {
     auto self = std::make_shared<WorkbenchControl>();
     self->window = window;
@@ -379,27 +678,44 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     self->homeKey = homeKey;
     self->managementKey = managementKey;
     self->callbacks = std::move(callbacks);
+    self->preferences = new WorkbenchPreferences(window, panel, preferencesFile);
     std::weak_ptr<WorkbenchControl> weak = self;
+    if (auto splitter = window->findChild<QSplitter*>("ElaWorkbenchPanelSplitter")) {
+        // 原生 Windows 分隔条不随 Ela 调色板切换；显式使用当前主题背景和悬停强调色。
+        auto handle = splitter->handle(1);
+        const auto update = [weak, handle](ElaThemeType::ThemeMode mode) {
+            if (auto state = weak.lock(); state && state->open)
+                state->withWindowAccess([handle, mode] {
+                    handle->setStyleSheet(QStringLiteral("QSplitterHandle{background:%1;}"
+                                                         "QSplitterHandle:hover{background:%2;}")
+                                              .arg(eTheme->getThemeColor(mode, ElaThemeType::WindowBase).name(),
+                                                   eTheme->getThemeColor(mode, ElaThemeType::PrimaryNormal).name()));
+                });
+        };
+        QObject::connect(eTheme, &ElaTheme::themeModeChanged, handle, update);
+        update(eTheme->getThemeMode());
+    }
     auto bar = new ElaMenuBar(window);
     self->menuBar = bar;
     bar->setObjectName("CordisMenuBar");
-    bar->setFixedWidth(250);
     bar->setFixedHeight(30);
     auto file = bar->addMenu(QString::fromUtf8("文件(&F)"));
     auto view = bar->addMenu(QString::fromUtf8("视图(&V)"));
     auto go = bar->addMenu(QString::fromUtf8("转到(&G)"));
     auto help = bar->addMenu(QString::fromUtf8("帮助(&H)"));
+    bar->setFixedWidth(bar->sizeHint().width());
     window->setCustomWidget(ElaAppBarType::LeftArea, bar);
-    auto center = new QWidget(window);
+    auto center = new CommandCenter(window);
     center->setObjectName("CordisCommandCenter");
     auto centerLayout = new QHBoxLayout(center);
     centerLayout->setContentsMargins(0, 0, 0, 0);
-    centerLayout->setSpacing(3);
+    centerLayout->setSpacing(4);
     auto back = new ElaToolButton(center);
     self->back = back;
     back->setObjectName("CordisNavigateBack");
     back->setElaIcon(ElaIconType::ArrowLeft);
     back->setToolTip(QString::fromUtf8("后退（Alt+←）"));
+    back->setAccessibleName(QString::fromUtf8("后退"));
     back->setFixedSize(32, 30);
     back->setShortcut(QKeySequence("Alt+Left"));
     auto forward = new ElaToolButton(center);
@@ -407,12 +723,14 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     forward->setObjectName("CordisNavigateForward");
     forward->setElaIcon(ElaIconType::ArrowRight);
     forward->setToolTip(QString::fromUtf8("前进（Alt+→）"));
+    forward->setAccessibleName(QString::fromUtf8("前进"));
     forward->setFixedSize(32, 30);
     forward->setShortcut(QKeySequence("Alt+Right"));
     auto search = new ElaSuggestBox(center);
     self->search = search;
     search->setObjectName("CordisPageSearch");
-    search->setFixedSize(300, 30);
+    search->setFixedHeight(30);
+    center->setSearch(search);
     search->setPlaceholderText(QString::fromUtf8("搜索页面  Ctrl+P"));
     centerLayout->addWidget(back);
     centerLayout->addWidget(forward);
@@ -431,6 +749,13 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
             control->navigate(data.getSuggestData().value("CordisPageKey").toString());
     });
     tabs->setTabsClosable(true);
+    tabs->setContextMenuPolicy(Qt::CustomContextMenu);
+    QObject::connect(tabs, &QWidget::customContextMenuRequested, window, [weak](const QPoint& position) {
+        if (auto self = weak.lock(); self && self->open)
+            self->withWindowAccess([self, position] {
+                self->showTabMenu(self->tabs->tabAt(position), self->tabs->mapToGlobal(position));
+            });
+    });
     QObject::connect(tabs, &QTabBar::tabCloseRequested, window, [weak](int index) {
         if (auto control = weak.lock())
             control->closeTab(index);
@@ -500,27 +825,98 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
                          state.search->focusSearch();
                  });
     self->action(go, QString::fromUtf8("插件管理"), "CordisOpenPlugins", {},
-                 [](WorkbenchControl& state) { state.navigate(state.managementKey); });
+                 [](WorkbenchControl& state) {
+                     if (state.callbacks.navigate)
+                         state.callbacks.navigate(state.managementKey, false);
+                 })
+        ->setVisible(false);
+    const auto platformAction = [self, file](const QString& text, const char* name, bool add) {
+        auto action = self->action(file, text, name, {}, [add](WorkbenchControl& state) {
+            const auto callback = add ? state.callbacks.addPlugin : state.callbacks.configurationFile;
+            if (!callback)
+                return;
+            auto result = callback();
+            if (!result.hasValue() && state.open && state.output)
+                state.output->appendPlainText(QString::fromStdString(result.error().message));
+        });
+        action->setEnabled(false);
+        action->setToolTip(add ? QString::fromUtf8("从已注册插件添加配置实例；需要工作台绑定配置会话。")
+                               : QString::fromUtf8("打开平台配置文件窗口；此入口由宿主提供。"));
+        if (add)
+            self->addPluginAction = action;
+        else
+            self->configurationFileAction = action;
+    };
+    file->addSeparator();
+    platformAction(QString::fromUtf8("添加插件配置…"), "CordisAddPlugin", true);
+    platformAction(QString::fromUtf8("配置文件…"), "CordisConfigurationFile", false);
     self->action(go, QString::fromUtf8("欢迎页"), "CordisOpenHome", {},
                  [](WorkbenchControl& state) { state.navigate(state.homeKey); });
+    auto notifications =
+        self->action(go, QString::fromUtf8("通知历史"), "CordisOpenNotifications", {}, [](WorkbenchControl& state) {
+            if (!state.open || !state.callbacks.showNotifications)
+                return;
+            const auto show = state.callbacks.showNotifications;
+            const auto result = show();
+            if (!result.hasValue() && state.open && state.output)
+                state.output->appendPlainText(QString::fromStdString(result.error().message));
+        });
     self->action(help, QString::fromUtf8("关于 Cordis"), "CordisOpenAbout", {}, [](WorkbenchControl& state) {
         if (state.about)
             state.navigate(state.about->property("ElaPageKey").toString());
     });
     self->createSettings();
-    for (const auto& entry : {std::make_pair("CordisWelcomePlugins", "CordisOpenPlugins"),
+    for (const auto& entry : {std::make_pair("CordisWelcomePlugins", "CordisAddPlugin"),
                               std::make_pair("CordisWelcomeSettings", "CordisOpenSettings"),
                               std::make_pair("CordisWelcomeCommands", "CordisOpenCommands")}) {
         auto button = window->findChild<QAbstractButton*>(QString::fromLatin1(entry.first));
         auto action = window->findChild<QAction*>(QString::fromLatin1(entry.second));
         if (button && action)
             QObject::connect(button, &QAbstractButton::clicked, action, &QAction::trigger);
+        if (button && action) {
+            const auto sync = [button, action] {
+                button->setEnabled(action->isEnabled());
+                button->setToolTip(action->toolTip());
+            };
+            QObject::connect(action, &QAction::changed, button, sync);
+            sync();
+        }
     }
-    auto corner = new ElaToolButton(panel);
+    auto panelTools = new QWidget(panel);
+    panelTools->setObjectName("CordisPanelTools");
+    auto toolsLayout = new QHBoxLayout(panelTools);
+    toolsLayout->setContentsMargins(0, 0, 4, 0);
+    toolsLayout->setSpacing(2);
+    for (const auto& entry : {std::make_pair("CordisCopyPanelOutput", "CordisCopyOutput"),
+                              std::make_pair("CordisClearPanelOutput", "CordisClearOutput")}) {
+        auto button = new ElaToolButton(panelTools);
+        const bool copy = QString::fromLatin1(entry.first) == "CordisCopyPanelOutput";
+        button->setObjectName(QString::fromLatin1(entry.first));
+        button->setElaIcon(copy ? ElaIconType::Copy : ElaIconType::TrashCan);
+        button->setFixedSize(28, 28);
+        button->setAccessibleName(copy ? QString::fromUtf8("复制全部输出") : QString::fromUtf8("清空输出"));
+        button->setToolTip(button->accessibleName());
+        toolsLayout->addWidget(button);
+        auto action = window->findChild<QAction*>(QString::fromLatin1(entry.second));
+        QObject::connect(button, &QToolButton::clicked, action, &QAction::trigger);
+        const auto sync = [weak, button](int) {
+            if (auto self = weak.lock(); self && self->open && self->panel)
+                self->withWindowAccess([self, button] {
+                    button->setVisible(self->panel->currentWidget() == self->output);
+                    button->setEnabled(self->open && self->output);
+                });
+        };
+        QObject::connect(panel, &QTabWidget::currentChanged, button, sync);
+        sync(panel->currentIndex());
+    }
+    auto corner = new ElaToolButton(panelTools);
     corner->setObjectName("CordisHidePanel");
     corner->setElaIcon(ElaIconType::Xmark);
     corner->setToolTip(QString::fromUtf8("隐藏工作区（Ctrl+J）"));
-    panel->setCornerWidget(corner, Qt::TopRightCorner);
+    corner->setAccessibleName(QString::fromUtf8("隐藏底部工作区"));
+    corner->setFixedSize(28, 28);
+    toolsLayout->addWidget(corner);
+    panel->setCornerWidget(panelTools, Qt::TopRightCorner);
     QObject::connect(corner, &QToolButton::clicked, window, [weak] {
         if (auto control = weak.lock(); control && control->open && control->togglePanel)
             control->togglePanel->click();
@@ -530,8 +926,18 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     location->setTextFormat(Qt::PlainText);
     location->setObjectName("CordisCurrentPage");
     location->setWordWrap(false);
+    location->setMaximumWidth(220);
     if (window->statusBar())
         window->statusBar()->addPermanentWidget(location);
+    auto historyButton = new ElaToolButton(window);
+    historyButton->setObjectName("CordisShowNotifications");
+    historyButton->setElaIcon(ElaIconType::Bell);
+    historyButton->setAccessibleName(QString::fromUtf8("查看通知历史"));
+    historyButton->setToolTip(QString::fromUtf8("查看通知历史；收到新通知不会自动打开面板。"));
+    historyButton->setFixedSize(26, 24);
+    QObject::connect(historyButton, &QToolButton::clicked, notifications, &QAction::trigger);
+    if (window->statusBar())
+        window->statusBar()->addPermanentWidget(historyButton);
     auto timer = new QTimer(window);
     self->homeTimer = timer;
     timer->setInterval(500);
@@ -540,6 +946,10 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
             control->refreshHome();
     });
     timer->start();
+    QObject::connect(eTheme, &ElaTheme::themeModeChanged, window, [weak] {
+        if (auto control = weak.lock())
+            control->refreshHome();
+    });
     self->updateHistory();
     return self;
 }
@@ -582,6 +992,7 @@ void selectWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const
         if (index == control->tabs->count()) {
             index = control->tabs->addTab(title);
             control->tabs->setTabData(index, key);
+            control->tabVersions.insert(key, ++control->nextTabVersion);
         }
         control->tabs->setCurrentIndex(index);
     }
@@ -590,6 +1001,8 @@ void selectWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const
         control->refreshHome();
     if (control->location)
         control->location->setText(title);
+    if (control->location)
+        control->location->setToolTip(title);
 }
 
 void selectWorkbenchEmpty(const std::shared_ptr<WorkbenchControl>& control)
@@ -647,6 +1060,11 @@ void closeWorkbench(const std::shared_ptr<WorkbenchControl>& control)
     if (!control || !control->open)
         return;
     control->open = false;
+    ++control->tabMenuGeneration;
+    if (control->tabContextMenu)
+        control->tabContextMenu->close();
+    if (control->preferences && !control->preferences->flush())
+        qWarning().noquote() << QString::fromUtf8("界面偏好保存失败；插件配置保存状态不受影响。");
     control->callbacks = {};
     control->replay.reset();
     for (const auto& action : control->actions)

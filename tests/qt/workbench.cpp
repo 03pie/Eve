@@ -168,6 +168,8 @@ void history()
     scene.action("CordisMenuBack");
     CHECK(scene.first->snapshot().value().current);
     scene.shell.showManagement().value();
+    CHECK(forward->isEnabled() && scene.first->snapshot().value().current);
+    scene.action("CordisOpenAbout");
     CHECK(!forward->isEnabled() && !scene.find<QAction>("CordisMenuForward")->isEnabled());
     back->click();
     CHECK(scene.first->snapshot().value().current);
@@ -341,7 +343,7 @@ void emptyWorkspace()
     CHECK(tabs->count() == 1);
     for (auto action : {"CordisOpenPlugins", "CordisOpenSettings", "CordisOpenAbout"})
         scene.action(action);
-    CHECK(tabs->count() == 4);
+    CHECK(tabs->count() == 3);
     while (tabs->count() > 0) {
         const auto before = tabs->count();
         scene.action("CordisCloseView");
@@ -360,7 +362,7 @@ void directActivation()
 {
     Scene scene;
     auto view = scene.find<QTreeView>("ElaNavigationView");
-    const auto group = view->model()->index(2, 0);
+    const auto group = view->model()->index(1, 0);
     CHECK(group.isValid());
     QTest::qWait(50);
     QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, view->visualRect(group).center());

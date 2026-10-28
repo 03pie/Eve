@@ -412,9 +412,12 @@ void nativeModes()
     scene.shell.showManagement().value();
     const auto management = window->getCurrentNavigationPageKey();
     auto closed = page->close();
+    CHECK(!page->navigate().hasValue());
+    wait(closed, scene.scheduler);
     window->navigation(key);
-    CHECK(window->getCurrentNavigationPageKey() == management && !page->snapshot().value().current);
-    wait(closed, scene.scheduler); CHECK(nativePage.isNull());
+    CHECK(window->getCurrentNavigationPageKey() != management && !page->snapshot().value().current);
+    CHECK(window->findChild<QWidget*>("CordisManagement")->isVisible());
+    CHECK(nativePage.isNull());
     scene.close();
 }
 /** @brief 紧凑菜单随页面撤销删除动作，分组仍存活时不能留下指向旧节点的入口。 */
@@ -474,15 +477,24 @@ void nativeCloseReentry()
     CHECK(window);
     auto management = window->findChild<QWidget*>("CordisManagement");
     CHECK(management);
-    const auto key = management->property("ElaPageKey").toString();
-    auto stack = qobject_cast<QStackedWidget*>(management->parentWidget());
-    CHECK(stack);
     std::optional<Task<void>> closed;
-    QObject::connect(stack, &QStackedWidget::currentChanged, stack, [&](int) {
+    struct Probe : QObject {
+        std::function<void()> callback;
+        bool eventFilter(QObject*, QEvent* event) override
+        {
+            if (event->type() == QEvent::Show)
+                callback();
+            return false;
+        }
+    } probe;
+    probe.callback = [&] {
+        if (closed)
+            return;
         closed = scene.shell.close();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    });
-    window->navigation(key);
+    };
+    management->installEventFilter(&probe);
+    scene.shell.showManagement();
     CHECK(closed);
     wait(*closed, scene.scheduler);
     CHECK(window.isNull());
