@@ -49,4 +49,17 @@ M1 的文件可使用合成字节；摘要正确不代表有效 PE 或合规插�
 | M2b-06 | 纯 C 自有实例/复制配置，取消不提前完成、销毁门禁及跨线程复制完成 | p4.business_lifecycle |
 | M2b-07 | 已固定/PIN 的真实 DLL 业务 query、echo 与正常清理 | p4.native_business |
 
-M3–M4 待补：真实 HostTable/Kernel 桥、生产重复/晚到 completion 与返回竞态、请求取消后完成、回调捕获及析构的 ModuleLease、清理失败驻留、真实服务/effect 及同工具链 UI DLL、退出链和 A/S06/S07 映射。M2b 的测试宿主只验证协议边界与复制值，不冒充这些生产行为；上述项目尚未验收。
+M3–M4 待补联合验收：真实 HostTable/Kernel 桥中重复/晚到 completion 与返回竞态、请求取消后完成、回调捕获及析构的 ModuleLease、清理失败驻留、真实服务/effect 及同工具链 UI DLL、退出链和 A/S06/S07 映射。下方 M3a 已验证独立请求组件，M2b 测试宿主仅验证协议/复制值，都不替代联合场景。
+
+| 编号 | M3a 请求组件场景 | 自动化依据 |
+|---|---|---|
+| M3a-01 | 同步/异步/早到完成与有界复制，结果只在入口退出后投递 | p4.request_sync / pending / early |
+| M3a-02 | 一次仲裁、返回与工作线程完成、取消竞态 | p4.request_race / cancel |
+| M3a-03 | 同步返回却完成、非法状态保持不静止；错误输入可诊断 | p4.request_protocol / input |
+| M3a-04 | 请求及总缓冲预算，容量释放后不复用旧编号 | p4.request_quota |
+| M3a-05 | close 仍可清理，seal 后不重开；实际完成前不得排空 | p4.request_closing / fence |
+| M3a-06 | 拒收/外线程丢弃/post 抛错保留账目；生产者侧最后捕获退役交回 owner | p4.request_reject / discard / throw / retire |
+| M3a-07 | 遗弃请求保守保留，错误线程/旧 context 无状态副作用 | p4.request_abandoned / threads |
+| M3a-08 | JSON 标量/容器/数字原文、UTF-8/转义及深度边界 | p4.request_json_valid / json_invalid |
+
+M3a 的组件证据不替代后续真实 DLL/HostTable/Kernel 桥；该联合验收及 M4 仍待完成，见 [M3 记录](../../docs/p4-m3-development.md)。

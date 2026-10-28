@@ -10,6 +10,11 @@ add_library(Cordis::ModuleAbi ALIAS cordis_module_abi)
 target_link_libraries(cordis_module_abi PUBLIC Cordis::Module)
 cordis_target_defaults(cordis_module_abi)
 
+add_library(cordis_module_requests STATIC request.cpp json.cpp)
+add_library(Cordis::ModuleRequests ALIAS cordis_module_requests)
+target_link_libraries(cordis_module_requests PUBLIC Cordis::ModuleAbi)
+cordis_target_defaults(cordis_module_requests)
+
 if(WIN32 AND CORDIS_REQUIRE_QT5152)
     add_library(cordis_module_preflight STATIC manifest.cpp)
     add_library(Cordis::ModulePreflight ALIAS cordis_module_preflight)

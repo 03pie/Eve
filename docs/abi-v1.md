@@ -89,4 +89,4 @@ HostTable 必须不可变，并覆盖全部实例、请求、回调和可能使�
 
 PENDING=1，OK=0；错误固定为 INVALID_ARGUMENT=-1、UNSUPPORTED=-2、NOT_FOUND=-3、CLOSED=-4、WRONG_THREAD=-5、CANCELLED=-6、ABI_PROTOCOL=-7、LIMIT=-8、FAILED=-9、BUSY=-10。complete/effect_ready/request_complete 接受的 status 只能为 OK 或上述负值。未知线码、query/destroy/create 的 PENDING 均为协议错误；Core 错误与线码的运行桥映射留给 M3。
 
-这些是 M3 的实现约束。当前协商器只验证函数表、能力和身份；测试宿主只是请求/复制值夹具，不是生产请求状态机，不证明取消竞态、资源排空或 Kernel 桥已经实现。
+这些是 M3 的实现约束。M3a 已实现独立请求仲裁/复制与退役组件，见 [请求协议决策](adr/0032-native-request-arbitration.md)；宿主 JSON 扫描限制容器深度 64、Unicode 标量编码/转义，保留数字及重复成员原文，业务 schema 另验。M2b 协商器及测试宿主没有升级为完整生产桥；真实 DLL 生命周期、资源排空与 Kernel 接入仍须在 M3b–M3d 完成。
