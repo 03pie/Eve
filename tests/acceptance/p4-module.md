@@ -77,3 +77,17 @@ M3a 的组件证据不替代后续真实 DLL/HostTable/Kernel 桥；该联合验
 | M3b-08 | 关闭门禁后迟到日志必须隔离，完成后观察器排队时关闭不能误取消 | p4.native_host_late_log / close_queued |
 
 M3b 只协商基础能力，真实服务/effect、Kernel/Session 和 UI DLL 仍按 M3c/M3d/M4 验收，不将上表当作整个 P4 完成。审查红绿证据及最终矩阵见 [M3b 记录](../../docs/p4-m3b-development.md)。
+
+
+| 编号 | M3c1 dispatch/effect 场景 | 自动化依据 |
+|---|---|---|
+| M3c1-01 | 排队、复制整数原文、消费方和目标独立请求、同步/异步/早到回调、最终 ACK | p4.native_resource_dispatch / sync / early |
+| M3c1-02 | 排队和在途取消，关闭不假完成、ACK 前不销毁 | p4.native_resource_cancel_queued / cancel_pending / close_queued / close_pending |
+| M3c1-03 | 真实 Core effect、逆序关闭、异步清理和 setup 取消后报告 | p4.native_resource_effects / cleanup_pending / setup_pending |
+| M3c1-04 | 主动清理、清理失败驻留，正在主动清理时实例关闭先等待 | p4.native_resource_explicit_cleanup / explicit_failure / cleanup_failure / close_during_cleanup |
+| M3c1-05 | owner/context/effect 归属、无效参数、操作预算、释放后再创建且不复用编号 | p4.native_resource_guards / effect_reuse |
+| M3c1-06 | 重复 ready、违规 ACK、Core effect 投递丢弃保守保留 | p4.native_resource_duplicate_ready / ack_protocol / discard |
+| M3c1-07 | ACK 后仍有合法投递副本时不得静止，最后捕获跨线程释放交回 owner | p4.native_resource_retire |
+| M3c1-08 | scheduler 对象释放后仍可读取诊断，关闭保守报告不静止 | p4.native_resource_expired_scheduler |
+
+M3c1 的资源桥验证不替代 M3c2 服务或 Kernel/Session 联合验收；红绿复现和最终矩阵见 [M3c 记录](../../docs/p4-m3c-development.md)。

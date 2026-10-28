@@ -62,6 +62,10 @@ struct RequestEntry {
 };
 enum class Ready { Waiting, Queue, Blocked };
 } // namespace
+CordisRequestId allocateNativeRequestId()
+{
+    return allocate(requests);
+}
 struct RequestControl {
     RequestControl(std::shared_ptr<IScheduler> target, GenerationLedger resources, InstanceId instanceId,
                    Epoch activation, RequestLimits budget)
@@ -285,7 +289,7 @@ Result<NativeTicket> RequestChannel::begin(NativeRequestKind kind, std::string l
     if (!operation.hasValue())
         return Result<NativeTicket>::failure(operation.error());
     auto entry = std::make_shared<RequestEntry>();
-    entry->id = allocate(requests);
+    entry->id = allocateNativeRequestId();
     entry->kind = kind;
     entry->entryLease = std::move(call.value());
     entry->operationLease = std::move(operation.value());

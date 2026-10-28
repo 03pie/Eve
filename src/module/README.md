@@ -15,3 +15,5 @@ M2 装载/协商层已完成，不代表整个 P4 或物理卸载完成；M2a �
 M3a 的 Cordis::ModuleRequests 提供私有请求仲裁/JSON 复制与真实 ledger 租约。close 与最终 seal 分开，drained 等待真实退役；投递/协议不确定时保留账目。它尚未替代 M3b–M3d 的原生宿主和 Kernel 资源桥，见 [M3 记录](../../docs/p4-m3-development.md)。
 
 M3b 的 Cordis::ModuleHost / NativeModule 提供稳定基础 HostTable、真实 DLL 生命周期、跨线程回调 Call 租约和显式关闭；不确定失败保留对象和模块。Serving 只表示业务宿主已建立；capabilities=0，不将未接入服务/effect 伪报为生产能力。实现及后续边界见 [M3b 记录](../../docs/p4-m3b-development.md)。
+
+M3c1 开启生产 DISPATCH/EFFECTS：复制及排队调用、独立请求/ACK、真实 Core effect、逆序清理和最后捕获退役屏障。服务能力仍关闭，M3c2 接入服务后再进入 Kernel/Session 联合验收，见 [资源桥记录](../../docs/p4-m3c-development.md)。上述 capabilities=0 是 M3b 提交时的历史状态。

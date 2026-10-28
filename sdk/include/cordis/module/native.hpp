@@ -31,6 +31,8 @@ struct NativeInstanceSnapshot {
     std::size_t activeHostCalls;
     std::optional<ErrorInfo> failure;
     std::vector<NativeLogRecord> logs;
+    std::size_t pendingHostOperations;
+    ScopeSnapshot resources;
 };
 /** @brief owner 线程使用的共享实例句柄，析构不代替显式 close。
  * 失败关闭保留原生实例与模块引用；成功关闭才执行并确认 destroy。

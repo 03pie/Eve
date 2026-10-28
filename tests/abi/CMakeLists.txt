@@ -72,6 +72,9 @@ if(TARGET cordis_module_native)
     cordis_query_fixture(business_throw 0)
     target_sources(cordis_fixture_business_throw PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/business_fixture.c" "${PROJECT_SOURCE_DIR}/tests/fixtures/business_throw.cpp")
     target_compile_definitions(cordis_fixture_business_throw PRIVATE CORDIS_ABI_EXPORTS FIXTURE_THROW_START)
+    cordis_query_fixture(resources 0)
+    target_sources(cordis_fixture_resources PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/resource_fixture.c")
+    target_compile_definitions(cordis_fixture_resources PRIVATE CORDIS_ABI_EXPORTS)
     cordis_query_fixture(blocking 0)
     target_compile_definitions(cordis_fixture_blocking PRIVATE FIXTURE_BLOCKING)
     cordis_query_fixture(bad_header 1)
@@ -97,13 +100,16 @@ if(TARGET cordis_module_native)
     target_link_libraries(cordis_module_native_tests PRIVATE Cordis::ModuleNative Cordis::ModuleAbi Cordis::ModuleHost Qt5::Core)
     set_target_properties(cordis_module_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     cordis_target_defaults(cordis_module_native_tests)
-    foreach(name IN ITEMS good business business_throw blocking bad_header bad_identity bad_reserved bad_null rejected short_table bad_runtime bad_flags bad_catalog bad_span missing throwing dependent dependency)
+    foreach(name IN ITEMS good business business_throw resources blocking bad_header bad_identity bad_reserved bad_null rejected short_table bad_runtime bad_flags bad_catalog bad_span missing throwing dependent dependency)
         add_dependencies(cordis_module_native_tests cordis_fixture_${name})
     endforeach()
     foreach(case IN ITEMS loaded business publication duplicate conflict aliases untracked tampered incompatible image lifetime sharing threads dependency search budget
         host_sync host_async host_multi host_early host_start_failure host_stop_failure host_destroy_failure host_create_null
         host_create_pending host_create_live_error host_duplicate host_sync_protocol host_exception host_missing host_guards
-        host_closed_scheduler host_reuse host_callback host_callback_copy host_late_log host_close_queued)
+        host_closed_scheduler host_reuse host_callback host_callback_copy host_late_log host_close_queued
+        resource_dispatch resource_early resource_sync resource_cancel_queued resource_cancel_pending resource_close_queued resource_close_pending
+        resource_effects resource_cleanup_pending resource_setup_pending resource_explicit_cleanup resource_explicit_failure resource_cleanup_failure
+        resource_guards resource_duplicate_ready resource_ack_protocol resource_discard resource_close_during_cleanup resource_retire resource_effect_reuse resource_expired_scheduler)
         add_test(NAME p4.native_${case} COMMAND "${CMAKE_COMMAND}"
             "-DTEST_EXE=$<TARGET_FILE:cordis_module_native_tests>"
             "-DFIXTURES=$<TARGET_FILE_DIR:cordis_fixture_good>"

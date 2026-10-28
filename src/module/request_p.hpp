@@ -43,6 +43,8 @@ struct NativeRequestSnapshot {
     std::size_t bufferedBytes;
     std::vector<NativeRequestRecord> requests;
 };
+/** @brief 两个方向共用不复用请求编号，不混淆消费者和目标请求。 */
+CordisRequestId allocateNativeRequestId();
 struct RequestControl;
 /** @brief 每个激活上下文一个通道；除 complete 外须 owner 线程调用。
  * 必须在全部清理请求登记后 seal，并等待 drained 后销毁；失败账目保守自保留。

@@ -1,7 +1,8 @@
 /** @file host.cpp
- * @brief 稳定基础 HostTable、真实业务生命周期与保守失败驻留；不实现可选资源族。
+ * @brief 稳定基础 HostTable、真实业务生命周期、资源入口与保守失败驻留。
  */
-#include "abi_p.hpp"
+#include "host_p.hpp"
+#include "host_resources_p.hpp"
 #include "json_p.hpp"
 #include "native_source_p.hpp"
 #include "request_p.hpp"
@@ -14,7 +15,6 @@
 #include <thread>
 
 namespace cordis::module::detail {
-namespace {
 ErrorInfo hostError(ErrorCode code, const char* message)
 {
     auto error = makeError(code, message);
@@ -25,22 +25,19 @@ bool finalStatus(CordisStatus status)
 {
     return status <= CORDIS_OK && status >= CORDIS_E_BUSY;
 }
+namespace {
 Task<CleanupReport> failedCleanupTask(ErrorInfo error)
 {
     Promise<CleanupReport> promise;
     promise.reject(std::move(error));
     return promise.task();
 }
+} // namespace
 CordisBytesV1 bytes(const std::string& value)
 {
     return {reinterpret_cast<const uint8_t*>(value.data()), value.size()};
 }
-struct BusinessRecord {
-    std::optional<BusinessApi> api;
-    std::optional<ErrorInfo> failure;
-    bool negotiating = false;
-    std::shared_ptr<NativeModuleControl> active;
-};
+namespace {
 struct HostRegistry {
     std::mutex mutex;
     std::map<GenerationId, std::shared_ptr<BusinessRecord>> modules;
@@ -52,80 +49,6 @@ HostRegistry& registry()
     return *value;
 }
 } // namespace
-
-struct NativeModuleControl : std::enable_shared_from_this<NativeModuleControl> {
-    NativeModuleControl(NativeSource value, std::shared_ptr<BusinessRecord> business,
-                        std::shared_ptr<IScheduler> target)
-        : source(std::move(value)), record(std::move(business)), scheduler(target), owner(std::this_thread::get_id())
-    {
-    }
-    NativeSource source;
-    std::shared_ptr<BusinessRecord> record;
-    std::weak_ptr<IScheduler> scheduler;
-    const std::thread::id owner;
-    mutable std::mutex mutex;
-    bool closing = false, closed = false, faulted = false;
-    std::size_t waiting = 0;
-    CleanupReport report{true, {}};
-    std::map<CordisHandle, std::shared_ptr<NativeInstanceControl>> instances;
-    Promise<CleanupReport> stopped;
-    bool ownerThread() const { return owner == std::this_thread::get_id(); }
-    void finishOne(const Result<CleanupReport>& value);
-    void finish();
-};
-struct NativeInstanceControl : std::enable_shared_from_this<NativeInstanceControl> {
-    NativeInstanceControl(std::shared_ptr<NativeModuleControl> module, std::shared_ptr<IScheduler> target,
-                          std::string plugin, InstanceId id, Epoch activation, ModuleLease lease)
-        : root(std::move(module)), channel(std::move(target), root->source.ledger, id, activation),
-          pluginId(std::move(plugin)), instance(id), epoch(activation), instanceLease(std::move(lease))
-    {
-    }
-    std::shared_ptr<NativeModuleControl> root;
-    RequestChannel channel;
-    const std::string pluginId;
-    const InstanceId instance;
-    const Epoch epoch;
-    mutable std::mutex mutex;
-    NativeInstanceState state = NativeInstanceState::Created;
-    CordisHandle native = 0;
-    CordisRequestId startRequest = 0;
-    CordisStatus startReturn = CORDIS_PENDING;
-    std::optional<Task<NativeOutcome>> startWire;
-    bool startIssued = false, startSettled = false, stopIssued = false;
-    bool closing = false, uncertain = false, blocked = false;
-    bool callbacksClosing = false, destroying = false;
-    std::size_t hostCalls = 0, logBytes = 0;
-    std::vector<NativeLogRecord> logs;
-    std::optional<ErrorInfo> failure;
-    ModuleLease instanceLease;
-    Promise<void> started, callbacksEmpty;
-    Promise<CleanupReport> stopped;
-    bool ownerThread() const { return root->ownerThread(); }
-    void quarantine(ErrorInfo error) noexcept;
-    void watch(const Task<void>& receipt);
-    template <class T, class F> void observe(const Task<T>& task, F action)
-    {
-        auto target = root->scheduler.lock();
-        if (!target || !target->isOpen()) {
-            quarantine(hostError(ErrorCode::SchedulerClosed, "native scheduler unavailable"));
-            return;
-        }
-        auto self = shared_from_this();
-        auto receipt = task.thenOn(target, [self, action = std::move(action)](const Result<T>& value) {
-            {
-                std::lock_guard<std::mutex> lock(self->mutex);
-                if (self->uncertain)
-                    return;
-            }
-            action(*self, value);
-        });
-        watch(receipt);
-    }
-    void advanceClose();
-    void callbackDrain();
-    void destroy();
-    Result<NativeInstanceSnapshot> snapshot() const;
-};
 
 namespace {
 std::shared_ptr<NativeInstanceControl> lookup(CordisHandle context)
@@ -234,7 +157,7 @@ CordisStatus CORDIS_CALL log(CordisHandle context, std::uint32_t level, CordisBy
         return CORDIS_E_FAILED;
     }
 }
-CordisStatus CORDIS_CALL cancelHost(CordisHandle context, CordisRequestId) noexcept
+CordisStatus CORDIS_CALL cancelHost(CordisHandle context, CordisRequestId request) noexcept
 {
     try {
         auto self = lookup(context);
@@ -245,25 +168,72 @@ CordisStatus CORDIS_CALL cancelHost(CordisHandle context, CordisRequestId) noexc
             self->quarantine(hostError(ErrorCode::AbiProtocol, "late native host request after callback gate closed"));
             return CORDIS_E_CLOSED;
         }
-        return self->ownerThread() ? CORDIS_E_NOT_FOUND : CORDIS_E_WRONG_THREAD;
+        return self->resources->cancel(request);
     } catch (...) {
         return CORDIS_E_FAILED;
     }
 }
+template <class F> CordisStatus withResources(CordisHandle context, F action) noexcept
+{
+    try {
+        auto self = lookup(context);
+        if (!self)
+            return CORDIS_E_CLOSED;
+        auto call = enter(self, false);
+        if (!call) {
+            self->quarantine(hostError(ErrorCode::AbiProtocol, "late native resource call after callback gate closed"));
+            return CORDIS_E_CLOSED;
+        }
+        return action(*self->resources);
+    } catch (...) {
+        if (auto self = lookup(context))
+            self->quarantine(hostError(ErrorCode::CallbackFailed, "native resource host failure"));
+        return CORDIS_E_FAILED;
+    }
+}
+CordisStatus CORDIS_CALL dispatchHost(CordisHandle context, CordisHandle callback, CordisBytesV1 payload,
+                                      CordisRequestId* output) noexcept
+{
+    if (output)
+        *output = 0;
+    return withResources(context,
+                         [&](NativeResources& resources) { return resources.dispatch(callback, payload, output); });
+}
+CordisStatus CORDIS_CALL createEffectHost(CordisHandle context, CordisBytesV1 label, CordisHandle callback,
+                                          CordisHandle* output) noexcept
+{
+    if (output)
+        *output = 0;
+    return withResources(context,
+                         [&](NativeResources& resources) { return resources.effectCreate(label, callback, output); });
+}
+CordisStatus CORDIS_CALL readyEffectHost(CordisHandle context, CordisHandle effect, CordisStatus status,
+                                         CordisBytesV1 details) noexcept
+{
+    return withResources(context,
+                         [&](NativeResources& resources) { return resources.effectReady(effect, status, details); });
+}
+CordisStatus CORDIS_CALL closeEffectHost(CordisHandle context, CordisHandle effect, CordisRequestId* output) noexcept
+{
+    if (output)
+        *output = 0;
+    return withResources(context, [&](NativeResources& resources) { return resources.effectClose(effect, output); });
+}
 const CordisHostV1 hostTable{{sizeof(CordisHostV1), CORDIS_ABI_MAJOR, CORDIS_ABI_MINOR, 0},
-                             0,
+                             CORDIS_CAP_DISPATCH | CORDIS_CAP_EFFECTS,
                              0,
                              complete,
                              log,
                              cancelHost,
+                             dispatchHost,
                              nullptr,
                              nullptr,
                              nullptr,
-                             nullptr,
-                             nullptr,
-                             nullptr,
-                             nullptr};
-ErrorInfo operationError(CordisStatus status, bool stopping, const std::string& details = {})
+                             createEffectHost,
+                             readyEffectHost,
+                             closeEffectHost};
+} // namespace
+ErrorInfo operationError(CordisStatus status, bool stopping, const std::string& details)
 {
     auto error =
         hostError(status == CORDIS_E_CANCELLED ? ErrorCode::OperationCancelled
@@ -277,7 +247,6 @@ ErrorInfo operationError(CordisStatus status, bool stopping, const std::string& 
     }
     return error;
 }
-} // namespace
 
 void NativeInstanceControl::quarantine(ErrorInfo error) noexcept
 {
@@ -324,7 +293,7 @@ void NativeInstanceControl::advanceClose()
 {
     {
         std::lock_guard<std::mutex> lock(mutex);
-        if (uncertain || stopIssued || !closing || (startIssued && !startSettled))
+        if (uncertain || stopIssued || !closing || (startIssued && !startSettled) || resources->businessBusy())
             return;
         stopIssued = true;
     }
@@ -358,6 +327,16 @@ void NativeInstanceControl::advanceClose()
             self.quarantine(hostError(ErrorCode::AbiProtocol, "native stop protocol fault"));
             return;
         }
+        self.closeResources();
+    });
+}
+void NativeInstanceControl::closeResources()
+{
+    observe(resources->close(), [](NativeInstanceControl& self, const Result<void>& result) {
+        if (!result.hasValue()) {
+            self.quarantine(result.error());
+            return;
+        }
         auto sealed = self.channel.seal();
         if (!sealed.hasValue()) {
             self.quarantine(sealed.error());
@@ -370,6 +349,27 @@ void NativeInstanceControl::advanceClose()
                 instance.callbackDrain();
         });
     });
+}
+Task<NativeOutcome> NativeInstanceControl::invoke(NativeRequestKind kind, const char* label,
+                                                  const std::function<CordisStatus(CordisRequestId)>& action)
+{
+    auto ticket = channel.begin(kind, label);
+    if (!ticket.hasValue()) {
+        quarantine(ticket.error());
+        Promise<NativeOutcome> failed;
+        failed.reject(ticket.error());
+        return failed.task();
+    }
+    CordisStatus status;
+    try {
+        status = action(ticket.value().id);
+    } catch (...) {
+        status = 0x7fff;
+    }
+    auto returned = channel.returned(ticket.value().id, status);
+    if (!returned.hasValue())
+        quarantine(returned.error());
+    return ticket.value().result;
 }
 void NativeInstanceControl::callbackDrain()
 {
@@ -446,11 +446,14 @@ Result<NativeInstanceSnapshot> NativeInstanceControl::snapshot() const
     auto requests = channel.snapshot();
     if (!requests.hasValue())
         return Result<NativeInstanceSnapshot>::failure(requests.error());
+    auto effects = resources->snapshot();
+    if (!effects.hasValue())
+        return Result<NativeInstanceSnapshot>::failure(effects.error());
     std::lock_guard<std::mutex> lock(mutex);
-    return Result<NativeInstanceSnapshot>::success({root->source.generation, instance, epoch, pluginId,
-                                                    uncertain ? NativeInstanceState::Failed : state, native != 0,
-                                                    closing || uncertain, uncertain, blocked,
-                                                    requests.value().requests.size(), hostCalls, failure, logs});
+    return Result<NativeInstanceSnapshot>::success(
+        {root->source.generation, instance, epoch, pluginId, uncertain ? NativeInstanceState::Failed : state,
+         native != 0, closing || uncertain, uncertain, blocked, requests.value().requests.size(), hostCalls, failure,
+         logs, resources->pending(), effects.value()});
 }
 void NativeModuleControl::finishOne(const Result<CleanupReport>& value)
 {
@@ -593,6 +596,7 @@ Result<NativeInstance> NativeModule::create(std::string plugin, std::string conf
         return Result<NativeInstance>::failure(lease.error());
     auto self = std::make_shared<NativeInstanceControl>(root, scheduler, std::move(plugin), id, epoch,
                                                         std::move(lease.value()));
+    self->resources = std::make_shared<NativeResources>(self, scheduler);
     {
         auto& directory = registry();
         std::lock_guard<std::mutex> lock(directory.mutex);
@@ -631,6 +635,11 @@ Result<NativeInstance> NativeModule::create(std::string plugin, std::string conf
         return Result<NativeInstance>::failure(std::move(error));
     }
     if (status != CORDIS_OK) {
+        if (!self->resources->empty()) {
+            auto error = hostError(ErrorCode::AbiProtocol, "failed native create retained registered resources");
+            self->quarantine(error);
+            return Result<NativeInstance>::failure(std::move(error));
+        }
         auto error = operationError(status, false);
         discardUncreated(self);
         return Result<NativeInstance>::failure(std::move(error));
@@ -737,6 +746,7 @@ Task<CleanupReport> NativeInstance::close() const
         pending = self->startIssued && !self->startSettled && self->startReturn == CORDIS_PENDING && self->startWire &&
                   !self->startWire->isReady();
     }
+    self->resources->cancelBusiness();
     auto closed = self->channel.close();
     if (!closed.hasValue()) {
         self->quarantine(closed.error());
@@ -821,8 +831,12 @@ Result<NativeModuleSnapshot> NativeModule::snapshot() const
         for (const auto& pair : root->instances)
             instances.push_back(pair.second);
     }
-    for (const auto& instance : instances)
-        result.instances.push_back(instance->snapshot().value());
+    for (const auto& instance : instances) {
+        auto snapshot = instance->snapshot();
+        if (!snapshot.hasValue())
+            return Result<NativeModuleSnapshot>::failure(snapshot.error());
+        result.instances.push_back(std::move(snapshot.value()));
+    }
     return Result<NativeModuleSnapshot>::success(std::move(result));
 }
 } // namespace cordis::module

@@ -1,6 +1,6 @@
 # P4-M3 请求与资源桥
 
-日期：2026-10-29。M3 进行中；M3a 请求组件已审核提交（1ffa0ff），M3b 基础生命周期已实现、审核修复并完成最终矩阵，随本提交归档。M3c/M3d 和 M4 尚未完成，不将单个组件等同于整包或整个 P4。
+日期：2026-10-29。M3 进行中；M3a 请求组件已审核提交（1ffa0ff），M3b 基础生命周期已审核提交（f32191b），M3c 资源桥进行中。M3c/M3d 和 M4 尚未完成，不将单个组件等同于整包或整个 P4。
 
 ## 分段与提交门槛
 
@@ -10,7 +10,7 @@
 |---|---|---|
 | M3a | 生产请求控制块、复制/一次仲裁、取消、投递与租约退役 | 已完成；1ffa0ff，审查修复 seal 屏障及晚到取消 |
 | M3b | 稳定 HostTable/模块业务表、真实 create/start/stop/destroy 与 ModuleGeneration | 已完成；审查修复及最终矩阵见 [M3b 记录](p4-m3b-development.md) |
-| M3c | 生产 dispatch/service/effect 桥及真实资源租约 | 待实施 |
+| M3c | 生产 dispatch/service/effect 桥及真实资源租约 | 进行中；M3c1 dispatch/effect 已审核修复并验证，随本提交归档；M3c2 服务待实施，见 [资源记录](p4-m3c-development.md) |
 | M3d | Kernel/Session、两个服务 DLL、多实例、失败驻留及退出联合验收 | 待实施 |
 
 M3 结束后继续 M4 的同工具链 UI DLL、工具链预检、管理诊断与 P4 收口。上述拆分不减少原计划的服务 DLL、UI DLL 或 A/S06/S07 验收要求。
@@ -50,6 +50,6 @@ M3 结束后继续 M4 的同工具链 UI DLL、工具链预检、管理诊断与
 
 ## 后续接入约束
 
-M3b 必须在 DLL 调用实际退出后执行 returned，不能仅依据 complete 到达推进生命周期；稳定 HostTable 和通道覆盖所有合法回调寿命。Host.complete/log 的跨边界 shim 还须单独持 CallLease，工作线程退出也须有独立屏障，不能用请求结果代替。先关业务、登记并完成 Stop/资源清理，再 seal/等待 drained，最后 destroy；不能先让模块账目拒绝清理引用。
+M3b 已实现以下约束，M3c/d 接入须继续保持：在 DLL 调用实际退出后执行 returned，不能仅依据 complete 到达推进生命周期；稳定 HostTable 和通道覆盖所有合法回调寿命。Host.complete/log 的跨边界 shim 还须单独持 CallLease，工作线程退出也须有独立屏障，不能用请求结果代替。先关业务、登记并完成 Stop/资源清理，再 seal/等待 drained，最后 destroy；不能先让模块账目拒绝清理引用。
 
 投递或协议不确定时保留实例和模块并返回可诊断的不静止结果，不能假装成功关闭。生产服务和 effect 继续使用真实账目，不将 M2b 的协商哨兵槽用作生产实现。
