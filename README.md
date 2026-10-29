@@ -6,7 +6,7 @@
 
 底部工作区支持搜索并执行已注册命令、按平台/插件实例选择真实输出，以及运行问题的筛选、详情和定位。插件通过 `ui.output/v1` 写入隔离通道，见[工作区接入说明](docs/workbench-panel-development.md)。
 
-**P4 进行中**：M1 预检/账目、M2 原生装载及完整业务 ABI 协商已审核提交，见 [ABI V1](docs/abi-v1.md)。当前 [M3a 请求组件](docs/p4-m3-development.md)、[M3b 原生生命周期](docs/p4-m3b-development.md)、[M3c1 dispatch/effect](docs/p4-m3c-development.md)及 [M3c2 服务桥](docs/p4-m3c2-development.md)已实现；[M3d1 Core 托管与配置目录](docs/p4-m3d1-development.md)亦已完成，[M3d2a 业务 DLL/真实 Qt 配置链路](docs/p4-m3d2a-development.md)已完成，M3d2b/S06/S07 与 M4 UI DLL 仍待完成，P5 受控替换未开始；当前 C++ 源码 SDK 不构成稳定二进制 ABI。
+**P4 进行中**：M1 预检/账目、M2 原生装载及完整业务 ABI 协商已审核提交，见 [ABI V1](docs/abi-v1.md)。当前 [M3a 请求组件](docs/p4-m3-development.md)、[M3b 原生生命周期](docs/p4-m3b-development.md)、[M3c1 dispatch/effect](docs/p4-m3c-development.md)及 [M3c2 服务桥](docs/p4-m3c2-development.md)已实现；[M3d1 Core 托管与配置目录](docs/p4-m3d1-development.md)亦已完成，[M3d2a 业务 DLL/真实 Qt 配置链路](docs/p4-m3d2a-development.md)已完成，[M3d2b 分层 S06/S07 验证](docs/p4-m3d2b-development.md)已通过，M3 收口；M4 UI DLL 仍待完成，P5 受控替换未开始；当前 C++ 源码 SDK 不构成稳定二进制 ABI。
 
 当前工作区还已实现受限类型化 Qt 信号投递：数值、枚举与标准/Qt 字符串会在发射时冻结，参数保留至异步业务完成，并沿用 Context/epoch 及原生退出屏障。详情见 [类型化连接决策](docs/adr/0026-typed-qt-connections.md)，示例为 cordis_qt_value_connection_demo。
 
@@ -48,7 +48,7 @@
 | `Cordis::ConfigIoQt` | 可选配置后台串行读写、线程 join 与文件/目录监听，通知不自动应用目标 |
 | `Cordis::ConfigUi` | 可选 Ela 配置编辑页及 Home/管理适配器，弱持宿主会话；普通 Ui SDK 不依赖配置层 |
 | `src/qt` | 可选 Cordis::Qt，包含 QtScheduler、QtClock、QObjectResource、托管 QtConnection 与 QtWorker |
-| `src/module` | Module 账目、ModulePreflight 预检、Windows ModuleNative 驻留装载及 ModuleHost 真实生命周期/资源/服务桥；Core 托管及冻结 Kernel/Session 配置目录；另有两个业务服务 DLL 和真实 Qt 配置示例；S06/S07 待 M3d2b |
+| `src/module` | Module 账目、ModulePreflight 预检、Windows ModuleNative 驻留装载及 ModuleHost 真实生命周期/资源/服务桥；Core 托管及冻结 Kernel/Session 配置目录；另有两个业务服务 DLL 和真实 Qt 配置示例；S06/S07 分层证据见 M3d2b |
 | `src/ui` | 可选 Cordis::Ui，包含 Ela 插件状态卡片及电源操作、单击直达的插件导航、菜单/搜索/前进后退、可全部关闭的中央页签、底部工作区、贡献服务和只读诊断；资源树属于具体插件页 |
 | `third_party/ela` | 项目内维护的 Ela 组件库及资源，保留上游基线、本地修改和 MIT 许可 |
 | `third_party/libyaml` | 固定 0.2.5 C 解析库和 MIT 许可，私有链接至配置文本层 |

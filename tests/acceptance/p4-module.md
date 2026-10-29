@@ -144,3 +144,18 @@ M3d1 后续复审新增 M3d1-10：修复前真实失败 0/1，修复后 1/1；�
 | M3d2a-05 | cleanup 失败不假静止，drain 拒绝、PIN 与执行引用保留 | p4.native_qt_cleanup_failure |
 
 最终 Release 全量 612/612、Debug/ASan P4 各 144/144、GCC 全量 245/245、原 Release 关闭示例 P4 144/144 并恢复 ON；五项在 Debug/ASan 各连续 20 次通过。日志、8 项源码快照、3 个 ASan 编译命令及 6 份声明/产物摘要映射见 [阶段记录](../../docs/p4-m3d2a-development.md)。本轮观察启动业务日志，未单独请求报告器 read 方法；取消后晚到的 stop completion（S06）和 DLL 内失活捕获析构（S07）仍属 M3d2b，M4 UI DLL 待实施。
+
+
+## M3d2b 分层 S06/S07 收口
+
+取消在生产 RequestChannel 请求边界配合真实 DLL 与 Qt 验证，NativeModule 当前无公开 stop-cancel 操作；完整生产 HostTable 的 PENDING stop 等待单独检查。S07 使用生产 Core/Kernel 托管、真实 QtScheduler 和 DLL 内 lambda/Capture；专用控制导出只存在于测试夹具，不加入业务 DLL/SDK。
+
+| 编号 | 场景 | 自动化依据 |
+|---|---|---|
+| M3d2b-01 / S06 | Stop PENDING→一次取消→另一线程在 DLL 内晚到完成；取消/seal 不假完成，复制后改写缓冲，退役后才 destroy | p4.native_lifecycle_cancel_stop |
+| M3d2b-02 | 生产 HostTable 的 PENDING stop 等真实完成，回执不内联 destroy | p4.native_lifecycle_pending_stop |
+| M3d2b-03 / S07 | Core 失活抑制 DLL 主体、ACK CANCELLED、DLL 内捕获析构，保留任务副本阻止假静止，最后释放跨线程回到 owner | p4.native_lifecycle_stale_capture |
+| M3d2b-04 | 活动对照：主体/ACK/捕获析构各一次，完整排空 | p4.native_lifecycle_live_capture |
+| M3d2b-05 | 失败对照：不析构/不 destroy，模块与执行引用保留 | p4.native_lifecycle_failed_capture |
+
+临时去掉执行前门禁的负向控制 0/1，恢复后全部通过；生产源码逐字节恢复，未增加公共取消接口。最终 Release 617/617、Debug/ASan P4 各 149/149、GCC 245/245、原 Release 关闭示例 P4 149/149 并恢复 ON，五项各连续 20 次通过。证据及 4 项源码/3 个 ASan 编译命令见 [本段记录](../../docs/p4-m3d2b-development.md)。M3d1/M3d2a/M3d2b 共同完成 M3 业务/资源范围，M4 UI DLL 和整个 P4 收口仍待完成，物理卸载不在当前证明范围。

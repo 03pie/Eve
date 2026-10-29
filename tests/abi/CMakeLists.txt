@@ -75,6 +75,9 @@ if(TARGET cordis_module_native)
     cordis_query_fixture(resources 0)
     target_sources(cordis_fixture_resources PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/resource_fixture.c")
     target_compile_definitions(cordis_fixture_resources PRIVATE CORDIS_ABI_EXPORTS)
+    cordis_query_fixture(lifecycle 0)
+    target_sources(cordis_fixture_lifecycle PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/lifecycle_fixture.cpp")
+    target_compile_definitions(cordis_fixture_lifecycle PRIVATE CORDIS_ABI_EXPORTS)
     foreach(name IN ITEMS services services_peer)
         cordis_query_fixture(${name} 0)
         target_sources(cordis_fixture_${name} PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/resource_fixture.c")
@@ -102,10 +105,10 @@ if(TARGET cordis_module_native)
     target_link_libraries(cordis_fixture_dependent PRIVATE cordis_fixture_dependency)
 
     add_executable(cordis_module_native_tests "${PROJECT_SOURCE_DIR}/tests/qt/module_native.cpp")
-    target_link_libraries(cordis_module_native_tests PRIVATE Cordis::ModuleNative Cordis::ModuleAbi Cordis::ModuleHost Cordis::ConfigKernel Cordis::ConfigSession Qt5::Core)
+    target_link_libraries(cordis_module_native_tests PRIVATE Cordis::ModuleNative Cordis::ModuleAbi Cordis::ModuleHost Cordis::ConfigKernel Cordis::ConfigSession Cordis::Qt Qt5::Core)
     set_target_properties(cordis_module_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     cordis_target_defaults(cordis_module_native_tests)
-    foreach(name IN ITEMS good business business_throw resources services services_peer blocking bad_header bad_identity bad_reserved bad_null rejected short_table bad_runtime bad_flags bad_catalog bad_span missing throwing dependent dependency)
+    foreach(name IN ITEMS good business business_throw resources lifecycle services services_peer blocking bad_header bad_identity bad_reserved bad_null rejected short_table bad_runtime bad_flags bad_catalog bad_span missing throwing dependent dependency)
         add_dependencies(cordis_module_native_tests cordis_fixture_${name})
     endforeach()
     foreach(case IN ITEMS loaded business publication duplicate conflict aliases untracked tampered incompatible image lifetime sharing threads dependency search budget
@@ -119,7 +122,8 @@ if(TARGET cordis_module_native)
         service_budget service_cancel_protocol service_effect_barrier service_cycle service_retire service_cleanup_failure
         managed_flow managed_publication managed_setup_cancel managed_key managed_cleanup managed_guards
         managed_realms managed_stale_dispatch managed_session
-        managed_metadata managed_undeclared managed_setup_failure managed_scheduler managed_index managed_generation managed_incoming_budget managed_ack_capacity managed_create_failure)
+        managed_metadata managed_undeclared managed_setup_failure managed_scheduler managed_index managed_generation managed_incoming_budget managed_ack_capacity managed_create_failure
+        lifecycle_cancel_stop lifecycle_pending_stop lifecycle_stale_capture lifecycle_live_capture lifecycle_failed_capture)
         add_test(NAME p4.native_${case} COMMAND "${CMAKE_COMMAND}"
             "-DTEST_EXE=$<TARGET_FILE:cordis_module_native_tests>"
             "-DFIXTURES=$<TARGET_FILE_DIR:cordis_fixture_good>"

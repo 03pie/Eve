@@ -1,8 +1,8 @@
 # P4 原生插件模块开发
 
-日期：2026-10-29。当前 **P4 进行中，M1/M2 已完成，M3 请求/资源桥进行中**；P1/P2/P3 及 UI 专项的既有收口不撤销。M1 为 59b7c76，M2a 为 249a425，M2b 为 fed5a51，均已审核提交；P5 未开始。
+日期：2026-10-29。当前 **P4 进行中，M1/M2/M3 已完成，下一段 M4 UI DLL**；P1/P2/P3 及 UI 专项的既有收口不撤销。M1 为 59b7c76，M2a 为 249a425，M2b 为 fed5a51，均已审核提交；P5 未开始。
 
-M3a 请求组件已审核提交为 1ffa0ff，M3b 生命周期已审核提交为 f32191b，M3c1 dispatch/effect 为 e9c89dd；当前 M3c2 真实服务桥已实现，审核修复与验证见 [服务记录](p4-m3c2-development.md)，M3d1 Core 托管与冻结配置目录亦已完成，M3d2a 业务 DLL/真实 Qt 配置链路已完成，M3d2b/S06/S07 待实施，见 [M3 记录](p4-m3-development.md)。每段确认无未解决问题后提交，再继续下一段；M4 UI DLL 仍是 P4 必需交付。
+M3a 请求组件已审核提交为 1ffa0ff，M3b 生命周期已审核提交为 f32191b，M3c1 dispatch/effect 为 e9c89dd；当前 M3c2 真实服务桥已实现，审核修复与验证见 [服务记录](p4-m3c2-development.md)，M3d1 Core 托管与冻结配置目录亦已完成，M3d2a 业务 DLL/真实 Qt 配置链路已完成，M3d2b 分层 S06/S07 已通过，见 [M3 记录](p4-m3-development.md)。每段确认无未解决问题后提交，再继续下一段；M4 UI DLL 仍是 P4 必需交付。
 
 此前 M2b 交付：完整业务表签名、所有权/能力规则、无 Qt 协商器及纯 C/真实 DLL 夹具；最终 MSVC Debug/Release 各 497/497、GCC 223/223、ASan 与关闭示例 P4 各 38/38，见 [M2b 记录](p4-m2b-development.md)和 [ADR-0031](adr/0031-business-abi.md)。该段是 M2b 历史，不覆盖本页当前 M3 状态。
 
@@ -14,7 +14,7 @@ M3a 请求组件已审核提交为 1ffa0ff，M3b 生命周期已审核提交为 
 |---|---|---|---|
 | P4-M1 | 声明、路径/摘要预检、宿主引用账目 | 已完成 | 真实文件、越界、预算、租约/线程/排空测试及工具链回归通过，见下表 |
 | P4-M2 | 原生装载、ABI 声明与握手 | 已完成（装载/协商层） | M2a 驻留发现 + M2b 完整签名/能力/所有权、C/C++ 布局及真实 DLL 握手；生产桥见 M3 |
-| P4-M3 | 请求/资源桥与服务 DLL | 进行中（M3c/M3d1/M3d2a 完成，M3d2b 待实施） | M3a/M3b/M3c 请求、生命周期与真实资源桥已完成；M3d1 托管/目录已完成，见 [记录](p4-m3d1-development.md)；M3d2a 业务 DLL/Qt 配置/失败退出已完成，见 [记录](p4-m3d2a-development.md)；M3d2b/S06/S07 待验收 |
+| P4-M3 | 请求/资源桥与服务 DLL | 已完成（当前 Windows x64 支持矩阵） | M3a/M3b/M3c 请求、生命周期与真实资源桥已完成；M3d1 托管/目录已完成，见 [记录](p4-m3d1-development.md)；M3d2a 业务 DLL/Qt 配置/失败退出已完成，见 [记录](p4-m3d2a-development.md)；M3d2b 的请求边界/Host 集成及 DLL 捕获验证通过，见 [记录](p4-m3d2b-development.md) |
 | P4-M4 | 同工具链 UI DLL 与 P4 收口 | 未开始 | 工具链检查、UI 工厂完整退出、模块诊断、A/S06/S07 与原生验收映射 |
 
 M1 独立可用，但不替代设计说明书对整个 P4 的服务 DLL、UI DLL 和 ABI 验收要求。架构及限制见 [ADR-0029](adr/0029-module-preflight-ledger.md)。

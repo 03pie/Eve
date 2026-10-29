@@ -6,7 +6,9 @@
 
 ## 当前状态
 
-**P1/P2/P3 及 UI 专项已完成（当前内置插件/Windows 支持矩阵）。P4-M1 为 59b7c76、M2a 为 249a425、M2b 为 fed5a51，均已审核提交。当前 M3 进行中：M3a 已提交（1ffa0ff），M3b 为 f32191b，M3c1 为 e9c89dd；M3c2 真实服务桥已完成审查修复和最终验证，随本提交归档。M3d1 Core 托管与 Kernel/Session 目录接入已完成审查修复与最终验证，随本提交归档；M3d2a 业务 DLL/真实 Qt 配置链路已完成审查验证；M3d2b/S06/S07 与 M4 UI DLL 待实施，P5 未开始。**
+**P1/P2/P3 及 UI 专项已完成（当前内置插件/Windows 支持矩阵）。P4-M1 为 59b7c76、M2a 为 249a425、M2b 为 fed5a51，均已审核提交。当前 M3 已完成（Windows x64 支持矩阵）：M3a 已提交（1ffa0ff），M3b 为 f32191b，M3c1 为 e9c89dd；M3c2 真实服务桥已完成审查修复和最终验证，随本提交归档。M3d1 Core 托管与 Kernel/Session 目录接入已完成审查修复与最终验证，随本提交归档；M3d2a 业务 DLL/真实 Qt 配置链路已完成审查验证；M3d2b 的分层 S06/S07 已通过，随本提交归档；下一段 M4 UI DLL，P5 未开始。**
+
+2026-10-29 M3d2b：新增真实 C++ DLL 夹具及五项 Qt 生命周期检查。S06 在生产请求边界验证 Stop PENDING 后取消仍晚到完成，另验生产 HostTable 等待真实 stop；S07 验证 Core 失活时主体不执行、DLL 内捕获析构、最后任务副本跨线程退役及失败保留。去掉执行门禁的负向控制 0/1，生产代码已恢复且本提交仅增加测试/文档。最终 Release 617/617、Debug/ASan P4 各 149/149、GCC 245/245、关闭示例 P4 149/149；五项在 Debug/ASan 各连续 20 次通过，4 项快照及 3 个 ASan 编译行核对通过。M3d/M3 当前范围收口，下一段 M4，见 [分层验收与审查](p4-m3d2b-development.md)。
 
 2026-10-29 M3d2a：新增计数和报告两个真实业务 DLL、独立配置及 Qt 命令行宿主；DLL 仅依赖 C ABI，宿主实际执行 Kernel/Session、写盘和完整正常退出。五项场景覆盖共享计数、多实例/realm、启动失败及清理失败驻留。最终 Release 612/612、Debug/ASan P4 各 144/144、GCC 245/245、关闭示例 P4 144/144；新场景在 Debug/ASan 各连续 20 次通过，8 项快照、3 个 ASan 编译行及 6 份实际 DLL 声明摘要一致。已审查并随本提交归档；M3d2b/S06/S07 尚未完成，见 [本段记录](p4-m3d2a-development.md)与 [示例说明](../examples/native_services/README.md)。
 
@@ -81,7 +83,7 @@ Qt 5.15.2 Core/Widgets/Test 已就绪，本机入口见 [开发环境](developme
 | P2 响应式服务依赖 | 已完成（首阶段内置范围） | W4/W5/W7 联合闭环通过；跨 ABI、物理卸载及替换不在本轮 |
 | P3 Qt / Loader / Ela | 已完成（当前支持矩阵） | L01–L04/Q01/U01/S05/S08/S10 及真实装配检查通过；Q4d3 已获本次用户确认，Home 手动路径/原生 150% 代理复核通过，见 [收口审计](p3-closeout.md)；不补造系统 DPI/跨屏证据 |
 | UI 设计与优化（独立专项） | 已完成（当前支持矩阵） | UI-S0–S4 与 UI-00–07 已完成，原生 32/32、三次用户确认和最终审计归档；跨屏未覆盖，见 [阶段计划](ui-special-stages.md)及[增量验证](ui-structure-verification.md) |
-| P4 原生插件模块 | 进行中 | M1/M2、M3a/M3b/M3c 请求、生命周期及真实资源/服务桥已完成；M3d1 Core/配置目录已完成，M3d2a 业务 DLL/Qt 配置/失败退出已完成，M3d2b/S06/S07 与 M4 UI DLL 待实施，见 [阶段记录](p4-development.md) |
+| P4 原生插件模块 | 进行中 | M1/M2、M3a/M3b/M3c 请求、生命周期及真实资源/服务桥已完成；M3d1 Core/配置目录已完成，M3d2a 业务 DLL/Qt 配置/失败退出已完成，M3d2b 分层 S06/S07 已通过，M3 收口；M4 UI DLL 待实施，见 [阶段记录](p4-development.md) |
 | P5 受控替换 | 未开始 | 新旧代替换、恢复和卸载专项验证待实现 |
 
 ## UI 设计与优化专项

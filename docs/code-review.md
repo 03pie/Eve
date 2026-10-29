@@ -1,5 +1,15 @@
 # 提交前代码审查记录
 
+## P4-M3d2b 取消与 DLL 捕获验收提交前审核
+
+日期：2026-10-29。基线 6c5931f。仅增加 lifecycle C++ DLL 夹具、真实 Qt 请求/托管检查及测试构建接入，生产 Module/Core/Loader/UI、SDK 和两个业务 DLL 未改。由当前代理审查，未使用子代理。
+
+S06 分开核对生产 RequestChannel 的 Stop 取消/晚到完成与生产 HostTable 的 PENDING stop；前者使用测试 shim 转交 completion，明确不冒充完整 HostTable，也未新增公开 stop-cancel API。S07 以 Core epoch 立即失活、真实 DLL lambda 和其 Capture 析构、一个已接受宿主任务副本的 Callback/QueuePayload 租约及跨线程最后释放验证，活动和失败对照避免只观察最终计数冒充安全退役。所有跨 DLL 入口持 Call/Instance 等真实代次引用。
+
+负向检查临时去掉 dispatchOne 执行前 allowed 门禁后，stale_capture 按预期 0/1；在 finally 中逐字节恢复并刷新时间戳重新编译，生产源与 HEAD 相同。首轮缺私有请求头的编译失败已补显式包含；复核 Qt 局部事件循环超时/异常、线程 join/异常交回、ABI 表、一次取消、完成值复制、捕获失败保留以及夹具退出后的独立目录清理，没有放宽原有超时或警告。未发现阻止本段提交的剩余问题。
+
+最终原 Release 全量 617/617、Debug/ASan P4 各 149/149、GCC 245/245，关闭示例 P4 149/149 并恢复 ON。新五项在 Debug/ASan 各连续 20 次通过；4 项测试/构建哈希与 3 个 C/C++ ASan 编译行、格式/编码/差异/引用及生产/只读边界审计通过。完整证据见 [开发记录](p4-m3d2b-development.md)。M3 当前 Windows x64 范围已收口；M4 UI DLL、P4 整体和物理卸载不由本次测试完成。
+
 ## P4-M3d2a 业务 DLL 与真实 Qt 链路提交前审核
 
 日期：2026-10-29。基线 02d2ca9。范围为两个业务 DLL、公共 C ABI 支持、实际产物声明生成、Qt 配置宿主及五项端到端检查。由当前代理审核，未使用子代理；Core/Loader/Ui/SDK/第三方未改。

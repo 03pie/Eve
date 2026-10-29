@@ -1,6 +1,6 @@
 # P4-M3 请求与资源桥
 
-日期：2026-10-29。M3 进行中；M3a 请求组件已审核提交（1ffa0ff），M3b 基础生命周期已审核提交（f32191b），M3c1 dispatch/effect 已提交（e9c89dd），M3c2 服务桥已完成审查修复和最终验证，随本提交归档。M3d 和 M4 尚未完成，不将单个组件等同于整包或整个 P4。
+日期：2026-10-29。M3 已完成（当前 Windows x64 支持矩阵）；M3a 请求组件已审核提交（1ffa0ff），M3b 基础生命周期已审核提交（f32191b），M3c1 dispatch/effect 已提交（e9c89dd），M3c2 服务桥已完成审查修复和最终验证，随本提交归档。M3d1/M3d2a/M3d2b 的托管、业务 DLL/配置链路与分层 S06/S07 均已验收，见 [M3d2b 记录](p4-m3d2b-development.md)。M4 UI DLL 尚未完成，不将 M3 完成等同于整个 P4。
 
 ## 分段与提交门槛
 
@@ -11,7 +11,7 @@
 | M3a | 生产请求控制块、复制/一次仲裁、取消、投递与租约退役 | 已完成；1ffa0ff，审查修复 seal 屏障及晚到取消 |
 | M3b | 稳定 HostTable/模块业务表、真实 create/start/stop/destroy 与 ModuleGeneration | 已完成；审查修复及最终矩阵见 [M3b 记录](p4-m3b-development.md) |
 | M3c | 生产 dispatch/service/effect 桥及真实资源租约 | 已完成；M3c1 已提交，M3c2 最终验证通过并随本提交归档，见 [服务记录](p4-m3c2-development.md)；前段历史见 [资源记录](p4-m3c-development.md) |
-| M3d | Kernel/Session、两个服务 DLL、多实例、失败驻留及退出联合验收 | 进行中；M3d1 托管与配置目录已完成审核与最终验证，M3d2a 业务 DLL/真实 Qt 配置链路已完成，M3d2b/S06/S07 待实施，见 [分段](p4-m3d-development.md) |
+| M3d | Kernel/Session、两个服务 DLL、多实例、失败驻留及退出联合验收 | 已完成；M3d1 托管/目录、M3d2a 业务 DLL/Qt 配置与 M3d2b 分层 S06/S07 通过，见 [分段](p4-m3d-development.md) |
 
 M3 结束后继续 M4 的同工具链 UI DLL、工具链预检、管理诊断与 P4 收口。上述拆分不减少原计划的服务 DLL、UI DLL 或 A/S06/S07 验收要求。
 

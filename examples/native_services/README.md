@@ -19,4 +19,4 @@ cmake --build build/ela-msvc-release --target cordis_native_services_demo --para
 
 另有 start_failure 和 cleanup_failure 两个显式故障演示。前者用报告器配置 {"failStart":true} 验证失败回滚后仍能完整退出；后者用计数器配置 {"failCleanup":true} 验证不静止报告、DLL 和执行引用保留。故障场景返回 0 表示它符合预期的验收结果，不能解释为清理成功。这两个参数仅为本示例 schema 的故障演示能力。
 
-五项检查在关闭 CORDIS_BUILD_EXAMPLES 时仍由 cordis_native_services_probe 执行。业务链、真实磁盘保存、多实例/realm 与上述故障已覆盖；report/read 方法由示例提供，本轮联合检查观察启动业务日志，未单独发起该方法调用。S06 取消后的晚到 stop completion 与 S07 DLL 内捕获析构仍属于 M3d2b；M4 UI DLL 另行实施，见 [阶段记录](../../docs/p4-m3d2a-development.md)。
+五项检查在关闭 CORDIS_BUILD_EXAMPLES 时仍由 cordis_native_services_probe 执行。业务链、真实磁盘保存、多实例/realm 与上述故障已覆盖；report/read 方法由示例提供，本轮联合检查观察启动业务日志，未单独发起该方法调用。S06 取消后的晚到 stop completion 与 S07 DLL 内捕获析构已由 [M3d2b 专用夹具分层验证](../../docs/p4-m3d2b-development.md)，没有向本示例加入测试控制导出；M4 UI DLL 另行实施，见 [阶段记录](../../docs/p4-m3d2a-development.md)。
