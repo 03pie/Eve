@@ -91,3 +91,19 @@ M3b 只协商基础能力，真实服务/effect、Kernel/Session 和 UI DLL 仍�
 | M3c1-08 | scheduler 对象释放后仍可读取诊断，关闭保守报告不静止 | p4.native_resource_expired_scheduler |
 
 M3c1 的资源桥验证不替代 M3c2 服务或 Kernel/Session 联合验收；红绿复现和最终矩阵见 [M3c 记录](../../docs/p4-m3c-development.md)。
+
+| 编号 | M3c2 真实服务桥场景 | 自动化依据 |
+|---|---|---|
+| M3c2-01 | 同步/异步/早到服务结果，复制整数原文及两端独立请求 | p4.native_service_sync / async / early |
+| M3c2-02 | start 与真实 Core effect ready 双屏障；失败不发布 | p4.native_service_publication / start_failure / effect_barrier |
+| M3c2-03 | minor/能力、转义重复、非法参数、线程与归属检查 | p4.native_service_guards |
+| M3c2-04 | 精确 realm、同 scheduler 共享索引、活动索引不可切换 | p4.native_service_realms |
+| M3c2-05 | 撤回立即拒新调用、通知消费者退出、排空后确认 | p4.native_service_withdraw |
+| M3c2-06 | 旧绑定异步清理、提供者等待消费者；清理失败保留 | p4.native_service_cleanup / cleanup_failure |
+| M3c2-07 | 排队/在途真实取消，非法取消协议隔离两端 | p4.native_service_cancel_queued / cancel_pending / cancel_protocol |
+| M3c2-08 | 提供者与宿主操作预算；拒绝受理后不遗留 committed 租约 | p4.native_service_limits / budget |
+| M3c2-09 | 两个真实 C DLL 共享 Core 注册表互调并级联退出 | p4.native_service_shared |
+| M3c2-10 | 真实 Core 依赖环；清理期间拒绝新绑定 | p4.native_service_cycle |
+| M3c2-11 | ACK 后仍有投递副本时不静止，最后捕获跨线程释放 | p4.native_service_retire |
+
+M3c2 记录见 [服务桥验证](../../docs/p4-m3c2-development.md)。这些 DLL 为回归夹具，M3d 的业务服务 DLL、Kernel/Session 配置激活和完整退出链，以及 M4 UI DLL 仍须另验；不声明 P4 整体完成或物理卸载安全。

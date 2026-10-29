@@ -2,6 +2,8 @@
 
 日期：2026-10-29。基线 f32191b（M3b 已审核提交）。M3c 分为 dispatch/effect（M3c1）和服务（M3c2）；每段实现、审查修复、验证后提交，再进入下一段。该拆分不减少 M3d/M4 和两个服务 DLL 的原计划要求。
 
+最新：M3c1 已提交为 e9c89dd；M3c2 已接入真实 Core 服务索引、提交租约与跨 DLL 调用，见 [服务桥记录](p4-m3c2-development.md)及 [ADR-0035](adr/0035-native-services.md)。下文能力关闭及服务待实施的描述保留为 M3c1 当时状态。
+
 ## M3c1 交付
 
 - 稳定生产 HostTable 开启 DISPATCH/EFFECTS；真实排队目标调用、复制参数、独立消费方/目标请求及同步最终应答。

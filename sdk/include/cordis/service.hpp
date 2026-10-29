@@ -17,6 +17,7 @@
 #include <vector>
 
 namespace cordis {
+namespace module::detail { struct NativeServices; }
 class Context;
 class Instance;
 class CleanupContext;
@@ -41,7 +42,8 @@ Result<void> callService(const std::weak_ptr<BindingControl>& binding, std::type
                          const std::function<void(void*)>& callback);
 /** @brief 异步调用将绑定与消费者调用保留到源任务完成且 owner 已处理其结果。 */
 Task<void> invokeService(const std::weak_ptr<BindingControl>& binding, const std::weak_ptr<CommittedLease>& lease,
-    bool committed, std::type_index type, std::function<Task<void>(void*)> callback);
+    bool committed, std::type_index type, std::function<Task<void>(void*)> callback,
+    bool cleanup = false, InstanceId instance = {}, Epoch epoch = 0);
 }
 
 /** @brief 服务名称、接口主版本和精确隔离域构成的键。 */
@@ -151,6 +153,7 @@ public:
     /** @brief owner 线程读取状态，即使 Released 也可诊断。 */
     Result<BindingSnapshot> snapshot() const;
 private:
+    friend struct module::detail::NativeServices;
     friend class ServiceRegistry;
     friend struct detail::InstanceControl;
     /** @brief 为托管输出标记实例所有者，用于依赖环诊断。 */
@@ -182,6 +185,7 @@ public:
     /** @brief 读取所有尚未释放的绑定，不隐式清理资源。 */
     Result<std::vector<BindingSnapshot>> snapshot() const;
 private:
+    friend struct module::detail::NativeServices;
     friend class Context;
     friend struct detail::InstanceControl;
     friend class Instance;

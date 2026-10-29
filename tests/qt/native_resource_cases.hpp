@@ -22,8 +22,11 @@ struct Resources : Scene {
     Stat stat;
     Ack ack;
     Data data;
-    explicit Resources(std::shared_ptr<IScheduler> scheduler = std::make_shared<FakeScheduler>())
-        : Scene(std::move(scheduler), "resources"), dispatch(entry<Dispatch>(image, "cordis_resource_dispatch")),
+    explicit Resources(std::shared_ptr<IScheduler> scheduler = std::make_shared<FakeScheduler>(),
+                       const QString& fixture = "resources", const QString& folder = "module",
+                       std::optional<ServiceRegistry> services = {})
+        : Scene(std::move(scheduler), fixture, folder, std::move(services)),
+          dispatch(entry<Dispatch>(image, "cordis_resource_dispatch")),
           cancel(entry<Cancel>(image, "cordis_resource_cancel")),
           effect(entry<Effect>(image, "cordis_resource_effect")), ready(entry<Ready>(image, "cordis_resource_ready")),
           close(entry<Close>(image, "cordis_resource_close")), stat(entry<Stat>(image, "cordis_resource_stat")),

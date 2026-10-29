@@ -25,14 +25,16 @@ struct BusinessRecord {
 
 struct NativeModuleControl : std::enable_shared_from_this<NativeModuleControl> {
     NativeModuleControl(NativeSource value, std::shared_ptr<BusinessRecord> business,
-                        std::shared_ptr<IScheduler> target)
-        : source(std::move(value)), record(std::move(business)), scheduler(target), owner(std::this_thread::get_id())
+                        std::shared_ptr<IScheduler> target, std::optional<ServiceRegistry> index)
+        : source(std::move(value)), record(std::move(business)), scheduler(target), owner(std::this_thread::get_id()),
+          services(std::move(index))
     {
     }
     NativeSource source;
     std::shared_ptr<BusinessRecord> record;
     std::weak_ptr<IScheduler> scheduler;
     const std::thread::id owner;
+    std::optional<ServiceRegistry> services;
     mutable std::mutex mutex;
     bool closing = false, closed = false, faulted = false;
     std::size_t waiting = 0;

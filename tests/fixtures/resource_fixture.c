@@ -5,7 +5,7 @@
 
 typedef struct ResourceInstance {
     CordisHandle context, id;
-    CordisRequestId pending, latest;
+    CordisRequestId pending, latest, target_request;
     CordisStatus last_status;
     unsigned acks, calls, cleanups;
     CordisHandle order[256];
@@ -13,6 +13,12 @@ typedef struct ResourceInstance {
     CordisStatus ack_return;
     char data[1024];
     uint64_t size;
+    unsigned stops;
+#ifdef FIXTURE_SERVICES
+    CordisRequestId cleanup_waiting, cleanup_operation;
+    CordisStatus cleanup_result;
+    int cleanup_ready, start_pending, start_fail;
+#endif
 } ResourceInstance;
 static const CordisHostV1* host;
 static ResourceInstance instances[4];
@@ -35,7 +41,9 @@ static CordisStatus CORDIS_CALL create(CordisHandle context, CordisBytesV1 plugi
                                        CordisHandle* output)
 {
     unsigned i;
+#ifndef FIXTURE_SERVICES
     (void)config;
+#endif
     if (!output)
         return CORDIS_E_INVALID_ARGUMENT;
     *output = 0;
@@ -46,6 +54,12 @@ static CordisStatus CORDIS_CALL create(CordisHandle context, CordisBytesV1 plugi
             memset(&instances[i], 0, sizeof(instances[i]));
             instances[i].context = context;
             instances[i].id = next_id++;
+#ifdef FIXTURE_SERVICES
+            instances[i].start_pending =
+                config.size == 15 && config.data && memcmp(config.data, "\"start-pending\"", 15) == 0;
+            instances[i].start_fail =
+                config.size == 12 && config.data && memcmp(config.data, "\"start-fail\"", 12) == 0;
+#endif
             *output = instances[i].id;
             return CORDIS_OK;
         }
@@ -57,6 +71,14 @@ static CordisStatus CORDIS_CALL start(CordisHandle id, CordisRequestId request)
     if (!value || !request)
         return CORDIS_E_INVALID_ARGUMENT;
     value->started = 1;
+#ifdef FIXTURE_SERVICES
+    if (value->start_fail)
+        return CORDIS_E_FAILED;
+    if (value->start_pending) {
+        value->pending = request;
+        return CORDIS_PENDING;
+    }
+#endif
     return CORDIS_OK;
 }
 static CordisStatus CORDIS_CALL stop(CordisHandle id, CordisRequestId request)
@@ -66,6 +88,7 @@ static CordisStatus CORDIS_CALL stop(CordisHandle id, CordisRequestId request)
         return CORDIS_E_INVALID_ARGUMENT;
     if (value->pending)
         return CORDIS_E_BUSY;
+    ++value->stops;
     value->started = 0;
     return CORDIS_OK;
 }
@@ -85,6 +108,10 @@ static CordisStatus CORDIS_CALL cancel(CordisHandle id, CordisRequestId request)
     ResourceInstance* value = find(id);
     if (!value || value->pending != request)
         return CORDIS_E_NOT_FOUND;
+#ifdef FIXTURE_SERVICES
+    if (value->ack_return == CORDIS_PENDING)
+        return CORDIS_PENDING;
+#endif
     value->cancelled = 1;
     return CORDIS_OK;
 }
@@ -99,6 +126,12 @@ static CordisStatus CORDIS_CALL ack(CordisHandle id, CordisRequestId request, Co
     value->size = data.size;
     if (data.size)
         memcpy(value->data, data.data, (size_t)data.size);
+#ifdef FIXTURE_SERVICES
+    if (request == value->cleanup_operation) {
+        value->cleanup_result = status;
+        value->cleanup_ready = 1;
+    }
+#endif
     return value->ack_return;
 }
 static CordisStatus CORDIS_CALL dispatch(CordisHandle id, CordisHandle callback, CordisBytesV1 data,
@@ -110,6 +143,7 @@ static CordisStatus CORDIS_CALL dispatch(CordisHandle id, CordisHandle callback,
     if (value->pending)
         return CORDIS_E_BUSY;
     ++value->calls;
+    value->target_request = request;
     value->size = data.size;
     if (data.size)
         memcpy(value->data, data.data, (size_t)data.size);
@@ -135,6 +169,28 @@ static CordisStatus CORDIS_CALL cleanup(CordisHandle id, CordisHandle effect, Co
     if (value->pending || value->cleanups >= 256)
         return CORDIS_E_BUSY;
     value->order[value->cleanups++] = callback;
+#ifdef FIXTURE_SERVICES
+    if (callback == 15) {
+        const CordisServiceKeyV1 key = {{(const uint8_t*)"test.service", 12}, 1, 0, 1};
+        const CordisBytesV1 caps = {(const uint8_t*)"[]", 2}, method = {(const uint8_t*)"cleanup", 7},
+                            payload = {(const uint8_t*)"{}", 2};
+        value->cleanup_waiting = request;
+        if (host->service_invoke(value->context, &key, 0, caps, method, payload, &value->cleanup_operation) !=
+            CORDIS_PENDING)
+            return CORDIS_E_FAILED;
+        return CORDIS_PENDING;
+    }
+    if (callback == 16) {
+        const CordisServiceKeyV1 key = {{(const uint8_t*)"test.unbound", 12}, 1, 0, 1};
+        const CordisBytesV1 caps = {(const uint8_t*)"[]", 2}, method = {(const uint8_t*)"cleanup", 7},
+                            payload = {(const uint8_t*)"{}", 2};
+        CordisRequestId output = 77;
+        return host->service_invoke(value->context, &key, 0, caps, method, payload, &output) == CORDIS_E_CLOSED &&
+                       !output
+                   ? CORDIS_OK
+                   : CORDIS_E_FAILED;
+    }
+#endif
     if (callback == 13)
         return CORDIS_E_FAILED;
     if (callback == 12) {
@@ -180,6 +236,16 @@ CORDIS_EXPORT unsigned CORDIS_CALL cordis_business_fixture_finish_all(void)
     unsigned i, count = 0;
     for (i = 0; i < 4; ++i) {
         ResourceInstance* value = slot(i);
+#ifdef FIXTURE_SERVICES
+        if (value && value->cleanup_waiting && value->cleanup_ready) {
+            const CordisBytesV1 empty = {0, 0};
+            if (host->complete(value->context, value->cleanup_waiting, value->cleanup_result, empty) == CORDIS_OK) {
+                value->cleanup_waiting = 0;
+                value->cleanup_ready = 0;
+                ++count;
+            }
+        }
+#endif
         if (value && value->pending) {
             CordisRequestId pending = value->pending;
             CordisBytesV1 data = {(const uint8_t*)value->data, value->size};
@@ -215,6 +281,10 @@ CORDIS_EXPORT uint64_t CORDIS_CALL cordis_resource_stat(unsigned index, unsigned
         return value->pending;
     case 5:
         return value->latest;
+    case 7:
+        return value->stops;
+    case 6:
+        return value->target_request;
     default:
         return field >= 10 && field < 266 ? value->order[field - 10] : 0;
     }
@@ -234,6 +304,36 @@ CORDIS_EXPORT CordisBytesV1 CORDIS_CALL cordis_resource_result(unsigned index)
     }
     return value;
 }
+#ifdef FIXTURE_SERVICES
+static CordisStatus CORDIS_CALL invoke_service(CordisHandle id, CordisHandle token, CordisBytesV1 method,
+                                               CordisBytesV1 payload, CordisRequestId request)
+{
+    if (!method.size || !method.data)
+        return CORDIS_E_INVALID_ARGUMENT;
+    return dispatch(id, token, payload, request);
+}
+CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_service_register(unsigned index, CordisHandle effect,
+                                                               const CordisServiceKeyV1* key,
+                                                               const CordisServiceMetadataV1* metadata,
+                                                               CordisHandle token, CordisHandle* output)
+{
+    ResourceInstance* value = slot(index);
+    return value ? host->service_register(value->context, effect, key, metadata, token, output) : CORDIS_E_NOT_FOUND;
+}
+CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_service_withdraw(unsigned index, CordisHandle binding,
+                                                               CordisRequestId* output)
+{
+    ResourceInstance* value = slot(index);
+    return value ? host->service_withdraw(value->context, binding, output) : CORDIS_E_NOT_FOUND;
+}
+CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_service_invoke(unsigned index, const CordisServiceKeyV1* key,
+                                                             uint32_t minor, CordisBytesV1 caps, CordisBytesV1 method,
+                                                             CordisBytesV1 payload, CordisRequestId* output)
+{
+    ResourceInstance* value = slot(index);
+    return value ? host->service_invoke(value->context, key, minor, caps, method, payload, output) : CORDIS_E_NOT_FOUND;
+}
+#endif
 CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_query_v1(uint32_t major, const CordisHostV1* table,
                                                        CordisPluginApiV1* output)
 {
@@ -250,8 +350,16 @@ CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_query_v1(uint32_t major, const Cor
     api.header.abi_major = CORDIS_ABI_MAJOR;
     api.capabilities = CORDIS_CAP_DISPATCH | CORDIS_CAP_EFFECTS;
     api.required_host_capabilities = api.capabilities;
+#ifdef FIXTURE_SERVICES
+    api.capabilities = CORDIS_CAP_ALL;
+    api.required_host_capabilities = CORDIS_CAP_ALL;
+    api.invoke_service = invoke_service;
+    api.module_id.data = (const uint8_t*)FIXTURE_ID;
+    api.module_id.size = sizeof(FIXTURE_ID) - 1;
+#else
     api.module_id.data = (const uint8_t*)"org.cordis.resources";
     api.module_id.size = 20;
+#endif
     api.module_version.data = (const uint8_t*)"1.0.0";
     api.module_version.size = 5;
     api.plugins = plugins;

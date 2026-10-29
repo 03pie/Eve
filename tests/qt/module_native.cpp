@@ -78,6 +78,7 @@ int queryCount(const ModuleGenerationSnapshot& value)
 }
 #include "native_host_cases.hpp"
 #include "native_resource_cases.hpp"
+#include "native_service_cases.hpp"
 void loaded()
 {
     const auto manifest = install("good", QString::fromUtf8("插件"));
@@ -372,7 +373,7 @@ int main(int argc, char** argv)
         const auto name = arguments[1];
         root = arguments[2];
         fixtures = arguments[3];
-        if ((native_host_test::run(name) || native_resource_test::run(name))) {
+        if ((native_host_test::run(name) || native_resource_test::run(name) || native_service_test::run(name))) {
         } else if (name == "loaded")
             loaded();
         else if (name == "business")

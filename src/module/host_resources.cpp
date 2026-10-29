@@ -2,6 +2,7 @@
  * @brief 排队原生回调、异步应答及真实 Core effect 清理，保留失败资源。
  */
 #include "host_resources_p.hpp"
+#include "host_services_p.hpp"
 #include "json_p.hpp"
 #include <atomic>
 #include <limits>
@@ -72,7 +73,7 @@ struct NativeEffect {
     CordisHandle id, callback;
     Promise<void> setup;
     std::optional<EffectToken> token;
-    bool ready = false, closed = false, cleanupPending = false;
+    bool ready = false, succeeded = false, closed = false, cleanupPending = false, withdrawing = false;
     ModuleLease setupLease, callbackLease;
     std::function<void()> retired;
     ~NativeEffect()
@@ -84,27 +85,23 @@ struct NativeEffect {
             retired();
     }
 };
-struct HostOperation {
-    CordisRequestId id, target = 0;
-    bool business = true, cancelled = false, entered = false, delivering = false;
-    std::string payload;
-    ModuleLease callbackLease, payloadLease;
-    std::optional<Task<NativeOutcome>> source;
-    std::function<void()> retired;
-    ~HostOperation()
-    {
-        source.reset();
-        std::string{}.swap(payload);
-        callbackLease.reset();
-        payloadLease.reset();
-        if (retired)
-            retired();
-    }
-};
+HostOperation::~HostOperation()
+{
+    source.reset();
+    serviceCall.reset();
+    endpoint.reset();
+    std::string{}.swap(payload);
+    std::string{}.swap(method);
+    callbackLease.reset();
+    payloadLease.reset();
+    if (retired)
+        retired();
+}
 NativeResources::NativeResources(std::weak_ptr<NativeInstanceControl> instance,
                                  const std::shared_ptr<IScheduler>& scheduler)
     : owner(instance), scope(std::make_shared<ResourceScheduler>(std::move(instance), scheduler))
 {
+    services = std::make_shared<NativeServices>(owner);
 }
 std::function<void()> NativeResources::retirement(std::size_t bytes)
 {
@@ -158,10 +155,11 @@ CordisStatus NativeResources::allowed(bool cleanup) const
     auto target = self->root->scheduler.lock();
     return target && target->isOpen() ? CORDIS_OK : CORDIS_E_CLOSED;
 }
-Result<std::shared_ptr<HostOperation>> NativeResources::operation(bool business, std::string payload)
+Result<std::shared_ptr<HostOperation>> NativeResources::operation(bool business, std::string payload,
+                                                                  std::string method)
 {
     using Output = Result<std::shared_ptr<HostOperation>>;
-    if (operations.size() >= 128 || payload.size() > 8 * 1024 * 1024 - payloadBytes)
+    if (operations.size() >= 128 || payload.size() + method.size() > 8 * 1024 * 1024 - payloadBytes)
         return Output::failure(hostError(ErrorCode::ModulePinned, "native host operation budget exhausted"));
     auto self = owner.lock();
     auto callback = self->root->source.ledger.acquire(ResourceKind::Callback, "native.host.operation");
@@ -174,9 +172,10 @@ Result<std::shared_ptr<HostOperation>> NativeResources::operation(bool business,
     value->id = allocateNativeRequestId();
     value->business = business;
     value->payload = std::move(payload);
+    value->method = std::move(method);
     value->callbackLease = std::move(callback.value());
     value->payloadLease = std::move(data.value());
-    value->retired = retirement(value->payload.size());
+    value->retired = retirement(value->payload.size() + value->method.size());
     operations.emplace(value->id, value);
     return Output::success(std::move(value));
 }
@@ -214,6 +213,7 @@ void NativeResources::dispatchOne(const std::shared_ptr<HostOperation>& op, Cord
     }
     auto self = owner.lock();
     op->entered = true;
+    op->targetOwner = self;
     auto source = self->invoke(NativeRequestKind::Callback, "native.dispatch", [&](CordisRequestId request) {
         op->target = request;
         return self->root->record->api->table.dispatch(self->native, callback, bytes(op->payload), request);
@@ -277,32 +277,42 @@ CordisStatus NativeResources::cancel(CordisRequestId request)
     if (!op->entered || !op->target)
         return CORDIS_OK;
     auto self = owner.lock();
-    auto requested = self->channel.cancel(op->target);
+    auto target = op->targetOwner.lock();
+    if (!target) {
+        self->quarantine(hostError(ErrorCode::StaleContext, "native target disappeared"));
+        return CORDIS_E_CLOSED;
+    }
+    auto requested = target->channel.cancel(op->target);
     if (!requested.hasValue()) {
+        target->quarantine(requested.error());
         self->quarantine(requested.error());
         return CORDIS_E_ABI_PROTOCOL;
     }
     if (!requested.value())
         return CORDIS_OK;
-    auto call = self->root->source.ledger.acquire(ResourceKind::Call, "native.dispatch.cancel");
+    auto call = target->root->source.ledger.acquire(ResourceKind::Call, "native.operation.cancel");
     if (!call.hasValue()) {
         self->quarantine(call.error());
         return CORDIS_E_LIMIT;
     }
     CordisStatus status;
     try {
-        status = self->root->record->api->table.cancel_request(self->native, op->target);
+        status = target->root->record->api->table.cancel_request(target->native, op->target);
     } catch (...) {
         status = 0x7fff;
     }
     if (!finalStatus(status)) {
-        self->quarantine(hostError(ErrorCode::AbiProtocol, "native dispatch cancel protocol fault"));
+        auto error = hostError(ErrorCode::AbiProtocol, "native operation cancel protocol fault");
+        target->quarantine(error);
+        self->quarantine(std::move(error));
         return CORDIS_E_ABI_PROTOCOL;
     }
     return status;
 }
 bool NativeResources::businessBusy() const
 {
+    if (services->busy())
+        return true;
     if (!operations.empty())
         return true;
     for (const auto& pair : effects)
@@ -312,10 +322,11 @@ bool NativeResources::businessBusy() const
 }
 bool NativeResources::empty() const
 {
-    return effects.empty() && operations.empty();
+    return effects.empty() && operations.empty() && services->empty();
 }
 void NativeResources::cancelBusiness()
 {
+    services->retireAll();
     std::vector<CordisRequestId> requests;
     for (const auto& pair : operations)
         if (pair.second->business)
@@ -367,6 +378,10 @@ CordisStatus NativeResources::effectCreate(CordisBytesV1 label, CordisHandle cal
         return CORDIS_E_CLOSED;
     effect->token = token.value();
     effects.emplace(effect->id, effect);
+    self->observe(effect->token->ready(), [weak](NativeInstanceControl&, const Result<void>&) {
+        if (auto resources = weak.lock())
+            resources->services->publishReady();
+    });
     *output = effect->id;
     return CORDIS_OK;
 }
@@ -390,6 +405,7 @@ CordisStatus NativeResources::effectReady(CordisHandle id, CordisStatus status, 
             return copied;
     }
     effect->ready = true;
+    effect->succeeded = status == CORDIS_OK;
     effect->setupLease.reset();
     if (status == CORDIS_OK)
         effect->setup.resolve();
@@ -403,25 +419,34 @@ Task<void> NativeResources::cleanup(const std::shared_ptr<NativeEffect>& effect)
     if (!self || !self->native)
         return failedTask(hostError(ErrorCode::CleanupFailed, "native cleanup instance unavailable"));
     effect->cleanupPending = true;
-    auto task = self->invoke(NativeRequestKind::Cleanup, "native.effect.cleanup", [&](CordisRequestId request) {
-        return self->root->record->api->table.request_cleanup(self->native, effect->id, effect->callback, request);
-    });
     Promise<void> done;
-    self->observe(task, [done, effect](NativeInstanceControl& instance, const Result<NativeOutcome>& result) {
-        const auto state = instance.channel.snapshot();
-        if (!result.hasValue() || !state.hasValue() || state.value().faulted) {
-            auto error =
-                result.hasValue() ? hostError(ErrorCode::AbiProtocol, "native cleanup protocol fault") : result.error();
-            instance.quarantine(error);
-            done.reject(std::move(error));
-        } else {
-            effect->cleanupPending = false;
-            if (result.value().status != CORDIS_OK)
-                done.reject(operationError(result.value().status, true, result.value().json));
-            else
-                done.resolve();
-            instance.advanceClose();
+    self->observe(services->retireEffect(effect->id), [done, effect](NativeInstanceControl& instance,
+                                                                     const Result<void>& unused) {
+        if (!unused.hasValue()) {
+            instance.quarantine(unused.error());
+            done.reject(unused.error());
+            return;
         }
+        auto task = instance.invoke(NativeRequestKind::Cleanup, "native.effect.cleanup", [&](CordisRequestId request) {
+            return instance.root->record->api->table.request_cleanup(instance.native, effect->id, effect->callback,
+                                                                     request);
+        });
+        instance.observe(task, [done, effect](NativeInstanceControl& instance, const Result<NativeOutcome>& result) {
+            const auto state = instance.channel.snapshot();
+            if (!result.hasValue() || !state.hasValue() || state.value().faulted) {
+                auto error = result.hasValue() ? hostError(ErrorCode::AbiProtocol, "native cleanup protocol fault")
+                                               : result.error();
+                instance.quarantine(error);
+                done.reject(std::move(error));
+            } else {
+                effect->cleanupPending = false;
+                if (result.value().status != CORDIS_OK)
+                    done.reject(operationError(result.value().status, true, result.value().json));
+                else
+                    done.resolve();
+                instance.advanceClose();
+            }
+        });
     });
     return done.task();
 }
@@ -443,6 +468,8 @@ CordisStatus NativeResources::effectClose(CordisHandle id, CordisRequestId* outp
     op->entered = true;
     auto resources = shared_from_this();
     auto effect = found->second;
+    effect->withdrawing = true;
+    (void)services->retireEffect(id);
     owner.lock()->observe(effect->token->close(),
                           [resources, effect, op](NativeInstanceControl&, const Result<CleanupReport>& result) {
                               if (result.hasValue() && result.value().quiescent) {
@@ -508,6 +535,7 @@ void NativeResources::nextEffect()
 void NativeResources::checkClosed()
 {
     if (closing && effectsDone && operations.empty() && retainedCaptures == 0) {
+        services->releaseConsumers();
         effects.clear();
         stopped.resolve();
     }
@@ -515,5 +543,31 @@ void NativeResources::checkClosed()
 Result<ScopeSnapshot> NativeResources::snapshot() const
 {
     return scope.snapshot();
+}
+bool NativeResources::serviceEffectExists(CordisHandle id) const
+{
+    const auto found = effects.find(id);
+    return found != effects.end() && !found->second->closed && !found->second->withdrawing &&
+           !found->second->cleanupPending;
+}
+bool NativeResources::serviceEffectReady(CordisHandle id) const
+{
+    if (!serviceEffectExists(id))
+        return false;
+    auto effect = effects.at(id);
+    auto result = effect->token->ready().tryResult();
+    auto self = owner.lock();
+    return effect->succeeded && result && result->hasValue() && self && !self->closing &&
+           self->state == NativeInstanceState::Started;
+}
+bool NativeResources::cleanupServices() const
+{
+    auto self = owner.lock();
+    if (self && self->stopIssued)
+        return true;
+    for (const auto& effect : effects)
+        if (effect.second->cleanupPending)
+            return true;
+    return false;
 }
 } // namespace cordis::module::detail

@@ -1,6 +1,6 @@
 # C 业务 ABI V1
 
-日期：2026-10-28。对应 [独立 C11 头](../sdk/include/cordis_abi/plugin.h)、[ADR-0031](adr/0031-business-abi.md) 和 [M2b 开发记录](p4-m2b-development.md)。这是 Windows x64 业务表的签名及布局基线；当前完成协商层，实际 Kernel/请求/服务/effect 桥在 M3 实施。
+日期：2026-10-29。对应 [独立 C11 头](../sdk/include/cordis_abi/plugin.h)、[ADR-0031](adr/0031-business-abi.md) 和 [M2b 开发记录](p4-m2b-development.md)。这是 Windows x64 业务表的签名及布局基线；M3a–M3c 已实现请求、生命周期与 dispatch/service/effect 桥，Kernel/Session 联合接入仍在 M3d 实施。
 
 ## 平台与版本
 
@@ -89,4 +89,6 @@ HostTable 必须不可变，并覆盖全部实例、请求、回调和可能使�
 
 PENDING=1，OK=0；错误固定为 INVALID_ARGUMENT=-1、UNSUPPORTED=-2、NOT_FOUND=-3、CLOSED=-4、WRONG_THREAD=-5、CANCELLED=-6、ABI_PROTOCOL=-7、LIMIT=-8、FAILED=-9、BUSY=-10。complete/effect_ready/request_complete 接受的 status 只能为 OK 或上述负值。未知线码、query/destroy/create 的 PENDING 均为协议错误；Core 错误与线码的运行桥映射留给 M3。
 
-这些是 M3 的实现约束。M3a 已实现独立请求仲裁/复制与退役组件，见 [请求协议决策](adr/0032-native-request-arbitration.md)；宿主 JSON 扫描限制容器深度 64、Unicode 标量编码/转义，保留数字及重复成员原文，业务 schema 另验。M2b 协商器及测试宿主没有升级为完整生产桥；真实 DLL 生命周期、资源排空与 Kernel 接入仍须在 M3b–M3d 完成。
+M3a 已实现独立请求仲裁/复制与退役组件，见 [请求协议决策](adr/0032-native-request-arbitration.md)；宿主 JSON 扫描限制容器深度 64、Unicode 标量编码/转义，保留数字及重复成员原文，业务 schema 另验。M3b/M3c 的生产宿主已实现真实 DLL 生命周期、资源排空及全部可选函数族；Kernel/Session 联合接入仍须在 M3d 完成。
+
+M3c2 能力数组运行限额为 16 KiB、最多 64 个唯一非空名称，每名最多 128 字节，按转义解码后的字符串判重。服务先归属 effect 并 stage，start 与真实 Core effect ready 成功后才 publish。撤回即拒绝普通调用；旧绑定仅在所属消费者清理期间使用，提供者等待租约/在途调用及最后捕获排空。共享注册表、容量及两端请求规则见 [原生服务决策](adr/0035-native-services.md)。

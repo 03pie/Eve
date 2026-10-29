@@ -6,7 +6,9 @@
 
 ## 当前状态
 
-**P1/P2/P3 及 UI 专项已完成（当前内置插件/Windows 支持矩阵）。P4-M1 为 59b7c76、M2a 为 249a425、M2b 为 fed5a51，均已审核提交。当前 M3 进行中：M3a 已提交（1ffa0ff），M3b 基础生命周期已审核提交（f32191b），M3c1 dispatch/effect 已审核提交（e9c89dd）；M3c2/M3d 服务与 Kernel 桥、M4 UI DLL 待实施，P5 未开始。**
+**P1/P2/P3 及 UI 专项已完成（当前内置插件/Windows 支持矩阵）。P4-M1 为 59b7c76、M2a 为 249a425、M2b 为 fed5a51，均已审核提交。当前 M3 进行中：M3a 已提交（1ffa0ff），M3b 为 f32191b，M3c1 为 e9c89dd；M3c2 真实服务桥已完成审查修复和最终验证，随本提交归档。M3d Kernel/Session 与业务服务 DLL 联合接入、M4 UI DLL 待实施，P5 未开始。**
+
+2026-10-29 M3c2：生产 HostTable 开启真实服务注册/撤回/调用，复用 Core committed 租约、精确 realm、版本/能力、依赖环及旧绑定清理；支持显式共享索引下两个真实 C DLL 互调。审查复现并修复“受理超限残留租约”和“取消协议异常遗漏隔离提供者”两项 P2，红测试 0/2、服务专项 19/19。最终 Debug/Release 各 585/585、GCC 241/241、ASan P4/W4/W5 152/152、关闭示例 P4 117/117；16 项源码哈希及 8 个 ASan 编译命令核对通过。见 [服务桥记录](p4-m3c2-development.md)、[决策](adr/0035-native-services.md)和[审查](code-review.md#p4-m3c2-原生服务桥提交前审核)。M3c 完成不代替 M3d 的配置驱动业务服务 DLL 和 Kernel/Session 完整退出验收。
 
 2026-10-29 用户追加底部工作区需求：中央/底部页签背景对调；命令接入真实平台注册动作和插件命令；输出新增平台/插件实例通道选择、当前目标复制/清空和阅读位置保留；问题接入真实运行诊断及定位。新增 ui.output/v1 与九项功能回归；提交前复审修复重入误清目标、复制遗漏保留历史及详情滞后三项 P2，初次新回归 0/3，另有命令面板清空分支 0/1，修复后最终 Debug/Release 各 566/566、ASan 面板 9/9、GCC 无 Qt SDK 头独立编译通过。实现及审核记录按用户要求随本提交归档；新增体验不沿用旧 UI 人工确认，见[接入说明](workbench-panel-development.md)和[审核记录](code-review.md#底部工作区与输出通道增量审核)。P4 后续服务/Kernel/UI DLL 路线保持不变。
 
@@ -73,7 +75,7 @@ Qt 5.15.2 Core/Widgets/Test 已就绪，本机入口见 [开发环境](developme
 | P2 响应式服务依赖 | 已完成（首阶段内置范围） | W4/W5/W7 联合闭环通过；跨 ABI、物理卸载及替换不在本轮 |
 | P3 Qt / Loader / Ela | 已完成（当前支持矩阵） | L01–L04/Q01/U01/S05/S08/S10 及真实装配检查通过；Q4d3 已获本次用户确认，Home 手动路径/原生 150% 代理复核通过，见 [收口审计](p3-closeout.md)；不补造系统 DPI/跨屏证据 |
 | UI 设计与优化（独立专项） | 已完成（当前支持矩阵） | UI-S0–S4 与 UI-00–07 已完成，原生 32/32、三次用户确认和最终审计归档；跨屏未覆盖，见 [阶段计划](ui-special-stages.md)及[增量验证](ui-structure-verification.md) |
-| P4 原生插件模块 | 进行中 | M1/M2、M3a/M3b 与 M3c1 dispatch/effect 已完成；M3c2/M3d 服务与 Kernel 联合桥、M4 UI DLL 待实施，见 [阶段记录](p4-development.md) |
+| P4 原生插件模块 | 进行中 | M1/M2、M3a/M3b/M3c 请求、生命周期及真实资源/服务桥已完成；M3d Kernel/Session 与业务服务 DLL 联合验收、M4 UI DLL 待实施，见 [阶段记录](p4-development.md) |
 | P5 受控替换 | 未开始 | 新旧代替换、恢复和卸载专项验证待实现 |
 
 ## UI 设计与优化专项

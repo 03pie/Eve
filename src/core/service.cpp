@@ -285,7 +285,8 @@ struct AsyncServiceCall : std::enable_shared_from_this<AsyncServiceCall> {
 
 /** @brief 在调用插件前固定异步 CallLease，异常同样通过异步完成路径收敛。 */
 Task<void> invokeService(const std::weak_ptr<BindingControl>& weak, const std::weak_ptr<CommittedLease>& committedLease,
-    bool committed, std::type_index type, std::function<Task<void>(void*)> callback)
+                         bool committed, std::type_index type, std::function<Task<void>(void*)> callback, bool cleanup,
+                         InstanceId instance, Epoch epoch)
 {
     auto lease = committed ? committedLease.lock() : std::shared_ptr<CommittedLease>{};
     auto binding = committed ? (lease ? lease->binding : nullptr) : weak.lock();
@@ -294,10 +295,20 @@ Task<void> invokeService(const std::weak_ptr<BindingControl>& weak, const std::w
     if (!binding->scheduler->isOpen()) return failedTask(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
     if (lease) {
         if (!lease->active) return failedTask(makeError(ErrorCode::StaleContext, "lease expired"));
-        auto allowed = lease->businessGuard();
-        if (!allowed.hasValue()) return failedTask(allowed.error());
+        if (cleanup) {
+            if (lease->instance != instance || lease->epoch != epoch)
+                return failedTask(
+                    makeError(ErrorCode::StaleContext, "cleanup lease belongs to another instance or epoch"));
+        } else {
+            auto allowed = lease->businessGuard();
+            if (!allowed.hasValue())
+                return failedTask(allowed.error());
+        }
     }
-    if (binding->state != BindingState::Published) return failedTask(makeError(ErrorCode::ServiceRetiring, "binding retiring"));
+    if (cleanup && !lease)
+        return failedTask(makeError(ErrorCode::StaleContext, "cleanup requires committed lease"));
+    if (binding->state != BindingState::Published && !(cleanup && binding->state == BindingState::Retiring))
+        return failedTask(makeError(ErrorCode::ServiceRetiring, "binding retiring"));
     if (binding->type != type) return failedTask(makeError(ErrorCode::DependencyVersion, "service type mismatch"));
     if (binding->calls == std::numeric_limits<std::size_t>::max() || (lease && lease->calls == std::numeric_limits<std::size_t>::max()))
         return failedTask(makeError(ErrorCode::InvalidArgument, "call count exhausted"));

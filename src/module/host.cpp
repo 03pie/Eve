@@ -3,6 +3,7 @@
  */
 #include "host_p.hpp"
 #include "host_resources_p.hpp"
+#include "host_services_p.hpp"
 #include "json_p.hpp"
 #include "native_source_p.hpp"
 #include "request_p.hpp"
@@ -219,16 +220,44 @@ CordisStatus CORDIS_CALL closeEffectHost(CordisHandle context, CordisHandle effe
         *output = 0;
     return withResources(context, [&](NativeResources& resources) { return resources.effectClose(effect, output); });
 }
+CordisStatus CORDIS_CALL registerServiceHost(CordisHandle context, CordisHandle effect, const CordisServiceKeyV1* key,
+                                             const CordisServiceMetadataV1* metadata, CordisHandle token,
+                                             CordisHandle* output) noexcept
+{
+    if (output)
+        *output = 0;
+    return withResources(context, [&](NativeResources& resources) {
+        return resources.services->add(effect, key, metadata, token, output);
+    });
+}
+CordisStatus CORDIS_CALL withdrawServiceHost(CordisHandle context, CordisHandle binding,
+                                             CordisRequestId* output) noexcept
+{
+    if (output)
+        *output = 0;
+    return withResources(context,
+                         [&](NativeResources& resources) { return resources.services->withdraw(binding, output); });
+}
+CordisStatus CORDIS_CALL invokeServiceHost(CordisHandle context, const CordisServiceKeyV1* key, std::uint32_t minor,
+                                           CordisBytesV1 capabilities, CordisBytesV1 method, CordisBytesV1 payload,
+                                           CordisRequestId* output) noexcept
+{
+    if (output)
+        *output = 0;
+    return withResources(context, [&](NativeResources& resources) {
+        return resources.services->invoke(key, minor, capabilities, method, payload, output);
+    });
+}
 const CordisHostV1 hostTable{{sizeof(CordisHostV1), CORDIS_ABI_MAJOR, CORDIS_ABI_MINOR, 0},
-                             CORDIS_CAP_DISPATCH | CORDIS_CAP_EFFECTS,
+                             CORDIS_CAP_ALL,
                              0,
                              complete,
                              log,
                              cancelHost,
                              dispatchHost,
-                             nullptr,
-                             nullptr,
-                             nullptr,
+                             registerServiceHost,
+                             withdrawServiceHost,
+                             invokeServiceHost,
                              createEffectHost,
                              readyEffectHost,
                              closeEffectHost};
@@ -453,7 +482,8 @@ Result<NativeInstanceSnapshot> NativeInstanceControl::snapshot() const
     return Result<NativeInstanceSnapshot>::success(
         {root->source.generation, instance, epoch, pluginId, uncertain ? NativeInstanceState::Failed : state,
          native != 0, closing || uncertain, uncertain, blocked, requests.value().requests.size(), hostCalls, failure,
-         logs, resources->pending(), effects.value()});
+         logs, resources->pending(), effects.value(), resources->services->snapshot(),
+         resources->services->committed()});
 }
 void NativeModuleControl::finishOne(const Result<CleanupReport>& value)
 {
@@ -496,7 +526,8 @@ void NativeModuleControl::finish()
 
 namespace cordis::module {
 using namespace detail;
-Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id, std::shared_ptr<IScheduler> scheduler)
+Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id, std::shared_ptr<IScheduler> scheduler,
+                                        std::optional<ServiceRegistry> services)
 {
     auto managerView = manager.snapshot();
     if (!managerView.hasValue())
@@ -507,6 +538,9 @@ Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id,
         return Result<NativeModule>::failure(hostError(ErrorCode::WrongThread, "open native host on scheduler owner"));
     if (!scheduler->isOpen())
         return Result<NativeModule>::failure(hostError(ErrorCode::SchedulerClosed, "native host scheduler is closed"));
+    if (services && !NativeServices::uses(*services, scheduler))
+        return Result<NativeModule>::failure(
+            hostError(ErrorCode::InvalidArgument, "native services require same scheduler"));
     auto source = acquireNativeSource(id);
     if (!source.hasValue())
         return Result<NativeModule>::failure(source.error());
@@ -531,6 +565,13 @@ Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id,
             std::lock_guard<std::mutex> rootLock(root->mutex);
             if (root->closing || root->faulted)
                 return Result<NativeModule>::failure(hostError(ErrorCode::ContextClosing, "native host is closing"));
+            if (services) {
+                if (root->services && !NativeServices::same(*root->services, *services))
+                    return Result<NativeModule>::failure(
+                        hostError(ErrorCode::ServiceConflict, "generation already bound to another service registry"));
+                if (!root->services)
+                    root->services = std::move(services);
+            }
             return Result<NativeModule>::success(NativeModule(std::move(root)));
         }
         record->negotiating = true;
@@ -556,7 +597,8 @@ Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id,
         record->api = std::move(queried.value());
         recordNativeBusiness(id, {});
     }
-    auto root = std::make_shared<NativeModuleControl>(std::move(source.value()), record, scheduler);
+    auto root =
+        std::make_shared<NativeModuleControl>(std::move(source.value()), record, scheduler, std::move(services));
     {
         auto& directory = registry();
         std::lock_guard<std::mutex> lock(directory.mutex);
@@ -715,6 +757,8 @@ Task<void> NativeInstance::start() const
             if (error)
                 instance.failure = *error;
         }
+        if (!error)
+            instance.resources->services->publishReady();
         if (error)
             instance.started.reject(*error);
         else
