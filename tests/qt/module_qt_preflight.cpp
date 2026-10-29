@@ -53,7 +53,8 @@ int main(int argc, char** argv)
                   ErrorCode::AbiMismatch);
         } else {
             auto checked = inspectQtModule(root.path().toStdString(), path.toStdString());
-            if (name == "good" || name == "order") {
+            if (name == "good" || name == "order" || name == "root_parent" || name == "root_throw" ||
+                name == "root_reenter") {
                 if (!checked.hasValue())
                     throw std::runtime_error(checked.error().message);
                 CHECK(checked.hasValue() && checked.value().artifact.isValid());

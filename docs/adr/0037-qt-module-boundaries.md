@@ -29,3 +29,9 @@ M4c 再装配页面示例、管理诊断和 UI 退出验收。只在实际第二
 Qt 预检使用独立测试入口，复用测试产物安装设施，不再往 native 测试主文件增加 Qt 分支。既有 C ABI 装载及路径/共享/篡改/代次回归保护 VerifiedSource 提取；真实 Qt 元数据 DLL 验证兼容性拒绝和无映射/无实例副作用。
 
 Qt 的元数据查询与 root 所有权依据 [QPluginLoader 官方文档](https://doc.qt.io/qt-5/qpluginloader.html)，同时核对本机固定版本头。M4a 不等于 Qt 工厂、页面或 P4 整体完成。
+
+## M4b1 实施细化
+
+2026-10-29：第二个后端实际接入时，提取 catalog.cpp 为两个后端共用的唯一代次目录和受限 Windows 映像映射。原生管理器保留自己的描述握手；Qt 使用自己的 QPluginLoader 与 root 驻留所有者。共同错误信号不依赖目录/Windows/Qt，业务请求层无需知道 Qt 装载器。
+
+M4b 分为 root 装载与业务工厂两次提交：b1 的 loadQtModule 只建立真实映像/root，诊断不标记 descriptorAccepted/businessAccepted；b2 才冻结 IQtPluginV1 业务契约并接实例。root 的真实 QObject 租约保持登记且阻止 drain，首版不以手动删除 root、调用 unload 或清空账目取得假退出。模块默认驻留与每次业务激活的完整退出分开验收，详见 [实施记录](../p4-m4b1-development.md)。

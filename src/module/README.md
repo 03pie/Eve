@@ -23,3 +23,5 @@ M3c2 已开启生产服务能力；M3d1 在同一桥上新增 NativeModule.runti
 M3d2a 已增加 [两个业务服务 DLL 与真实 Qt/Kernel/Session 示例](../../examples/native_services/README.md)，包含实际磁盘保存、多实例/realm、启动失败和清理失败驻留；仍沿用 M3d1 托管桥和默认 PIN。[M3d2b 的分层 S06/S07](../../docs/p4-m3d2b-development.md)已通过，M3 当前范围收口；M4 UI DLL 不由该示例交付。
 
 M4a 将文件/祖先固定、二次声明/摘要及 PE 检查提取为私有 VerifiedSource，原生后端与 Cordis::ModuleQtPreflight 共用。manifest 明确区分 c-abi/qt-ui，原生后端拒绝 Qt 类型；Qt 端仅返回宿主工具链/产物快照，不调用 load/instance，不创建 root 或第二套目录。Qt 工厂/页面适配在 M4b/c，见 [架构边界](../../docs/adr/0037-qt-module-boundaries.md)和 [M4a 记录](../../docs/p4-m4a-development.md)。
+
+M4b1 新增 Cordis::ModuleQt / loadQtModule：两个装载后端共用进程目录、受限映像搜索及 PIN；Qt 对相同产物创建一次 loader root，并保留 loader/root 租约。root 活跃时 drain 拒绝，错误构造保守驻留；不手动 delete root 或 unload。此时 descriptorAccepted/businessAccepted 仍为 false，尚不能创建业务实例或插件页面；M4b2 工厂/实例适配继续，见 [记录](../../docs/p4-m4b1-development.md)。

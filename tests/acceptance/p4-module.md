@@ -174,3 +174,18 @@ M3d1 后续复审新增 M3d1-10：修复前真实失败 0/1，修复后 1/1；�
 | M4a-05 | 来源验证提取不改变路径、摘要、共享、PE 和原生目录/生命周期 | 既有 P4 native/manifest 场景 |
 
 元数据增量依赖修复前 JSON 改动未进入 DLL、错误通过；明确 JSON→moc→DLL 后，修改构建元数据真实触发 0/1 拒绝，恢复并重建后 2/2 通过。最终 Release 630/630、Debug/ASan P4 各 162/162、GCC 245/245、关闭示例 P4 162/162 并恢复 ON，四项新检查各连续 20 次通过。16 项源码/构建、17 个 ASan 编译行及独立公开头证据见 [M4a 记录](../../docs/p4-m4a-development.md)。M4b/c 的 Qt 后端/root/工厂、页面析构屏障和原生 UI 仍待验证；不标记整个 P4 完成。
+
+## M4b1 共同目录与 Qt root 装载
+
+| 行为 | 自动化依据 |
+|---|---|
+| 真实 Qt root、映像 PIN/文件保护、未协商业务及原生入口拒绝 Qt | p4.qt_load_loaded |
+| 跨安装路径同内容复用、root 只创建一次；不同摘要不重绑 ID | p4.qt_load_reuse / identity |
+| root 租约阻止 drain；C ABI/Qt 实际共用目录 | p4.qt_load_drain / mixed |
+| 无应用、错误线程、后端/工具链、预检后篡改均拒绝 | p4.qt_load_no_app / thread / backend / metadata / tamper |
+| root 构造 parent 错误/抛异常后保留失败、映像和引用 | p4.qt_load_parent / throw |
+| 外部 Windows/Qt loader 已映射的产物不收养 | p4.qt_load_existing / qt_existing |
+| 构造重入只见 Validated，不能复用或 drain 未完成代次 | p4.qt_load_reentry |
+| 元数据合法但异常构造/重入的夹具仍仅预检、不创建 root | p4.qt_preflight_root_parent / root_throw / root_reenter |
+
+Loaded 仅证明此装载层完成，不证明 IQtPluginV1 工厂协商或 UI 可用；根租约仍在账，不声明可物理卸载。M4b2 工厂/实例与 M4c UI DLL/原生验收继续，详见 [记录](../../docs/p4-m4b1-development.md)。

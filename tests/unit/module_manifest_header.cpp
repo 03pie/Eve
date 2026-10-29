@@ -3,3 +3,5 @@
  */
 #include <cordis/module/qt_manifest.hpp>
 static_assert(sizeof(cordis::module::PreflightLimits) > 0, "module headers must remain independent of Qt");
+
+#include <cordis/module/qt_module.hpp>
