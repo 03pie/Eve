@@ -129,3 +129,18 @@ M3c2 记录见 [服务桥验证](../../docs/p4-m3c2-development.md)。这些 DLL
 最终 Release 全量 606/606、GCC 245/245、Debug/ASan Core/P4 各 260/260；关闭示例 P4 138/138 后恢复 ON。六项关键托管场景在 Debug/ASan 各连续 20 次通过，29 项源码/构建快照、15 个 ASan 编译命令、8 个独立 SDK 头和依赖边界核对通过。日志索引和红绿复现见 [开发记录](../../docs/p4-m3d1-development.md)。M3d1 完成不代表 M3d/M4、整个 P4 或物理卸载完成。
 
 M3d1 后续复审新增 M3d1-10：修复前真实失败 0/1，修复后 1/1；最终 Release 全量 607/607、Debug/ASan P4 各 139/139，新场景各连续 20 次通过。见 [独立复审](../../docs/code-review.md#p4-m3d1-独立复审创建拒绝与借用输入)；前段 606/260 等仍为 ed2471d 历史证据。
+
+
+## M3d2a 业务 DLL 与真实 Qt 配置链路
+
+使用 examples/native_services 的两个业务 DLL，未借用夹具测试导出；真实 QCoreApplication/QtScheduler、Kernel/Session 与 QtConfigurationWriter 写盘并核对 persisted 文本。通过不表示物理卸载，成功关闭后仍为 Resident/PIN。
+
+| 编号 | 场景 | 自动化依据 |
+|---|---|---|
+| M3d2a-01 | 预览不执行、目录固定、跨 DLL 业务、真实保存及完整正常退出 | p4.native_qt_normal |
+| M3d2a-02 | 两个报告器共享计数，结果 1/2，各保留一份输入 | p4.native_qt_multi |
+| M3d2a-03 | 两组 realm 独立计数，均从 1 开始 | p4.native_qt_realms |
+| M3d2a-04 | start 失败形成 Failed，仍保存目标且正常排空，无模块隔离 | p4.native_qt_start_failure |
+| M3d2a-05 | cleanup 失败不假静止，drain 拒绝、PIN 与执行引用保留 | p4.native_qt_cleanup_failure |
+
+最终 Release 全量 612/612、Debug/ASan P4 各 144/144、GCC 全量 245/245、原 Release 关闭示例 P4 144/144 并恢复 ON；五项在 Debug/ASan 各连续 20 次通过。日志、8 项源码快照、3 个 ASan 编译命令及 6 份声明/产物摘要映射见 [阶段记录](../../docs/p4-m3d2a-development.md)。本轮观察启动业务日志，未单独请求报告器 read 方法；取消后晚到的 stop completion（S06）和 DLL 内失活捕获析构（S07）仍属 M3d2b，M4 UI DLL 待实施。

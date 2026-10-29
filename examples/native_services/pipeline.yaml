@@ -1,0 +1,7 @@
+formatVersion: 1
+modules:
+  counter: {manifest: counter/module.json}
+  reporter: {manifest: reporter/module.json}
+plugins:
+  - {id: counter, plugin: example.counter, module: counter, config: null}
+  - {id: reporter, plugin: example.reporter, module: reporter, config: null}

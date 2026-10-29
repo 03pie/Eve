@@ -19,3 +19,5 @@ M3b 的 Cordis::ModuleHost / NativeModule 提供稳定基础 HostTable、真实 
 M3c1 开启生产 DISPATCH/EFFECTS：复制及排队调用、独立请求/ACK、真实 Core effect、逆序清理和最后捕获退役屏障。服务能力仍关闭，M3c2 接入服务后再进入 Kernel/Session 联合验收，见 [资源桥记录](../../docs/p4-m3c-development.md)。上述 capabilities=0 是 M3b 提交时的历史状态。
 
 M3c2 已开启生产服务能力；M3d1 在同一桥上新增 NativeModule.runtime/NativePlugin 与 Core 托管模式。输入借用 Core 预提交租约、输出由 Core 统一发布并保留到完整清理；低层 open/create 继续可用。宿主通过 Kernel.registerRuntime 保留定义身份，并以冻结配置目录接入 Session，见 [接入与验证](../../docs/p4-m3d1-development.md)及 [ADR-0036](../../docs/adr/0036-managed-native-runtime.md)。托管实例先由 Core/Kernel 关闭，之后关闭模块会话、排空代次、最后关闭 scheduler。当前真实 DLL 夹具不替代 M3d2 业务示例/Qt 事件循环或 M4 UI DLL；默认 PIN 驻留不变。
+
+M3d2a 已增加 [两个业务服务 DLL 与真实 Qt/Kernel/Session 示例](../../examples/native_services/README.md)，包含实际磁盘保存、多实例/realm、启动失败和清理失败驻留；仍沿用 M3d1 托管桥和默认 PIN。S06/S07 专项在 M3d2b 继续，M4 UI DLL 不由该示例交付。

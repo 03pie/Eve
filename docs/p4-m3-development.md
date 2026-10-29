@@ -11,7 +11,7 @@
 | M3a | 生产请求控制块、复制/一次仲裁、取消、投递与租约退役 | 已完成；1ffa0ff，审查修复 seal 屏障及晚到取消 |
 | M3b | 稳定 HostTable/模块业务表、真实 create/start/stop/destroy 与 ModuleGeneration | 已完成；审查修复及最终矩阵见 [M3b 记录](p4-m3b-development.md) |
 | M3c | 生产 dispatch/service/effect 桥及真实资源租约 | 已完成；M3c1 已提交，M3c2 最终验证通过并随本提交归档，见 [服务记录](p4-m3c2-development.md)；前段历史见 [资源记录](p4-m3c-development.md) |
-| M3d | Kernel/Session、两个服务 DLL、多实例、失败驻留及退出联合验收 | 进行中；M3d1 托管与配置目录已完成审核与最终验证，M3d2 业务 DLL/真实 Qt 场景待实施，见 [分段](p4-m3d-development.md) |
+| M3d | Kernel/Session、两个服务 DLL、多实例、失败驻留及退出联合验收 | 进行中；M3d1 托管与配置目录已完成审核与最终验证，M3d2a 业务 DLL/真实 Qt 配置链路已完成，M3d2b/S06/S07 待实施，见 [分段](p4-m3d-development.md) |
 
 M3 结束后继续 M4 的同工具链 UI DLL、工具链预检、管理诊断与 P4 收口。上述拆分不减少原计划的服务 DLL、UI DLL 或 A/S06/S07 验收要求。
 
