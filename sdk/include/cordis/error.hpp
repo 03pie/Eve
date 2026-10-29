@@ -44,7 +44,8 @@ enum class ErrorCode {
     StepLimitExceeded,
     BrokenPromise,
     ClockClosed,
-    ConfigIo
+    ConfigIo,
+    ModuleLoad
 };
 
 /**

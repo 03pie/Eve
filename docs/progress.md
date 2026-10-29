@@ -1,14 +1,22 @@
 # 开发进度
 
-最后更新：2026-10-28（北京时间）。当前工作区：`D:/01_C++/Eve`。
+最后更新：2026-10-29（北京时间）。当前工作区：`D:/WorkSpace/code/cpp/Eve`。
 
 本文件是项目进度的统一入口，记录实际状态；设计细节见说明书，任务完成条件见工作单，测试依据见验收规范和验证报告。代码行数、文档篇幅和测试数量不作为项目完成百分比。
 
 ## 当前状态
 
-2026-10-28 Eve 软件图标增量：采用用户指定设计合集的最终纯色蓝 #2864C5，两个桌面入口 EXE 与 Qt 窗口/任务栏、Ela 导航品牌位统一。现成七尺寸透明 PNG 原样使用，ICO 封装可复现，素材 hash 与原稿/归档 manifest 一致；不依赖只读 sources/ 参与构建。Debug/Release 各 459/459 通过，Windows 图标帧和原生显示已复核；详见 [资源说明](../app/shell/resources/README.md)及[审核记录](code-review.md#eve-正式软件图标接入审核)。本轮审核后提交，P4/P5 状态不变。
+**P1/P2/P3 及 UI 专项已完成（当前内置插件/Windows 支持矩阵）。P4-M1 为 59b7c76、M2a 为 249a425、M2b 为 fed5a51，均已审核提交。当前 M3 进行中：M3a 已提交（1ffa0ff），M3b 基础生命周期已审核提交（f32191b），M3c1 dispatch/effect 已审核提交（e9c89dd）；M3c2/M3d 服务与 Kernel 桥、M4 UI DLL 待实施，P5 未开始。**
 
-**P1/P2 及 P3 已完成（当前内置插件/Windows 支持矩阵）。Q2g 已审核提交为 e3491ae，跨组件装配验收为 766db1e。本次用户明确确认 Q4d3 手动验证通过；当前 Release 的 Home 手动路径及原生 150% 明暗布局另经代理复核，退出码均为 0。P3 完成审计及最终验收记录随本阶段审核提交归档。UI 设计与优化独立专项已完成（当前第一方 Windows / Qt 5.15.2 / Ela 范围）；P4/P5 尚未开始，原生模块路线仍为 ModuleManager、ABI 桥与模块驻留账目。**
+本轮按“实现→审核修复→验证无未解决问题→提交→下一段”推进。M3c1 开启真实 dispatch/effect 桥，修复主动清理期间提前 stop、投递捕获未释放就假静止及 scheduler 释放后丢失诊断三项 P2。最终 Release 557/557、GCC 241/241，Debug/ASan/关闭示例 P4 各 98/98；12 项源/构建哈希和 8 个 ASan 编译行及依赖/文档审计通过，见 [资源桥记录](p4-m3c-development.md)和 [ADR-0034](adr/0034-native-dispatch-effects.md)。M3c2 服务、M3d Kernel/Session 与两个服务 DLL、M4 UI DLL 继续按计划实施，不提前计为整个 P4 完成。M3b 历史见 [生命周期记录](p4-m3b-development.md)。
+
+2026-10-28 本轮见 [M2b 开发记录](p4-m2b-development.md)、[ABI V1](abi-v1.md)及 [ADR-0031](adr/0031-business-abi.md)。最终串行 MSVC Debug/Release 各 497/497、GCC 223/223，ASan 与关闭示例的 P4 专项各 38/38；独立 C/C++ 头、12 项源快照和依赖/文档审计通过。首轮既有 UI 超时及原样复核记录保留。M2 装载/协商层完成不代表业务插件已接入 Kernel；ModuleManager.load 仍只读发现，测试宿主不是生产请求状态机。下列 M2a 及更早数量保留为提交历史。
+
+2026-10-28 当前增量见 [M2 开发记录](p4-m2-development.md)及 [ADR-0030](adr/0030-native-module-discovery.md)。提交前审查修复过早发布 Loaded 及异常选项处理；MSVC Debug/Release 各 490/490、GCC 217/217，ASan 与关闭示例的 P4 专项各 31/31；CLI、22 项源快照及边界审计通过，按用户要求随本提交归档。不把只读描述握手当作外部业务插件已激活，也不提前冻结不完整的 HostTable。下列 M1 及更早验证保留为各提交的历史。
+
+2026-10-28 本轮范围、阶段和测试见 [P4 开发记录](p4-development.md)及 [ADR-0029](adr/0029-module-preflight-ledger.md)。审查修复缺盘符路径误接受、预检按字符串重开来源，以及关闭示例时 junction 回归缺失；新增回归修复前 0/2、修复后 2/2。最终原目录 MSVC Debug/Release 各 473/473、无 Qt GCC Debug 215/215、ASan P4 专项及关闭示例的 Qt Debug 各 14/14 通过；13 项源/构建/脚本快照及依赖/文档审计通过，按用户要求随本提交归档。下文各轮“未开始”“未提交”和测试数量为当时历史，不覆盖本节最新结论。
+
+2026-10-28 Eve 软件图标增量：采用用户指定设计合集的最终纯色蓝 #2864C5，两个桌面入口 EXE 与 Qt 窗口/任务栏、Ela 导航品牌位统一。现成七尺寸透明 PNG 原样使用，ICO 封装可复现，素材 hash 与原稿/归档 manifest 一致；不依赖只读 sources/ 参与构建。图标分支 Debug/Release 各 459/459 通过，Windows 图标帧和原生显示已复核；详见 [资源说明](../app/shell/resources/README.md)及[审核记录](code-review.md#eve-正式软件图标接入审核)。已提交为 9d1ccda；P4 最新状态以本节顶部为准。
 
 UI 专项 [UI-S0–S4 五个阶段](ui-special-stages.md)已全部收口：统一 Ela 组件、Microsoft YaHei 字体、ElaAwesome 图标、真实状态与独立反馈/偏好，并完成 VS Code 结构对照及四项交互增量。最终 Release 454/454、ASan UI 114/114；Debug 完整轮次 453 项通过，150% 多截图项独立连续五次通过。最新原生检查 32/32 通过，用户已分别确认基线体验、Windows 系统 150% 和四项新增交互及两个窗口正常关闭。剪贴板错误 5 已解除，见 [增量验证与完成审计](ui-structure-verification.md)。原先未提交的 UI 基线随本提交归档，P4/P5 仍未开始。
 
@@ -61,7 +69,7 @@ Qt 5.15.2 Core/Widgets/Test 已就绪，本机入口见 [开发环境](developme
 | P2 响应式服务依赖 | 已完成（首阶段内置范围） | W4/W5/W7 联合闭环通过；跨 ABI、物理卸载及替换不在本轮 |
 | P3 Qt / Loader / Ela | 已完成（当前支持矩阵） | L01–L04/Q01/U01/S05/S08/S10 及真实装配检查通过；Q4d3 已获本次用户确认，Home 手动路径/原生 150% 代理复核通过，见 [收口审计](p3-closeout.md)；不补造系统 DPI/跨屏证据 |
 | UI 设计与优化（独立专项） | 已完成（当前支持矩阵） | UI-S0–S4 与 UI-00–07 已完成，原生 32/32、三次用户确认和最终审计归档；跨屏未覆盖，见 [阶段计划](ui-special-stages.md)及[增量验证](ui-structure-verification.md) |
-| P4 原生插件模块 | 未开始 | ABI、ModuleManager 和驻留账目待实现 |
+| P4 原生插件模块 | 进行中 | M1/M2、M3a/M3b 与 M3c1 dispatch/effect 已完成；M3c2/M3d 服务与 Kernel 联合桥、M4 UI DLL 待实施，见 [阶段记录](p4-development.md) |
 | P5 受控替换 | 未开始 | 新旧代替换、恢复和卸载专项验证待实现 |
 
 ## UI 设计与优化专项
@@ -91,7 +99,7 @@ Qt 5.15.2 Core/Widgets/Test 已就绪，本机入口见 [开发环境](developme
 | UI-06 | 键盘、缩放与细节 | 已完成（当前支持矩阵） | 键盘/焦点、明暗/宽窄与进程 150% 已验证，用户系统 150% 及新增交互分别确认；单屏环境未覆盖跨屏 |
 | UI-07 | 联合回归与收口 | 已完成 | 基线与新增自动化、原生 32/32、用户确认、修复审查和最终归档完成；不扩大为外部插件或模块卸载认证 |
 
-UI 专项已收口；后续按主计划推进 P4 ModuleManager、ABI 与驻留账目。本轮未开始 P4/P5，UI 基线、追加实现和验收文档随本提交归档。
+UI 专项已收口，基线、追加实现及验收文档已提交于 31e52ab；当前按主计划推进 P4，最新状态见本文件首节与 [P4 阶段记录](p4-development.md)。
 
 ## 内核工作包
 
@@ -178,7 +186,8 @@ W0–W7 沿用 [现有工作单](p1-work-items.md) 编号，其中服务工作�
 | Q2g 原生 Qt 信号前缀与验收映射 | 2026-10-27 | Ela 各 428/428、GCC 各 210/210、ASan 专项 109/109，11 项 Debug/ASan 各重复 20 次；GCC/MSVC 正向及六类拒绝检查 | [Q2g](p3-development.md#q2g-原生-qt-信号前缀与验收映射)、[P3 验收映射](p3-acceptance.md)；本轮未提交，人工确认待登记 |
 | Home 状态卡片、电源停止/加载/重试 | 2026-10-25 | Ela/MSVC Debug/Release 各 276/276，GCC 各 173/173；UI ASan 63/63、Core remount 1/1；明暗及 150% 布局通过 | [Home 记录](p3-development.md#home-状态卡片与电源操作)；本次 Home 专项人工复核待办 |
 | Home 左右滑动开关替换 | 2026-10-25 | 原目录 Ela/MSVC Debug/Release 专项各 34/34，ASan 同范围 34/34；同步位置不触发操作，连续点击去重通过 | [Home 记录](p3-development.md#home-状态卡片与电源操作)；仅私有 UI 接口变更 |
-| 完整配置管理 UI、ABI、物理卸载和替换 | — | 待实现或验证 | [设计说明书](../Cordis插件平台-软件设计说明书.md) |
+| P4-M1 模块预检及宿主驻留账目 | 2026-10-28 | MSVC Debug/Release 各 473/473；GCC Debug 215/215；ASan P4/关闭示例配置各 14/14；真实路径/共享回归及源/边界审计通过 | [开发与验证记录](p4-development.md)，审查后随本提交归档 |
+| 原生模块/ABI、物理卸载和替换 | — | P4 后续工作包及 P5 待实现或验证 | [设计说明书](../Cordis插件平台-软件设计说明书.md) |
 
 “最近验证”是当时已检查的版本；后续代码变化不自动继承通过状态。新验证需注明覆盖范围、工具链和失败/跳过项。临时构建日志位于 build，持久结论保存在本台账及对应报告。
 

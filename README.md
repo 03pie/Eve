@@ -2,7 +2,9 @@
 
 基于 Cordis 思路设计的 C++17 插件内核，目标桌面环境为 Qt 5.15.2 + ElaWidgetTools。
 
-当前已完成 **W0–W7 首阶段内置内核与联合验收**。P3 已有内置配置子树、类型化依赖、域继承、真实协调和文件/Store。可选配置工作台连接预览、应用、期望启停及保存，明确区分运行和持久化状态。原工作台、配置工作台及 Home/管理页路由已获用户人工确认。后台读写/文件监听已完成原生代理复核，用户人工确认仍单独待办；外部原文仅在显式操作后载入编辑区。Windows 托管 worker 已支持类型化结果及完整退出屏障。
+当前已完成 **P1/P2/P3 及第一方 Windows UI 专项**，P3 收口及用户确认见 [阶段审计](docs/p3-closeout.md)。配置工作台支持预览、应用、期望启停、保存和磁盘冲突处理；Home 卡片可打开管理/配置窗口，顶部菜单可添加已注册插件的配置实例。Windows 托管 worker 支持类型化结果及完整退出屏障。
+
+**P4 进行中**：M1 预检/账目、M2 原生装载及完整业务 ABI 协商已审核提交，见 [ABI V1](docs/abi-v1.md)。当前 [M3a 请求组件](docs/p4-m3-development.md)、[M3b 原生生命周期](docs/p4-m3b-development.md)及 [M3c1 dispatch/effect](docs/p4-m3c-development.md)已实现，服务与 Kernel 联合桥、M4 UI DLL 仍待完成，P5 受控替换未开始；当前 C++ 源码 SDK 不构成稳定二进制 ABI。
 
 当前工作区还已实现受限类型化 Qt 信号投递：数值、枚举与标准/Qt 字符串会在发射时冻结，参数保留至异步业务完成，并沿用 Context/epoch 及原生退出屏障。详情见 [类型化连接决策](docs/adr/0026-typed-qt-connections.md)，示例为 cordis_qt_value_connection_demo。
 
@@ -44,6 +46,7 @@
 | `Cordis::ConfigIoQt` | 可选配置后台串行读写、线程 join 与文件/目录监听，通知不自动应用目标 |
 | `Cordis::ConfigUi` | 可选 Ela 配置编辑页及 Home/管理适配器，弱持宿主会话；普通 Ui SDK 不依赖配置层 |
 | `src/qt` | 可选 Cordis::Qt，包含 QtScheduler、QtClock、QObjectResource、托管 QtConnection 与 QtWorker |
+| `src/module` | Cordis::Module 账目、ModulePreflight 预检及 Windows ModuleNative 只读描述装载；尚不激活外部业务插件 |
 | `src/ui` | 可选 Cordis::Ui，包含 Ela 插件状态卡片及电源操作、单击直达的插件导航、菜单/搜索/前进后退、可全部关闭的中央页签、底部工作区、贡献服务和只读诊断；资源树属于具体插件页 |
 | `third_party/ela` | 项目内维护的 Ela 组件库及资源，保留上游基线、本地修改和 MIT 许可 |
 | `third_party/libyaml` | 固定 0.2.5 C 解析库和 MIT 许可，私有链接至配置文本层 |
@@ -107,6 +110,7 @@ QtWorker 支持协作取消，在原生线程和 TLS 退出后释放捕获，随
 ## 设计及实施入口
 
 - [开发进度](docs/progress.md)：当前状态、工作包、验证台账及下一任务。
+- [P4 原生模块](docs/p4-development.md)：分阶段范围、预检/驻留账目、测试及诊断入口。
 - [UI 设计与优化专项](docs/ui-optimization-plan.md)：P3 收口后的工作台/页面/状态/偏好优化、工作包和完成条件。
 - [Home 管理窗口与平台添加](docs/home-management-development.md)：卡片管理/配置窗口、顶部添加已注册配置实例及验证记录。
 - [UI 专项阶段](docs/ui-special-stages.md)：Ela 基线、VS Code 全结构分析、框架、宿主页和联合验收五个阶段。
