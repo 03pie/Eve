@@ -56,6 +56,10 @@ void schema()
     auto value = parseManifest(json(manifest()));
     CHECK(value.hasValue());
     CHECK(value.value().moduleId == "org.cordis.example" && value.value().plugins.size() == 1);
+    CHECK(value.value().loader == ModuleLoader::CAbi);
+    auto qt = manifest();
+    qt["loader"] = "qt-ui";
+    CHECK(parseManifest(json(qt)).value().loader == ModuleLoader::QtUi);
     CHECK(value.value().sha256 == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     for (const auto& key : manifest().keys()) {
         auto missing = manifest();
@@ -78,7 +82,7 @@ void schema()
     for (const auto& pair : std::vector<std::pair<QString, QJsonValue>>{{"manifestVersion", "1"},
                                                                         {"manifestVersion", 1.5},
                                                                         {"platform", "linux-x64"},
-                                                                        {"loader", "qt-ui"},
+                                                                        {"loader", "unknown"},
                                                                         {"unloadPolicy", "unload"},
                                                                         {"moduleVersion", "01.0.0"},
                                                                         {"moduleVersion", "1.0.0-beta"},

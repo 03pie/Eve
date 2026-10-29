@@ -21,3 +21,5 @@ M3c1 开启生产 DISPATCH/EFFECTS：复制及排队调用、独立请求/ACK、
 M3c2 已开启生产服务能力；M3d1 在同一桥上新增 NativeModule.runtime/NativePlugin 与 Core 托管模式。输入借用 Core 预提交租约、输出由 Core 统一发布并保留到完整清理；低层 open/create 继续可用。宿主通过 Kernel.registerRuntime 保留定义身份，并以冻结配置目录接入 Session，见 [接入与验证](../../docs/p4-m3d1-development.md)及 [ADR-0036](../../docs/adr/0036-managed-native-runtime.md)。托管实例先由 Core/Kernel 关闭，之后关闭模块会话、排空代次、最后关闭 scheduler。当前真实 DLL 夹具不替代 M3d2 业务示例/Qt 事件循环或 M4 UI DLL；默认 PIN 驻留不变。
 
 M3d2a 已增加 [两个业务服务 DLL 与真实 Qt/Kernel/Session 示例](../../examples/native_services/README.md)，包含实际磁盘保存、多实例/realm、启动失败和清理失败驻留；仍沿用 M3d1 托管桥和默认 PIN。[M3d2b 的分层 S06/S07](../../docs/p4-m3d2b-development.md)已通过，M3 当前范围收口；M4 UI DLL 不由该示例交付。
+
+M4a 将文件/祖先固定、二次声明/摘要及 PE 检查提取为私有 VerifiedSource，原生后端与 Cordis::ModuleQtPreflight 共用。manifest 明确区分 c-abi/qt-ui，原生后端拒绝 Qt 类型；Qt 端仅返回宿主工具链/产物快照，不调用 load/instance，不创建 root 或第二套目录。Qt 工厂/页面适配在 M4b/c，见 [架构边界](../../docs/adr/0037-qt-module-boundaries.md)和 [M4a 记录](../../docs/p4-m4a-development.md)。

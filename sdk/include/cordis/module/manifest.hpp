@@ -10,13 +10,15 @@
 #include <vector>
 
 namespace cordis::module {
-/** @brief 当前支持 c-abi / windows-x64 / ABI 1.0 / resident；不是已装载的 Runtime。 */
+enum class ModuleLoader { CAbi, QtUi };
+/** @brief windows-x64 / 接口声明 1.0 / resident；装载类型由后端显式核对。 */
 struct ModuleManifest {
     std::string moduleId;
     std::string moduleVersion;
     std::string library;
     std::string sha256;
     std::vector<std::string> plugins;
+    ModuleLoader loader = ModuleLoader::CAbi;
 };
 
 /** @brief 所有限额均须为正；文件读取采用分块而非完整映射 DLL。 */

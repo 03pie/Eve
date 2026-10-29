@@ -159,3 +159,18 @@ M3d1 后续复审新增 M3d1-10：修复前真实失败 0/1，修复后 1/1；�
 | M3d2b-05 | 失败对照：不析构/不 destroy，模块与执行引用保留 | p4.native_lifecycle_failed_capture |
 
 临时去掉执行前门禁的负向控制 0/1，恢复后全部通过；生产源码逐字节恢复，未增加公共取消接口。最终 Release 617/617、Debug/ASan P4 各 149/149、GCC 245/245、原 Release 关闭示例 P4 149/149 并恢复 ON，五项各连续 20 次通过。证据及 4 项源码/3 个 ASan 编译命令见 [本段记录](../../docs/p4-m3d2b-development.md)。M3d1/M3d2a/M3d2b 共同完成 M3 业务/资源范围，M4 UI DLL 和整个 P4 收口仍待完成，物理卸载不在当前证明范围。
+
+
+## M4a 结构提取与 Qt 只读预检
+
+共同 VerifiedSource 同时被既有 C ABI 装载与新 Qt 预检消费，原生完整回归保护来源/共享/PE/代次行为。Qt 用独立测试入口和真实元数据 DLL，复用产物安装设施；所有 Qt 检查确认无映射、无目录新增。这里未实例化 IQtPluginV1 或 QWidget。
+
+| 编号 | 场景 | 自动化依据 |
+|---|---|---|
+| M4a-01 | 合法工具链/元数据、快照之后文件变更必须重新预检 | p4.qt_preflight_good |
+| M4a-02 | 编译器、Qt patch、CRT、迭代器调试、指针宽度、SDK 及缺字段拒绝 | p4.qt_preflight_compiler / qt / runtime / iterator / pointer / sdk / missing |
+| M4a-03 | 目录不匹配拒绝，合法目录顺序不影响集合语义 | p4.qt_preflight_catalog / order |
+| M4a-04 | C ABI/Qt 后端双向拒绝、非 owner、真实非 Qt DLL | p4.qt_preflight_backend / thread / not_qt |
+| M4a-05 | 来源验证提取不改变路径、摘要、共享、PE 和原生目录/生命周期 | 既有 P4 native/manifest 场景 |
+
+元数据增量依赖修复前 JSON 改动未进入 DLL、错误通过；明确 JSON→moc→DLL 后，修改构建元数据真实触发 0/1 拒绝，恢复并重建后 2/2 通过。最终 Release 630/630、Debug/ASan P4 各 162/162、GCC 245/245、关闭示例 P4 162/162 并恢复 ON，四项新检查各连续 20 次通过。16 项源码/构建、17 个 ASan 编译行及独立公开头证据见 [M4a 记录](../../docs/p4-m4a-development.md)。M4b/c 的 Qt 后端/root/工厂、页面析构屏障和原生 UI 仍待验证；不标记整个 P4 完成。

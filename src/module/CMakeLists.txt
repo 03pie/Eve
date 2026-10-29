@@ -16,11 +16,20 @@ target_link_libraries(cordis_module_requests PUBLIC Cordis::ModuleAbi)
 cordis_target_defaults(cordis_module_requests)
 
 if(WIN32 AND CORDIS_REQUIRE_QT5152)
-    add_library(cordis_module_preflight STATIC manifest.cpp)
+    add_library(cordis_module_preflight STATIC manifest.cpp artifact.cpp)
     add_library(Cordis::ModulePreflight ALIAS cordis_module_preflight)
     target_link_libraries(cordis_module_preflight PUBLIC Cordis::Module PRIVATE Qt5::Core)
     target_compile_definitions(cordis_module_preflight PRIVATE QT_NO_KEYWORDS)
     cordis_target_defaults(cordis_module_preflight)
+
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        add_library(cordis_module_qt_preflight STATIC qt_manifest.cpp)
+        add_library(Cordis::ModuleQtPreflight ALIAS cordis_module_qt_preflight)
+        target_link_libraries(cordis_module_qt_preflight PUBLIC Cordis::ModulePreflight PRIVATE Qt5::Core)
+        target_compile_definitions(cordis_module_qt_preflight PRIVATE QT_NO_KEYWORDS
+            CORDIS_PROJECT_VERSION="${PROJECT_VERSION}" CORDIS_QT_COMPILER_VERSION="${CMAKE_CXX_COMPILER_VERSION}")
+        cordis_target_defaults(cordis_module_qt_preflight)
+    endif()
 
     add_library(cordis_module_native STATIC manager.cpp)
     add_library(Cordis::ModuleNative ALIAS cordis_module_native)

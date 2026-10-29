@@ -184,8 +184,9 @@ Result<ModuleManifest> parseManifest(const std::string& json, PreflightLimits li
         return reject("invalid moduleId");
     if (!root.value("moduleVersion").isString() || !version(root.value("moduleVersion").toString()))
         return reject("moduleVersion must be three decimal components");
-    if (root.value("loader") != QJsonValue(QStringLiteral("c-abi")))
-        return reject("only c-abi preflight is supported");
+    if (root.value("loader") != QJsonValue(QStringLiteral("c-abi")) &&
+        root.value("loader") != QJsonValue(QStringLiteral("qt-ui")))
+        return reject("unsupported module loader");
     if (root.value("platform") != QJsonValue(QStringLiteral("windows-x64")))
         return reject("unsupported module platform");
     if (root.value("unloadPolicy") != QJsonValue(QStringLiteral("resident")))
@@ -214,6 +215,7 @@ Result<ModuleManifest> parseManifest(const std::string& json, PreflightLimits li
                           hash.toString().toLower().toStdString(),
                           {}};
     std::set<QString> seen;
+    result.loader = root.value("loader").toString() == QLatin1String("qt-ui") ? ModuleLoader::QtUi : ModuleLoader::CAbi;
     for (const auto& plugin : plugins) {
         if (!plugin.isString() || !identifier(plugin.toString()) || !seen.insert(plugin.toString()).second)
             return reject("plugin identifiers must be valid and unique");

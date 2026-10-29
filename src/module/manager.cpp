@@ -1,9 +1,8 @@
 /** @file manager.cpp
  * @brief 固定产物、受限搜索、只读 C 握手及进程级默认驻留；不创建业务实例。
  */
-#include "native_file_p.hpp"
+#include "artifact_p.hpp"
 #include "native_source_p.hpp"
-#include <QFileInfo>
 #include <algorithm>
 #include <cordis/module/manager.hpp>
 #include <cordis_abi/module_query.h>
@@ -15,6 +14,7 @@
 namespace cordis::module {
 namespace {
 using detail::OpenedPath;
+using detail::sameManifest;
 ErrorInfo error(ErrorCode code, std::string phase, std::string message)
 {
     auto result = makeError(code, std::move(message));
@@ -24,14 +24,6 @@ ErrorInfo error(ErrorCode code, std::string phase, std::string message)
 ErrorInfo ownerError()
 {
     return error(ErrorCode::WrongThread, "module.owner", "module manager called outside its owner thread");
-}
-bool sameManifest(const ModuleManifest& left, const ModuleManifest& right)
-{
-    auto a = left.plugins, b = right.plugins;
-    std::sort(a.begin(), a.end());
-    std::sort(b.begin(), b.end());
-    return left.moduleId == right.moduleId && left.moduleVersion == right.moduleVersion &&
-           left.sha256 == right.sha256 && a == b;
 }
 /** @brief 只含宿主对象；注册后驻留至进程退出，不在管理器析构中销毁原生映射。 */
 struct Generation {
@@ -97,30 +89,6 @@ Result<ModuleLoadReport> failed(const std::shared_ptr<Generation>& generation, E
     }
     return Result<ModuleLoadReport>::failure(std::move(failure));
 }
-/** @brief 从卷根向下固定每个祖先目录，只在装载期间持有，禁止路径解析时替换祖先。 */
-bool protectParents(const QString& file, std::vector<std::unique_ptr<OpenedPath>>& guards)
-{
-    std::vector<QString> paths;
-    auto current = QFileInfo(file).absolutePath();
-    for (;;) {
-        if (paths.size() >= 128)
-            return false;
-        paths.push_back(current);
-        QDir parent(current);
-        if (parent.isRoot())
-            break;
-        if (!parent.cdUp() || parent.absolutePath() == current)
-            return false;
-        current = parent.absolutePath();
-    }
-    for (auto at = paths.rbegin(); at != paths.rend(); ++at) {
-        auto guard = std::make_unique<OpenedPath>(*at, true);
-        if (!guard->valid() || guard->finalPath() != *at)
-            return false;
-        guards.push_back(std::move(guard));
-    }
-    return true;
-}
 QString imagePath(HMODULE image)
 {
     std::wstring buffer(32768, L'\0');
@@ -128,19 +96,6 @@ QString imagePath(HMODULE image)
     if (length == 0 || length >= buffer.size())
         return {};
     return QString::fromWCharArray(buffer.data(), static_cast<int>(length));
-}
-/** @brief 不把改名为 .dll 的 EXE 当作库查询，先验证 AMD64/PE32+ 与 DLL 特征。 */
-bool compatibleImage(const OpenedPath& artifact)
-{
-    IMAGE_DOS_HEADER dos{};
-    IMAGE_NT_HEADERS64 nt{};
-    return artifact.readAt(0, reinterpret_cast<char*>(&dos), sizeof(dos)) && dos.e_magic == IMAGE_DOS_SIGNATURE &&
-           dos.e_lfanew >= static_cast<LONG>(sizeof(dos)) &&
-           artifact.readAt(static_cast<std::uint64_t>(dos.e_lfanew), reinterpret_cast<char*>(&nt), sizeof(nt)) &&
-           nt.Signature == IMAGE_NT_SIGNATURE && nt.FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64 &&
-           (nt.FileHeader.Characteristics & IMAGE_FILE_DLL) != 0 &&
-           nt.FileHeader.SizeOfOptionalHeader >= sizeof(nt.OptionalHeader) &&
-           nt.OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC;
 }
 /** @brief 仅复制有界借用值，不保留 DLL 字符串或数组地址。模块属于同进程可信代码。 */
 bool matches(CordisQueryBytesV1 bytes, const std::string& expected, std::uint64_t maximum)
@@ -203,34 +158,14 @@ Result<ModuleLoadReport> ModuleManager::load(const std::string& pluginRoot, cons
 {
     if (std::this_thread::get_id() != owner_)
         return Result<ModuleLoadReport>::failure(ownerError());
-    auto first = preflightModule(pluginRoot, manifestPath, limits);
-    if (!first.hasValue())
-        return Result<ModuleLoadReport>::failure(first.error());
-    const auto& initial = first.value();
-    auto artifact = std::make_unique<OpenedPath>(QString::fromUtf8(initial.libraryPath().c_str()), false);
-    const OpenedPath manifestGuard(QString::fromUtf8(initial.manifestPath().c_str()), false);
-    std::vector<std::unique_ptr<OpenedPath>> directories;
-    if (!artifact->valid() || !manifestGuard.valid() ||
-        !protectParents(QString::fromUtf8(initial.libraryPath().c_str()), directories) ||
-        !protectParents(QString::fromUtf8(initial.manifestPath().c_str()), directories))
+    auto source = detail::verifyModuleSource(pluginRoot, manifestPath, limits);
+    if (!source.hasValue())
+        return Result<ModuleLoadReport>::failure(source.error());
+    const auto& verified = source.value()->artifact;
+    auto& artifact = source.value()->library;
+    if (verified.manifest().loader != ModuleLoader::CAbi)
         return Result<ModuleLoadReport>::failure(
-            error(ErrorCode::ModuleLoad, "module.source", "cannot protect module source or ancestor directories"));
-    auto checked = preflightModule(pluginRoot, manifestPath, limits);
-    if (!checked.hasValue())
-        return Result<ModuleLoadReport>::failure(checked.error());
-    const auto& verified = checked.value();
-    if (initial.manifestPath() != verified.manifestPath() || initial.libraryPath() != verified.libraryPath() ||
-        !sameManifest(initial.manifest(), verified.manifest()) ||
-        artifact->finalPath().toUtf8().toStdString() != verified.libraryPath() ||
-        manifestGuard.finalPath().toUtf8().toStdString() != verified.manifestPath())
-        return Result<ModuleLoadReport>::failure(
-            error(ErrorCode::ModuleLoad, "module.source", "source changed while acquiring load guards"));
-    if (!artifact->sameFile(*artifact))
-        return Result<ModuleLoadReport>::failure(
-            error(ErrorCode::ModuleLoad, "module.source", "stable 128-bit file identity is unavailable"));
-    if (!compatibleImage(*artifact))
-        return Result<ModuleLoadReport>::failure(
-            error(ErrorCode::ModuleLoad, "module.image", "artifact is not a supported AMD64 PE32+ DLL"));
+            error(ErrorCode::AbiMismatch, "module.loader", "C ABI backend requires c-abi loader"));
     std::shared_ptr<Generation> generation;
     bool created = false;
     {

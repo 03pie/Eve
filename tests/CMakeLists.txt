@@ -453,3 +453,10 @@ foreach(case IN ITEMS required versions realms async async_blocked validation ad
     add_test(NAME w4.contract_${case} COMMAND cordis_service_contract_tests ${case})
     set_tests_properties(w4.contract_${case} PROPERTIES LABELS "w4;core" TIMEOUT 15)
 endforeach()
+
+if(TARGET cordis_module_qt_preflight)
+    add_executable(cordis_module_qt_preflight_tests qt/module_qt_preflight.cpp)
+    target_link_libraries(cordis_module_qt_preflight_tests PRIVATE Cordis::ModuleQtPreflight Cordis::ModuleNative Qt5::Core)
+    cordis_target_defaults(cordis_module_qt_preflight_tests)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/qt/qt_preflight.cmake")
+endif()

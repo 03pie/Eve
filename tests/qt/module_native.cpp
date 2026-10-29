@@ -1,6 +1,7 @@
 /** @file module_native.cpp
  * @brief 用真实 C DLL 验证描述 ABI、固定文件、目录搜索及进程驻留；不激活业务。
  */
+#include "../support/module_artifacts.hpp"
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDir>
@@ -31,38 +32,16 @@ using namespace cordis::module;
 QString root, fixtures;
 void write(const QString& path, const QByteArray& data)
 {
-    QFile file(path);
-    CHECK(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
-    CHECK(file.write(data) == data.size());
-    CHECK(file.flush());
+    cordis::testing::modules::write(path, data);
 }
 QByteArray read(const QString& path)
 {
-    QFile file(path);
-    CHECK(file.open(QIODevice::ReadOnly));
-    return file.readAll();
+    return cordis::testing::modules::read(path);
 }
 QString install(const QString& name, const QString& folder = "module")
 {
-    const auto directory = root + '/' + folder;
-    CHECK(QDir().mkpath(directory));
-    const auto source = fixtures + "/cordis_fixture_" + name + ".dll";
-    const auto library = directory + "/module.dll";
-    CHECK(QFile::copy(source, library));
-    const QJsonObject manifest{
-        {"manifestVersion", 1},
-        {"moduleId", "org.cordis." + name},
-        {"moduleVersion", "1.0.0"},
-        {"loader", "c-abi"},
-        {"library", "module.dll"},
-        {"sha256", QString::fromLatin1(QCryptographicHash::hash(read(library), QCryptographicHash::Sha256).toHex())},
-        {"platform", "windows-x64"},
-        {"abi", QJsonObject{{"major", 1}, {"minor", 0}}},
-        {"plugins", QJsonArray{"org.cordis.plugin"}},
-        {"unloadPolicy", "resident"}};
-    const auto path = directory + "/module.json";
-    write(path, QJsonDocument(manifest).toJson());
-    return path;
+    return cordis::testing::modules::install(fixtures + "/cordis_fixture_" + name + ".dll", root + '/' + folder,
+                                             "org.cordis." + name, QJsonArray{"org.cordis.plugin"});
 }
 int queryCount(const ModuleGenerationSnapshot& value)
 {
