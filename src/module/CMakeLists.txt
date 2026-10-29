@@ -28,7 +28,7 @@ if(WIN32 AND CORDIS_REQUIRE_QT5152)
     target_compile_definitions(cordis_module_native PRIVATE QT_NO_KEYWORDS)
     cordis_target_defaults(cordis_module_native)
 
-    add_library(cordis_module_host STATIC host.cpp host_resources.cpp host_services.cpp)
+    add_library(cordis_module_host STATIC host.cpp host_resources.cpp host_services.cpp runtime.cpp)
     add_library(Cordis::ModuleHost ALIAS cordis_module_host)
     target_link_libraries(cordis_module_host PUBLIC Cordis::Module PRIVATE Cordis::ModuleNative Cordis::ModuleRequests Qt5::Core)
     target_compile_definitions(cordis_module_host PRIVATE QT_NO_KEYWORDS)

@@ -1,8 +1,8 @@
 /** @file host_services.cpp
  * @brief 原生服务的真实 Core 注册、旧绑定租约、异步调用与逆序退出桥。
  */
-#include "host_services_p.hpp"
 #include "host_resources_p.hpp"
+#include "host_services_p.hpp"
 #include "json_p.hpp"
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -95,6 +95,19 @@ bool permits(const ServiceMetadata& available, std::uint32_t minor, const std::v
             return false;
     return true;
 }
+bool businessAvailable(const std::shared_ptr<NativeServiceEndpoint>& endpoint)
+{
+    auto provider = endpoint->owner.lock();
+    if (!provider)
+        return false;
+    {
+        std::lock_guard<std::mutex> lock(provider->mutex);
+        if (provider->uncertain || provider->callbacksClosing || !provider->native)
+            return false;
+    }
+    std::lock_guard<std::mutex> lock(provider->root->mutex);
+    return !provider->root->closing && !provider->root->closed && !provider->root->faulted;
+}
 } // namespace
 struct NativeBinding {
     std::optional<ProviderHandle> handle;
@@ -106,12 +119,51 @@ struct NativeBinding {
 struct NativeCommit {
     std::shared_ptr<cordis::detail::CommittedLease> lease;
     std::shared_ptr<NativeServiceEndpoint> endpoint;
+    bool borrowed = false;
 };
 NativeServiceEndpoint::~NativeServiceEndpoint()
 {
+    detach();
+}
+void NativeServiceEndpoint::detach()
+{
+    owner.reset();
+    token = effect = 0;
     lease.reset();
-    if (retired)
-        retired();
+    auto notify = std::move(retired);
+    if (notify)
+        notify();
+}
+Result<void> NativeServices::bind(const Context& context)
+{
+    auto self = owner.lock();
+    auto registry = context.managedRegistry();
+    if (!registry.hasValue())
+        return Result<void>::failure(registry.error());
+    if (self->root->services && !same(*self->root->services, registry.value()))
+        return Result<void>::failure(
+            hostError(ErrorCode::InvalidArgument, "native index differs from owning Core registry"));
+    auto inputs = context.inputs(typeid(NativeServiceEndpoint));
+    if (!inputs.hasValue())
+        return Result<void>::failure(inputs.error());
+    if (inputs.value().size() > 128)
+        return Result<void>::failure(hostError(ErrorCode::ModulePinned, "native input budget exhausted"));
+    for (const auto& input : inputs.value()) {
+        auto value = std::make_shared<NativeCommit>();
+        value->lease = input.second;
+        value->borrowed = true;
+        auto obtained = cordis::detail::callCommitted(
+            value->lease, typeid(NativeServiceEndpoint),
+            [value](void* object) {
+                value->endpoint = static_cast<NativeServiceEndpoint*>(object)->shared_from_this();
+            },
+            false);
+        if (!obtained.hasValue())
+            return obtained;
+        consumers.emplace(input.first, std::move(value));
+    }
+    self->root->services = registry.value();
+    return Result<void>::success();
 }
 bool NativeServices::uses(const ServiceRegistry& registry, const std::shared_ptr<IScheduler>& scheduler)
 {
@@ -141,6 +193,8 @@ CordisStatus NativeServices::add(CordisHandle effect, const CordisServiceKeyV1* 
         return allowed;
     if (!(self->root->record->api->table.capabilities & CORDIS_CAP_SERVICES))
         return CORDIS_E_UNSUPPORTED;
+    if (self->managed && self->startSettled)
+        return CORDIS_E_CLOSED;
     if (!resources->serviceEffectExists(effect) || !token || !wireMetadata ||
         wireMetadata->struct_size < sizeof(CordisServiceMetadataV1))
         return CORDIS_E_INVALID_ARGUMENT;
@@ -150,6 +204,8 @@ CordisStatus NativeServices::add(CordisHandle effect, const CordisServiceKeyV1* 
     auto checked = key(wireKey, serviceKey);
     if (checked != CORDIS_OK)
         return checked;
+    if (self->managed)
+        serviceKey = self->managed->realms_.resolve(serviceKey);
     ServiceMetadata metadata;
     metadata.minor = wireMetadata->minor;
     checked = capabilities(wireMetadata->capabilities_json, metadata.capabilities);
@@ -169,6 +225,14 @@ CordisStatus NativeServices::add(CordisHandle effect, const CordisServiceKeyV1* 
     if (!staged.hasValue())
         return statusOf(staged.error());
     staged.value().setOwner(self->instance);
+    if (self->managed) {
+        auto adopted = self->managed->adoptOutput(staged.value(), typeid(NativeServiceEndpoint));
+        if (!adopted.hasValue()) {
+            (void)staged.value().retire();
+            (void)staged.value().release();
+            return statusOf(adopted.error());
+        }
+    }
     auto binding = std::make_shared<NativeBinding>();
     binding->handle = staged.value();
     binding->endpoint = endpoint;
@@ -183,6 +247,8 @@ void NativeServices::publishReady()
     auto self = owner.lock();
     if (!self || self->resources->allowed(false) != CORDIS_OK)
         return;
+    if (self->managed)
+        return; // Core publishes only after the complete activation task settles.
     for (const auto& pair : providers) {
         const auto& binding = pair.second;
         if (!binding->withdrawing && binding->handle->snapshot().value().state == BindingState::Staged &&
@@ -215,12 +281,14 @@ void NativeServices::retire(const std::shared_ptr<NativeBinding>& binding)
                           binding->withdrawn.reject(result.error());
                           return;
                       }
-                      auto released = binding->handle->release();
+                      auto released = instance.managed ? Result<void>::success() : binding->handle->release();
                       if (!released.hasValue()) {
                           instance.quarantine(released.error());
                           binding->withdrawn.reject(released.error());
                           return;
                       }
+                      if (instance.managed)
+                          binding->endpoint->detach();
                       services->providers.erase(binding->id);
                       binding->withdrawn.resolve();
                       instance.advanceClose();
@@ -306,6 +374,8 @@ CordisStatus NativeServices::invoke(const CordisServiceKeyV1* wireKey, std::uint
     auto checked = key(wireKey, serviceKey);
     if (checked != CORDIS_OK)
         return checked;
+    if (self->managed)
+        serviceKey = self->managed->realms_.resolve(serviceKey);
     std::vector<std::string> required;
     checked = capabilities(requiredCapabilities, required);
     if (checked != CORDIS_OK)
@@ -324,6 +394,8 @@ CordisStatus NativeServices::invoke(const CordisServiceKeyV1* wireKey, std::uint
     if (existing != consumers.end())
         committed = existing->second;
     else {
+        if (self->managed)
+            return cleanup ? CORDIS_E_CLOSED : CORDIS_E_NOT_FOUND;
         if (cleanup)
             return CORDIS_E_CLOSED;
         if (consumers.size() >= 128)
@@ -363,10 +435,12 @@ CordisStatus NativeServices::invoke(const CordisServiceKeyV1* wireKey, std::uint
     }
     const bool newCommit = existing == consumers.end();
     const auto rejected = [&](CordisStatus status) {
-        if (newCommit)
+        if (newCommit && !committed->borrowed)
             cordis::detail::releaseCommitted(committed->lease);
         return status;
     };
+    if (!cleanup && !businessAvailable(committed->endpoint))
+        return rejected(CORDIS_E_CLOSED);
     if (!permits(committed->endpoint->metadata, minor, required))
         return rejected(CORDIS_E_UNSUPPORTED);
     auto available = cordis::detail::callCommitted(
@@ -402,12 +476,17 @@ CordisStatus NativeServices::invoke(const CordisServiceKeyV1* wireKey, std::uint
 }
 void NativeServices::call(const std::shared_ptr<HostOperation>& operation)
 {
-    if (operation->cancelled) {
+    if (operation->cancelled || (operation->business && owner.lock()->resources->allowed(false) != CORDIS_OK)) {
         operation->outcome = NativeOutcome{CORDIS_E_CANCELLED, {}, true};
         operation->serviceDone.resolve();
         return;
     }
     auto self = owner.lock();
+    if (operation->business && !businessAvailable(operation->endpoint)) {
+        operation->outcome = NativeOutcome{CORDIS_E_CLOSED, {}, false};
+        operation->serviceDone.resolve();
+        return;
+    }
     auto provider = operation->endpoint->owner.lock();
     if (!provider || provider->uncertain || !provider->native) {
         self->quarantine(hostError(ErrorCode::StaleContext, "native provider unavailable"));
@@ -457,7 +536,8 @@ void NativeServices::releaseConsumers()
         return;
     released = true;
     for (const auto& pair : consumers)
-        cordis::detail::releaseCommitted(pair.second->lease);
+        if (!pair.second->borrowed)
+            cordis::detail::releaseCommitted(pair.second->lease);
     consumers.clear();
 }
 std::vector<BindingSnapshot> NativeServices::snapshot() const

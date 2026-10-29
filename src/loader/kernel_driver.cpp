@@ -1,6 +1,7 @@
 /** @file kernel_driver.cpp
  * @brief 以真实 Kernel 及父代能力执行内置配置树，运行账目与目标、保存状态分别维护。
  */
+#include "module_catalog_p.hpp"
 #include <cordis/loader/kernel_driver.hpp>
 
 #include <algorithm>
@@ -142,6 +143,9 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     std::shared_ptr<Kernel> kernel;
     std::map<std::string, Runtime> plugins;
     std::map<std::string, std::vector<ServiceRequirement>> configurableInject;
+    std::map<std::string, PluginModule> modules;
+    std::map<std::string, std::function<Result<void>()>> availabilityChecks;
+    std::map<std::string, std::size_t> maximumDependencies;
     std::map<std::string, RealmId> realms;
     std::map<std::string, KernelRecord> records;
     std::shared_ptr<KernelDelivery> delivery = std::make_shared<KernelDelivery>();
@@ -331,11 +335,15 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
             return checked;
         if (!target.source().isValid())
             return Result<void>::failure(driverError(ErrorCode::ConfigInvalid, "candidate was moved from"));
+        auto bindings = checkModuleBindings(target.source().structure(), modules);
+        if (!bindings.hasValue())
+            return Result<void>::failure(driverError(bindings.error().code, bindings.error().message,
+                                                     bindings.error().entryPath.value_or(std::string{})));
         std::map<std::string, EntryValue> enabled;
         std::map<std::string, std::vector<ServiceRequirement>> contracts;
         for (const auto& entry : runtimeValues(target)) {
             auto plugin = plugins.find(entry.second.plugin);
-            if (entry.second.module != "builtin" || plugin == plugins.end())
+            if (plugin == plugins.end())
                 return Result<void>::failure(
                     driverError(ErrorCode::ConfigInvalid, "plugin is not registered in this driver", entry.first));
             for (const auto& realm : entry.second.realms)
@@ -354,11 +362,26 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
             auto typed = requirements(entry.second, effective->second, entry.first);
             if (!typed.hasValue())
                 return Result<void>::failure(typed.error());
+            const auto limit = maximumDependencies.at(entry.second.plugin);
+            if (limit && typed.value().size() > limit)
+                return Result<void>::failure(
+                    driverError(ErrorCode::ConfigInvalid, "plugin dependency budget exceeded", entry.first));
             for (const auto& dependency : typed.value())
                 if (!kernel->services().ownsRealm(view.resolve(dependency.key).realm).value())
                     return Result<void>::failure(
                         driverError(ErrorCode::ConfigInvalid, "dependency uses foreign realm", entry.first));
             if (!entry.second.effectiveDisabled) {
+                const auto& gate = availabilityChecks.at(entry.second.plugin);
+                if (gate) {
+                    try {
+                        auto ready = gate();
+                        if (!ready.hasValue())
+                            return ready;
+                    } catch (...) {
+                        return Result<void>::failure(
+                            driverError(ErrorCode::ConfigInvalid, "host availability check threw", entry.first));
+                    }
+                }
                 enabled.emplace(entry.first, entry.second);
                 contracts.emplace(entry.first, std::move(typed).value());
             }
@@ -754,7 +777,12 @@ KernelReconcileDriver::KernelReconcileDriver(std::shared_ptr<IScheduler> schedul
             !control_->plugins.emplace(plugin.id, std::move(plugin.runtime)).second)
             throw std::invalid_argument("duplicate, invalid or foreign kernel runtime");
         control_->configurableInject.emplace(plugin.id, std::move(plugin.configurableInject));
+        control_->modules.emplace(plugin.id, std::move(plugin.module));
+        control_->availabilityChecks.emplace(plugin.id, std::move(plugin.available));
+        control_->maximumDependencies.emplace(plugin.id, plugin.maximumDependencies);
     }
+    if (!detail::checkModuleCatalog(control_->modules).hasValue())
+        throw std::invalid_argument("invalid host module catalog");
     for (const auto& realm : realms)
         if (realm.first.empty() || !control_->kernel->services().ownsRealm(realm.second).value())
             throw std::invalid_argument("invalid realm alias");

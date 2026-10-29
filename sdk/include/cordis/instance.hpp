@@ -7,6 +7,9 @@
 #include <optional>
 
 namespace cordis {
+namespace module {
+class NativeModule;
+}
 class Runtime;
 class Instance;
 struct ServiceRequirement;
@@ -96,6 +99,12 @@ public:
     }
 private:
     friend class ui::UiPagesService;
+    friend struct module::detail::NativeServices;
+    friend class module::NativeModule;
+    Result<ServiceRegistry> managedRegistry() const;
+    Result<void> adoptOutput(ProviderHandle output, std::type_index type) const;
+    Result<std::vector<std::pair<ServiceKey, std::shared_ptr<detail::CommittedLease>>>>
+    inputs(std::type_index type) const;
     friend class ui::CommandService;
     friend class ui::NotificationService;
     friend class ui::OutputService;

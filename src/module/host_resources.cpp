@@ -152,6 +152,8 @@ CordisStatus NativeResources::allowed(bool cleanup) const
         if (!cleanup && (self->root->closing || self->root->faulted))
             return CORDIS_E_CLOSED;
     }
+    if (!cleanup && self->managed && !self->managed->identity().hasValue())
+        return CORDIS_E_CLOSED;
     auto target = self->root->scheduler.lock();
     return target && target->isOpen() ? CORDIS_OK : CORDIS_E_CLOSED;
 }
@@ -207,7 +209,7 @@ CordisStatus NativeResources::dispatch(CordisHandle callback, CordisBytesV1 payl
 }
 void NativeResources::dispatchOne(const std::shared_ptr<HostOperation>& op, CordisHandle callback)
 {
-    if (op->cancelled) {
+    if (op->cancelled || allowed(false) != CORDIS_OK) {
         deliver(op, CORDIS_E_CANCELLED);
         return;
     }
@@ -239,28 +241,36 @@ void NativeResources::deliver(const std::shared_ptr<HostOperation>& op, CordisSt
         return;
     op->delivering = true;
     auto self = owner.lock();
-    // The ACK is a distinct synchronous foreign entry, also permitted during draining.
-    auto ack = self->invoke(NativeRequestKind::Cleanup, "native.request_complete", [&](CordisRequestId) {
-        const auto returned =
-            self->root->record->api->table.request_complete(self->native, op->id, status, bytes(json));
-        return returned == CORDIS_PENDING ? CordisStatus{0x7fff} : returned;
-    });
-    auto resources = shared_from_this();
-    self->observe(ack, [resources, op](NativeInstanceControl& instance, const Result<NativeOutcome>& result) {
-        const auto state = instance.channel.snapshot();
-        if (!result.hasValue() || result.value().status != CORDIS_OK || !state.hasValue() || state.value().faulted) {
-            instance.quarantine(result.hasValue() ? hostError(ErrorCode::AbiProtocol, "native operation ACK rejected")
-                                                  : result.error());
+    // This synchronous ACK has no request of its own. The real call and final op capture still fence retirement.
+    auto call = self->root->source.ledger.acquire(ResourceKind::Call, "native.request_complete");
+    if (!call.hasValue()) {
+        self->quarantine(call.error());
+        return;
+    }
+    CordisStatus returned;
+    try {
+        returned = self->root->record->api->table.request_complete(self->native, op->id, status, bytes(json));
+    } catch (...) {
+        returned = 0x7fff;
+    }
+    call.value().reset();
+    const auto state = self->channel.snapshot();
+    {
+        std::lock_guard<std::mutex> lock(self->mutex);
+        if (self->uncertain)
             return;
-        }
-        resources->operations.erase(op->id);
-        if (resources->failure) {
-            instance.quarantine(*resources->failure);
-            return;
-        }
-        resources->checkClosed();
-        instance.advanceClose();
-    });
+    }
+    if (returned != CORDIS_OK || !state.hasValue() || state.value().faulted) {
+        self->quarantine(hostError(ErrorCode::AbiProtocol, "native operation ACK rejected"));
+        return;
+    }
+    operations.erase(op->id);
+    if (failure) {
+        self->quarantine(*failure);
+        return;
+    }
+    checkClosed();
+    self->advanceClose();
 }
 CordisStatus NativeResources::cancel(CordisRequestId request)
 {
@@ -569,5 +579,24 @@ bool NativeResources::cleanupServices() const
         if (effect.second->cleanupPending)
             return true;
     return false;
+}
+Task<void> NativeResources::ready() const
+{
+    std::vector<Task<void>> tasks;
+    for (const auto& value : effects)
+        if (!value.second->closed && !value.second->withdrawing)
+            tasks.push_back(value.second->token->ready());
+    if (tasks.empty())
+        return completedTask();
+    Promise<void> done;
+    auto remaining = std::make_shared<std::atomic_size_t>(tasks.size());
+    for (const auto& task : tasks)
+        cordis::detail::TaskAccess::observe(task, [done, remaining](Task<void>::Snapshot result) {
+            if (!result->hasValue())
+                done.reject(result->error());
+            if (remaining->fetch_sub(1) == 1)
+                done.resolve();
+        });
+    return done.task();
 }
 } // namespace cordis::module::detail

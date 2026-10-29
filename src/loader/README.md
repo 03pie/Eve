@@ -17,3 +17,5 @@ Q4c2 的 Cordis::ConfigKernel 已接入真实 Kernel：宿主类型目录、实�
 Q4e1 新增无 Qt 的 Cordis::ConfigSession，独占连接候选、Coordinator 和 Store：预览无副作用，候选绑定会话与基准修订，接受后同栈跟踪保存目标；期望启停修改配置路径，保存/退出明确区分运行和持久化。可选 Cordis::ConfigUi 和配置工作台在 UI 层消费此接口，普通 Ui SDK 不依赖 Loader。见 [ADR-0020](../../docs/adr/0020-configuration-session-ui.md)。
 
 Q4e2 已通过宿主协议统一 Home/管理路由，路径启停经 Session 而不直接停止配置实例，见 [ADR-0021](../../docs/adr/0021-configuration-management-routing.md)。Q4d3 已提供可选 Cordis::ConfigIoQt：私有串行后台读写、真实线程 join、文件/父目录监听恢复和自身版本消重；通知只提供外部原文，不自动接受目标。见 [ADR-0022](../../docs/adr/0022-configuration-background-io-watcher.md)。Q4c1 的受控驱动只验证协调协议，Q4c2 的真实 Kernel 场景单独验证资源/依赖闭环；候选、目标、运行和保存状态继续分离。
+
+P4-M3d1 新增宿主冻结的 PluginModule 目录：PluginDefinition 与 KernelPlugin 缺省仍为 builtin；原生模块由宿主先验证/装载，再固定插件标识、别名和 manifest 定位文本。校验器和驱动分别核对所有声明（包括未使用声明），预览不读取或执行 DLL。KernelPlugin.available 与 maximumDependencies 在启用/挂载前检查，失效模块仍可显式停用；Loader 不增加 Module/Qt 依赖。真实 NativeModule/Kernel/Session 夹具验证与使用边界见 [M3d1 记录](../../docs/p4-m3d1-development.md)；Q4b 的外部模块拒绝描述为其历史状态。

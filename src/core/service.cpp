@@ -323,9 +323,33 @@ Task<void> invokeService(const std::weak_ptr<BindingControl>& weak, const std::w
     catch (...) { call->observe(failedTask(makeError(ErrorCode::CallbackFailed, "async service callback threw"))); }
     return call->completed.task();
 }
+Result<BindingSnapshot> committedSnapshot(const std::shared_ptr<CommittedLease>& lease, std::type_index type)
+{
+    using Output = Result<BindingSnapshot>;
+    if (!lease || !lease->active)
+        return Output::failure(makeError(ErrorCode::StaleContext, "committed lease expired"));
+    auto binding = lease->binding;
+    if (!binding->scheduler->isCurrentThread())
+        return Output::failure(makeError(ErrorCode::WrongThread, "committed snapshot requires owner thread"));
+    if (binding->type != type)
+        return Output::failure(makeError(ErrorCode::DependencyVersion, "committed service type mismatch"));
+    return Output::success(binding->snapshot());
+}
 } // namespace cordis::detail
 
 namespace cordis {
+Result<void> ServiceRegistry::validateStaged(const ProviderHandle& output, std::type_index type,
+                                             InstanceId instance) const
+{
+    if (!control_->scheduler->isCurrentThread())
+        return Result<void>::failure(makeError(ErrorCode::WrongThread, "output adoption requires owner thread"));
+    const auto& binding = output.binding_;
+    if (!binding || binding->owner.lock() != control_ || binding->state != BindingState::Staged ||
+        binding->provider != instance || binding->type != type)
+        return Result<void>::failure(
+            makeError(ErrorCode::InvalidArgument, "foreign, published or incorrectly typed output"));
+    return Result<void>::success();
+}
 /** @brief 子实例尚未执行激活时登记所有权，不触发插件代码。 */
 void ServiceRegistry::attachParent(InstanceId child, InstanceId parent) const { control_->parents.emplace(child, parent); }
 /** @brief 确认静止后删除所有权边，不由句柄析构推断终结。 */

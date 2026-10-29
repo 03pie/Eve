@@ -31,6 +31,23 @@ Result<Runtime> Kernel::registerPlugin(std::string name, Runtime::Activate activ
     } catch (const std::invalid_argument& error) { return Result<Runtime>::failure(makeError(ErrorCode::InvalidArgument, error.what())); }
 }
 
+Result<Runtime> Kernel::registerRuntime(std::string name, const Runtime& runtime)
+{
+    if (!scheduler_->isCurrentThread())
+        return Result<Runtime>::failure(makeError(ErrorCode::WrongThread, "register requires owner thread"));
+    if (closing_)
+        return Result<Runtime>::failure(makeError(ErrorCode::ContextClosing, "kernel closing"));
+    if (!scheduler_->isOpen())
+        return Result<Runtime>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
+    if (name.empty() || !runtime.id().valid() || runtimes_.count(name))
+        return Result<Runtime>::failure(makeError(ErrorCode::InvalidArgument, "invalid or duplicate runtime"));
+    for (const auto& entry : runtimes_)
+        if (entry.second.id() == runtime.id())
+            return Result<Runtime>::failure(makeError(ErrorCode::InvalidArgument, "runtime already registered"));
+    runtimes_.emplace(std::move(name), runtime);
+    return Result<Runtime>::success(runtime);
+}
+
 /** @brief 拒绝其他内核的运行时，并在激活前保存实例句柄。 */
 Result<Instance> Kernel::mount(const Runtime& runtime, std::string config, RealmMap realms,
                                std::vector<ServiceRequirement> additionalDependencies)

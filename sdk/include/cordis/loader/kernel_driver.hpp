@@ -17,6 +17,11 @@ struct KernelPlugin {
     Runtime runtime;
     /** @brief 可按需追加的依赖类型/原始域及最低要求；未列入的新增接口在接受前拒绝。 */
     std::vector<ServiceRequirement> configurableInject{};
+    /** @brief 冻结模块目录，只匹配来源文本；预览不能装载或重指向产物。 */
+    PluginModule module{};
+    /** @brief 宿主只读激活门禁，不能执行插件；禁用项仍可被停用。 */
+    std::function<Result<void>()> available{};
+    std::size_t maximumDependencies = 0;
 };
 namespace detail {
 struct KernelDriverControl;

@@ -32,6 +32,8 @@ public:
     Kernel& operator=(const Kernel&) = delete;
     /** @brief 按名称登记插件；重复名称、关闭或错误线程返回错误。 */
     Result<Runtime> registerPlugin(std::string name, Runtime::Activate activate, std::vector<ServiceRequirement> dependencies = {}, std::vector<ServiceOutput> outputs = {});
+    /** @brief 登记宿主已创建的定义并保留 RuntimeId；拒绝重复名称或身份。 */
+    Result<Runtime> registerRuntime(std::string name, const Runtime& runtime);
     /** @brief 获取共享索引的宿主句柄，用于隔离域配置和诊断。 */
     ServiceRegistry services() const { return *services_; }
     /** @brief 挂载已登记 Runtime；附加类型化依赖只能增加或收紧本实例的要求。 */

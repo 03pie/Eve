@@ -567,6 +567,74 @@ Result<BindingId> Context::provideErased(ServiceKey key, std::shared_ptr<void> o
     return self->provide(realms_.resolve(std::move(key)), std::move(object), type);
 }
 
+Result<ServiceRegistry> Context::managedRegistry() const
+{
+    auto self = control_.lock();
+    if (!self || !self->services)
+        return Result<ServiceRegistry>::failure(makeError(ErrorCode::StaleContext, "managed registry unavailable"));
+    auto allowed = self->business(epoch_);
+    return allowed.hasValue() ? Result<ServiceRegistry>::success(*self->services)
+                              : Result<ServiceRegistry>::failure(allowed.error());
+}
+Result<void> Context::adoptOutput(ProviderHandle output, std::type_index type) const
+{
+    auto self = control_.lock();
+    if (!self)
+        return Result<void>::failure(makeError(ErrorCode::StaleContext, "instance expired"));
+    auto allowed = self->business(epoch_);
+    if (!allowed.hasValue())
+        return allowed;
+    if (!self->services || self->state != InstanceState::Loading)
+        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "adoption requires managed activation"));
+    auto valid = self->services->validateStaged(output, type, self->id);
+    if (!valid.hasValue())
+        return valid;
+    const auto snapshot = output.snapshot().value();
+    auto found =
+        std::find_if(self->declarations.begin(), self->declarations.end(), [&](const ServiceOutput& declaration) {
+            const auto resolved = realms_.resolve(declaration.key);
+            return !(resolved < snapshot.key) && !(snapshot.key < resolved);
+        });
+    if (found == self->declarations.end() || found->type != type || found->metadata.minor != snapshot.metadata.minor) {
+        auto error = makeError(ErrorCode::ProvisionIncomplete, "undeclared or mismatched native output");
+        self->provisionError = error;
+        return Result<void>::failure(error);
+    }
+    auto actual = snapshot.metadata.capabilities, expected = found->metadata.capabilities;
+    std::sort(actual.begin(), actual.end());
+    std::sort(expected.begin(), expected.end());
+    if (actual != expected) {
+        auto error = makeError(ErrorCode::ProvisionIncomplete, "native output capabilities differ from declaration");
+        self->provisionError = error;
+        return Result<void>::failure(error);
+    }
+    for (const auto& existing : self->outputs)
+        if (existing.snapshot().value().id == snapshot.id)
+            return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "output already adopted"));
+    self->outputs.push_back(std::move(output));
+    return Result<void>::success();
+}
+Result<std::vector<std::pair<ServiceKey, std::shared_ptr<detail::CommittedLease>>>>
+Context::inputs(std::type_index type) const
+{
+    using Output = Result<std::vector<std::pair<ServiceKey, std::shared_ptr<detail::CommittedLease>>>>;
+    auto self = control_.lock();
+    if (!self)
+        return Output::failure(makeError(ErrorCode::StaleContext, "instance expired"));
+    auto allowed = self->business(epoch_);
+    if (!allowed.hasValue())
+        return Output::failure(allowed.error());
+    std::vector<std::pair<ServiceKey, std::shared_ptr<detail::CommittedLease>>> result;
+    for (const auto& lease : self->committed) {
+        auto view = detail::committedSnapshot(lease, type);
+        if (view.hasValue())
+            result.emplace_back(view.value().key, lease);
+        else if (view.error().code != ErrorCode::DependencyVersion)
+            return Output::failure(view.error());
+    }
+    return Output::success(std::move(result));
+}
+
 /** @brief 消费托管索引，不允许无注册表实例假定存在默认服务。 */
 Result<std::shared_ptr<detail::CommittedLease>> Context::consumeManaged(const ServiceKey& key, std::type_index type) const
 {

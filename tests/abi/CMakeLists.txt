@@ -102,7 +102,7 @@ if(TARGET cordis_module_native)
     target_link_libraries(cordis_fixture_dependent PRIVATE cordis_fixture_dependency)
 
     add_executable(cordis_module_native_tests "${PROJECT_SOURCE_DIR}/tests/qt/module_native.cpp")
-    target_link_libraries(cordis_module_native_tests PRIVATE Cordis::ModuleNative Cordis::ModuleAbi Cordis::ModuleHost Qt5::Core)
+    target_link_libraries(cordis_module_native_tests PRIVATE Cordis::ModuleNative Cordis::ModuleAbi Cordis::ModuleHost Cordis::ConfigKernel Cordis::ConfigSession Qt5::Core)
     set_target_properties(cordis_module_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     cordis_target_defaults(cordis_module_native_tests)
     foreach(name IN ITEMS good business business_throw resources services services_peer blocking bad_header bad_identity bad_reserved bad_null rejected short_table bad_runtime bad_flags bad_catalog bad_span missing throwing dependent dependency)
@@ -116,7 +116,10 @@ if(TARGET cordis_module_native)
         resource_effects resource_cleanup_pending resource_setup_pending resource_explicit_cleanup resource_explicit_failure resource_cleanup_failure
         resource_guards resource_duplicate_ready resource_ack_protocol resource_discard resource_close_during_cleanup resource_retire resource_effect_reuse resource_expired_scheduler
         service_sync service_early service_async service_publication service_start_failure service_guards service_realms service_withdraw service_cleanup service_cancel_queued service_cancel_pending service_limits service_shared
-        service_budget service_cancel_protocol service_effect_barrier service_cycle service_retire service_cleanup_failure)
+        service_budget service_cancel_protocol service_effect_barrier service_cycle service_retire service_cleanup_failure
+        managed_flow managed_publication managed_setup_cancel managed_key managed_cleanup managed_guards
+        managed_realms managed_stale_dispatch managed_session
+        managed_metadata managed_undeclared managed_setup_failure managed_scheduler managed_index managed_generation managed_incoming_budget managed_ack_capacity)
         add_test(NAME p4.native_${case} COMMAND "${CMAKE_COMMAND}"
             "-DTEST_EXE=$<TARGET_FILE:cordis_module_native_tests>"
             "-DFIXTURES=$<TARGET_FILE_DIR:cordis_fixture_good>"

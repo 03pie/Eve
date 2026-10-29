@@ -10,6 +10,11 @@
 #include <vector>
 
 namespace cordis::loader {
+/** @brief 宿主在产物校验后冻结的模块归属；builtin 的 manifest 必须为空。 */
+struct PluginModule {
+    std::string alias = "builtin";
+    std::string manifest;
+};
 /** @brief 配置中附加或收紧的依赖声明；接口类型由后续插件定义校验确定。 */
 struct InjectSpec {
     std::string name;

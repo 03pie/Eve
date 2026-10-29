@@ -107,3 +107,22 @@ M3c1 的资源桥验证不替代 M3c2 服务或 Kernel/Session 联合验收；�
 | M3c2-11 | ACK 后仍有投递副本时不静止，最后捕获跨线程释放 | p4.native_service_retire |
 
 M3c2 记录见 [服务桥验证](../../docs/p4-m3c2-development.md)。这些 DLL 为回归夹具，M3d 的业务服务 DLL、Kernel/Session 配置激活和完整退出链，以及 M4 UI DLL 仍须另验；不声明 P4 整体完成或物理卸载安全。
+
+
+## M3d1 Core 托管与冻结配置目录
+
+2026-10-29：在远端优先合并基线 d6d003f 上扩展既有 NativeServices。以下为真实 C DLL 夹具、FakeScheduler 和受控内存 writer 的自动化证据；Session 保存不宣称真实磁盘 I/O，业务服务 DLL 与原生 Qt 事件循环/S06/S07 完整退出由 M3d2 另验。
+
+| 编号 | 场景 | 自动化依据 |
+|---|---|---|
+| M3d1-01 | Runtime 身份登记、重复/已移动定义、owner/关闭门禁 | p4.catalog_registration |
+| M3d1-02 | 冻结目录、未用模块声明、重指向、schema 前拒绝与 YAML 位置 | p4.catalog_catalog |
+| M3d1-03 | 启用门禁、抛错、失效模块停用、依赖限额 | p4.catalog_availability / budget |
+| M3d1-04 | Core 激活、借用输入不重复计数、异步调用及完整清理 | p4.native_managed_flow |
+| M3d1-05 | start/setup 发布屏障、取消及失败回滚 | p4.native_managed_publication / setup_cancel / setup_failure |
+| M3d1-06 | Retiring 服务键保留、旧绑定首次清理调用、epoch 取消 ACK | p4.native_managed_key / cleanup / stale_dispatch |
+| M3d1-07 | 声明/元数据验证、晚登记、realm 与 scheduler/索引归属 | p4.native_managed_guards / undeclared / metadata / realms / scheduler / index |
+| M3d1-08 | 提供者代次隔离、普通业务超限与恢复、满额同步 ACK | p4.native_managed_generation / incoming_budget / ack_capacity |
+| M3d1-09 | 真实 NativeModule→Kernel→Session、额外 inject、预览/CAS/保存/移除/退出 | p4.native_managed_session |
+
+最终 Release 全量 606/606、GCC 245/245、Debug/ASan Core/P4 各 260/260；关闭示例 P4 138/138 后恢复 ON。六项关键托管场景在 Debug/ASan 各连续 20 次通过，29 项源码/构建快照、15 个 ASan 编译命令、8 个独立 SDK 头和依赖边界核对通过。日志索引和红绿复现见 [开发记录](../../docs/p4-m3d1-development.md)。M3d1 完成不代表 M3d/M4、整个 P4 或物理卸载完成。

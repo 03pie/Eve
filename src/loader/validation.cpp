@@ -1,8 +1,9 @@
 /** @file validation.cpp
  * @brief 以内置定义和无业务副作用 schema 校验配置，合并依赖时保留定义要求。
  */
-#include <cordis/loader/yaml.hpp>
+#include "module_catalog_p.hpp"
 #include <algorithm>
+#include <cordis/loader/yaml.hpp>
 #include <exception>
 
 namespace cordis::loader {
@@ -43,9 +44,8 @@ Result<ValidatedCandidate> validateCandidate(ParsedConfiguration source, std::ve
 {
     if (!source.isValid())
         return Result<ValidatedCandidate>::failure(errorAt(source, "loader.definition", "parsed configuration was moved from"));
-    if (!source.structure().modules().empty())
-        return Result<ValidatedCandidate>::failure(errorAt(source, "loader.definition", "external modules require P4 artifact validation"));
     std::map<std::string, PluginDefinition> catalog;
+    std::map<std::string, PluginModule> modules;
     for (auto& definition : definitions) {
         Document probe;
         EntrySpec value;
@@ -56,12 +56,16 @@ Result<ValidatedCandidate> validateCandidate(ParsedConfiguration source, std::ve
             return Result<ValidatedCandidate>::failure(errorAt(source, "loader.definition", "invalid, duplicate or schema-less plugin definition"));
         definition.requiredInject = checked.value().entries().begin()->second.inject;
         const auto id = definition.id;
+        modules.emplace(id, definition.module);
         catalog.emplace(id, std::move(definition));
     }
-    // 完成所有条目的定义预检后才进入 schema，避免未知插件出现在后部时已经执行前项校验。
-    for (const auto& entry : source.structure().entries())
-        if (entry.second.module != "builtin" || !catalog.count(entry.second.plugin))
-            return Result<ValidatedCandidate>::failure(errorAt(source, "loader.definition", "unknown builtin plugin: " + entry.second.plugin, entry.first));
+    auto declarations = detail::checkModuleCatalog(modules);
+    if (!declarations.hasValue())
+        return Result<ValidatedCandidate>::failure(errorAt(source, "loader.definition", declarations.error().message));
+    auto bindings = detail::checkModuleBindings(source.structure(), modules);
+    if (!bindings.hasValue())
+        return Result<ValidatedCandidate>::failure(errorAt(source, "loader.definition", bindings.error().message,
+                                                           bindings.error().entryPath.value_or(std::string{})));
     std::map<std::string, std::vector<InjectSpec>> inject;
     for (const auto& entry : source.structure().entries()) {
         const auto& definition = catalog.at(entry.second.plugin);

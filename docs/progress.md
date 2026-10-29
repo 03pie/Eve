@@ -1,12 +1,14 @@
 # 开发进度
 
-最后更新：2026-10-29（北京时间）。当前工作区：`D:/WorkSpace/code/cpp/Eve`。
+最后更新：2026-10-29（北京时间）。当前工作区：`D:/01_C++/Eve`。
 
 本文件是项目进度的统一入口，记录实际状态；设计细节见说明书，任务完成条件见工作单，测试依据见验收规范和验证报告。代码行数、文档篇幅和测试数量不作为项目完成百分比。
 
 ## 当前状态
 
-**P1/P2/P3 及 UI 专项已完成（当前内置插件/Windows 支持矩阵）。P4-M1 为 59b7c76、M2a 为 249a425、M2b 为 fed5a51，均已审核提交。当前 M3 进行中：M3a 已提交（1ffa0ff），M3b 为 f32191b，M3c1 为 e9c89dd；M3c2 真实服务桥已完成审查修复和最终验证，随本提交归档。M3d Kernel/Session 与业务服务 DLL 联合接入、M4 UI DLL 待实施，P5 未开始。**
+**P1/P2/P3 及 UI 专项已完成（当前内置插件/Windows 支持矩阵）。P4-M1 为 59b7c76、M2a 为 249a425、M2b 为 fed5a51，均已审核提交。当前 M3 进行中：M3a 已提交（1ffa0ff），M3b 为 f32191b，M3c1 为 e9c89dd；M3c2 真实服务桥已完成审查修复和最终验证，随本提交归档。M3d1 Core 托管与 Kernel/Session 目录接入已完成审查修复与最终验证，随本提交归档；M3d2 业务服务 DLL/真实 Qt 联合退出与 M4 UI DLL 待实施，P5 未开始。**
+
+2026-10-29 M3d1：以远端优先合并后的 d6d003f 为基线，沿用已有 NativeServices/open/create，新增 Core 托管 Runtime、冻结输出/输入、Kernel 身份登记及配置目录。Kernel/Session、额外 inject、realm、回滚和关闭的 17 项真实 DLL 场景与 4 项无 Qt 场景已实现；复现修复 epoch/键/代次/容量门禁及低层回执兼容。最终 Release 606/606、Debug/ASan Core/P4 各 260/260、GCC 245/245、关闭示例 P4 138/138；六项关键场景在 Debug/ASan 各连续 20 次通过，29 项源/构建快照与 SDK/依赖审计通过。见 [M3d 分段](p4-m3d-development.md)、[本段记录](p4-m3d1-development.md)及 [ADR-0036](adr/0036-managed-native-runtime.md)。本轮不等同于业务 DLL 示例、真实 Qt 事件循环或整个 P4 完成。
 
 2026-10-29 M3c2：生产 HostTable 开启真实服务注册/撤回/调用，复用 Core committed 租约、精确 realm、版本/能力、依赖环及旧绑定清理；支持显式共享索引下两个真实 C DLL 互调。审查复现并修复“受理超限残留租约”和“取消协议异常遗漏隔离提供者”两项 P2，红测试 0/2、服务专项 19/19。最终 Debug/Release 各 585/585、GCC 241/241、ASan P4/W4/W5 152/152、关闭示例 P4 117/117；16 项源码哈希及 8 个 ASan 编译命令核对通过。见 [服务桥记录](p4-m3c2-development.md)、[决策](adr/0035-native-services.md)和[审查](code-review.md#p4-m3c2-原生服务桥提交前审核)。M3c 完成不代替 M3d 的配置驱动业务服务 DLL 和 Kernel/Session 完整退出验收。
 
@@ -75,7 +77,7 @@ Qt 5.15.2 Core/Widgets/Test 已就绪，本机入口见 [开发环境](developme
 | P2 响应式服务依赖 | 已完成（首阶段内置范围） | W4/W5/W7 联合闭环通过；跨 ABI、物理卸载及替换不在本轮 |
 | P3 Qt / Loader / Ela | 已完成（当前支持矩阵） | L01–L04/Q01/U01/S05/S08/S10 及真实装配检查通过；Q4d3 已获本次用户确认，Home 手动路径/原生 150% 代理复核通过，见 [收口审计](p3-closeout.md)；不补造系统 DPI/跨屏证据 |
 | UI 设计与优化（独立专项） | 已完成（当前支持矩阵） | UI-S0–S4 与 UI-00–07 已完成，原生 32/32、三次用户确认和最终审计归档；跨屏未覆盖，见 [阶段计划](ui-special-stages.md)及[增量验证](ui-structure-verification.md) |
-| P4 原生插件模块 | 进行中 | M1/M2、M3a/M3b/M3c 请求、生命周期及真实资源/服务桥已完成；M3d Kernel/Session 与业务服务 DLL 联合验收、M4 UI DLL 待实施，见 [阶段记录](p4-development.md) |
+| P4 原生插件模块 | 进行中 | M1/M2、M3a/M3b/M3c 请求、生命周期及真实资源/服务桥已完成；M3d1 Core/配置目录已完成，M3d2 业务 DLL/真实 Qt 联合验收与 M4 UI DLL 待实施，见 [阶段记录](p4-development.md) |
 | P5 受控替换 | 未开始 | 新旧代替换、恢复和卸载专项验证待实现 |
 
 ## UI 设计与优化专项

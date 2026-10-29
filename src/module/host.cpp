@@ -384,9 +384,14 @@ Task<NativeOutcome> NativeInstanceControl::invoke(NativeRequestKind kind, const 
 {
     auto ticket = channel.begin(kind, label);
     if (!ticket.hasValue()) {
-        quarantine(ticket.error());
         Promise<NativeOutcome> failed;
-        failed.reject(ticket.error());
+        if ((kind == NativeRequestKind::Invoke || kind == NativeRequestKind::Callback) &&
+            ticket.error().code == ErrorCode::ModulePinned)
+            failed.resolve({CORDIS_E_LIMIT, {}, false});
+        else {
+            quarantine(ticket.error());
+            failed.reject(ticket.error());
+        }
         return failed.task();
     }
     CordisStatus status;
@@ -610,12 +615,22 @@ Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id,
 }
 Result<NativeInstance> NativeModule::create(std::string plugin, std::string config, InstanceId id, Epoch epoch) const
 {
+    return createBound(std::move(plugin), std::move(config), id, epoch, nullptr);
+}
+Result<NativeInstance> NativeModule::createBound(std::string plugin, std::string config, InstanceId id, Epoch epoch,
+                                                 const Context* context) const
+{
     auto root = control_;
     if (!root->ownerThread())
         return Result<NativeInstance>::failure(hostError(ErrorCode::WrongThread, "native host owner required"));
     auto scheduler = root->scheduler.lock();
     if (!scheduler || !scheduler->isOpen())
         return Result<NativeInstance>::failure(hostError(ErrorCode::SchedulerClosed, "native scheduler is closed"));
+    if (context) {
+        auto guard = context->eventGuard(scheduler);
+        if (!guard.hasValue())
+            return Result<NativeInstance>::failure(guard.error());
+    }
     if (!id.valid() || epoch == 0 || config.size() > CORDIS_MAX_JSON_BYTES || !validAbiJson(config) ||
         std::find(root->record->api->plugins.begin(), root->record->api->plugins.end(), plugin) ==
             root->record->api->plugins.end())
@@ -639,6 +654,8 @@ Result<NativeInstance> NativeModule::create(std::string plugin, std::string conf
     auto self = std::make_shared<NativeInstanceControl>(root, scheduler, std::move(plugin), id, epoch,
                                                         std::move(lease.value()));
     self->resources = std::make_shared<NativeResources>(self, scheduler);
+    if (context)
+        self->managed = *context;
     {
         auto& directory = registry();
         std::lock_guard<std::mutex> lock(directory.mutex);
@@ -650,6 +667,41 @@ Result<NativeInstance> NativeModule::create(std::string plugin, std::string conf
     {
         std::lock_guard<std::mutex> lock(root->mutex);
         root->instances.emplace(self->channel.context(), self);
+    }
+    if (context) {
+        auto bound = self->resources->services->bind(*context);
+        if (!bound.hasValue()) {
+            discardUncreated(self);
+            return Result<NativeInstance>::failure(bound.error());
+        }
+        std::weak_ptr<NativeInstanceControl> weak = self;
+        auto cleanup = context->onCleanup(
+            [weak](CleanupContext) {
+                auto value = weak.lock();
+                if (!value)
+                    return completedTask();
+                value->managedClosing = true;
+                auto closed = NativeInstance(value).close();
+                Promise<void> done;
+                cordis::detail::TaskAccess::observe(closed, [done](Task<CleanupReport>::Snapshot result) {
+                    if (result->hasValue() && result->value().quiescent)
+                        done.resolve();
+                    else {
+                        auto error = hostError(ErrorCode::CleanupFailed, "managed native instance did not quiesce");
+                        if (result->hasValue())
+                            error.causes = result->value().errors;
+                        else
+                            error.causes.push_back(result->error());
+                        done.reject(std::move(error));
+                    }
+                });
+                return done.task();
+            },
+            "native.instance");
+        if (!cleanup.hasValue()) {
+            discardUncreated(self);
+            return Result<NativeInstance>::failure(cleanup.error());
+        }
     }
     auto call = root->source.ledger.acquire(ResourceKind::Call, "native.create");
     if (!call.hasValue()) {
@@ -752,27 +804,52 @@ Task<void> NativeInstance::start() const
             instance.startSettled = true;
             instance.startWire.reset();
             closing = instance.closing;
-            instance.state = closing ? NativeInstanceState::Stopping
-                                     : (error ? NativeInstanceState::Failed : NativeInstanceState::Started);
-            if (error)
-                instance.failure = *error;
         }
-        if (!error)
-            instance.resources->services->publishReady();
-        if (error)
-            instance.started.reject(*error);
-        else
-            instance.started.resolve();
+        if (instance.managed && !error) {
+            instance.observe(instance.resources->ready(), [](NativeInstanceControl& value, const Result<void>& ready) {
+                value.settleStart(ready.hasValue() ? std::optional<ErrorInfo>{}
+                                                   : std::optional<ErrorInfo>{ready.error()});
+            });
+        } else {
+            instance.settleStart(error);
+        }
         if (closing)
             instance.advanceClose();
     });
     return self->started.task();
+}
+void NativeInstanceControl::settleStart(std::optional<ErrorInfo> error)
+{
+    bool stop;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (uncertain || state == NativeInstanceState::Destroyed)
+            return;
+        stop = closing;
+        if (!closing) {
+            state = error ? NativeInstanceState::Failed : NativeInstanceState::Started;
+            if (error)
+                failure = *error;
+        }
+    }
+    if (stop && managed)
+        started.reject(hostError(ErrorCode::OperationCancelled, "native start closing"));
+    else if (error)
+        started.reject(*error);
+    else {
+        resources->services->publishReady();
+        started.resolve();
+    }
+    if (stop)
+        advanceClose();
 }
 Task<CleanupReport> NativeInstance::close() const
 {
     auto self = control_;
     if (!self->ownerThread())
         return failedCleanupTask(hostError(ErrorCode::WrongThread, "native instance owner required"));
+    if (self->managed && !self->managedClosing)
+        return failedCleanupTask(hostError(ErrorCode::ContextClosing, "close the owning Core instance first"));
     auto scheduler = self->root->scheduler.lock();
     if (!scheduler || !scheduler->isOpen()) {
         self->quarantine(hostError(ErrorCode::SchedulerClosed, "native scheduler is closed"));
@@ -790,6 +867,8 @@ Task<CleanupReport> NativeInstance::close() const
         pending = self->startIssued && !self->startSettled && self->startReturn == CORDIS_PENDING && self->startWire &&
                   !self->startWire->isReady();
     }
+    if (self->managed)
+        self->started.reject(hostError(ErrorCode::OperationCancelled, "managed native instance closing"));
     self->resources->cancelBusiness();
     auto closed = self->channel.close();
     if (!closed.hasValue()) {
@@ -846,6 +925,9 @@ Task<CleanupReport> NativeModule::close() const
         std::lock_guard<std::mutex> lock(root->mutex);
         if (root->closing)
             return root->stopped.task();
+        for (const auto& pair : root->instances)
+            if (pair.second->managed && !pair.second->managedClosing)
+                return failedCleanupTask(hostError(ErrorCode::ContextClosing, "close owning Core instances first"));
         root->closing = true;
         for (const auto& pair : root->instances)
             instances.push_back(pair.second);

@@ -15,11 +15,13 @@ struct NativeServiceEndpoint : std::enable_shared_from_this<NativeServiceEndpoin
     ModuleLease lease;
     std::function<void()> retired;
     ~NativeServiceEndpoint();
+    void detach();
 };
 struct NativeServices : std::enable_shared_from_this<NativeServices> {
     explicit NativeServices(std::weak_ptr<NativeInstanceControl> instance) : owner(std::move(instance)) {}
     static bool uses(const ServiceRegistry& registry, const std::shared_ptr<IScheduler>& scheduler);
     static bool same(const ServiceRegistry& first, const ServiceRegistry& second);
+    Result<void> bind(const Context& context);
     CordisStatus add(CordisHandle effect, const CordisServiceKeyV1* key, const CordisServiceMetadataV1* metadata,
                      CordisHandle token, CordisHandle* output);
     CordisStatus withdraw(CordisHandle binding, CordisRequestId* output);

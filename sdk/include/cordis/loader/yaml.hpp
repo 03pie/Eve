@@ -69,6 +69,7 @@ struct PluginDefinition {
     std::string id;
     std::vector<InjectSpec> requiredInject;
     std::function<Result<void>(const std::string&)> validateConfig;
+    PluginModule module{};
 };
 /** @brief 内置插件定义/schema 校验完成的目标；不保留回调、Runtime 或实例。 */
 class ValidatedCandidate {

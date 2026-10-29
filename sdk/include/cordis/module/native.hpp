@@ -7,7 +7,12 @@
 #include <cordis/service.hpp>
 #include <optional>
 
+namespace cordis {
+class Runtime;
+class Context;
+} // namespace cordis
 namespace cordis::module {
+struct NativePlugin;
 class ModuleManager;
 namespace detail {
 struct NativeModuleControl;
@@ -72,12 +77,17 @@ public:
      * 活动模块一旦使用索引就不能切换；默认索引不提供与其他模块的隐式连接。
      */
     static Result<NativeModule> open(ModuleManager& manager, GenerationId generation,
-                                     std::shared_ptr<IScheduler> scheduler, std::optional<ServiceRegistry> services = {});
+                                     std::shared_ptr<IScheduler> scheduler,
+                                     std::optional<ServiceRegistry> services = {});
     Result<NativeInstance> create(std::string pluginId, std::string configJson, InstanceId instance, Epoch epoch) const;
+    /** @brief 创建 Core 托管定义；契约见 runtime.hpp，不改变低层 create 的行为。 */
+    Result<Runtime> runtime(NativePlugin plugin) const;
     Task<CleanupReport> close() const;
     Result<NativeModuleSnapshot> snapshot() const;
 
 private:
+    Result<NativeInstance> createBound(std::string pluginId, std::string configJson, InstanceId instance, Epoch epoch,
+                                       const Context* context) const;
     explicit NativeModule(std::shared_ptr<detail::NativeModuleControl> control) : control_(std::move(control)) {}
     std::shared_ptr<detail::NativeModuleControl> control_;
 };

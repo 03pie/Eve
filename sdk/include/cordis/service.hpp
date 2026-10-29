@@ -100,6 +100,10 @@ struct BindingSnapshot {
     ServiceMetadata metadata;
     bool deliveryBlocked;
 };
+namespace detail {
+/** @brief 适配器只读检查已提交绑定的键和类型，不建立或释放保留。 */
+Result<BindingSnapshot> committedSnapshot(const std::shared_ptr<CommittedLease>& lease, std::type_index type);
+} // namespace detail
 
 /** @brief 非拥有的业务引用，每次同步调用重新检查绑定门禁。 */
 template<class T> class ServiceRef {
@@ -199,6 +203,7 @@ private:
     Result<void> checkDeclarations(InstanceId instance) const;
     /** @brief 检查托管实例与索引是否归属同一调度器。 */
     bool usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const;
+    Result<void> validateStaged(const ProviderHandle& output, std::type_index type, InstanceId instance) const;
     /** @brief 检查隔离域是否属于本注册表，不创建新域。 */
     bool containsRealm(RealmId realm) const;
     /** @brief 弱登记索引变化通知，回调始终经 scheduler 排队。 */

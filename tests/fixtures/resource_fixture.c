@@ -15,6 +15,9 @@ typedef struct ResourceInstance {
     uint64_t size;
     unsigned stops;
 #ifdef FIXTURE_SERVICES
+    CordisRequestId held[300];
+    unsigned char held_cancelled[300];
+    unsigned held_count;
     CordisRequestId cleanup_waiting, cleanup_operation;
     CordisStatus cleanup_result;
     int cleanup_ready, start_pending, start_fail;
@@ -86,7 +89,11 @@ static CordisStatus CORDIS_CALL stop(CordisHandle id, CordisRequestId request)
     ResourceInstance* value = find(id);
     if (!value || !request)
         return CORDIS_E_INVALID_ARGUMENT;
-    if (value->pending)
+    if (value->pending
+#ifdef FIXTURE_SERVICES
+        || value->held_count
+#endif
+    )
         return CORDIS_E_BUSY;
     ++value->stops;
     value->started = 0;
@@ -97,7 +104,11 @@ static CordisStatus CORDIS_CALL destroy(CordisHandle id)
     ResourceInstance* value = find(id);
     if (!value)
         return CORDIS_E_NOT_FOUND;
-    if (value->pending || value->started)
+    if (value->pending || value->started
+#ifdef FIXTURE_SERVICES
+        || value->held_count
+#endif
+    )
         return CORDIS_E_BUSY;
     /* Keep host-side test diagnostics, but never expose the instance as alive. */
     value->id = 0;
@@ -106,6 +117,15 @@ static CordisStatus CORDIS_CALL destroy(CordisHandle id)
 static CordisStatus CORDIS_CALL cancel(CordisHandle id, CordisRequestId request)
 {
     ResourceInstance* value = find(id);
+#ifdef FIXTURE_SERVICES
+    unsigned i;
+    if (value)
+        for (i = 0; i < value->held_count; ++i)
+            if (value->held[i] == request) {
+                value->held_cancelled[i] = 1;
+                return CORDIS_OK;
+            }
+#endif
     if (!value || value->pending != request)
         return CORDIS_E_NOT_FOUND;
 #ifdef FIXTURE_SERVICES
@@ -237,6 +257,19 @@ CORDIS_EXPORT unsigned CORDIS_CALL cordis_business_fixture_finish_all(void)
     for (i = 0; i < 4; ++i) {
         ResourceInstance* value = slot(i);
 #ifdef FIXTURE_SERVICES
+        if (value && value->held_count) {
+            unsigned j;
+            const CordisBytesV1 empty = {0, 0};
+            for (j = 0; j < value->held_count; ++j)
+                if (value->held[j] &&
+                    host->complete(value->context, value->held[j],
+                                   value->held_cancelled[j] ? CORDIS_E_CANCELLED : CORDIS_OK, empty) == CORDIS_OK) {
+                    value->held[j] = 0;
+                    ++count;
+                }
+            while (value->held_count && !value->held[value->held_count - 1])
+                --value->held_count;
+        }
         if (value && value->cleanup_waiting && value->cleanup_ready) {
             const CordisBytesV1 empty = {0, 0};
             if (host->complete(value->context, value->cleanup_waiting, value->cleanup_result, empty) == CORDIS_OK) {
@@ -308,8 +341,19 @@ CORDIS_EXPORT CordisBytesV1 CORDIS_CALL cordis_resource_result(unsigned index)
 static CordisStatus CORDIS_CALL invoke_service(CordisHandle id, CordisHandle token, CordisBytesV1 method,
                                                CordisBytesV1 payload, CordisRequestId request)
 {
+    ResourceInstance* value = find(id);
     if (!method.size || !method.data)
         return CORDIS_E_INVALID_ARGUMENT;
+    if (token == 10) {
+        if (!value || !value->started || !request)
+            return CORDIS_E_CLOSED;
+        if (value->held_count >= 300)
+            return CORDIS_E_LIMIT;
+        value->held_cancelled[value->held_count] = 0;
+        value->held[value->held_count++] = request;
+        ++value->calls;
+        return CORDIS_PENDING;
+    }
     return dispatch(id, token, payload, request);
 }
 CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_service_register(unsigned index, CordisHandle effect,

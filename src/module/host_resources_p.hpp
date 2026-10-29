@@ -34,6 +34,7 @@ struct NativeResources : std::enable_shared_from_this<NativeResources> {
     bool empty() const;
     void cancelBusiness();
     Task<void> close();
+    Task<void> ready() const;
     Result<ScopeSnapshot> snapshot() const;
     std::size_t pending() const { return operations.size(); }
     std::shared_ptr<NativeServices> services;

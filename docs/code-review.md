@@ -1,5 +1,17 @@
 # 提交前代码审查记录
 
+## P4-M3d1 Core 托管与配置目录提交前审核
+
+日期：2026-10-29。基线 d6d003f。范围为 Core 私有适配门禁、NativeModule.runtime、Kernel 身份登记、冻结模块目录及 17 项真实 DLL/4 项无 Qt 回归；沿用远端低层 open/create 和 NativeServices。由当前代理审核，未使用子代理。
+
+复现并修复六类问题：低层启动回执被新关闭语义误改；Core 停用后排队回调仍进入 DLL；异步清理提前释放 Core 服务键；提供者代次故障未阻止健康实例继续受理业务；普通 invoke/dispatch 配额耗尽误隔离健康模块；同步 ACK 额外申请异步请求导致满额时不能交付。回归分别验证低层兼容、执行前 epoch 门禁、Core 最终释放键、代次受理/执行双检查、LIMIT 拒绝与恢复，以及实际 CallLease/捕获屏障下不占请求预算的同步 ACK。红测日志及各项修复映射见 [M3d1 记录](p4-m3d1-development.md)。
+
+质量检查覆盖输出声明及元数据回滚、初始 setup 发布/取消/失败、只借用 Core 已提交输入与旧绑定清理、realm/owner/scheduler/索引约束、Session 预览不执行 DLL、模块目录不能被配置重指向、失效模块仍可停用。新测试头显式包含基础夹具，避免格式化改变包含顺序后编译失败；未修改警告或测试超时。Core/Loader 无 Module/Qt/Windows 反向实现依赖，C++ 宿主描述不跨 C ABI。
+
+最终原目录 MSVC Release 606/606、无 Qt GCC 245/245、Debug/ASan Core/P4 各 260/260、原 Release 关闭示例 P4 138/138 并恢复 ON。cleanup/session/key/generation/incoming_budget/ack_capacity 在 Debug/ASan 各连续 20 次，共各 120 次通过。29 项源/构建哈希、15 个受影响 C/C++ ASan 编译命令、8 个 SDK 头的两编译器独立编译、格式/编码/差异/文档/依赖审计通过。sources/、research/、third_party/、UI 和既有测试预算未改。
+
+未发现阻止本段提交的剩余问题。测试使用真实 DLL 夹具与 FakeScheduler、受控内存 writer；业务 DLL 示例、真实 Qt 循环及 S06/S07 联合退出属于 M3d2，M4 UI DLL 仍待实施。本次不新增人工桌面验收要求，不将夹具通过标记为整个 P4 或物理卸载完成。
+
 ## 远端优先合并验证
 
 日期：2026-10-29。本地 a788c51 与远端 5e71888 分叉。按用户“以远端为主”处理 19 个冲突，M3c2 服务桥、关联 SDK/Core 接口、夹具与测试整体采用远端版本；本地另一套服务桥专属接口、测试及 ADR 随之移除，原提交保留在合并历史中。远端 Eve 品牌资源、工作区面板及隔离输出完整保留。
