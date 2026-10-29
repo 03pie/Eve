@@ -3,6 +3,7 @@
  */
 #pragma once
 #include "status_p.hpp"
+#include "output_p.hpp"
 #include <QString>
 #include <cordis/result.hpp>
 #include <cstdint>
@@ -52,7 +53,8 @@ QWidget* createWelcomePage();
 std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* tabs, QTabWidget* panel,
                                                   QPlainTextEdit* output, QToolButton* togglePanel,
                                                   const QString& homeKey, const QString& managementKey,
-                                                  WorkbenchActions actions, const QString& preferencesFile = {});
+                                                  WorkbenchActions actions, const QString& preferencesFile = {},
+                                                  std::shared_ptr<OutputControl> logs = {});
 /** @brief 永久宿主页由 ElaWindow 接管，页面通过 key 加入同一导航。 */
 QWidget* workbenchSettings(const std::shared_ptr<WorkbenchControl>& control);
 /** @brief 关于页保留在中央工作区，不创建不受控独立窗口。 */

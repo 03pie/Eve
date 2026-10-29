@@ -8,6 +8,8 @@
 
 **P1/P2/P3 及 UI 专项已完成（当前内置插件/Windows 支持矩阵）。P4-M1 为 59b7c76、M2a 为 249a425、M2b 为 fed5a51，均已审核提交。当前 M3 进行中：M3a 已提交（1ffa0ff），M3b 基础生命周期已审核提交（f32191b），M3c1 dispatch/effect 已审核提交（e9c89dd）；M3c2/M3d 服务与 Kernel 桥、M4 UI DLL 待实施，P5 未开始。**
 
+2026-10-29 用户追加底部工作区需求：中央/底部页签背景对调；命令接入真实平台注册动作和插件命令；输出新增平台/插件实例通道选择、当前目标复制/清空和阅读位置保留；问题接入真实运行诊断及定位。新增 ui.output/v1 与九项功能回归；提交前复审修复重入误清目标、复制遗漏保留历史及详情滞后三项 P2，初次新回归 0/3，另有命令面板清空分支 0/1，修复后最终 Debug/Release 各 566/566、ASan 面板 9/9、GCC 无 Qt SDK 头独立编译通过。实现及审核记录按用户要求随本提交归档；新增体验不沿用旧 UI 人工确认，见[接入说明](workbench-panel-development.md)和[审核记录](code-review.md#底部工作区与输出通道增量审核)。P4 后续服务/Kernel/UI DLL 路线保持不变。
+
 2026-10-29 分支整合：本地 Eve 图标提交 9d1ccda 与远端六项 P4 提交合并为 96b650a，保留双方审核记录并采用最新 P4 状态。合并后 Ela/MSVC Debug、Release 各 557/557 通过，四个桌面 EXE 的七尺寸图标逐帧匹配原稿；详见[合并审核](code-review.md#eve-图标与-p4-分支合并审核)。下列记录保留各阶段的历史验证范围与数量。
 
 本轮按“实现→审核修复→验证无未解决问题→提交→下一段”推进。M3c1 开启真实 dispatch/effect 桥，修复主动清理期间提前 stop、投递捕获未释放就假静止及 scheduler 释放后丢失诊断三项 P2。最终 Release 557/557、GCC 241/241，Debug/ASan/关闭示例 P4 各 98/98；12 项源/构建哈希和 8 个 ASan 编译行及依赖/文档审计通过，见 [资源桥记录](p4-m3c-development.md)和 [ADR-0034](adr/0034-native-dispatch-effects.md)。M3c2 服务、M3d Kernel/Session 与两个服务 DLL、M4 UI DLL 继续按计划实施，不提前计为整个 P4 完成。M3b 历史见 [生命周期记录](p4-m3b-development.md)。

@@ -52,7 +52,7 @@ struct ContextIdentity {
     InstanceId instance;
     Epoch epoch;
 };
-namespace ui { class UiPagesService; class CommandService; class NotificationService; }
+namespace ui { class UiPagesService; class CommandService; class NotificationService; class OutputService; }
 namespace qt {
 class QtConnection;
 class QtWorker;
@@ -98,6 +98,7 @@ private:
     friend class ui::UiPagesService;
     friend class ui::CommandService;
     friend class ui::NotificationService;
+    friend class ui::OutputService;
     friend class qt::QtConnection;
     friend class qt::QtWorker;
     template<class T> friend class EventBus;

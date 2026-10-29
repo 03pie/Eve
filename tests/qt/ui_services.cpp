@@ -8,6 +8,8 @@
 #include <QEventLoop>
 #include <QLabel>
 #include <QListView>
+#include <QLineEdit>
+#include <QComboBox>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QTest>
@@ -328,6 +330,8 @@ void notifications()
     for (auto window : QApplication::topLevelWidgets())
         if (auto found = window->findChild<QPlainTextEdit*>("CordisWorkbenchOutput")) output = found;
     CHECK(output);
+    for (auto window : QApplication::topLevelWidgets())
+        if (auto target = window->findChild<QComboBox*>("CordisOutputTarget")) target->setCurrentIndex(1);
     std::optional<Result<std::uint64_t>> nested;
     bool entered = false;
     auto connection = QObject::connect(output, &QPlainTextEdit::textChanged, output, [&] {
@@ -415,7 +419,10 @@ void interaction()
     auto instance = scene.kernel.mount(runtime).value(); wait(instance.ready(), scene.scheduler);
     QListView* list = nullptr;
     for (auto window : QApplication::topLevelWidgets()) if (auto found = window->findChild<QListView*>("CordisCommandList")) list = found;
-    CHECK(list && list->model()->rowCount() == 2);
+    CHECK(list);
+    auto filter = list->parentWidget()->findChild<QLineEdit*>("CordisCommandFilter");
+    CHECK(filter); filter->setText("run");
+    CHECK(list->model()->rowCount() == 1);
     list->setCurrentIndex(list->model()->index(0, 0));
     QTest::keyClick(list, Qt::Key_Return);
     CHECK(entered == 0);
@@ -423,7 +430,9 @@ void interaction()
     QTest::keyClick(list, Qt::Key_Return);
     until([&] { return !scene.notices->snapshot().value().empty(); });
     CHECK(entered == 1 && scene.notices->snapshot().value().back().notification.level == NotificationLevel::Error);
-    list->setCurrentIndex(list->model()->index(1, 0));
+    filter->setText("empty-error");
+    CHECK(list->model()->rowCount() == 1);
+    list->setCurrentIndex(list->model()->index(0, 0));
     QTest::keyClick(list, Qt::Key_Return);
     until([&] { return emptyError->snapshot().value().activeCalls == 0; });
     // owner 还需消费宿主结果观察者，使用显式队列回执确认其已执行。

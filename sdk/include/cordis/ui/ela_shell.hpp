@@ -6,6 +6,7 @@
 #include <cordis/ui/commands.hpp>
 #include <cordis/ui/management.hpp>
 #include <cordis/ui/notifications.hpp>
+#include <cordis/ui/output.hpp>
 #include <cordis/ui/pages.hpp>
 #include <functional>
 #include <memory>
@@ -29,6 +30,10 @@ public:
     std::shared_ptr<CommandService> commands() const;
     /** @brief 获取可注册为 ui.notifications/v1 的纯值通知服务。 */
     std::shared_ptr<NotificationService> notifications() const;
+    /** @brief ui.output/v1，按插件实例/代次隔离的有界输出。 */
+    std::shared_ptr<OutputService> output() const;
+    /** @brief 仅宿主写入平台输出；插件使用带 Context 的 OutputService。 */
+    Result<std::uint64_t> writeOutput(std::string text, OutputLevel level = OutputLevel::Info) const;
     /** @brief 获取仅宿主持有的管理入口；绑定 Kernel 后可刷新、停止和重试实例。 */
     std::shared_ptr<ManagementController> management() const;
     /** @brief 获取可注册为 diagnostics/v1 的只读值快照服务。 */
@@ -50,6 +55,7 @@ private:
     std::shared_ptr<UiPagesService> pages_;
     std::shared_ptr<CommandService> commands_;
     std::shared_ptr<NotificationService> notifications_;
+    std::shared_ptr<OutputService> output_;
     std::shared_ptr<ManagementController> management_;
     std::shared_ptr<DiagnosticsService> diagnostics_;
 };

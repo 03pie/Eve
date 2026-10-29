@@ -16,7 +16,9 @@ public:
     {
         setMovable(false);
         setTabsClosable(false);
-        setTabSize(QSize(132, 34));
+        setTabSize(QSize(84, 34));
+        tabBar()->setFixedHeight(34);
+        tabBar()->setExpanding(false);
         setIsTabTransparent(true);
         setStyleSheet("QTabWidget::pane{border:0;background:transparent;}");
         applyTheme(eTheme->getThemeMode());
@@ -31,9 +33,15 @@ private:
     {
         auto colors = palette();
         colors.setColor(QPalette::Window, eTheme->getThemeColor(mode, ElaThemeType::WindowBase));
-        colors.setColor(QPalette::Base, eTheme->getThemeColor(mode, ElaThemeType::BasicBase));
+        colors.setColor(QPalette::Base, eTheme->getThemeColor(mode, ElaThemeType::WindowBase));
         colors.setColor(QPalette::Text, eTheme->getThemeColor(mode, ElaThemeType::BasicText));
         setPalette(colors);
+        tabBar()->setStyleSheet(QStringLiteral(
+            "QTabBar::tab{background:%1;color:%2;border:0;border-bottom:2px solid transparent;"
+            "height:24px;padding:4px 10px;}QTabBar::tab:selected{background:transparent;border-bottom:2px solid %3;}")
+            .arg(eTheme->getThemeColor(mode, ElaThemeType::BasicSelectedAlpha).name(QColor::HexArgb),
+                 eTheme->getThemeColor(mode, ElaThemeType::BasicText).name(),
+                 eTheme->getThemeColor(mode, ElaThemeType::PrimaryNormal).name()));
     }
 protected:
     /** @brief ElaTabBar 的拖出逻辑独立于 movable 开关，须在其 mouseMoveEvent 前拦截。 */

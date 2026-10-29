@@ -8,6 +8,11 @@
 #include <QPlainTextEdit>
 #include <QListView>
 #include <QStandardItemModel>
+#include <QSortFilterProxyModel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QAction>
+#include <QShortcut>
 #include <QPointer>
 #include <atomic>
 #include <deque>
@@ -71,6 +76,21 @@ struct ServicesControl : std::enable_shared_from_this<ServicesControl> {
     QStandardItemModel* model = nullptr;
     QPointer<QLabel> notification;
     QPointer<QPlainTextEdit> output;
+    std::shared_ptr<OutputControl> logs;
+    WindowAccess windowAccess;
+    QPointer<QLabel> commandResult;
+    QPointer<QSortFilterProxyModel> filter;
+    std::map<QStandardItem*, QPointer<QAction>> platformCommands;
+    std::uint64_t commandSequence = 0;
+    /** @brief 运行结果由命令面板承接，输出通道另保留完整执行记录。 */
+    void commandStatus(const QString& text)
+    {
+        if (windowAccess) {
+            auto access = windowAccess;
+            access([this, text] { if (open && commandResult) commandResult->setText(text); });
+        }
+    }
+    void activate(const QModelIndex& index);
     std::map<CommandKey, std::shared_ptr<CommandControl>> records;
     std::map<QStandardItem*, std::weak_ptr<CommandControl>> rows;
     std::deque<NotificationSnapshot> history;
@@ -114,10 +134,14 @@ struct ServicesControl : std::enable_shared_from_this<ServicesControl> {
         const QString prefix = latest.level == NotificationLevel::Error ? QString::fromUtf8("错误：") :
             latest.level == NotificationLevel::Warning ? QString::fromUtf8("提示：") : QString::fromUtf8("消息：");
         const auto text = prefix + QString::fromStdString(latest.text);
+        const auto logText = latest.text;
+        const auto logLevel = latest.level;
         notification->setText(text);
         if (notification)
             notification->setToolTip(text);
-        if (output) output->appendPlainText(text);
+        if (logs) (void)appendOutput(logs, owner, "通知", logText,
+            logLevel == NotificationLevel::Error ? OutputLevel::Error : logLevel == NotificationLevel::Warning ? OutputLevel::Warning : OutputLevel::Info);
+        else if (output) output->appendPlainText(text);
         return Result<std::uint64_t>::success(submittedSequence);
     }
     /** @brief 贡献记录保留到 effect 完整报告，不能只凭内部 drained 完成关闭。 */
@@ -255,6 +279,47 @@ Task<void> CommandControl::execute()
     if (!accepted) call->finish(Result<void>::failure(makeError(ErrorCode::SchedulerClosed, "command dispatch rejected")));
     return result;
 }
+/** @brief 过滤后必须映射回源记录，防止同名或移动行调用错误实例。 */
+void ServicesControl::activate(const QModelIndex& index)
+{
+    if (!open || !index.isValid()) return;
+    const auto source = filter ? filter->mapToSource(index) : index;
+    auto item = model->itemFromIndex(source);
+    const auto platform = platformCommands.find(item);
+    if (platform != platformCommands.end()) {
+        QPointer<QAction> action = platform->second;
+        if (!action || !action->isEnabled() || !action->isVisible()) {
+            commandStatus(QString::fromUtf8("当前命令不可用。")); return;
+        }
+        const auto title = action->text();
+        const auto execution = ++commandSequence;
+        action->trigger();
+        if (!open) return;
+        if (logs) (void)appendOutput(logs, {}, "platform", (QString::fromUtf8("已调用平台命令：") + title).toStdString());
+        if (commandSequence == execution) commandStatus(QString::fromUtf8("已调用：") + title);
+        return;
+    }
+    auto found = rows.find(item);
+    auto record = found == rows.end() ? nullptr : found->second.lock();
+    if (!record) return;
+    const auto identity = record->owner;
+    const auto title = record->spec.title;
+    const auto execution = ++commandSequence;
+    commandStatus(QString::fromUtf8("运行中：") + QString::fromStdString(title));
+    if (logs) (void)appendOutput(logs, identity, "命令", "开始执行：" + title);
+    std::weak_ptr<ServicesControl> weak = shared_from_this();
+    record->execute().thenOn(scheduler, [weak, identity, title, execution](const Result<void>& result) {
+        auto host = weak.lock(); if (!host || !host->open) return;
+        const auto text = result.hasValue() ? "执行完成：" + title : "执行失败：" + title + " · " + (result.error().message.empty() ? "未提供错误说明" : result.error().message);
+        if (host->commandSequence == execution) host->commandStatus(QString::fromStdString(text));
+        if (host->logs) (void)appendOutput(host->logs, identity, "命令", text, result.hasValue() ? OutputLevel::Info : OutputLevel::Error);
+        if (!result.hasValue()) {
+            auto message = result.error().message.substr(0, NotificationService::textLimit);
+            if (message.empty()) message = "命令执行失败";
+            host->append(identity, {NotificationLevel::Error, std::move(message), result.error().operation});
+        }
+    });
+}
 /** @brief 只有宿主列表的激活信号可以查找内部命令；连接不持任何插件回调。 */
 std::shared_ptr<ServicesControl> createUiServices(std::shared_ptr<qt::QtScheduler> scheduler,
                                                QListView* commands, QLabel* notification, QPlainTextEdit* output)
@@ -269,22 +334,61 @@ std::shared_ptr<ServicesControl> createUiServices(std::shared_ptr<qt::QtSchedule
     notification->setTextFormat(Qt::PlainText);
     std::weak_ptr<ServicesControl> weak = state;
     QObject::connect(commands, &QListView::activated, commands, [weak](const QModelIndex& index) {
-        auto owner = weak.lock();
-        if (!owner) return;
-        auto found = owner->rows.find(owner->model->itemFromIndex(index));
-        if (found == owner->rows.end()) return;
-        auto record = found->second.lock();
-        if (!record) return;
-        const auto identity = record->owner;
-        record->execute().thenOn(owner->scheduler, [weak, identity](const Result<void>& result) {
-            if (!result.hasValue()) if (auto host = weak.lock()) {
-                auto text = result.error().message.substr(0, NotificationService::textLimit);
-                if (text.empty()) text = "命令执行失败";
-                host->append(identity, {NotificationLevel::Error, std::move(text), result.error().operation});
-            }
-        });
+        if (auto owner = weak.lock()) owner->activate(index);
     });
     return state;
+}
+void configureCommandPanel(const std::shared_ptr<ServicesControl>& state, QWidget* page,
+    const std::vector<QAction*>& actions, std::shared_ptr<OutputControl> output, WindowAccess access)
+{
+    state->logs = std::move(output); state->windowAccess = std::move(access);
+    state->commandResult = page->findChild<QLabel*>("CordisCommandResult");
+    auto filter = new QSortFilterProxyModel(state->commands); state->filter = filter;
+    filter->setSourceModel(state->model); filter->setFilterCaseSensitivity(Qt::CaseInsensitive);
+    filter->setFilterRole(Qt::UserRole + 1); state->commands->setModel(filter);
+    std::weak_ptr<ServicesControl> weak = state;
+    for (auto action : actions) {
+        if (!action || action->isSeparator() || !action->isVisible()) continue;
+        auto row = new QStandardItem;
+        row->setEditable(false); state->platformCommands.emplace(row, action);
+        const auto sync = [weak, row, action] {
+            if (auto host = weak.lock(); host && host->open) {
+                row->setText(action->text() + QString::fromUtf8("  · 平台"));
+                row->setData(action->text() + " " + action->objectName() + " platform 平台", Qt::UserRole + 1);
+                row->setToolTip(action->objectName() + "\n" + action->toolTip());
+                row->setEnabled(action->isEnabled() && action->isVisible());
+            }
+        };
+        state->model->appendRow(row); sync();
+        QObject::connect(action, &QAction::changed, page, sync);
+    }
+    auto search = page->findChild<QLineEdit*>("CordisCommandFilter");
+    const auto select = [weak] {
+        if (auto host = weak.lock(); host && host->open && host->commands && host->filter) {
+            if (!host->commands->currentIndex().isValid()) host->commands->setCurrentIndex(host->filter->index(0, 0));
+        }
+    };
+    QObject::connect(search, &QLineEdit::textChanged, page, [weak, select](const QString& text) {
+        if (auto host = weak.lock(); host && host->open && host->filter) {
+            host->filter->setFilterFixedString(text.trimmed()); select();
+            host->commandStatus(host->filter->rowCount() ? QString::fromUtf8("%1 个匹配命令；按回车执行。").arg(host->filter->rowCount()) : QString::fromUtf8("没有匹配的命令。"));
+        }
+    });
+    const auto run = [weak, select] {
+        select(); if (auto host = weak.lock(); host && host->commands) host->activate(host->commands->currentIndex());
+    };
+    QObject::connect(search, &QLineEdit::returnPressed, page, run);
+    for (const auto key : {Qt::Key_Down, Qt::Key_Up}) {
+        auto shortcut = new QShortcut(QKeySequence(key), search); shortcut->setContext(Qt::WidgetShortcut);
+        QObject::connect(shortcut, &QShortcut::activated, page, [weak, key] {
+            if (auto host = weak.lock(); host && host->open && host->commands && host->filter) {
+                auto row = host->commands->currentIndex().row() + (key == Qt::Key_Down ? 1 : -1);
+                if (row >= 0 && row < host->filter->rowCount()) host->commands->setCurrentIndex(host->filter->index(row, 0));
+            }
+        });
+    }
+    if (auto button = page->findChild<QPushButton*>("CordisRunCommand")) QObject::connect(button, &QPushButton::clicked, page, run);
+    select();
 }
 /** @brief 外壳关闭先统一关门，使用副本请求所有 effect，容忍同步完成和重入。 */
 Task<void> closeUiServices(const std::shared_ptr<ServicesControl>& control)
@@ -334,6 +438,9 @@ Result<CommandHandle> CommandService::add(const Context& owner, CommandSpec spec
         auto result = setup.addCleanup([record] { return record->retire(); });
         if (!result.hasValue()) return failedTask(result.error());
         record->row = new QStandardItem(QString::fromStdString(record->spec.title));
+        record->row->setEditable(false);
+        record->row->setText(QString::fromStdString(record->spec.title) + QString::fromUtf8("  · 插件 #%1 / 代 %2").arg(record->owner.instance.value()).arg(record->owner.epoch));
+        record->row->setData(QString::fromStdString(record->spec.title + " " + record->spec.id) + QString(" %1 %2").arg(record->owner.instance.value()).arg(record->owner.epoch), Qt::UserRole + 1);
         record->row->setToolTip(QString::fromUtf8("双击或按回车执行"));
         host->rows.emplace(record->row, record);
         host->model->appendRow(record->row);

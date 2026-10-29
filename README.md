@@ -4,6 +4,8 @@
 
 当前已完成 **P1/P2/P3 及第一方 Windows UI 专项**，P3 收口及用户确认见 [阶段审计](docs/p3-closeout.md)。配置工作台支持预览、应用、期望启停、保存和磁盘冲突处理；Home 卡片可打开管理/配置窗口，顶部菜单可添加已注册插件的配置实例。Windows 托管 worker 支持类型化结果及完整退出屏障。
 
+底部工作区支持搜索并执行已注册命令、按平台/插件实例选择真实输出，以及运行问题的筛选、详情和定位。插件通过 `ui.output/v1` 写入隔离通道，见[工作区接入说明](docs/workbench-panel-development.md)。
+
 **P4 进行中**：M1 预检/账目、M2 原生装载及完整业务 ABI 协商已审核提交，见 [ABI V1](docs/abi-v1.md)。当前 [M3a 请求组件](docs/p4-m3-development.md)、[M3b 原生生命周期](docs/p4-m3b-development.md)及 [M3c1 dispatch/effect](docs/p4-m3c-development.md)已实现，服务与 Kernel 联合桥、M4 UI DLL 仍待完成，P5 受控替换未开始；当前 C++ 源码 SDK 不构成稳定二进制 ABI。
 
 当前工作区还已实现受限类型化 Qt 信号投递：数值、枚举与标准/Qt 字符串会在发射时冻结，参数保留至异步业务完成，并沿用 Context/epoch 及原生退出屏障。详情见 [类型化连接决策](docs/adr/0026-typed-qt-connections.md)，示例为 cordis_qt_value_connection_demo。

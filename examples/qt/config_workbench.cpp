@@ -118,6 +118,7 @@ struct Workbench : std::enable_shared_from_this<Workbench> {
     /** @brief 恢复关闭按钮，配置页展示原始磁盘冲突而不自动覆盖。 */
     void keepOpen()
     {
+        (void)shell.writeOutput("配置尚未保存，已保留工作台供处理冲突或错误。", OutputLevel::Warning);
         closing = false;
         shell.cancelCloseRequest().value();
         if (configurationPage)
@@ -127,6 +128,7 @@ struct Workbench : std::enable_shared_from_this<Workbench> {
     void stop()
     {
         if (!closing) {
+            (void)shell.writeOutput("正在保存配置并关闭工作台。");
             closing = true;
             flushBeforeClose();
         }
@@ -147,6 +149,7 @@ struct Workbench : std::enable_shared_from_this<Workbench> {
     /** @brief 异步读取后的 owner 装配不自动接受目标，监听与文件后端由宿主保活。 */
     void startPrepared(bool smoke, const ConfigurationDiskObservation& initialDisk)
     {
+        (void)shell.writeOutput(initialDisk.disk.version.exists ? "已读取磁盘配置，正在装配配置会话。" : "配置文件尚不存在，已建立默认配置会话。");
         auto weak = weak_from_this();
         auto notes =
             kernel
@@ -155,6 +158,15 @@ struct Workbench : std::enable_shared_from_this<Workbench> {
                                      auto self = weak.lock();
                                      if (!self)
                                          return failedTask(makeError(ErrorCode::ContextClosing, "host expired"));
+                                     auto output = self->shell.output();
+                                     auto written = output->write(context, "demo.notes", "笔记插件已启动。");
+                                     if (!written.hasValue()) return failedTask(written.error());
+                                     self->shell.commands()->add(context,
+                                         {"notes.showConfiguration", "笔记：输出当前配置",
+                                          [output, context] {
+                                              auto written = output->write(context, "demo.notes", "当前配置：" + context.config());
+                                              return written.hasValue() ? completedTask() : failedTask(written.error());
+                                          }, {}}).value();
                                      auto page =
                                          self->shell.pages()
                                              ->add(context,

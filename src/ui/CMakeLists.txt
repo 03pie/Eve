@@ -1,5 +1,5 @@
 include("${PROJECT_SOURCE_DIR}/cmake/Ela.cmake")
-add_library(cordis_ui STATIC pages.cpp services.cpp management.cpp workbench.cpp home.cpp preferences.cpp brand.cpp
+add_library(cordis_ui STATIC pages.cpp services.cpp management.cpp workbench.cpp home.cpp preferences.cpp brand.cpp output.cpp panel.cpp
     "${PROJECT_SOURCE_DIR}/app/shell/resources/eve_brand.qrc")
 set_target_properties(cordis_ui PROPERTIES AUTORCC ON)
 add_library(Cordis::Ui ALIAS cordis_ui)

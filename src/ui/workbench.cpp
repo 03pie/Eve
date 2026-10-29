@@ -147,6 +147,7 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
     QPointer<QTabBar> tabs;
     QPointer<QTabWidget> panel;
     QPointer<QPlainTextEdit> output;
+    std::shared_ptr<OutputControl> logs;
     QPointer<QToolButton> togglePanel;
     QPointer<ElaSuggestBox> search;
     QPointer<ElaToolButton> back, forward;
@@ -667,13 +668,15 @@ QWidget* createWelcomePage()
 std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* tabs, QTabWidget* panel,
                                                   QPlainTextEdit* output, QToolButton* togglePanel,
                                                   const QString& homeKey, const QString& managementKey,
-                                                  WorkbenchActions callbacks, const QString& preferencesFile)
+                                                  WorkbenchActions callbacks, const QString& preferencesFile,
+                                                  std::shared_ptr<OutputControl> logs)
 {
     auto self = std::make_shared<WorkbenchControl>();
     self->window = window;
     self->tabs = tabs;
     self->panel = panel;
     self->output = output;
+    self->logs = std::move(logs);
     self->togglePanel = togglePanel;
     self->homeKey = homeKey;
     self->managementKey = managementKey;
@@ -792,16 +795,22 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
                      if (state.panel) {
                          state.panel->show();
                          state.panel->setCurrentIndex(0);
-                         if (auto widget = state.panel->currentWidget())
+                         if (auto search = state.panel->findChild<QLineEdit*>("CordisCommandFilter"))
+                             search->setFocus();
+                         else if (auto widget = state.panel->currentWidget())
                              widget->setFocus();
                      }
                  });
     self->action(view, QString::fromUtf8("清空输出"), "CordisClearOutput", {}, [](WorkbenchControl& state) {
-        if (state.output)
+        if (state.logs)
+            clearOutput(state.logs);
+        else if (state.output)
             state.output->clear();
     });
     self->action(view, QString::fromUtf8("复制全部输出"), "CordisCopyOutput", {}, [](WorkbenchControl& state) {
-        if (state.output)
+        if (state.logs)
+            QApplication::clipboard()->setText(currentOutputText(state.logs));
+        else if (state.output)
             QApplication::clipboard()->setText(state.output->toPlainText());
     });
     view->addSeparator();
@@ -836,8 +845,8 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
             if (!callback)
                 return;
             auto result = callback();
-            if (!result.hasValue() && state.open && state.output)
-                state.output->appendPlainText(QString::fromStdString(result.error().message));
+            if (!result.hasValue() && state.open && state.logs)
+                (void)appendOutput(state.logs, {}, "platform", result.error().message, OutputLevel::Error);
         });
         action->setEnabled(false);
         action->setToolTip(add ? QString::fromUtf8("从已注册插件添加配置实例；需要工作台绑定配置会话。")
@@ -858,8 +867,8 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
                 return;
             const auto show = state.callbacks.showNotifications;
             const auto result = show();
-            if (!result.hasValue() && state.open && state.output)
-                state.output->appendPlainText(QString::fromStdString(result.error().message));
+            if (!result.hasValue() && state.open && state.logs)
+                (void)appendOutput(state.logs, {}, "platform", result.error().message, OutputLevel::Error);
         });
     self->action(help, QString::fromUtf8("关于 Cordis"), "CordisOpenAbout", {}, [](WorkbenchControl& state) {
         if (state.about)
@@ -894,7 +903,7 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
         button->setObjectName(QString::fromLatin1(entry.first));
         button->setElaIcon(copy ? ElaIconType::Copy : ElaIconType::TrashCan);
         button->setFixedSize(28, 28);
-        button->setAccessibleName(copy ? QString::fromUtf8("复制全部输出") : QString::fromUtf8("清空输出"));
+        button->setAccessibleName(copy ? QString::fromUtf8("复制当前目标输出") : QString::fromUtf8("清空当前目标输出"));
         button->setToolTip(button->accessibleName());
         toolsLayout->addWidget(button);
         auto action = window->findChild<QAction*>(QString::fromLatin1(entry.second));
