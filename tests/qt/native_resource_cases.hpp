@@ -23,8 +23,10 @@ struct Resources : Scene {
     Ack ack;
     Data data;
     explicit Resources(std::shared_ptr<IScheduler> scheduler = std::make_shared<FakeScheduler>(),
-                       const QString& name = "resources")
-        : Scene(std::move(scheduler), name), dispatch(entry<Dispatch>(image, "cordis_resource_dispatch")),
+                       const QString& fixture = "resources", const QString& folder = "module",
+                       std::optional<ServiceRegistry> services = {})
+        : Scene(std::move(scheduler), fixture, folder, std::move(services)),
+          dispatch(entry<Dispatch>(image, "cordis_resource_dispatch")),
           cancel(entry<Cancel>(image, "cordis_resource_cancel")),
           effect(entry<Effect>(image, "cordis_resource_effect")), ready(entry<Ready>(image, "cordis_resource_ready")),
           close(entry<Close>(image, "cordis_resource_close")), stat(entry<Stat>(image, "cordis_resource_stat")),
@@ -188,8 +190,6 @@ void closeDuringCleanup()
 void guards()
 {
     Resources s;
-    NativePlugin unsupported{"org.cordis.plugin", {{{"native.echo", 1}, 0, {}}}, {}};
-    CHECK(s.module.runtime(unsupported).error().code == ErrorCode::AbiMismatch);
     auto a = s.active(), b = s.active(2);
     auto effect = s.add();
     CordisRequestId request = 99;

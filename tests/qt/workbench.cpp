@@ -257,9 +257,9 @@ void menus()
     scene.action("CordisOpenCommands");
     CHECK(!panel->isHidden() && panel->currentIndex() == 0);
     auto output = scene.find<QPlainTextEdit>("CordisWorkbenchOutput");
-    output->setPlainText("<literal output>");
+    scene.shell.writeOutput("<literal output>").value();
     scene.action("CordisCopyOutput");
-    CHECK(QApplication::clipboard()->text() == "<literal output>");
+    CHECK(QApplication::clipboard()->text() == output->toPlainText());
     scene.action("CordisClearOutput");
     CHECK(output->toPlainText().isEmpty());
     scene.action("CordisOpenAbout");

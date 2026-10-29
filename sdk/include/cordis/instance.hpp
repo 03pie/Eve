@@ -28,22 +28,6 @@ class CleanupContext {
 public:
     /** @brief owner 线程读取旧代信息；清理已完成或上下文过期时返回 StaleContext。 */
     Result<CleanupSnapshot> snapshot() const;
-    /** @brief 清理窗口内异步访问本实例本代旧绑定，调用屏障持续至源任务实际完成。 */
-    template <class T, class F> Task<void> invokeService(const ServiceRef<T>& service, F&& function) const
-    {
-        static_assert(std::is_same_v<std::invoke_result_t<F&, T&>, Task<void>>,
-                      "cleanup async service callback must return Task<void>");
-        auto current = snapshot();
-        if (!current.hasValue())
-            return failedTask(current.error());
-        std::function<Task<void>(T&)> callback(std::forward<F>(function));
-        if (!callback)
-            return failedTask(makeError(ErrorCode::InvalidArgument, "empty cleanup async service callback"));
-        return detail::invokeService(
-            {}, service.lease_, service.committed_, typeid(T),
-            [callback = std::move(callback)](void* object) { return callback(*static_cast<T*>(object)); }, true,
-            current.value().instance, current.value().epoch);
-    }
     /** @brief 仅在有效清理窗口内访问本实例本代已提交的旧绑定，允许 Retiring。 */
     template<class T, class F> Result<void> withService(const ServiceRef<T>& service, F&& function) const
     {
@@ -68,13 +52,10 @@ struct ContextIdentity {
     InstanceId instance;
     Epoch epoch;
 };
-namespace ui { class UiPagesService; class CommandService; class NotificationService; }
+namespace ui { class UiPagesService; class CommandService; class NotificationService; class OutputService; }
 namespace qt {
 class QtConnection;
 class QtWorker;
-}
-namespace module {
-class NativeModule;
 }
 
 /** @brief 使用受限上下文执行清理，返回真实释放完成任务。 */
@@ -93,14 +74,10 @@ public:
     /** @brief 在本代登记托管 Staged 输出，激活完成后才对其他实例发布。 */
     template<class T> Result<BindingId> provide(ServiceKey key, std::shared_ptr<T> object) const
     { return provideErased(std::move(key), std::move(object), typeid(T)); }
-    /** @brief 撤回本代自有输出并等待消费者/调用排空；对象及键仍由实例最终清理释放。 */
-    Task<void> withdraw(BindingId binding) const;
-    /** @brief 从托管注册表消费服务，优先使用激活前固定的声明依赖；最低要求失败不登记新保留。 */
-    template <class T>
-    Result<ServiceRef<T>> consume(const ServiceKey& key, std::uint32_t minimumMinor = 0,
-                                  const std::vector<std::string>& capabilities = {}) const
+    /** @brief 从托管注册表消费服务，优先使用激活前固定的声明依赖。 */
+    template<class T> Result<ServiceRef<T>> consume(const ServiceKey& key) const
     {
-        auto lease = consumeManaged(key, typeid(T), minimumMinor, capabilities);
+        auto lease = consumeManaged(key, typeid(T));
         if (!lease.hasValue()) return Result<ServiceRef<T>>::failure(lease.error());
         return Result<ServiceRef<T>>::success(ServiceRef<T>(std::weak_ptr<detail::CommittedLease>(lease.value())));
     }
@@ -111,12 +88,9 @@ public:
     /** @brief 登记独立清理组；清理中只能使用 CleanupContext，不获得激活上下文。 */
     Result<EffectToken> onCleanup(InstanceCleanup cleanup, std::string label = "instance.cleanup") const;
     /** @brief 固定当前 Published 服务到本代 committed 账目；缺服务返回 DependencyMissing。 */
-    template <class T>
-    Result<ServiceRef<T>> consume(const ServiceRegistry& registry, const ServiceKey& key,
-                                  std::uint32_t minimumMinor = 0,
-                                  const std::vector<std::string>& capabilities = {}) const
+    template<class T> Result<ServiceRef<T>> consume(const ServiceRegistry& registry, const ServiceKey& key) const
     {
-        auto lease = consumeErased(registry, key, typeid(T), minimumMinor, capabilities);
+        auto lease = consumeErased(registry, key, typeid(T));
         if (!lease.hasValue()) return Result<ServiceRef<T>>::failure(lease.error());
         return Result<ServiceRef<T>>::success(ServiceRef<T>(std::weak_ptr<detail::CommittedLease>(lease.value())));
     }
@@ -124,23 +98,19 @@ private:
     friend class ui::UiPagesService;
     friend class ui::CommandService;
     friend class ui::NotificationService;
+    friend class ui::OutputService;
     friend class qt::QtConnection;
     friend class qt::QtWorker;
-    friend class module::NativeModule;
     template<class T> friend class EventBus;
     /** @brief 为事件/UI/Qt 适配器提供同 scheduler、本代业务门禁，不授予实例所有权。 */
     Result<std::function<Result<void>()>> eventGuard(const std::shared_ptr<IScheduler>& scheduler) const;
     /** @brief 校验本代能力后登记并保存托管输出。 */
     Result<BindingId> provideErased(ServiceKey key, std::shared_ptr<void> object, std::type_index type) const;
     /** @brief 解析本实例托管注册表，不向插件暴露发布/释放控制。 */
-    Result<std::shared_ptr<detail::CommittedLease>> consumeManaged(const ServiceKey& key, std::type_index type,
-                                                                   std::uint32_t minimumMinor,
-                                                                   const std::vector<std::string>& capabilities) const;
+    Result<std::shared_ptr<detail::CommittedLease>> consumeManaged(const ServiceKey& key, std::type_index type) const;
     /** @brief 经过实例能力校验后固定服务，并纳入本代清理屏障。 */
     Result<std::shared_ptr<detail::CommittedLease>> consumeErased(const ServiceRegistry& registry,
-                                                                  const ServiceKey& key, std::type_index type,
-                                                                  std::uint32_t minimumMinor,
-                                                                  const std::vector<std::string>& capabilities) const;
+        const ServiceKey& key, std::type_index type) const;
     friend struct detail::InstanceControl;
     friend class Instance;
     /** @brief 捕获实例的弱引用，不延长实例生命周期。 */

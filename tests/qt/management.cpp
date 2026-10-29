@@ -4,6 +4,7 @@
 #include <cordis/ui/ela_shell.hpp>
 #include <QAbstractItemModel>
 #include <QApplication>
+#include <QComboBox>
 #include <QEventLoop>
 #include <QEvent>
 #include <QLabel>
@@ -419,6 +420,7 @@ void workbench()
     auto togglePanel = scene.widget<QToolButton>("CordisTogglePanel");
     CHECK(panel->isHidden());
     togglePanel->click(); CHECK(!panel->isHidden()); togglePanel->click(); CHECK(panel->isHidden());
+    scene.widget<QComboBox>("CordisOutputTarget")->setCurrentIndex(1);
     CHECK(scene.widget<QPlainTextEdit>("CordisWorkbenchOutput")->toPlainText().contains("<b>output</b>"));
     auto closed = instance.stop(); wait(closed, scene.scheduler);
     CHECK(tabs->count() == 1 && !page->snapshot().value().widgetAlive);

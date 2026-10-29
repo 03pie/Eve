@@ -1,0 +1,3 @@
+#pragma code_page(65001)
+// Eve 应用的 Windows 可执行文件图标；路径由 CMake 配置，支持含空格的工作目录。
+1 ICON "@CORDIS_EVE_ICON_FILE@"

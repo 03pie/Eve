@@ -1,17 +1,48 @@
 # 提交前代码审查记录
 
-## P4-M3c2 原生服务桥提交前审查
+## 远端优先合并验证
 
-日期：2026-10-29。基线 e9c89dd。范围：NativeModule.runtime、真实服务族、Core 旧绑定异步清理/自有输出撤回/版本前检、UTF-8 能力数组和 19 项真实服务 DLL 场景及 6 项 Core 场景。由当前开发代理审查，未使用子代理；按用户要求先审核修复并提交，再进入 M3d。
+日期：2026-10-29。本地 a788c51 与远端 5e71888 分叉。按用户“以远端为主”处理 19 个冲突，M3c2 服务桥、关联 SDK/Core 接口、夹具与测试整体采用远端版本；本地另一套服务桥专属接口、测试及 ADR 随之移除，原提交保留在合并历史中。远端 Eve 品牌资源、工作区面板及隔离输出完整保留。
 
-复现并修复六项 P2：版本拒绝后错误提交依赖租约；已完成动态查询的消费缓存无上限；提供者准入满额却隔离健康实例；同步 ACK 被异步请求预算阻塞；Core 停止后旧排队回调仍运行；同代故障后直接 C++ 服务入口仍可绕过门禁。五份红日志分别为 0/1、0/1、0/1、0/1、0/2，修复后包含在 P4 123/123 中。最后一份覆盖两个权限问题。拒绝不新增租约，满额不取消既有 256 项调用，释放后可再调用；ACK 单独持实际 Call 租约和最后捕获屏障。细节见 [服务桥记录](p4-m3c2-development.md)。
+代码相对远端仅保留三个兼容文件的独立增量：json.cpp/json_p.hpp 的有界字符串数组解码，以及 requests.cpp 中 Unicode/转义重复项/预算断言。没有混用两种 NativeModule 服务桥接口。合并冲突标记与引用检查通过。最终原 Release 全量 585/585、无 Qt GCC 全量 241/241、ASan P4 117/117 通过，分别见 build/remote-merge-release-tests.log、gcc-tests.log、asan-tests.log；208 项源码/构建/资源 SHA256 一致，两个保留增量的 C++ 编译行包含 ASan。没有新建 Release 目录或关闭证书验证。
 
-核对所有权：Core 统一暂存/发布/撤回；原生 ready 和 start 完成后才发布输出；清理先等消费者/调用，再执行 DLL 资源清理并释放 ServiceObject。CleanupContext 只能使用本实例本代旧 committed 绑定，异步调用计数持续到真实源完成并交回 owner。初始 setup 取消/失败、部分输出、realm、版本与能力、不同 scheduler、错误应答及代次故障均有真实场景。C++ 包装仅留宿主，跨业务 C ABI 的仍是不透明编号与复制 JSON。
+git fetch 的默认 Windows TLS 后端遇到握手失败；使用命令级 OpenSSL 后端（保持证书校验）成功获取，最新 origin/master 与 MERGE_HEAD 均为 5e71888。未改 Git 持久设置或关闭 TLS 校验。
 
-ASan 另发现新测试构造 vector 时引用自身旧元素的问题，已先复制样本再扩容；不是通过关闭插桩或放宽断言解决。先前 Debug/ASan 失败、原始源快照及错误堆栈保留。自动审批拒绝一次历史失败夹具清理（只返回 blocked by policy），保留该目录，没有换工具绕过；最终矩阵自身夹具均正常清理。
+## P4-M3c2 原生服务桥提交前审核
 
-最终 Release 全量 582/582、GCC 全量 247/247；Debug/ASan Core 与 P4 各 245/245，关闭示例 P4 123/123。24 项最终源/构建哈希、13 个受影响 ASan 编译行、编码/变更区域格式/文档/依赖及 diff 审计通过，原 Release 示例开关已恢复。GCC 的共同 SDK/Core/JSON/测试代码在后续 Windows 修复中未改变。未发现阻止本段提交的剩余问题；未修改 UI/Loader、第三方/只读参考或既有 UI 超时。M3d 的两个服务 DLL/Kernel/Session、M4 UI DLL 和 P4 总体验收仍须完成，全部完成后再按用户要求同步 GitHub。
+日期：2026-10-29。基线 aa22275。范围：Core 内部异步清理门禁、NativeModule 显式共享索引、生产服务注册/撤回/调用、资源退出屏障、两个真实 C DLL 及 19 项回归。用户要求修改完成后提交并同步。审查由当前代理完成，未使用子代理。
 
+复现并修复两项 P2：受理超限后遗留新 committed 租约，导致被拒绝的调用也钉住提供者；提供者取消入口返回非法 PENDING 时，遗漏隔离提供者。新增 service_budget / service_cancel_protocol 修复前 0/2，见 build/p4-m3c2-review-red-tests.log；现在失败受理撤销新租约、取消协议异常隔离两端并保留账目。修复后服务专项 19/19，见 build/p4-m3c2-review-green-tests.log。
+
+审查核对 start 与真实 effect ready 双发布屏障、精确 realm/minor/能力、转义能力判重、Core 实际依赖环、旧绑定受限清理、提供者等待消费者、两端独立请求及真实取消。补测 ACK 后投递副本仍存在和最后捕获跨线程释放，清理失败不释放租约。共享索引只能在同 scheduler 使用，活动会话不能切换；调用方保证活动 InstanceId 唯一。夹具改为按 generation 选择真实 DLL，不依赖全局快照第一项。
+
+最终 MSVC Debug/Release 各 585/585、无 Qt GCC Debug 241/241、ASan P4/W4/W5 152/152、原 Release 关闭示例 P4 117/117 并恢复 ON。ASan 首轮目标未齐的失败另存 p4-m3c2-asan-incomplete-targets.log，补齐全部构建后重跑，不计为通过。16 项源/构建文件哈希和 8 个受影响 ASan 编译命令一致；编码、差异、文档和依赖边界检查通过，没有修改 UI/Loader、第三方/只读参考或既有测试预算。
+
+未发现阻止本段提交的剩余问题。实现和完整日志索引见 [服务桥记录](p4-m3c2-development.md)及 [ADR-0035](adr/0035-native-services.md)。M3d 的 Kernel/Session 与两个业务服务 DLL、M4 UI DLL 仍待完成；本次夹具通过不等同于整个 P4 或物理卸载安全。
+
+## 底部工作区与输出通道增量审核
+
+日期：2026-10-29。基线 d917f64。范围：当前/非当前页签配色、底部命令/输出/问题工作区、ui.output/v1 源码 SDK、笔记插件实际接入及九项新增真实 Qt 回归。用户明确选择执行已注册平台/插件命令，并要求输出可按目标选择，随后要求代码审核、提交并同步远端。由当前代理完成审查，未使用子代理；本增量按用户要求随提交归档，不覆盖此前 UI 专项的用户确认。
+
+命令经过过滤模型映射回原始实例/epoch 记录，保留原 enabled、队列、Task 和 effect 屏障；平台动作复用现有 QAction。异步结果在面板中显示，过程/结果另入所属输出通道，通知历史保持独立。输出仅保存有界值，按实例/代次及名称隔离，旧 Context/错误线程拒绝写入，平台身份仅由宿主入口产生；目标切换和清空不串改其他记录。问题来自 diagnostics 真实值，具有筛选、详情和身份/路径定位，恢复后移除，源失效不假报恢复。
+
+审查修复了工具栏角控件与页签 size hint 不一致导致的裁切、非当前目标日志重置当前视图、追加日志丢失阅读选区、重入追加未显示最新记录、长诊断截断破坏 UTF-8，以及实例/effect 汇总重复计数。关闭重入回归以嵌套事件循环验证窗口访问屏障，未放宽任何既有超时或清理断言。通知和管理旧检查按新的目标隔离语义显式选择输出来源。
+
+提交前复审另发现并修复三项 P2：清空动作先发出文本信号再删除当前目标记录，重入切换目标可误清另一通道；复制只读编辑器的 500 行窗口，遗漏后台保留的历史；问题树在阻断信号后恢复原选中项，但详情仍保留旧快照。新增三项检查修复前 0/3，见 build/panel-review-red-tests.log，修复后相关检查 12/12。进一步复现从命令面板执行清空时，平台前置日志也可改变清空目标；分支修复前 0/1，见 panel-platform-clear-red-tests.log。现由后台先捕获/清空目标，平台调用日志在实际动作之后写入；复制读取全部当前目标历史，显示在进入 QTextDocument 前裁剪至 5000 行；恢复选中项时同步刷新详情，并保持窗口访问屏障。
+
+实现阶段 Ela/MSVC Debug、Release 曾各 563/563；过程日志为 build/panel-reviewed-debug.log、panel-reviewed-release.log，100%/150% 主题截图保留在 build/。初次三项显示/旧目标断言失败保留在 panel-debug-ui-tests.log。GCC C++17 对 output.hpp 的无 Qt 包含路径独立编译通过，独立头探针为 build/panel-output-header.cpp。提交前修复的最终验证另列于本节末尾，历史结果不代替最终源码的验收。
+
+本轮自动化和真实 Qt 截图通过，没有代填新增体验的用户确认。sources/、research/、third_party/ 未改；Core 仅增加输出适配器的私有 friend 声明，没有修改其实现。新接口不声称冻结原生二进制 ABI，P4-M3c2/M3d/M4 状态不变。使用与接入见[底部工作区说明](workbench-panel-development.md)。
+
+提交前最终源码的 Ela/MSVC Debug、Release 各 566/566（含 UI 各 128 项），ASan 面板专项 9/9。最终日志为 build/panel-submit-final-debug.log、panel-submit-final-release.log、panel-submit-final-asan-tests.log；ASan 受影响目标重新构建，未修改检查预算或编译警告。编码/文档链接/只读边界与差异检查通过，源码摘要保留于 build/panel-submit-final-source-sha256.json；未发现阻止本轮提交的剩余问题。
+
+## Eve 图标与 P4 分支合并审核
+
+日期：2026-10-29。范围：将远端六项 P4 提交（59b7c76 至 e9c89dd）合入本地图标提交 9d1ccda，合并提交为 96b650a。冲突仅在本文件和进度文档：保留两侧审核/验证记录，以远端已提交的 M3c1 为当前状态，图标记录作为独立已提交增量；不再用图标分支的“P4 未开始”覆盖最新进度。
+
+整合检查确认 P4 模块、ABI 和测试代码与 e9c89dd 一致；Qt 示例同时保留模块诊断入口及两个桌面 EXE 的 RC 资源，ICO 的 OBJECT_DEPENDS 仍有效。八项正式素材与只读原稿及 provenance 哈希一致，四个 Debug/Release 桌面 EXE 的七尺寸 RT_ICON 帧逐字节匹配原 PNG。未改 sources/ 或第三方源码，未新增功能。
+
+合并后 Ela/MSVC Debug、Release 构建及全量测试各 557/557 通过。Debug 首轮及重试分别遇到两个桌面入口的既有 PDB 损坏（LNK1285）；仅删除对应生成文件后重新链接通过，未修改编译选项或源代码。初始失败与最终日志保留为 build/merge-p4-eve-debug*.log、merge-p4-eve-release.log，PE 图标审计为 build/merge-p4-eve-icons.log。冲突标记、差异格式、文档本地链接检查通过；本次整合审核未发现阻止合并的剩余问题。
 
 ## P4-M3c1 排队操作与 effect 提交前审查
 
@@ -81,6 +112,16 @@ ASan 另发现新测试构造 vector 时引用自身旧元素的问题，已先�
 两个新增真实回归在修复前 0/2 通过，修复后 2/2，P4 专项 14/14；红/绿日志保留为 build/p4-review-red-tests.log / green-tests.log。账目审查覆盖唯一租约、移动/自移动、排空与并发释放、永久 pin 和预算；未把记录为空当作卸载许可。公开接口保持 Qt/Windows 类型隔离，原生句柄禁止复制且所有返回路径由 RAII 关闭，未关闭严格警告。
 
 最终原目录 MSVC Debug/Release 各 473/473，无 Qt GCC Debug 215/215，ASan P4 14/14；关闭示例的 Qt Debug P4 14/14，检查后恢复原开关。六个新增编译单元的 ASan 参数、13 项源/构建/脚本快照、公开头/依赖边界、编码/格式、文档链接及 git diff --check 均通过。末次将 PowerShell 规范为仓库要求的 BOM/CRLF，脚本解码内容一致，随后四种入口的 junction 定向复验通过；其余文件保持 UTF-8/LF。日志为 build/p4-review-*-tests.log / script-*.log，审计为 build/p4-review-audit.log。未发现阻止本轮提交的剩余问题，实现和审查记录随本提交归档；P4-M2 真实 DLL/ABI 尚未实施，不将 M1 当作整阶段完成。
+
+## Eve 正式软件图标接入审核
+
+日期：2026-10-28。范围：31e52ab 后的 Eve 素材、Qt 内嵌资源、Windows EXE 图标、内部品牌工厂及 ICO 封装工具。采用用户指定设计合集 README 标明的最终纯色蓝主稿 #2864C5，不采用历史渐变或字标组合。八个正式素材的 SHA-256 与原始文件及归档 manifest 一致；sources/ 保持只读。
+
+审核确认 PNG 原样内嵌至静态 Ui 库，通过全局资源初始化函数保证链接并只注册一次；图标对象按应用使用，不额外静态持有 GUI 图标。默认应用、窗口/任务栏和导航品牌位共用七尺寸 PNG；宿主已显式设置的应用图标保持有效。两个桌面 EXE 另编入 ICO，Core/普通源码 SDK 不增加依赖，不引入 QtSvg、运行时外部文件或 Python 依赖。RC 模板使用带引号的配置路径和 UTF-8 code page。
+
+ICO 工具只用标准库验证 RGBA 尺寸并封装既有 PNG，无重采样/着色；重复生成 SHA-256 一致。四个 Debug/Release 桌面 EXE 的 RT_GROUP_ICON/RT_ICON 数据逐帧与原 PNG 相同，涵盖 16/24/32/48/64/128/256px。Debug/Release 各 459/459 通过；最终 RC 模板单独重建检查通过。日志为 build/eve-brand-<debug|release>.log、eve-brand-final-resources-<mode>.log 和 eve-brand-audit.log。
+
+原生 Release 窗口观察到标题栏和左侧品牌位为正式 Eve 轮廓且透明镂空正确，工作台保持运行供查看。首次原生状态捕获提示 no screenshot targets found，按原窗口重新选取后恢复，未据此重启或重复启动进程。没有修改应用名称、配置路径、插件业务图标或保存状态；未改第三方源码。差异、来源及文档检查通过，本轮审核未发现阻止提交的问题。
 
 ## Home 卡片窗口与配置实例添加提交前审查
 

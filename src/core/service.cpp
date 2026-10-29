@@ -289,8 +289,6 @@ Task<void> invokeService(const std::weak_ptr<BindingControl>& weak, const std::w
                          InstanceId instance, Epoch epoch)
 {
     auto lease = committed ? committedLease.lock() : std::shared_ptr<CommittedLease>{};
-    if (cleanup && !lease)
-        return failedTask(makeError(ErrorCode::StaleContext, "cleanup requires a committed service lease"));
     auto binding = committed ? (lease ? lease->binding : nullptr) : weak.lock();
     if (!binding) return failedTask(makeError(ErrorCode::StaleContext, "service reference expired"));
     if (!binding->scheduler->isCurrentThread()) return failedTask(makeError(ErrorCode::WrongThread, "invoke requires owner thread"));
@@ -307,8 +305,10 @@ Task<void> invokeService(const std::weak_ptr<BindingControl>& weak, const std::w
                 return failedTask(allowed.error());
         }
     }
+    if (cleanup && !lease)
+        return failedTask(makeError(ErrorCode::StaleContext, "cleanup requires committed lease"));
     if (binding->state != BindingState::Published && !(cleanup && binding->state == BindingState::Retiring))
-        return failedTask(makeError(ErrorCode::ServiceRetiring, "binding unavailable for this async call"));
+        return failedTask(makeError(ErrorCode::ServiceRetiring, "binding retiring"));
     if (binding->type != type) return failedTask(makeError(ErrorCode::DependencyVersion, "service type mismatch"));
     if (binding->calls == std::numeric_limits<std::size_t>::max() || (lease && lease->calls == std::numeric_limits<std::size_t>::max()))
         return failedTask(makeError(ErrorCode::InvalidArgument, "call count exhausted"));
@@ -322,23 +322,6 @@ Task<void> invokeService(const std::weak_ptr<BindingControl>& weak, const std::w
     catch (const std::exception& error) { call->observe(failedTask(makeError(ErrorCode::CallbackFailed, error.what()))); }
     catch (...) { call->observe(failedTask(makeError(ErrorCode::CallbackFailed, "async service callback threw"))); }
     return call->completed.task();
-}
-Result<BindingSnapshot> snapshotService(const std::weak_ptr<BindingControl>& weak,
-                                        const std::weak_ptr<CommittedLease>& committedLease, bool committed,
-                                        std::type_index type)
-{
-    using Output = Result<BindingSnapshot>;
-    auto lease = committed ? committedLease.lock() : std::shared_ptr<CommittedLease>{};
-    auto binding = committed ? (lease ? lease->binding : nullptr) : weak.lock();
-    if (!binding)
-        return Output::failure(makeError(ErrorCode::StaleContext, "service reference expired"));
-    if (!binding->scheduler->isCurrentThread())
-        return Output::failure(makeError(ErrorCode::WrongThread, "service snapshot requires owner thread"));
-    if (lease && !lease->active)
-        return Output::failure(makeError(ErrorCode::StaleContext, "service lease released"));
-    if (binding->type != type)
-        return Output::failure(makeError(ErrorCode::DependencyVersion, "service type mismatch"));
-    return Output::success(binding->snapshot());
 }
 } // namespace cordis::detail
 

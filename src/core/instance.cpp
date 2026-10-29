@@ -566,54 +566,24 @@ Result<BindingId> Context::provideErased(ServiceKey key, std::shared_ptr<void> o
     if (!allowed.hasValue()) return Result<BindingId>::failure(allowed.error());
     return self->provide(realms_.resolve(std::move(key)), std::move(object), type);
 }
-Task<void> Context::withdraw(BindingId binding) const
-{
-    auto self = control_.lock();
-    if (!self)
-        return failedTask(makeError(ErrorCode::StaleContext, "instance expired"));
-    auto allowed = self->business(epoch_);
-    if (!allowed.hasValue())
-        return failedTask(allowed.error());
-    if (!binding.valid())
-        return failedTask(makeError(ErrorCode::InvalidArgument, "invalid output binding"));
-    for (const auto& output : self->outputs) {
-        auto snapshot = output.snapshot();
-        if (!snapshot.hasValue())
-            return failedTask(snapshot.error());
-        if (snapshot.value().id != binding)
-            continue;
-        auto retired = output.retire();
-        return retired.hasValue() ? output.whenUnused() : failedTask(retired.error());
-    }
-    return failedTask(makeError(ErrorCode::InvalidArgument, "output belongs to another instance or epoch"));
-}
 
 /** @brief 消费托管索引，不允许无注册表实例假定存在默认服务。 */
-Result<std::shared_ptr<detail::CommittedLease>>
-Context::consumeManaged(const ServiceKey& key, std::type_index type, std::uint32_t minimumMinor,
-                        const std::vector<std::string>& capabilities) const
+Result<std::shared_ptr<detail::CommittedLease>> Context::consumeManaged(const ServiceKey& key, std::type_index type) const
 {
     auto self = control_.lock();
     if (!self || !self->services) return Result<std::shared_ptr<detail::CommittedLease>>::failure(makeError(ErrorCode::StaleContext, "managed registry unavailable"));
-    return consumeErased(*self->services, key, type, minimumMinor, capabilities);
+    return consumeErased(*self->services, key, type);
 }
 /** @brief 固定本代服务租约，清理失败时保留账目而非提前释放提供者。 */
-Result<std::shared_ptr<detail::CommittedLease>>
-Context::consumeErased(const ServiceRegistry& registry, const ServiceKey& key, std::type_index type,
-                       std::uint32_t minimumMinor, const std::vector<std::string>& capabilities) const
+Result<std::shared_ptr<detail::CommittedLease>> Context::consumeErased(const ServiceRegistry& registry,
+    const ServiceKey& key, std::type_index type) const
 {
     using Output = Result<std::shared_ptr<detail::CommittedLease>>;
     auto control = control_.lock();
     if (!control) return Output::failure(makeError(ErrorCode::StaleContext, "instance context expired"));
     auto allowed = control->business(epoch_);
     if (!allowed.hasValue()) return Output::failure(allowed.error());
-    const auto resolved = realms_.resolve(key);
-    if (minimumMinor || !capabilities.empty()) {
-        auto checked = registry.findErased(resolved, type, minimumMinor, capabilities);
-        if (!checked.hasValue())
-            return Output::failure(checked.error());
-    }
-    return control->commit(registry, resolved, type);
+    return control->commit(registry, realms_.resolve(key), type);
 }
 
 /** @brief 检查清理调用窗口和线程，不允许异步清理结束后复用旧能力。 */

@@ -365,6 +365,7 @@ void states()
     scene.shell.management()->refresh().value();
     CHECK(scene.find<ElaText>("CordisNotification")->height() <= 24);
     CHECK(scene.window->statusBar()->height() <= 40);
+    scene.find<ElaComboBox>("CordisOutputTarget")->setCurrentIndex(1);
     CHECK(
         scene.find<ElaPlainTextEdit>("CordisWorkbenchOutput")->toPlainText().contains(QString::fromStdString(notice)));
     CHECK(scene.find<QTabWidget>("CordisWorkbenchPanel")->isHidden());
@@ -576,14 +577,15 @@ void panelTools()
     CHECK(!panel->isHidden() && copy->isHidden());
     panel->setCurrentWidget(output);
     CHECK(!copy->isHidden() && !clear->isHidden());
-    output->setPlainText("line one\nline two");
+    scene.shell.writeOutput("line one\nline two").value();
     copy->click();
     CHECK(QApplication::clipboard()->text() == output->toPlainText());
     clear->click();
     CHECK(output->toPlainText().isEmpty());
-    output->setPlainText("kept output");
+    scene.shell.writeOutput("kept output").value();
+    const auto kept = output->toPlainText();
     scene.find<QToolButton>("CordisHidePanel")->click();
-    CHECK(panel->isHidden() && output->toPlainText() == "kept output");
+    CHECK(panel->isHidden() && output->toPlainText() == kept);
     scene.close();
 }
 /** @brief 检索只改变显示，保留设置值；Ctrl+F/Escape 可恢复，不产生偏好写入。 */

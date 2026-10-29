@@ -17,6 +17,7 @@
 #include <vector>
 
 namespace cordis {
+namespace module::detail { struct NativeServices; }
 class Context;
 class Instance;
 class CleanupContext;
@@ -41,8 +42,8 @@ Result<void> callService(const std::weak_ptr<BindingControl>& binding, std::type
                          const std::function<void(void*)>& callback);
 /** @brief 异步调用将绑定与消费者调用保留到源任务完成且 owner 已处理其结果。 */
 Task<void> invokeService(const std::weak_ptr<BindingControl>& binding, const std::weak_ptr<CommittedLease>& lease,
-                         bool committed, std::type_index type, std::function<Task<void>(void*)> callback,
-                         bool cleanup = false, InstanceId instance = {}, Epoch epoch = 0);
+    bool committed, std::type_index type, std::function<Task<void>(void*)> callback,
+    bool cleanup = false, InstanceId instance = {}, Epoch epoch = 0);
 }
 
 /** @brief 服务名称、接口主版本和精确隔离域构成的键。 */
@@ -99,21 +100,10 @@ struct BindingSnapshot {
     ServiceMetadata metadata;
     bool deliveryBlocked;
 };
-namespace detail {
-/** @brief 只读诊断弱绑定或本代提交绑定，不授予调用或延长资源所有权。 */
-Result<BindingSnapshot> snapshotService(const std::weak_ptr<BindingControl>& binding,
-                                        const std::weak_ptr<CommittedLease>& lease, bool committed,
-                                        std::type_index type);
-} // namespace detail
 
 /** @brief 非拥有的业务引用，每次同步调用重新检查绑定门禁。 */
 template<class T> class ServiceRef {
 public:
-    /** @brief owner 读取本引用的精确键、状态及实现 minor/capability；不改变绑定寿命。 */
-    Result<BindingSnapshot> snapshot() const
-    {
-        return detail::snapshotService(binding_, lease_, committed_, typeid(T));
-    }
     /** @brief 发起返回 Task<void> 的异步调用；返回任务完成前服务所有权保持有效。 */
     template<class F> Task<void> invoke(F&& function) const
     {
@@ -163,6 +153,7 @@ public:
     /** @brief owner 线程读取状态，即使 Released 也可诊断。 */
     Result<BindingSnapshot> snapshot() const;
 private:
+    friend struct module::detail::NativeServices;
     friend class ServiceRegistry;
     friend struct detail::InstanceControl;
     /** @brief 为托管输出标记实例所有者，用于依赖环诊断。 */
@@ -194,6 +185,7 @@ public:
     /** @brief 读取所有尚未释放的绑定，不隐式清理资源。 */
     Result<std::vector<BindingSnapshot>> snapshot() const;
 private:
+    friend struct module::detail::NativeServices;
     friend class Context;
     friend struct detail::InstanceControl;
     friend class Instance;

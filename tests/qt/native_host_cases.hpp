@@ -28,12 +28,13 @@ struct Scene {
     using Count = unsigned(CORDIS_CALL*)();
     Count finishAll;
     Count queries;
-    Scene(std::shared_ptr<IScheduler> target = std::make_shared<FakeScheduler>(), const QString& name = "business")
+    Scene(std::shared_ptr<IScheduler> target = std::make_shared<FakeScheduler>(), const QString& name = "business",
+          const QString& folder = "module", std::optional<ServiceRegistry> services = {})
         : scheduler(std::move(target)),
-          generation(manager.load(root.toStdString(), install(name).toStdString()).value().generation),
-          module(NativeModule::open(manager, generation, scheduler).value())
+          generation(manager.load(root.toStdString(), install(name, folder).toStdString()).value().generation),
+          module(NativeModule::open(manager, generation, scheduler, std::move(services)).value())
     {
-        const auto value = manager.snapshot().value()[0];
+        const auto value = state();
         const auto path = QDir::toNativeSeparators(QString::fromUtf8(value.libraryPath.c_str())).toStdWString();
         image = GetModuleHandleW(path.c_str());
         CHECK(image);
@@ -49,12 +50,20 @@ struct Scene {
         auto fake = std::dynamic_pointer_cast<FakeScheduler>(scheduler);
         CHECK(fake && fake->runUntilIdle().hasValue());
     }
+    ModuleGenerationSnapshot state()
+    {
+        const auto snapshot = manager.snapshot().value();
+        for (const auto& value : snapshot)
+            if (value.generation == generation)
+                return value;
+        throw std::runtime_error("fixture generation missing");
+    }
     void finish()
     {
         auto report = module.close();
         pump();
         CHECK(report.isReady() && report.tryResult()->hasValue() && report.tryResult()->value().quiescent);
-        CHECK(manager.snapshot().value()[0].resources.records.empty());
+        CHECK(state().resources.records.empty());
         CHECK(manager.drain(generation).hasValue());
     }
 };

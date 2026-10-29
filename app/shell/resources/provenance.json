@@ -1,0 +1,47 @@
+{
+    "color":  "#2864C5",
+    "files":  [
+                  {
+                      "source":  "05_不同尺寸_透明PNG/eve-solid-blue-16.png",
+                      "file":  "eve-16.png",
+                      "sha256":  "aebc02493752f864967379b30eeda1a155e05d95a24dd85d631314f553112fcd"
+                  },
+                  {
+                      "source":  "05_不同尺寸_透明PNG/eve-solid-blue-24.png",
+                      "file":  "eve-24.png",
+                      "sha256":  "f7b912ffddae37f0563678573a98a544fd35b1790ec15d6c7cd1582428fa1a14"
+                  },
+                  {
+                      "source":  "05_不同尺寸_透明PNG/eve-solid-blue-32.png",
+                      "file":  "eve-32.png",
+                      "sha256":  "294f844ec31d8e8625a572a720209dfadd5a5ef34a4cf3b8e4c4d9146e7d699e"
+                  },
+                  {
+                      "source":  "05_不同尺寸_透明PNG/eve-solid-blue-48.png",
+                      "file":  "eve-48.png",
+                      "sha256":  "44b5c4142a9e0e533fb8da32e2c0d8fa11cb060b6418faad9256ac33cc861a7d"
+                  },
+                  {
+                      "source":  "05_不同尺寸_透明PNG/eve-solid-blue-64.png",
+                      "file":  "eve-64.png",
+                      "sha256":  "a90dc217c826fceb1233b32bdfa27982fda570bf0198c2cfb0cf778f3066cef9"
+                  },
+                  {
+                      "source":  "05_不同尺寸_透明PNG/eve-solid-blue-128.png",
+                      "file":  "eve-128.png",
+                      "sha256":  "404b6cdcaedf9ef2f167baac10791a206107d84a36c5f8b581a6a208e03c48be"
+                  },
+                  {
+                      "source":  "05_不同尺寸_透明PNG/eve-solid-blue-256.png",
+                      "file":  "eve-256.png",
+                      "sha256":  "595eade81bac76e148316289edf8e73d19527f21cf54d6e0133f19f40bdc6bb6"
+                  },
+                  {
+                      "source":  "01_最终主稿_纯色蓝/eve-solid-blue.svg",
+                      "file":  "eve-master.svg",
+                      "sha256":  "6d005649dcc832b0acb8722771e73922b31b897729202b3c4c46babcf728bf7b"
+                  }
+              ],
+    "source":  "sources/Eve_Studio_完整设计合集",
+    "version":  "最终主稿_纯色蓝"
+}

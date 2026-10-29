@@ -17,5 +17,3 @@ M3a 的 Cordis::ModuleRequests 提供私有请求仲裁/JSON 复制与真实 led
 M3b 的 Cordis::ModuleHost / NativeModule 提供稳定基础 HostTable、真实 DLL 生命周期、跨线程回调 Call 租约和显式关闭；不确定失败保留对象和模块。Serving 只表示业务宿主已建立；capabilities=0，不将未接入服务/effect 伪报为生产能力。实现及后续边界见 [M3b 记录](../../docs/p4-m3b-development.md)。
 
 M3c1 开启生产 DISPATCH/EFFECTS：复制及排队调用、独立请求/ACK、真实 Core effect、逆序清理和最后捕获退役屏障。服务能力仍关闭，M3c2 接入服务后再进入 Kernel/Session 联合验收，见 [资源桥记录](../../docs/p4-m3c-development.md)。上述 capabilities=0 是 M3b 提交时的历史状态。
-
-M3c2 开启生产 SERVICES，NativeModule.runtime 将原生实例绑定真实 Core Context，并复用声明服务、minor/capability/realm、异步调用和旧绑定清理。低层 create 未绑定 Core 时服务操作拒绝；托管实例先关闭 Core 所有者，再关闭模块会话。配额拒绝不新增依赖或隔离健康提供者，同步 ACK 不占异步仲裁预算。见 [服务桥记录](../../docs/p4-m3c2-development.md)；上文“服务关闭”为 M3c1 历史状态。

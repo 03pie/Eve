@@ -4,7 +4,7 @@
 #pragma once
 #include <cordis/effect.hpp>
 #include <cordis/module/ledger.hpp>
-#include <cordis/module/service.hpp>
+#include <cordis/service.hpp>
 #include <optional>
 
 namespace cordis::module {
@@ -12,6 +12,7 @@ class ModuleManager;
 namespace detail {
 struct NativeModuleControl;
 struct NativeInstanceControl;
+struct NativeServices;
 } // namespace detail
 enum class NativeInstanceState { Created, Starting, Started, Stopping, Destroyed, Failed };
 struct NativeLogRecord {
@@ -34,6 +35,8 @@ struct NativeInstanceSnapshot {
     std::vector<NativeLogRecord> logs;
     std::size_t pendingHostOperations;
     ScopeSnapshot resources;
+    std::vector<BindingSnapshot> services;
+    std::size_t committedServices;
 };
 /** @brief owner 线程使用的共享实例句柄，析构不代替显式 close。
  * 失败关闭保留原生实例与模块引用；成功关闭才执行并确认 destroy。
@@ -48,6 +51,7 @@ public:
 
 private:
     friend class NativeModule;
+    friend struct detail::NativeServices;
     explicit NativeInstance(std::shared_ptr<detail::NativeInstanceControl> control) : control_(std::move(control)) {}
     std::shared_ptr<detail::NativeInstanceControl> control_;
 };
@@ -63,17 +67,17 @@ struct NativeModuleSnapshot {
  */
 class NativeModule {
 public:
+    /** @brief 显式索引支持跨模块服务；未传入时首次服务操作创建本代私有索引。
+     * 共享索引须使用同一 scheduler，调用方保证其中所有活动实例的 InstanceId 唯一。
+     * 活动模块一旦使用索引就不能切换；默认索引不提供与其他模块的隐式连接。
+     */
     static Result<NativeModule> open(ModuleManager& manager, GenerationId generation,
-                                     std::shared_ptr<IScheduler> scheduler);
+                                     std::shared_ptr<IScheduler> scheduler, std::optional<ServiceRegistry> services = {});
     Result<NativeInstance> create(std::string pluginId, std::string configJson, InstanceId instance, Epoch epoch) const;
-    /** @brief 创建受 Core Context 拥有的定义，输出/依赖共用内核门禁；不挂载或登记 Kernel。 */
-    Result<Runtime> runtime(NativePlugin plugin) const;
     Task<CleanupReport> close() const;
     Result<NativeModuleSnapshot> snapshot() const;
 
 private:
-    Result<NativeInstance> createBound(std::string pluginId, std::string configJson, InstanceId instance, Epoch epoch,
-                                       std::optional<Context> context, NativePlugin plugin) const;
     explicit NativeModule(std::shared_ptr<detail::NativeModuleControl> control) : control_(std::move(control)) {}
     std::shared_ptr<detail::NativeModuleControl> control_;
 };

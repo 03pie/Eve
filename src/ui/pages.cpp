@@ -1,6 +1,9 @@
 /** @file pages.cpp
  * @brief 在 Ela 原生导航外壳中托管动态页面，按撤销贡献、完整删除和闭包释放的顺序清理。
  */
+#include "brand_p.hpp"
+#include "output_p.hpp"
+#include "panel_p.hpp"
 #include "fixed_tabs_p.hpp"
 #include "management_p.hpp"
 #include "services_p.hpp"
@@ -19,12 +22,14 @@
 #include <ElaToolButton.h>
 #include <ElaWindow.h>
 #include <QApplication>
+#include <QAction>
 #include <QCloseEvent>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QItemSelectionModel>
 #include <QKeySequence>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QPersistentModelIndex>
 #include <QPointer>
 #include <QScopedValueRollback>
@@ -55,12 +60,42 @@ public:
         setAcceptDrops(false);
         setExpanding(false);
         setTabSize(QSize(160, 36));
+        setFixedHeight(getTabSize().height());
+        applyTheme(eTheme->getThemeMode());
+        QObject::connect(eTheme, &ElaTheme::themeModeChanged, this,
+                         [this](ElaThemeType::ThemeMode mode) { applyTheme(mode); });
+    }
+private:
+    /** @brief 仅对调原有背景：当前页签透明，其余页签使用原选中叠层。 */
+    void applyTheme(ElaThemeType::ThemeMode mode)
+    {
+        setStyleSheet(QStringLiteral(
+            "QTabBar::tab{background:%1;color:%2;border:0;"
+            "border-top-left-radius:7px;border-top-right-radius:7px;"
+            "padding-left:13px;padding-right:8px;}"
+            "QTabBar::tab:!selected:hover{background:%3;}"
+            "QTabBar::tab:selected{background:transparent;}")
+            .arg(eTheme->getThemeColor(mode, ElaThemeType::BasicSelectedAlpha).name(QColor::HexArgb),
+                 eTheme->getThemeColor(mode, ElaThemeType::BasicText).name(),
+                 eTheme->getThemeColor(mode, ElaThemeType::BasicSelectedHoverAlpha).name(QColor::HexArgb)));
     }
 protected:
     /** @brief 禁止第三方拖出逻辑，保留普通悬停效果。 */
     void mouseMoveEvent(QMouseEvent* event) override
     {
         if (event->buttons() == Qt::NoButton) ElaTabBar::mouseMoveEvent(event);
+    }
+    /** @brief 保留原有短选中标记，不给透明页签添加整条边框。 */
+    void paintEvent(QPaintEvent* event) override
+    {
+        ElaTabBar::paintEvent(event);
+        if (currentIndex() < 0) return;
+        const auto current = tabRect(currentIndex());
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(eTheme->getThemeColor(eTheme->getThemeMode(), ElaThemeType::PrimaryNormal));
+        painter.drawRoundedRect(QRectF(current.left() + 7, current.top() + 7, 3, current.height() - 14), 2, 2);
     }
 };
 using Key = std::tuple<InstanceId, Epoch, std::string>;
@@ -118,6 +153,7 @@ private:
 struct ShellControl : std::enable_shared_from_this<ShellControl> {
     std::shared_ptr<qt::QtScheduler> scheduler;
     std::shared_ptr<ServicesControl> services;
+    std::shared_ptr<OutputControl> output;
     std::shared_ptr<ManagementControl> management;
     QPointer<HostWindow> window;
     std::optional<qt::QObjectResource> windowResource;
@@ -281,6 +317,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
         open = false;
         closing = true;
         starting = true;
+        closeOutput(output);
         closeWorkbench(workbench);
         auto self = shared_from_this();
         cordis::detail::TaskAccess::observe(closeManagement(management), [self](Task<void>::Snapshot result) {
@@ -574,11 +611,15 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     if (!qobject_cast<QApplication*>(QCoreApplication::instance()) || !scheduler || !scheduler->isCurrentThread() || !scheduler->isOpen())
         throw std::invalid_argument("ElaShell requires QApplication and open owner scheduler");
     eApp->init();
+    const auto icon = detail::eveApplicationIcon();
+    if (QApplication::windowIcon().isNull())
+        QApplication::setWindowIcon(icon);
     control_ = std::make_shared<detail::ShellControl>();
     control_->scheduler = std::move(scheduler);
     auto window = std::make_unique<detail::HostWindow>(control_);
     control_->window = window.get();
     window->setWindowTitle(QString::fromUtf8("Cordis 插件平台"));
+    window->setWindowIcon(QApplication::windowIcon());
     window->resize(1200, 800);
     window->setStackSwitchMode(ElaWindowType::None);
     window->setNavigationBarDisplayMode(ElaNavigationType::Compact);
@@ -590,8 +631,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     window->setNavigationBarWidth(240);
     window->setUserInfoCardTitle(QString::fromUtf8("Cordis"));
     window->setUserInfoCardSubTitle(QString::fromUtf8("插件工作台"));
-    window->setUserInfoCardPixmap(ElaIcon::getInstance()->getElaIcon(ElaIconType::PuzzlePiece, 48,
-        eTheme->getThemeColor(ElaThemeType::Light, ElaThemeType::PrimaryNormal)).pixmap(64, 64));
+    window->setUserInfoCardPixmap(icon.pixmap(64, 64));
     control_->navigation = window->findChild<ElaNavigationBar*>();
     control_->navigationView = window->findChild<QTreeView*>("ElaNavigationView");
     if (!control_->navigation || !control_->navigationView) throw std::runtime_error("pinned Ela navigation unavailable");
@@ -604,14 +644,13 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     if (!control_->stack) throw std::runtime_error("pinned Ela page stack unavailable");
     auto panel = new detail::FixedDiagnosticsTabs(nullptr);
     panel->setObjectName("CordisWorkbenchPanel"); panel->setMinimumHeight(110);
-    auto commandList = new ElaListView(panel);
-    commandList->setStyleSheet("ElaListView{background-color:transparent;border:0;}");
-    commandList->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    commandList->setItemHeight(32); commandList->setObjectName("CordisCommandList");
-    panel->addTab(commandList, QString::fromUtf8("命令"));
+    QListView* commandList = nullptr;
+    auto commandPanel = detail::createCommandPanel(panel, commandList);
+    panel->addTab(commandPanel, QString::fromUtf8("命令"));
     auto output = new ElaPlainTextEdit(panel);
-    output->setObjectName("CordisWorkbenchOutput"); output->setReadOnly(true); output->setMaximumBlockCount(500);
-    output->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}");
+    output->setObjectName("CordisWorkbenchOutput"); output->setReadOnly(true); output->setMaximumBlockCount(5000);
+    output->setFrameShape(QFrame::NoFrame);
+    output->setStyleSheet("ElaPlainTextEdit{background-color:transparent;border:0;}");
     panel->addTab(output, QString::fromUtf8("输出"));
     auto header = new QWidget;
     auto headerLayout = new QHBoxLayout(header); headerLayout->setContentsMargins(0, 0, 0, 0);
@@ -641,6 +680,15 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     statusBar->addWidget(notification, 1);
     window->setStatusBar(statusBar);
     control_->services = detail::createUiServices(control_->scheduler, commandList, notification, output);
+    std::weak_ptr<detail::ShellControl> outputWeak = control_;
+    detail::WindowAccess outputAccess = [outputWeak](const std::function<void()>& action) {
+        if (auto state = outputWeak.lock(); state && state->open) {
+            detail::ShellControl::NavigationAccess access(*state);
+            action();
+        }
+    };
+    control_->output = detail::createOutput(control_->scheduler, output, outputAccess);
+    output_ = std::shared_ptr<OutputService>(new OutputService(control_->output));
     pages_ = std::shared_ptr<UiPagesService>(new UiPagesService(control_));
     commands_ = std::shared_ptr<CommandService>(new CommandService(control_->services));
     notifications_ = std::shared_ptr<NotificationService>(new NotificationService(control_->services));
@@ -856,7 +904,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
              auto state = weak.lock();
              return state && state->open && static_cast<bool>(state->configurationHandler);
          }},
-        QString::fromStdString(preferencesFile));
+        QString::fromStdString(preferencesFile), control_->output);
     window->addFooterNode(QString::fromUtf8("设置"), detail::workbenchSettings(control_->workbench), control_->settingsKey, 0, ElaIconType::GearComplex);
     window->addFooterNode(QString::fromUtf8("关于"), detail::workbenchAbout(control_->workbench), control_->aboutKey, 0, ElaIconType::CircleInfo);
     for (const auto& entry : {std::make_pair(control_->safeKey, QString::fromUtf8("概览")),
@@ -864,6 +912,20 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
                              std::make_pair(control_->aboutKey, QString::fromUtf8("关于 Cordis"))})
         detail::registerWorkbenchPage(control_->workbench, entry.first, entry.second);
     detail::selectWorkbenchPage(control_->workbench, control_->safeKey);
+    std::vector<QAction*> platformCommands;
+    for (auto action : window->findChildren<QAction*>())
+        if (action->objectName().startsWith("Cordis")) platformCommands.push_back(action);
+    detail::configureCommandPanel(control_->services, commandPanel, platformCommands, control_->output, outputAccess);
+    detail::installOutputTools(control_->output, panel);
+    detail::installProblemsPanel(panel, diagnostics_, control_->output, outputAccess, [weak](InstanceId id, const QString& path) {
+        auto state = weak.lock();
+        if (!state || !state->open) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closed"));
+        detail::ShellControl::NavigationAccess access(*state);
+        if (!path.isEmpty()) return detail::showManagementDialog(state->management, "configuration:" + path, true);
+        if (!id.valid()) return state->configurationHandler ? state->configurationHandler() : Result<void>::failure(makeError(ErrorCode::InvalidArgument, "configuration editor unavailable"));
+        return detail::showManagementDialog(state->management, QString::number(id.value()));
+    });
+    (void)detail::appendOutput(control_->output, {}, "platform", "工作台已初始化。");
     QObject::connect(togglePanel, &ElaToolButton::clicked, window.get(), [panel] { panel->setVisible(panel->isHidden()); });
     // ElaWindow 转发信号发生在堆栈切换之前；直接监听其后注册的原生信号，记录实际已切换页面。
     QObject::connect(control_->navigation.data(), &ElaNavigationBar::navigationNodeClicked, window.get(), [weak, panel](ElaNavigationType::NavigationNodeType, const QString& key, bool) {
@@ -912,6 +974,11 @@ std::shared_ptr<UiPagesService> ElaShell::pages() const { return pages_; }
 std::shared_ptr<CommandService> ElaShell::commands() const { return commands_; }
 /** @brief 通知服务只接收值类型，宿主关闭后拒绝提交。 */
 std::shared_ptr<NotificationService> ElaShell::notifications() const { return notifications_; }
+std::shared_ptr<OutputService> ElaShell::output() const { return output_; }
+Result<std::uint64_t> ElaShell::writeOutput(std::string text, OutputLevel level) const
+{
+    return detail::appendOutput(control_->output, {}, "platform", std::move(text), level);
+}
 /** @brief 普通插件不获得管理控制器，宿主自行决定何时绑定 Kernel。 */
 std::shared_ptr<ManagementController> ElaShell::management() const { return management_; }
 /** @brief 只读服务的快照不包含 Kernel、Instance 或 Qt 对象。 */
