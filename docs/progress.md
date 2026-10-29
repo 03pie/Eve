@@ -6,6 +6,8 @@
 
 ## 当前状态
 
+2026-10-28 Eve 软件图标增量：采用用户指定设计合集的最终纯色蓝 #2864C5，两个桌面入口 EXE 与 Qt 窗口/任务栏、Ela 导航品牌位统一。现成七尺寸透明 PNG 原样使用，ICO 封装可复现，素材 hash 与原稿/归档 manifest 一致；不依赖只读 sources/ 参与构建。Debug/Release 各 459/459 通过，Windows 图标帧和原生显示已复核；详见 [资源说明](../app/shell/resources/README.md)及[审核记录](code-review.md#eve-正式软件图标接入审核)。本轮审核后提交，P4/P5 状态不变。
+
 **P1/P2 及 P3 已完成（当前内置插件/Windows 支持矩阵）。Q2g 已审核提交为 e3491ae，跨组件装配验收为 766db1e。本次用户明确确认 Q4d3 手动验证通过；当前 Release 的 Home 手动路径及原生 150% 明暗布局另经代理复核，退出码均为 0。P3 完成审计及最终验收记录随本阶段审核提交归档。UI 设计与优化独立专项已完成（当前第一方 Windows / Qt 5.15.2 / Ela 范围）；P4/P5 尚未开始，原生模块路线仍为 ModuleManager、ABI 桥与模块驻留账目。**
 
 UI 专项 [UI-S0–S4 五个阶段](ui-special-stages.md)已全部收口：统一 Ela 组件、Microsoft YaHei 字体、ElaAwesome 图标、真实状态与独立反馈/偏好，并完成 VS Code 结构对照及四项交互增量。最终 Release 454/454、ASan UI 114/114；Debug 完整轮次 453 项通过，150% 多截图项独立连续五次通过。最新原生检查 32/32 通过，用户已分别确认基线体验、Windows 系统 150% 和四项新增交互及两个窗口正常关闭。剪贴板错误 5 已解除，见 [增量验证与完成审计](ui-structure-verification.md)。原先未提交的 UI 基线随本提交归档，P4/P5 仍未开始。

@@ -1,6 +1,7 @@
 /** @file pages.cpp
  * @brief 在 Ela 原生导航外壳中托管动态页面，按撤销贡献、完整删除和闭包释放的顺序清理。
  */
+#include "brand_p.hpp"
 #include "fixed_tabs_p.hpp"
 #include "management_p.hpp"
 #include "services_p.hpp"
@@ -574,11 +575,15 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     if (!qobject_cast<QApplication*>(QCoreApplication::instance()) || !scheduler || !scheduler->isCurrentThread() || !scheduler->isOpen())
         throw std::invalid_argument("ElaShell requires QApplication and open owner scheduler");
     eApp->init();
+    const auto icon = detail::eveApplicationIcon();
+    if (QApplication::windowIcon().isNull())
+        QApplication::setWindowIcon(icon);
     control_ = std::make_shared<detail::ShellControl>();
     control_->scheduler = std::move(scheduler);
     auto window = std::make_unique<detail::HostWindow>(control_);
     control_->window = window.get();
     window->setWindowTitle(QString::fromUtf8("Cordis 插件平台"));
+    window->setWindowIcon(QApplication::windowIcon());
     window->resize(1200, 800);
     window->setStackSwitchMode(ElaWindowType::None);
     window->setNavigationBarDisplayMode(ElaNavigationType::Compact);
@@ -590,8 +595,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     window->setNavigationBarWidth(240);
     window->setUserInfoCardTitle(QString::fromUtf8("Cordis"));
     window->setUserInfoCardSubTitle(QString::fromUtf8("插件工作台"));
-    window->setUserInfoCardPixmap(ElaIcon::getInstance()->getElaIcon(ElaIconType::PuzzlePiece, 48,
-        eTheme->getThemeColor(ElaThemeType::Light, ElaThemeType::PrimaryNormal)).pixmap(64, 64));
+    window->setUserInfoCardPixmap(icon.pixmap(64, 64));
     control_->navigation = window->findChild<ElaNavigationBar*>();
     control_->navigationView = window->findChild<QTreeView*>("ElaNavigationView");
     if (!control_->navigation || !control_->navigationView) throw std::runtime_error("pinned Ela navigation unavailable");
