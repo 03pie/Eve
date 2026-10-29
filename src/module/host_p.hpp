@@ -52,6 +52,9 @@ struct NativeInstanceControl : std::enable_shared_from_this<NativeInstanceContro
     }
     std::shared_ptr<NativeModuleControl> root;
     std::shared_ptr<NativeResources> resources;
+    std::optional<Context> business;
+    std::optional<CleanupContext> cleanupAccess;
+    bool managedClosing = false;
     RequestChannel channel;
     const std::string pluginId;
     const InstanceId instance;
@@ -93,6 +96,7 @@ struct NativeInstanceControl : std::enable_shared_from_this<NativeInstanceContro
         watch(receipt);
     }
     void advanceClose();
+    void finishStart(std::optional<ErrorInfo> error);
     void closeResources();
     Task<NativeOutcome> invoke(NativeRequestKind kind, const char* label,
                                const std::function<CordisStatus(CordisRequestId)>& action);

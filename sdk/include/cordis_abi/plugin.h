@@ -156,7 +156,8 @@ typedef struct CordisPluginApiV1 {
     /* Cancels host-initiated plugin work, without completing or destroying it. */
     CordisStatus(CORDIS_CALL* cancel_request)(CordisHandle instance, CordisRequestId request);
     /* Final delivery for a plugin-originated host operation. Synchronous ACK;
-     * no PENDING, no recursive complete, borrowed result copied if retained.
+     * no PENDING or complete for this ACK. Other pending entries may complete;
+     * host.complete only copies/queues. Borrowed result copied if retained.
      */
     CordisStatus(CORDIS_CALL* request_complete)(CordisHandle instance, CordisRequestId request, CordisStatus status,
                                                 CordisBytesV1 result_json);

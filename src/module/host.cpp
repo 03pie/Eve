@@ -219,16 +219,44 @@ CordisStatus CORDIS_CALL closeEffectHost(CordisHandle context, CordisHandle effe
         *output = 0;
     return withResources(context, [&](NativeResources& resources) { return resources.effectClose(effect, output); });
 }
+CordisStatus CORDIS_CALL registerServiceHost(CordisHandle context, CordisHandle effect, const CordisServiceKeyV1* key,
+                                             const CordisServiceMetadataV1* metadata, CordisHandle token,
+                                             CordisHandle* output) noexcept
+{
+    if (output)
+        *output = 0;
+    return withResources(context, [&](NativeResources& resources) {
+        return resources.serviceRegister(effect, key, metadata, token, output);
+    });
+}
+CordisStatus CORDIS_CALL withdrawServiceHost(CordisHandle context, CordisHandle binding,
+                                             CordisRequestId* output) noexcept
+{
+    if (output)
+        *output = 0;
+    return withResources(context,
+                         [&](NativeResources& resources) { return resources.serviceWithdraw(binding, output); });
+}
+CordisStatus CORDIS_CALL invokeServiceHost(CordisHandle context, const CordisServiceKeyV1* key, uint32_t minor,
+                                           CordisBytesV1 capabilities, CordisBytesV1 method, CordisBytesV1 json,
+                                           CordisRequestId* output) noexcept
+{
+    if (output)
+        *output = 0;
+    return withResources(context, [&](NativeResources& resources) {
+        return resources.serviceInvoke(key, minor, capabilities, method, json, output);
+    });
+}
 const CordisHostV1 hostTable{{sizeof(CordisHostV1), CORDIS_ABI_MAJOR, CORDIS_ABI_MINOR, 0},
-                             CORDIS_CAP_DISPATCH | CORDIS_CAP_EFFECTS,
+                             CORDIS_CAP_ALL,
                              0,
                              complete,
                              log,
                              cancelHost,
                              dispatchHost,
-                             nullptr,
-                             nullptr,
-                             nullptr,
+                             registerServiceHost,
+                             withdrawServiceHost,
+                             invokeServiceHost,
                              createEffectHost,
                              readyEffectHost,
                              closeEffectHost};
@@ -355,9 +383,14 @@ Task<NativeOutcome> NativeInstanceControl::invoke(NativeRequestKind kind, const 
 {
     auto ticket = channel.begin(kind, label);
     if (!ticket.hasValue()) {
-        quarantine(ticket.error());
         Promise<NativeOutcome> failed;
-        failed.reject(ticket.error());
+        if (ticket.error().code == ErrorCode::ModulePinned &&
+            (kind == NativeRequestKind::Invoke || kind == NativeRequestKind::Callback))
+            failed.resolve({CORDIS_E_LIMIT, {}, false});
+        else {
+            quarantine(ticket.error());
+            failed.reject(ticket.error());
+        }
         return failed.task();
     }
     CordisStatus status;
@@ -568,12 +601,81 @@ Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id,
 }
 Result<NativeInstance> NativeModule::create(std::string plugin, std::string config, InstanceId id, Epoch epoch) const
 {
+    auto definition = NativePlugin{plugin, {}, {}};
+    return createBound(std::move(plugin), std::move(config), id, epoch, {}, std::move(definition));
+}
+Result<Runtime> NativeModule::runtime(NativePlugin plugin) const
+{
+    auto root = control_;
+    if (!root->ownerThread())
+        return Result<Runtime>::failure(hostError(ErrorCode::WrongThread, "native definition owner required"));
+    {
+        std::lock_guard<std::mutex> lock(root->mutex);
+        if (root->closing || root->faulted)
+            return Result<Runtime>::failure(hostError(ErrorCode::ContextClosing, "native host is closing"));
+    }
+    auto scheduler = root->scheduler.lock();
+    if (!scheduler || !scheduler->isOpen())
+        return Result<Runtime>::failure(hostError(ErrorCode::SchedulerClosed, "native scheduler is closed"));
+    if ((!plugin.dependencies.empty() || !plugin.outputs.empty()) &&
+        !(root->record->api->table.capabilities & CORDIS_CAP_SERVICES))
+        return Result<Runtime>::failure(hostError(ErrorCode::AbiMismatch, "module did not negotiate services"));
+    if (std::find(root->record->api->plugins.begin(), root->record->api->plugins.end(), plugin.pluginId) ==
+        root->record->api->plugins.end())
+        return Result<Runtime>::failure(hostError(ErrorCode::InvalidArgument, "plugin absent from verified module"));
+    if (plugin.dependencies.size() > 128 || plugin.outputs.size() > 128)
+        return Result<Runtime>::failure(
+            hostError(ErrorCode::InvalidArgument, "native service contract budget exceeded"));
+    auto validDescriptor = [](const ServiceKey& key, const std::vector<std::string>& names) {
+        if (key.name.empty() || key.name.size() > CORDIS_MAX_ID_BYTES || !validAbiUtf8(key.name) ||
+            !key.interfaceMajor || !key.realm.valid() || names.size() > 128)
+            return false;
+        return std::all_of(names.begin(), names.end(), [](const std::string& name) {
+            return !name.empty() && name.size() <= CORDIS_MAX_ID_BYTES && validAbiUtf8(name);
+        });
+    };
+    for (const auto& dependency : plugin.dependencies)
+        if (!validDescriptor(dependency.key, dependency.capabilities))
+            return Result<Runtime>::failure(hostError(ErrorCode::InvalidArgument, "invalid native service dependency"));
+    for (const auto& output : plugin.outputs)
+        if (!validDescriptor(output.key, output.metadata.capabilities))
+            return Result<Runtime>::failure(hostError(ErrorCode::InvalidArgument, "invalid native service output"));
+    std::vector<ServiceRequirement> dependencies;
+    std::vector<ServiceOutput> outputs;
+    for (const auto& dependency : plugin.dependencies)
+        dependencies.push_back(
+            ServiceRequirement::of<NativeService>(dependency.key, dependency.minimumMinor, dependency.capabilities));
+    for (const auto& output : plugin.outputs)
+        outputs.push_back(ServiceOutput::of<NativeService>(output.key, output.required, output.metadata));
+    try {
+        return Result<Runtime>::success(Runtime(
+            [module = *this, plugin = std::move(plugin)](Context context) {
+                auto identity = context.identity();
+                if (!identity.hasValue())
+                    return failedTask(identity.error());
+                auto instance = module.createBound(plugin.pluginId, context.config(), identity.value().instance,
+                                                   identity.value().epoch, context, plugin);
+                return instance.hasValue() ? instance.value().start() : failedTask(instance.error());
+            },
+            std::move(dependencies), std::move(outputs)));
+    } catch (const std::invalid_argument& error) {
+        return Result<Runtime>::failure(hostError(ErrorCode::InvalidArgument, error.what()));
+    }
+}
+Result<NativeInstance> NativeModule::createBound(std::string plugin, std::string config, InstanceId id, Epoch epoch,
+                                                 std::optional<Context> context, NativePlugin definition) const
+{
     auto root = control_;
     if (!root->ownerThread())
         return Result<NativeInstance>::failure(hostError(ErrorCode::WrongThread, "native host owner required"));
     auto scheduler = root->scheduler.lock();
     if (!scheduler || !scheduler->isOpen())
         return Result<NativeInstance>::failure(hostError(ErrorCode::SchedulerClosed, "native scheduler is closed"));
+    if (context) {
+        auto guard = context->eventGuard(scheduler);
+        if (!guard.hasValue())
+            return Result<NativeInstance>::failure(guard.error());
+    }
     if (!id.valid() || epoch == 0 || config.size() > CORDIS_MAX_JSON_BYTES || !validAbiJson(config) ||
         std::find(root->record->api->plugins.begin(), root->record->api->plugins.end(), plugin) ==
             root->record->api->plugins.end())
@@ -597,6 +699,7 @@ Result<NativeInstance> NativeModule::create(std::string plugin, std::string conf
     auto self = std::make_shared<NativeInstanceControl>(root, scheduler, std::move(plugin), id, epoch,
                                                         std::move(lease.value()));
     self->resources = std::make_shared<NativeResources>(self, scheduler);
+    self->business = context;
     {
         auto& directory = registry();
         std::lock_guard<std::mutex> lock(directory.mutex);
@@ -608,6 +711,42 @@ Result<NativeInstance> NativeModule::create(std::string plugin, std::string conf
     {
         std::lock_guard<std::mutex> lock(root->mutex);
         root->instances.emplace(self->channel.context(), self);
+    }
+    if (context) {
+        auto bound = self->resources->bind(*context, definition);
+        if (!bound.hasValue()) {
+            discardUncreated(self);
+            return Result<NativeInstance>::failure(bound.error());
+        }
+        std::weak_ptr<NativeInstanceControl> weak = self;
+        auto cleanup = context->onCleanup(
+            [weak](CleanupContext access) {
+                auto instance = weak.lock();
+                if (!instance)
+                    return completedTask();
+                instance->cleanupAccess = access;
+                instance->managedClosing = true;
+                auto closed = NativeInstance(instance).close();
+                Promise<void> done;
+                cordis::detail::TaskAccess::observe(closed, [done](Task<CleanupReport>::Snapshot report) {
+                    if (report->hasValue() && report->value().quiescent)
+                        done.resolve();
+                    else {
+                        auto error = hostError(ErrorCode::CleanupFailed, "managed native instance did not quiesce");
+                        if (report->hasValue())
+                            error.causes = report->value().errors;
+                        else
+                            error.causes.push_back(report->error());
+                        done.reject(std::move(error));
+                    }
+                });
+                return done.task();
+            },
+            "native.instance");
+        if (!cleanup.hasValue()) {
+            discardUncreated(self);
+            return Result<NativeInstance>::failure(cleanup.error());
+        }
     }
     auto call = root->source.ledger.acquire(ResourceKind::Call, "native.create");
     if (!call.hasValue()) {
@@ -701,34 +840,50 @@ Task<void> NativeInstance::start() const
             instance.quarantine(hostError(ErrorCode::AbiProtocol, "native start protocol fault"));
             return;
         }
-        std::optional<ErrorInfo> error;
-        if (value.value().status != CORDIS_OK)
-            error = operationError(value.value().status, false, value.value().json);
-        bool closing;
         {
             std::lock_guard<std::mutex> lock(instance.mutex);
             instance.startSettled = true;
             instance.startWire.reset();
-            closing = instance.closing;
-            instance.state = closing ? NativeInstanceState::Stopping
-                                     : (error ? NativeInstanceState::Failed : NativeInstanceState::Started);
-            if (error)
-                instance.failure = *error;
         }
-        if (error)
-            instance.started.reject(*error);
-        else
-            instance.started.resolve();
-        if (closing)
-            instance.advanceClose();
+        if (value.value().status != CORDIS_OK)
+            instance.finishStart(operationError(value.value().status, false, value.value().json));
+        else {
+            auto ready = instance.resources->ready();
+            instance.observe(ready, [](NativeInstanceControl& self, const Result<void>& result) {
+                self.finishStart(result.hasValue() ? std::optional<ErrorInfo>{}
+                                                   : std::optional<ErrorInfo>{result.error()});
+            });
+        }
+        instance.advanceClose();
     });
     return self->started.task();
+}
+void detail::NativeInstanceControl::finishStart(std::optional<ErrorInfo> error)
+{
+    bool stopping;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        stopping = closing;
+        if (state != NativeInstanceState::Destroyed)
+            state = stopping ? NativeInstanceState::Stopping
+                             : (error ? NativeInstanceState::Failed : NativeInstanceState::Started);
+        if (error)
+            failure = *error;
+    }
+    if (error)
+        started.reject(*error);
+    else
+        started.resolve();
+    if (stopping)
+        advanceClose();
 }
 Task<CleanupReport> NativeInstance::close() const
 {
     auto self = control_;
     if (!self->ownerThread())
         return failedCleanupTask(hostError(ErrorCode::WrongThread, "native instance owner required"));
+    if (self->business && !self->managedClosing)
+        return failedCleanupTask(hostError(ErrorCode::ContextClosing, "close the owning Core instance first"));
     auto scheduler = self->root->scheduler.lock();
     if (!scheduler || !scheduler->isOpen()) {
         self->quarantine(hostError(ErrorCode::SchedulerClosed, "native scheduler is closed"));
@@ -802,6 +957,9 @@ Task<CleanupReport> NativeModule::close() const
         std::lock_guard<std::mutex> lock(root->mutex);
         if (root->closing)
             return root->stopped.task();
+        for (const auto& pair : root->instances)
+            if (pair.second->business && !pair.second->managedClosing)
+                return failedCleanupTask(hostError(ErrorCode::ContextClosing, "close owning Core instances first"));
         root->closing = true;
         for (const auto& pair : root->instances)
             instances.push_back(pair.second);

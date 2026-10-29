@@ -2,6 +2,7 @@
  * @brief 线性扫描 RFC 8259 文法，保留文本，限制栈深度，不依赖 Qt。
  */
 #include "json_p.hpp"
+#include <algorithm>
 #include <cstdint>
 
 namespace cordis::module::detail {
@@ -39,6 +40,29 @@ class Scanner {
 public:
     explicit Scanner(std::string_view input) : input_(input) {}
     bool scan() noexcept { return value(0) && (space(), at_ == input_.size()); }
+    std::optional<std::vector<std::string>> strings()
+    {
+        space();
+        if (!take('['))
+            return {};
+        std::vector<std::string> result;
+        space();
+        if (take(']'))
+            return (space(), at_ == input_.size()) ? std::optional(result) : std::nullopt;
+        for (;;) {
+            space();
+            std::string item;
+            if (result.size() >= 128 || !string(&item) || item.empty() || item.size() > 128 ||
+                std::find(result.begin(), result.end(), item) != result.end())
+                return {};
+            result.push_back(std::move(item));
+            space();
+            if (take(']'))
+                return (space(), at_ == input_.size()) ? std::optional(result) : std::nullopt;
+            if (!take(','))
+                return {};
+        }
+    }
 
 private:
     char peek() const noexcept { return at_ < input_.size() ? input_[at_] : '\0'; }
@@ -80,7 +104,25 @@ private:
         }
         return true;
     }
-    bool string() noexcept
+    static void appendCode(std::string& output, std::uint32_t code)
+    {
+        if (code <= 0x7f)
+            output.push_back(static_cast<char>(code));
+        else if (code <= 0x7ff) {
+            output.push_back(static_cast<char>(0xc0 | (code >> 6)));
+            output.push_back(static_cast<char>(0x80 | (code & 0x3f)));
+        } else if (code <= 0xffff) {
+            output.push_back(static_cast<char>(0xe0 | (code >> 12)));
+            output.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3f)));
+            output.push_back(static_cast<char>(0x80 | (code & 0x3f)));
+        } else {
+            output.push_back(static_cast<char>(0xf0 | (code >> 18)));
+            output.push_back(static_cast<char>(0x80 | ((code >> 12) & 0x3f)));
+            output.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3f)));
+            output.push_back(static_cast<char>(0x80 | (code & 0x3f)));
+        }
+    }
+    bool string(std::string* output = nullptr)
     {
         if (!take('"'))
             return false;
@@ -93,22 +135,50 @@ private:
             if (c < 0x20)
                 return false;
             if (c >= 0x80) {
+                const auto begin = at_;
                 if (!readUnicode(input_, at_))
                     return false;
+                if (output)
+                    output->append(input_.substr(begin, at_ - begin));
                 continue;
             }
             ++at_;
-            if (c != '\\')
+            if (c != '\\') {
+                if (output)
+                    output->push_back(static_cast<char>(c));
                 continue;
+            }
             const auto escaped = peek();
             if (escaped == '"' || escaped == '\\' || escaped == '/' || escaped == 'b' || escaped == 'f' ||
                 escaped == 'n' || escaped == 'r' || escaped == 't') {
                 ++at_;
+                if (output) {
+                    switch (escaped) {
+                    case 'b':
+                        output->push_back('\b');
+                        break;
+                    case 'f':
+                        output->push_back('\f');
+                        break;
+                    case 'n':
+                        output->push_back('\n');
+                        break;
+                    case 'r':
+                        output->push_back('\r');
+                        break;
+                    case 't':
+                        output->push_back('\t');
+                        break;
+                    default:
+                        output->push_back(escaped);
+                        break;
+                    }
+                }
                 continue;
             }
             if (!take('u'))
                 return false;
-            std::uint32_t high, low;
+            std::uint32_t high, low = 0;
             if (!hex(high))
                 return false;
             if (high >= 0xdc00 && high <= 0xdfff)
@@ -116,6 +186,10 @@ private:
             if (high >= 0xd800 && high <= 0xdbff &&
                 (!take('\\') || !take('u') || !hex(low) || low < 0xdc00 || low > 0xdfff))
                 return false;
+            if (output)
+                appendCode(*output, high >= 0xd800 && high <= 0xdbff
+                                        ? 0x10000 + ((high - 0xd800) << 10) + (low - 0xdc00)
+                                        : high);
         }
         return false;
     }
@@ -205,5 +279,11 @@ bool validAbiUtf8(std::string_view text) noexcept
             return false;
     }
     return true;
+}
+std::optional<std::vector<std::string>> abiStringArray(std::string_view text)
+{
+    if (text.size() > 1024 * 1024)
+        return {};
+    return Scanner(text).strings();
 }
 } // namespace cordis::module::detail

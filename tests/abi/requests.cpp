@@ -385,6 +385,23 @@ void utf8()
     for (const auto& value : {"\x80", "\xc0\xaf", "\xe4\xb8", "\xed\xa0\x80", "\xf4\x90\x80\x80"})
         CHECK(!validAbiUtf8(value));
 }
+void stringArrays()
+{
+    auto decoded = abiStringArray(R"(["\u0065cho", "\u4e2d", "\ud83d\ude00", "a\nb"])");
+    CHECK(decoded && decoded->size() == 4 && (*decoded)[0] == "echo" && (*decoded)[1] == u8"中" &&
+          (*decoded)[2] == u8"😀" && (*decoded)[3] == "a\nb");
+    CHECK(abiStringArray("[]") && abiStringArray("[]")->empty());
+    CHECK(!abiStringArray(R"(["echo", "\u0065cho"])"));
+    const std::string unpaired = R"(["\ud800"])";
+    CHECK(!abiStringArray(unpaired));
+    CHECK(!abiStringArray("[1]") && !abiStringArray("[\"\"]") && !abiStringArray("[\"x\",]") && !abiStringArray("[]x"));
+    CHECK(!abiStringArray("[\"" + std::string(129, 'x') + "\"]"));
+    std::string values = "[";
+    for (unsigned i = 0; i < 128; ++i)
+        values += (i ? "," : "") + std::string("\"") + std::to_string(i) + "\"";
+    CHECK(abiStringArray(values + "]")->size() == 128);
+    CHECK(!abiStringArray(values + ",\"more\"]"));
+}
 int main(int argc, char** argv)
 {
     try {
@@ -425,6 +442,7 @@ int main(int argc, char** argv)
         else if (name == "json_valid") {
             json(true);
             utf8();
+            stringArrays();
         } else if (name == "json_invalid")
             json(false);
         else

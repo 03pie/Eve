@@ -91,3 +91,20 @@ M3b 只协商基础能力，真实服务/effect、Kernel/Session 和 UI DLL 仍�
 | M3c1-08 | scheduler 对象释放后仍可读取诊断，关闭保守报告不静止 | p4.native_resource_expired_scheduler |
 
 M3c1 的资源桥验证不替代 M3c2 服务或 Kernel/Session 联合验收；红绿复现和最终矩阵见 [M3c 记录](../../docs/p4-m3c-development.md)。
+
+
+| 编号 | M3c2 服务桥与 Core 场景 | 自动化依据 |
+|---|---|---|
+| M3c2-01 | 真实 DLL 独立实例、复制整数原文、独立请求、早到/异步/业务失败及 ACK | p4.native_service_flow / early / failure |
+| M3c2-02 | 在途取消、消费者关闭时仍等待真实提供者完成 | p4.native_service_cancel / closing |
+| M3c2-03 | 提供者退役后旧绑定异步清理，撤回等待并禁止跨实例 binding 操纵 | p4.native_service_cleanup / withdraw |
+| M3c2-04 | minor/capability、Unicode 转义同名、major/realm/owner、隔离域与 scheduler 归属 | p4.native_service_guards / realms / scheduler |
+| M3c2-05 | setup 未就绪不发布，取消 setup 完整清理，已暂存输出及元数据不匹配回滚 | p4.native_service_ready / ready_cancel / rollback |
+| M3c2-06 | 版本拒绝不提交租约；消费缓存预算、128 个真实绑定及失败无副作用 | p4.native_service_version_lease / consumers_budget |
+| M3c2-07 | 提供者满额仍回应 LIMIT、既有 256 项完成后恢复；同步 ACK 不被预算阻塞 | p4.native_service_incoming_budget / ack_capacity |
+| M3c2-08 | Core 停用后旧回调不执行；代次故障后直接服务引用不能进入 DLL | p4.native_service_stale_dispatch / generation_fault |
+| M3c2-09 | 旧 committed 异步清理、失败保留、跨实例/非 committed/过期/错误线程权限及元数据快照 | p4.service_access_async_cleanup / async_failure / guards / snapshots |
+| M3c2-10 | 自有输出撤回/消费者等待及版本前检，不改变失败查询的依赖账目 | p4.service_access_withdraw / versions |
+| M3c2-11 | 严格能力数组、UTF-8/代理对、转义同名、空值、非字符串及精确条数/字节边界 | p4.request_json_valid / json_invalid 内的字符串数组检查 |
+
+本表是 Core/服务桥，不计为两个独立服务 DLL 或 Kernel/Session/Qt UI DLL 已验收。阶段红绿、ASan 测试修复及最终矩阵见 [M3c2 记录](../../docs/p4-m3c2-development.md)。

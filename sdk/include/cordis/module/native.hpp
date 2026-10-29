@@ -4,6 +4,7 @@
 #pragma once
 #include <cordis/effect.hpp>
 #include <cordis/module/ledger.hpp>
+#include <cordis/module/service.hpp>
 #include <optional>
 
 namespace cordis::module {
@@ -65,10 +66,14 @@ public:
     static Result<NativeModule> open(ModuleManager& manager, GenerationId generation,
                                      std::shared_ptr<IScheduler> scheduler);
     Result<NativeInstance> create(std::string pluginId, std::string configJson, InstanceId instance, Epoch epoch) const;
+    /** @brief 创建受 Core Context 拥有的定义，输出/依赖共用内核门禁；不挂载或登记 Kernel。 */
+    Result<Runtime> runtime(NativePlugin plugin) const;
     Task<CleanupReport> close() const;
     Result<NativeModuleSnapshot> snapshot() const;
 
 private:
+    Result<NativeInstance> createBound(std::string pluginId, std::string configJson, InstanceId instance, Epoch epoch,
+                                       std::optional<Context> context, NativePlugin plugin) const;
     explicit NativeModule(std::shared_ptr<detail::NativeModuleControl> control) : control_(std::move(control)) {}
     std::shared_ptr<detail::NativeModuleControl> control_;
 };
