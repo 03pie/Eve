@@ -729,6 +729,9 @@ Result<NativeInstance> NativeModule::createBound(std::string plugin, std::string
         return Result<NativeInstance>::failure(std::move(error));
     }
     if (status != CORDIS_OK) {
+        // Core owns these precommitted inputs; they are not resources retained by a failed foreign create.
+        if (self->managed)
+            self->resources->services->releaseConsumers();
         if (!self->resources->empty()) {
             auto error = hostError(ErrorCode::AbiProtocol, "failed native create retained registered resources");
             self->quarantine(error);

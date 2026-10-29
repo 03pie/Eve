@@ -124,5 +124,8 @@ M3c2 记录见 [服务桥验证](../../docs/p4-m3c2-development.md)。这些 DLL
 | M3d1-07 | 声明/元数据验证、晚登记、realm 与 scheduler/索引归属 | p4.native_managed_guards / undeclared / metadata / realms / scheduler / index |
 | M3d1-08 | 提供者代次隔离、普通业务超限与恢复、满额同步 ACK | p4.native_managed_generation / incoming_budget / ack_capacity |
 | M3d1-09 | 真实 NativeModule→Kernel→Session、额外 inject、预览/CAS/保存/移除/退出 | p4.native_managed_session |
+| M3d1-10 | 托管 create 满额正常拒绝，借用依赖不被误判为遗留；释放容量后恢复与退出 | p4.native_managed_create_failure |
 
 最终 Release 全量 606/606、GCC 245/245、Debug/ASan Core/P4 各 260/260；关闭示例 P4 138/138 后恢复 ON。六项关键托管场景在 Debug/ASan 各连续 20 次通过，29 项源码/构建快照、15 个 ASan 编译命令、8 个独立 SDK 头和依赖边界核对通过。日志索引和红绿复现见 [开发记录](../../docs/p4-m3d1-development.md)。M3d1 完成不代表 M3d/M4、整个 P4 或物理卸载完成。
+
+M3d1 后续复审新增 M3d1-10：修复前真实失败 0/1，修复后 1/1；最终 Release 全量 607/607、Debug/ASan P4 各 139/139，新场景各连续 20 次通过。见 [独立复审](../../docs/code-review.md#p4-m3d1-独立复审创建拒绝与借用输入)；前段 606/260 等仍为 ed2471d 历史证据。

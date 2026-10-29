@@ -1,5 +1,17 @@
 # 提交前代码审查记录
 
+## P4-M3d1 独立复审：创建拒绝与借用输入
+
+日期：2026-10-29。审查基线 ed2471d，覆盖本段 Core/Kernel/Loader 和原生生命周期/服务/资源适配，按用户要求检查 bug、规范和质量后提交。由当前代理复审，未使用子代理。
+
+发现并修复一项 P2（src/module/host.cpp，NativeModule::createBound）：托管模式在进入 DLL create 前借用 Core 已提交的输入。DLL 满额且同步返回 LIMIT/空句柄时，原检查把这些宿主借用记录视为 DLL 遗留资源，错误隔离整个模块代次，阻止健康实例继续使用及后续重试。新增 native_managed_create_failure 使用真实 DLL 四槽容量，验证第五次拒绝、依赖计数回落、释放一槽后重新创建及完整退出；修复前 0/1，见 build/p4-m3d1-followup-red-tests.log，修复后 1/1，见 green-tests.log（相同 p4-m3d1-followup- 前缀）。
+
+修复仅在已经确认失败且空句柄的托管 create 分支清除借用输入引用，Core 继续持有并按本代清理释放租约。没有绕过真实 effect/服务/排队资源遗留的隔离检查，也没有改变低层 create 协议。复核了同 scheduler/索引归属、精确 realm、输出声明与统一发布、已接受操作/ACK 的最后捕获、服务键保留、目录冻结及配置门禁；未发现其他阻止本次提交的问题。格式、编码与差异规范通过，未为风格重写无关代码。
+
+最终原目录 Release 全量 607/607、Debug/ASan P4 各 139/139；新增创建失败/恢复在 Debug/ASan 各连续 20 次通过。三个变更源/构建文件 SHA256 与验证版本一致，两个受影响 C++ 编译命令均含 ASan，日志为 build/p4-m3d1-followup-{release,debug,asan}-{build,tests}.log、{debug,asan}-repeat.log、source-sha256.json、asan-commands.json 及 audit.log（均沿用前缀）。本轮没有修改 Core/Loader/SDK/可移植实现，GCC 和独立头证据沿用 ed2471d 的已验证版本；未把此前完整 Core/P4 数量记作本次重跑。sources/、research/、third_party/ 和 UI 未改，Release 仍为原目录且示例 ON。
+
+本次收口 M3d1 复审，M3d2 业务 DLL/真实 Qt/S06/S07 与 M4 UI DLL 仍待实施，P5 未开始。开发及验收映射见 [阶段记录](p4-m3d1-development.md)和 [验收单](../tests/acceptance/p4-module.md#m3d1-core-托管与冻结配置目录)。
+
 ## P4-M3d1 Core 托管与配置目录提交前审核
 
 日期：2026-10-29。基线 d6d003f。范围为 Core 私有适配门禁、NativeModule.runtime、Kernel 身份登记、冻结模块目录及 17 项真实 DLL/4 项无 Qt 回归；沿用远端低层 open/create 和 NativeServices。由当前代理审核，未使用子代理。

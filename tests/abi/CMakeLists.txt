@@ -119,7 +119,7 @@ if(TARGET cordis_module_native)
         service_budget service_cancel_protocol service_effect_barrier service_cycle service_retire service_cleanup_failure
         managed_flow managed_publication managed_setup_cancel managed_key managed_cleanup managed_guards
         managed_realms managed_stale_dispatch managed_session
-        managed_metadata managed_undeclared managed_setup_failure managed_scheduler managed_index managed_generation managed_incoming_budget managed_ack_capacity)
+        managed_metadata managed_undeclared managed_setup_failure managed_scheduler managed_index managed_generation managed_incoming_budget managed_ack_capacity managed_create_failure)
         add_test(NAME p4.native_${case} COMMAND "${CMAKE_COMMAND}"
             "-DTEST_EXE=$<TARGET_FILE:cordis_module_native_tests>"
             "-DFIXTURES=$<TARGET_FILE_DIR:cordis_fixture_good>"

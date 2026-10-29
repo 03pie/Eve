@@ -57,6 +57,12 @@
 
 上述日志的简写沿用 p4-m3d1-reviewed- 前缀。格式、UTF-8/LF、差异、文档引用及只读边界审计通过。完整 Debug UI 不属于本轮验证范围，UI 回归由 Release 全量覆盖。首轮 P4 135/135、138/138 及 pre-* 日志仅保留过程证据，最终矩阵以后缀 reviewed 的当前源码快照为准。未发现阻止本段提交的剩余问题；M3d2 与 M4 未完成，不能据此标记整包完成。
 
+## ed2471d 后的独立复审
+
+按用户要求复审 bug、规范和质量时发现：托管 create 前的 Core 借用输入被资源遗留检查误计入，DLL 正常容量拒绝也会隔离整个代次。现在在失败且空句柄分支清除宿主借用引用，Core 原有租约归属不变，实际 DLL 资源遗留仍保守隔离。
+
+新增 p4.native_managed_create_failure，使用真实 DLL 四槽容量验证满额拒绝、失败输入计数回落、释放容量后重新创建及完整退出；托管真实 DLL 场景由本段原 17 项增加为 18 项。红测 0/1、修复后 1/1；最终 Release 全量 607/607、Debug/ASan P4 各 139/139，新场景各连续 20 次通过。三个源/构建快照及两个 ASan 编译行核对通过，日志前缀为 build/p4-m3d1-followup-，详见 [复审记录](code-review.md#p4-m3d1-独立复审创建拒绝与借用输入)。上节 606/260 等数量保留为 ed2471d 的历史验证范围，不等同于本次重跑；M3d2/M4 待实施。
+
 ## 接入顺序
 
 宿主包含 cordis/module/runtime.hpp，先创建 scheduler/Kernel，再依次执行 ModuleManager.load、NativeModule.open（可显式传入 kernel.services()）、module.runtime(NativePlugin)、kernel.registerRuntime。ConfigSession 的 PluginDefinition 与 KernelPlugin 使用相同 PluginModule、真实 Runtime 和宿主 schema；按需用 nativeRequirement 声明可选 inject。只读状态门禁通过 NativeModule.snapshot 拒绝 closing/closed/faulted 的新激活，不进入 DLL。

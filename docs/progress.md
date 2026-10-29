@@ -8,6 +8,8 @@
 
 **P1/P2/P3 及 UI 专项已完成（当前内置插件/Windows 支持矩阵）。P4-M1 为 59b7c76、M2a 为 249a425、M2b 为 fed5a51，均已审核提交。当前 M3 进行中：M3a 已提交（1ffa0ff），M3b 为 f32191b，M3c1 为 e9c89dd；M3c2 真实服务桥已完成审查修复和最终验证，随本提交归档。M3d1 Core 托管与 Kernel/Session 目录接入已完成审查修复与最终验证，随本提交归档；M3d2 业务服务 DLL/真实 Qt 联合退出与 M4 UI DLL 待实施，P5 未开始。**
 
+2026-10-29 M3d1 复审：在 ed2471d 上发现并修复托管 create 正常拒绝时，借用输入被误判为 DLL 遗留资源、导致模块代次被隔离的一项 P2。新增真实 DLL 容量拒绝/恢复回归修复前 0/1、修复后通过；最终原 Release 全量 607/607、Debug/ASan P4 各 139/139，新场景在两配置各连续 20 次通过，格式、三项源码快照及 ASan 编译行检查通过。本次审查修复随提交归档，M3d2/M4 状态不变，见 [复审记录](code-review.md#p4-m3d1-独立复审创建拒绝与借用输入)。
+
 2026-10-29 M3d1：以远端优先合并后的 d6d003f 为基线，沿用已有 NativeServices/open/create，新增 Core 托管 Runtime、冻结输出/输入、Kernel 身份登记及配置目录。Kernel/Session、额外 inject、realm、回滚和关闭的 17 项真实 DLL 场景与 4 项无 Qt 场景已实现；复现修复 epoch/键/代次/容量门禁及低层回执兼容。最终 Release 606/606、Debug/ASan Core/P4 各 260/260、GCC 245/245、关闭示例 P4 138/138；六项关键场景在 Debug/ASan 各连续 20 次通过，29 项源/构建快照与 SDK/依赖审计通过。见 [M3d 分段](p4-m3d-development.md)、[本段记录](p4-m3d1-development.md)及 [ADR-0036](adr/0036-managed-native-runtime.md)。本轮不等同于业务 DLL 示例、真实 Qt 事件循环或整个 P4 完成。
 
 2026-10-29 M3c2：生产 HostTable 开启真实服务注册/撤回/调用，复用 Core committed 租约、精确 realm、版本/能力、依赖环及旧绑定清理；支持显式共享索引下两个真实 C DLL 互调。审查复现并修复“受理超限残留租约”和“取消协议异常遗漏隔离提供者”两项 P2，红测试 0/2、服务专项 19/19。最终 Debug/Release 各 585/585、GCC 241/241、ASan P4/W4/W5 152/152、关闭示例 P4 117/117；16 项源码哈希及 8 个 ASan 编译命令核对通过。见 [服务桥记录](p4-m3c2-development.md)、[决策](adr/0035-native-services.md)和[审查](code-review.md#p4-m3c2-原生服务桥提交前审核)。M3c 完成不代替 M3d 的配置驱动业务服务 DLL 和 Kernel/Session 完整退出验收。

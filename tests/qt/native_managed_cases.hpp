@@ -383,6 +383,30 @@ void incomingBudget()
     CHECK(s.stat(0, 1) == 257 && s.stat(3, 3) == CORDIS_OK);
     s.finishManaged();
 }
+void createFailure()
+{
+    Managed s;
+    s.mountProvider();
+    std::vector<Instance> consumers;
+    for (unsigned i = 0; i < 3; ++i)
+        consumers.push_back(s.kernel->mount(s.consumer).value());
+    s.pump();
+    // The real DLL has four slots. A fifth create rejects synchronously without retaining anything.
+    auto rejected = s.kernel->mount(s.consumer).value();
+    s.pump();
+    CHECK(rejected.ready().isReady() && !rejected.ready().tryResult()->hasValue());
+    CHECK(rejected.ready().tryResult()->error().code == ErrorCode::ActivationFailed);
+    CHECK(!s.module.snapshot().value().faulted && s.module.snapshot().value().instances.size() == 4);
+    CHECK(s.kernel->services().snapshot().value()[0].committedLeases == 3);
+    auto stopped = consumers.back().stop();
+    s.pump();
+    CHECK(stopped.tryResult()->value().quiescent);
+    auto recovered = s.kernel->mount(s.consumer).value();
+    s.pump();
+    CHECK(recovered.ready().tryResult()->hasValue() && !s.module.snapshot().value().faulted);
+    CHECK(s.kernel->services().snapshot().value()[0].committedLeases == 3);
+    s.finishManaged();
+}
 void ackCapacity()
 {
     Managed s;
@@ -464,6 +488,8 @@ bool run(const QString& name)
         generationGate();
     else if (name == "managed_incoming_budget")
         incomingBudget();
+    else if (name == "managed_create_failure")
+        createFailure();
     else if (name == "managed_ack_capacity")
         ackCapacity();
     else
