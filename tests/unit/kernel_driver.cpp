@@ -346,6 +346,27 @@ void cleanupFailure()
     scene.scheduler->close();
 }
 
+/** @brief 主作用域已清空但末尾清理失败时，配置仍不得认为检查点安全。 */
+void finalizerFailure()
+{
+    Scene scene;
+    scene.add("demo", [](Context context) {
+        context.afterCleanup([] { return failedTask(makeError(ErrorCode::CleanupFailed, "owner retained")); }).value();
+        return failedTask(makeError(ErrorCode::ActivationFailed, "setup rejected"));
+    });
+    scene.start();
+    auto accepted = scene.accept("[{id: a, plugin: demo}]");
+    scene.pump();
+    CHECK(accepted.settled.tryResult()->value().outcome == PlanOutcome::Failed);
+    CHECK(scene.coordinator->snapshot().value().unsafe);
+    const auto state = scene.kernel->snapshot().value().instances.front();
+    CHECK(state.resources.effects.empty() && state.hasRetainedResources());
+    auto closed = scene.coordinator->close();
+    scene.pump();
+    CHECK(!closed.tryResult()->value().quiescent);
+    scene.scheduler->close();
+}
+
 /** @brief 关闭不等 activate 完成才广播 stop，源任务真正结束后才确认排空。 */
 void shutdown()
 {
@@ -1473,6 +1494,8 @@ int main(int argc, char** argv)
             retry();
         else if (name == "cleanup_failure")
             cleanupFailure();
+        else if (name == "finalizer_failure")
+            finalizerFailure();
         else if (name == "shutdown")
             shutdown();
         else if (name == "realms")

@@ -90,6 +90,13 @@ public:
     Result<EffectToken> effect(EffectSetup setup, std::string label = "anonymous") const;
     /** @brief 登记独立清理组；清理中只能使用 CleanupContext，不获得激活上下文。 */
     Result<EffectToken> onCleanup(InstanceCleanup cleanup, std::string label = "instance.cleanup") const;
+    /** @brief 本代 effect/子实例/在途绑定调用全部静止后才执行；失败保留资源并阻止换代。
+     * 用于依赖其他清理完成的所有者销毁；按登记逆序串行执行，失败不再推进更早的所有者。
+     * 不提供提前关闭句柄，不授予业务/服务访问能力。
+     */
+    Result<void> afterCleanup(CleanupFunction cleanup, std::string label = "instance.finalize") const;
+    /** @brief 只比较上下文的调度器归属，不授予业务能力或延长实例寿命。 */
+    bool usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const;
     /** @brief 固定当前 Published 服务到本代 committed 账目；缺服务返回 DependencyMissing。 */
     template<class T> Result<ServiceRef<T>> consume(const ServiceRegistry& registry, const ServiceKey& key) const
     {
@@ -185,6 +192,15 @@ struct InstanceSnapshot {
     std::size_t committedLeases;
     std::optional<ErrorInfo> failure;
     std::size_t children;
+    /** @brief 末尾清理的独立账目；主资源静止不代表此阶段已完成。 */
+    std::optional<ScopeSnapshot> finalizers = {};
+    bool finalizing = false;
+    /** @brief 包含末尾清理的资源账目；空账目不单独证明调度器或状态有效。 */
+    bool hasRetainedResources() const noexcept
+    {
+        return !resources.effects.empty() || children != 0 || committedLeases != 0 ||
+               (finalizers && !finalizers->effects.empty());
+    }
 };
 
 /** @brief 声明强依赖的当前解析状态；key 已应用实例 realm，error 为空表示可发现。 */

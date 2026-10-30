@@ -3,6 +3,9 @@
  * @brief 生成当前编译器和目标平台的构建信息。
  */
 #include <cordis/build_info.hpp>
+#if defined(CORDIS_CORE_SHARED) && !defined(_DLL)
+#error "Shared Core requires the dynamic MSVC CRT (/MD or /MDd)"
+#endif
 
 namespace cordis {
 /**
@@ -21,5 +24,10 @@ BuildInfo buildInfo() noexcept
     constexpr auto compiler = "unknown";
 #endif
     return {CORDIS_PROJECT_VERSION, compiler, sizeof(void*) * 8U};
+}
+const void* coreRuntimeIdentity() noexcept
+{
+    static unsigned char identity = 0;
+    return &identity;
 }
 } // namespace cordis

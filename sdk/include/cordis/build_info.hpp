@@ -22,4 +22,6 @@ struct BuildInfo {
  * @return 当前构建的版本、编译器和指针宽度。
  */
 [[nodiscard]] BuildInfo buildInfo() noexcept;
+/** @brief 当前 Core 实现的进程内只读身份；比较身份不能代替 SDK/工具链兼容性校验。 */
+[[nodiscard]] const void* coreRuntimeIdentity() noexcept;
 } // namespace cordis

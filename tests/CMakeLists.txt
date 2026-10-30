@@ -57,7 +57,7 @@ add_executable(cordis_kernel_driver_tests unit/kernel_driver.cpp)
 target_link_libraries(cordis_kernel_driver_tests PRIVATE Cordis::ConfigKernel)
 cordis_target_defaults(cordis_kernel_driver_tests)
 foreach(case IN ITEMS lifecycle dependencies pending latest entry_identity retry cleanup_failure shutdown realms support ownership ownership_boundary guards delivery
-    inject_order inject_recovery inject_recreate inject_guards inject_graph inject_cleanup_failure internal_delivery
+    finalizer_failure inject_order inject_recovery inject_recreate inject_guards inject_graph inject_cleanup_failure internal_delivery
     tree_lifecycle tree_pending tree_realms tree_graph tree_latest tree_failure tree_shutdown tree_cleanup_failure tree_background_failure tree_cross_dependency tree_deferred_changes)
     add_test(NAME p3.kernel_driver_${case} COMMAND cordis_kernel_driver_tests ${case})
     set_tests_properties(p3.kernel_driver_${case} PROPERTIES LABELS "p3;loader;configuration;kernel_driver" TIMEOUT 15)
@@ -486,3 +486,17 @@ if(TARGET cordis_module_qt)
         set_tests_properties(p4.qt_load_${case} PROPERTIES LABELS "p4;module;qt;load" TIMEOUT 25)
     endforeach()
 endif()
+
+add_executable(cordis_instance_finalizer_tests unit/instance_finalizers.cpp)
+target_link_libraries(cordis_instance_finalizer_tests PRIVATE Cordis::Core)
+cordis_target_defaults(cordis_instance_finalizer_tests)
+foreach(case IN ITEMS order resource_failure finalizer_failure lifo lifo_failure epoch guards children setup dependencies delivery)
+    add_test(NAME p4.finalizer_${case} COMMAND cordis_instance_finalizer_tests ${case})
+    set_tests_properties(p4.finalizer_${case} PROPERTIES LABELS "p4;core;w3;finalizers" TIMEOUT 15)
+endforeach()
+
+if(TARGET cordis_module_qt)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/qt/qt_business.cmake")
+endif()
+
+set_tests_properties(p3.kernel_driver_finalizer_failure PROPERTIES LABELS "p4;p3;loader;configuration;kernel_driver;finalizers")

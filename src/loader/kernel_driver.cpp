@@ -466,8 +466,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
                                   auto state = instance.snapshot();
                                   bool safe = state.hasValue() && !state.value().deliveryBlocked &&
                                               !state.value().resources.deliveryBlocked &&
-                                              state.value().resources.effects.empty() && state.value().children == 0 &&
-                                              state.value().committedLeases == 0;
+                                              !state.value().hasRetainedResources();
                                   auto error = state.hasValue() && state.value().failure
                                                    ? *state.value().failure
                                                    : driverError(ErrorCode::ActivationFailed,
@@ -552,8 +551,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
             Access access(*self);
             auto snapshot = instance.snapshot().value();
             if (!result.hasValue() ||
-                (result.value().outcome == StableOutcome::Failed &&
-                 (!snapshot.resources.effects.empty() || snapshot.children || snapshot.committedLeases))) {
+                (result.value().outcome == StableOutcome::Failed && snapshot.hasRetainedResources())) {
                 self->backgroundUnsafe.emplace(driverError(
                     ErrorCode::CleanupFailed, "restored subtree did not establish a safe checkpoint", path));
             }

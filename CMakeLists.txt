@@ -19,6 +19,20 @@ if(CORDIS_BUILD_ELA_UI AND NOT CORDIS_REQUIRE_QT5152)
     message(FATAL_ERROR "Ela UI requires CORDIS_REQUIRE_QT5152")
 endif()
 
+# 同工具链 Qt 插件与宿主必须使用同一 Core，不能在各 DLL 中复制身份/服务状态。
+set(cordis_shared_core_default OFF)
+if(WIN32 AND CORDIS_REQUIRE_QT5152 AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    set(cordis_shared_core_default ON)
+endif()
+option(CORDIS_SHARED_CORE "Use one process Core DLL for same-toolchain C++ plugins" ${cordis_shared_core_default})
+if(CORDIS_SHARED_CORE)
+    if(NOT WIN32 OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        message(FATAL_ERROR "Shared Core currently supports the Windows/MSVC matrix only")
+    endif()
+    # Keep applications beside their shared runtime; per-fixture output overrides remain explicit.
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+endif()
+
 include(CTest)
 
 if(CORDIS_REQUIRE_QT5152)

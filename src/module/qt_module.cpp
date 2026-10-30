@@ -1,12 +1,14 @@
 /** @file qt_module.cpp
  * @brief 独立 Qt 装载后端；使用共同固定来源、进程目录及受限映像映射。
  */
-#include "catalog_p.hpp"
 #include "qt_manifest_p.hpp"
+#include "qt_module_p.hpp"
 #include <QCoreApplication>
 #include <QPluginLoader>
 #include <QPointer>
 #include <QThread>
+#include <cordis/build_info.hpp>
+#include <cordis/module/qt_manifest.hpp>
 #include <cordis/module/qt_module.hpp>
 
 namespace cordis::module {
@@ -17,13 +19,7 @@ ErrorInfo error(ErrorCode code, std::string message)
     value.phase = "module.qt.load";
     return value;
 }
-/** @brief 进程目录强持加载器及 root 账目；成员析构不用于声明成功退出。 */
-struct QtResidency final : detail::BackendResidency {
-    explicit QtResidency(const std::string& path) : loader(QString::fromUtf8(path.c_str())) {}
-    QPluginLoader loader;
-    QPointer<QObject> root;
-    ModuleLease rootLease;
-};
+using detail::QtResidency;
 } // namespace
 Result<ModuleLoadReport> loadQtModule(const std::string& root, const std::string& path, PreflightLimits limits)
 {
@@ -31,6 +27,12 @@ Result<ModuleLoadReport> loadQtModule(const std::string& root, const std::string
     auto app = QCoreApplication::instance();
     if (!app || QCoreApplication::closingDown() || QThread::currentThread() != app->thread())
         return Output::failure(error(ErrorCode::WrongThread, "Qt module loading requires application owner"));
+    // Also bind root-only hosts to the actual shared Core, before restricted dependency loading.
+    const auto runtime = buildInfo();
+    const auto host = qtToolchain();
+    if (runtime.version != std::string_view(host.sdkVersion) || runtime.compiler != std::string_view(host.compiler) ||
+        runtime.pointerBits != host.pointerBits)
+        return Output::failure(error(ErrorCode::AbiMismatch, "shared Core runtime differs from Qt SDK"));
     auto source = detail::verifyModuleSource(root, path, limits);
     if (!source.hasValue())
         return Output::failure(source.error());

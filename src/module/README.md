@@ -25,3 +25,5 @@ M3d2a 已增加 [两个业务服务 DLL 与真实 Qt/Kernel/Session 示例](../.
 M4a 将文件/祖先固定、二次声明/摘要及 PE 检查提取为私有 VerifiedSource，原生后端与 Cordis::ModuleQtPreflight 共用。manifest 明确区分 c-abi/qt-ui，原生后端拒绝 Qt 类型；Qt 端仅返回宿主工具链/产物快照，不调用 load/instance，不创建 root 或第二套目录。Qt 工厂/页面适配在 M4b/c，见 [架构边界](../../docs/adr/0037-qt-module-boundaries.md)和 [M4a 记录](../../docs/p4-m4a-development.md)。
 
 M4b1 新增 Cordis::ModuleQt / loadQtModule：两个装载后端共用进程目录、受限映像搜索及 PIN；Qt 对相同产物创建一次 loader root，并保留 loader/root 租约。root 活跃时 drain 拒绝，错误构造保守驻留；不手动 delete root 或 unload。此时 descriptorAccepted/businessAccepted 仍为 false，尚不能创建业务实例或插件页面；M4b2 工厂/实例适配继续，见 [记录](../../docs/p4-m4b1-development.md)。
+
+M4b2 提供 IQtPluginV1/IQtInstanceV1、Cordis::QtPluginSdk 和 qtRuntime。工厂通过实际 Core 身份和插件目录握手，宿主创建普通 Runtime；业务对象等待全部 Context 资源、输出对象和后登记的末尾清理完成，再通过 QObjectResource 完整析构并释放模块引用。输入 committed 租约在末尾清理成功后才释放，失败保留未确认对象。Windows/MSVC/Qt 默认使用共享 Core（Debug 加 d），SDK 与 Core 拒绝 /MT；无 Qt 默认静态 Core。根工厂继续进程驻留，创建中失活只清理、不激活旧代。实现与验证见 [M4b2](../../docs/p4-m4b2-development.md)，页面 DLL 在 M4c。

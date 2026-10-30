@@ -189,3 +189,17 @@ M3d1 后续复审新增 M3d1-10：修复前真实失败 0/1，修复后 1/1；�
 | 元数据合法但异常构造/重入的夹具仍仅预检、不创建 root | p4.qt_preflight_root_parent / root_throw / root_reenter |
 
 Loaded 仅证明此装载层完成，不证明 IQtPluginV1 工厂协商或 UI 可用；根租约仍在账，不声明可物理卸载。M4b2 工厂/实例与 M4c UI DLL/原生验收继续，详见 [记录](../../docs/p4-m4b1-development.md)。
+
+## M4b2 真实 Qt 工厂与业务实例
+
+| 行为 | 依据 |
+|---|---|
+| 实际接口/Core 身份/目录握手、定义租约及独立对象 | p4.qt_runtime_normal / multi / shared_core / wrong_core / missing_factory / bad_catalog / query_throw |
+| epoch 换代、初始化晚到、普通与末尾清理延迟/失败 | p4.qt_runtime_update / start_pending / cleanup_pending / start_failure / activation_throw / cleanup_failure / tail_pending / tail_failure |
+| 创建拒绝、异常、root/parent/活动对象别名及错误接口 | p4.qt_runtime_null / create_throw / root / parent / duplicate / wrong_instance |
+| owner/scheduler 门禁、插件内 inject 与带 DLL deleter 的服务输出 | p4.qt_runtime_guards / scheduler / inject / output |
+| 构造中 stop/update、跨 scheduler 的创建重入、描述重入 | p4.qt_reentry_create_stop / create_update / create_busy / query |
+| 末尾清理晚于主资源、LIFO、失败即停、换代/子树/晚到 setup/投递受阻/输入依赖保留 | p4.finalizer_order / resource_failure / finalizer_failure / lifo / lifo_failure / epoch / guards / children / setup / dependencies / delivery |
+| 主作用域为空但末尾清理仍未释放时配置不声明安全 | p3.kernel_driver_finalizer_failure |
+
+另以真实静态 Core 错链 DLL 检查生产握手在 query/create 前拒绝，不只依赖元数据声明；/MT 的插件 SDK 与共享 Core 编译探针均被拒绝。详见 [记录](../../docs/p4-m4b2-development.md)及 [ADR-0038](../../docs/adr/0038-qt-runtime-ownership.md)。本段为 QObject 业务夹具，M4c 的 QWidget 页面 DLL、配置装配和原生验收仍需完成；不声明物理卸载。

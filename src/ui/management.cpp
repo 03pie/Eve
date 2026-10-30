@@ -531,9 +531,15 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             for (const auto& runtime : core.value().names) if (runtime.id == snapshot.runtime) { name = runtime.name; break; }
             const bool pending = busy.count(snapshot.instance) != 0;
             const bool actionable = open && scheduler->isOpen() && !core.value().closing && !pending;
-            ManagedInstanceSnapshot row{snapshot, std::move(name), dependencies.value(), operation.value().id, {}, pending,
+            ManagedInstanceSnapshot row{
+                snapshot,
+                std::move(name),
+                dependencies.value(),
+                operation.value().id,
+                {},
+                pending,
                 actionable && snapshot.state != InstanceState::Unloading && snapshot.state != InstanceState::Disposed,
-                actionable && snapshot.state == InstanceState::Failed && snapshot.resources.effects.empty() && snapshot.children == 0 && snapshot.committedLeases == 0};
+                actionable && snapshot.state == InstanceState::Failed && !snapshot.hasRetainedResources()};
             if (auto result = operation.value().target.tryResult(); result && result->hasValue()) row.stable = result->value();
             output.instances.push_back(std::move(row));
         }
@@ -779,12 +785,26 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             text += dependency.error ? " : " + errorText(*dependency.error) + "\n" : QString::fromUtf8(" : 可用\n");
         }
         text += QString::fromUtf8("\n资源：%1  已提交租约：%2  子实例：%3\n").arg(snapshot.resources.effects.size()).arg(snapshot.committedLeases).arg(snapshot.children);
-        for (const auto& effect : snapshot.resources.effects) {
-            text += QString::fromStdString(effect.label) + QString::fromUtf8("  初始化等待=%1 清理等待=%2 保留清理=%3\n")
-                .arg(effect.setupPending).arg(effect.cleanupPending).arg(effect.retainedCleanups);
-            for (const auto& error : effect.errors) text += errorText(error) + "\n";
+        auto appendResources = [&](const ScopeSnapshot& resources) {
+            for (const auto& effect : resources.effects) {
+                text += QString::fromStdString(effect.label) +
+                        QString::fromUtf8("  初始化等待=%1 清理等待=%2 保留清理=%3\n")
+                            .arg(effect.setupPending)
+                            .arg(effect.cleanupPending)
+                            .arg(effect.retainedCleanups);
+                for (const auto& error : effect.errors)
+                    text += errorText(error) + "\n";
+            }
+            for (const auto& error : resources.errors)
+                text += errorText(error) + "\n";
+        };
+        appendResources(snapshot.resources);
+        if (snapshot.finalizers) {
+            text += QString::fromUtf8("\n末尾清理资源：%1  %2\n")
+                        .arg(snapshot.finalizers->effects.size())
+                        .arg(snapshot.finalizing ? QString::fromUtf8("执行中") : QString::fromUtf8("等待本代资源静止"));
+            appendResources(*snapshot.finalizers);
         }
-        for (const auto& error : snapshot.resources.errors) text += errorText(error) + "\n";
         text += QString::fromUtf8("\n管理操作\n");
         for (const auto& operation : local->operations) if (operation.instance == id) text += operationText(operation);
         details->setPlainText(text);

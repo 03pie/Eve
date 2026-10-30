@@ -95,6 +95,9 @@ struct ActiveContextWaiter {
 struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     std::shared_ptr<IScheduler> scheduler;
     EffectScope scope;
+    std::optional<EffectScope> finalizers;
+    std::vector<EffectToken> finalizerTokens;
+    bool finalizing = false;
     std::shared_ptr<const Runtime::Activate> activate;
     std::shared_ptr<InstanceControl> pin;
     std::optional<EffectToken> activation;
@@ -235,15 +238,12 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     /** @brief 资源清理及租约调用均静止后，释放 committed 并收敛实例目标。 */
     void finishRetire(const CleanupReport& report)
     {
-        activation.reset();
-        for (const auto& output : outputs) {
-            auto released = output.release();
-            if (!released.hasValue()) { blocked.store(true); return; }
-        }
-        outputs.clear();
-        for (const auto& lease : committed) releaseCommitted(lease);
+        for (const auto& lease : committed)
+            releaseCommitted(lease);
         committed.clear();
         children.clear();
+        finalizers.reset();
+        finalizing = false;
         retiring = false;
         if (stopping) {
             state = InstanceState::Disposed;
@@ -273,6 +273,63 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
         if (stopping) stopped.resolve(report);
     }
 
+    /** @brief 后登记者先释放，任何失败都保留尚未执行的所有者，不越过失败继续析构。 */
+    void advanceFinalizers(CleanupReport report)
+    {
+        auto self = shared_from_this();
+        if (!finalizerTokens.empty()) {
+            watch(finalizerTokens.back().close().thenOn(scheduler, [self, report = std::move(report)](
+                                                                       const Result<CleanupReport>& result) mutable {
+                if (!result.hasValue()) {
+                    self->blocked.store(true);
+                    return;
+                }
+                report.errors.insert(report.errors.end(), result.value().errors.begin(), result.value().errors.end());
+                if (!result.value().quiescent) {
+                    report.quiescent = false;
+                    self->failRetire(report);
+                    return;
+                }
+                self->finalizerTokens.pop_back();
+                self->advanceFinalizers(std::move(report));
+            }));
+            return;
+        }
+        watch(finalizers->close().thenOn(scheduler, [self, report = std::move(report)](
+                                                        const Result<CleanupReport>& result) mutable {
+            if (!result.hasValue()) {
+                self->blocked.store(true);
+                return;
+            }
+            report.quiescent = report.quiescent && result.value().quiescent;
+            if (report.quiescent)
+                self->finishRetire(report);
+            else {
+                report.errors.insert(report.errors.end(), result.value().errors.begin(), result.value().errors.end());
+                self->failRetire(report);
+            }
+        }));
+    }
+    /** @brief 主资源静止后先释放服务对象，再开始末尾所有者清理。 */
+    void finishFinalizers(CleanupReport report)
+    {
+        activation.reset();
+        for (const auto& output : outputs) {
+            auto released = output.release();
+            if (!released.hasValue()) {
+                blocked.store(true);
+                return;
+            }
+        }
+        outputs.clear();
+        if (!finalizers) {
+            finishRetire(report);
+            return;
+        }
+        finalizing = true;
+        advanceFinalizers(std::move(report));
+    }
+
     /** @brief 消费者和子实例全部退出后才启动提供者自己的 effect 清理。 */
     void beginCleanup()
     {
@@ -285,10 +342,13 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
                 self->failRetire(report);
                 return;
             }
-            self->watch(drainCommitted(self->committed).thenOn(self->scheduler, [self, report](const Result<void>& drained) {
-                if (drained.hasValue()) self->finishRetire(report);
-                else self->blocked.store(true);
-            }));
+            self->watch(
+                drainCommitted(self->committed).thenOn(self->scheduler, [self, report](const Result<void>& drained) {
+                    if (drained.hasValue())
+                        self->finishFinalizers(report);
+                    else
+                        self->blocked.store(true);
+                }));
         }));
     }
 
@@ -691,6 +751,35 @@ Result<EffectToken> Context::onCleanup(InstanceCleanup cleanup, std::string labe
     }, std::move(label));
 }
 
+bool Context::usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const
+{
+    auto control = control_.lock();
+    return control && control->scheduler == scheduler;
+}
+Result<void> Context::afterCleanup(CleanupFunction cleanup, std::string label) const
+{
+    if (!cleanup)
+        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "empty finalizer"));
+    auto control = control_.lock();
+    if (!control)
+        return Result<void>::failure(makeError(ErrorCode::StaleContext, "instance context expired"));
+    auto allowed = control->business(epoch_);
+    if (!allowed.hasValue())
+        return allowed;
+    if (!control->finalizers)
+        control->finalizers.emplace(control->scheduler);
+    auto accepted = control->finalizers->effect(
+        [cleanup = std::move(cleanup)](EffectSetupContext setup) mutable {
+            auto added = setup.addCleanup(std::move(cleanup));
+            return added.hasValue() ? completedTask() : failedTask(added.error());
+        },
+        std::move(label));
+    if (!accepted.hasValue())
+        return Result<void>::failure(accepted.error());
+    control->finalizerTokens.push_back(accepted.value());
+    return Result<void>::success();
+}
+
 /** @brief 校验插件定义，保存可供多个实例共享的激活函数。 */
 Runtime::Runtime(Activate activate, std::vector<ServiceRequirement> dependencies, std::vector<ServiceOutput> outputs)
 {
@@ -770,7 +859,17 @@ Result<InstanceSnapshot> Instance::snapshot() const
 {
     auto resources = control_->scope.snapshot();
     if (!resources.hasValue()) return Result<InstanceSnapshot>::failure(resources.error());
-    return Result<InstanceSnapshot>::success({control_->state, control_->blocked.load(), resources.value(), control_->epoch, control_->revision, control_->id, control_->runtime, control_->committed.size(), control_->failure, control_->children.size()});
+    std::optional<ScopeSnapshot> finalizers;
+    if (control_->finalizers) {
+        auto value = control_->finalizers->snapshot();
+        if (!value.hasValue())
+            return Result<InstanceSnapshot>::failure(value.error());
+        finalizers = value.value();
+    }
+    return Result<InstanceSnapshot>::success(
+        {control_->state, control_->blocked.load() || (finalizers && finalizers->deliveryBlocked), resources.value(),
+         control_->epoch, control_->revision, control_->id, control_->runtime, control_->committed.size(),
+         control_->failure, control_->children.size(), std::move(finalizers), control_->finalizing});
 }
 
 /** @brief 复用激活预检的精确查找，诊断不调用服务或改变 committed 保留。 */
