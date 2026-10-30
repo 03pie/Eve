@@ -1,6 +1,6 @@
 # P4 原生模块验收
 
-本单随 P4 逐包补齐。M1/M2 装载与 ABI 协商层在当前支持矩阵已验收；不将这些检查计为完整 P4、生产业务桥或 DLL 卸载验收。最新执行结果见 [P4 开发记录](../../docs/p4-development.md)、[M2a](../../docs/p4-m2-development.md)及 [M2b](../../docs/p4-m2b-development.md)。
+P4 已在当前 Windows x64 / MSVC / Qt 5.15.2 / 默认驻留支持矩阵完成，最新结论见 [收口审计](../../docs/p4-closeout.md)。本单保留各子阶段的详细自动化映射，当时的后续待实施描述作为历史；不声明物理卸载或 P5 完成。完整机器清单见 [p4-matrix.json](p4-matrix.json)，实际 CTest 标签及用户原生确认见 [M4c3 记录](../../docs/p4-m4c3-development.md)。
 
 | 编号 | 场景 | 当前自动化依据 |
 |---|---|---|
@@ -229,4 +229,4 @@ Loaded 仅证明此装载层完成，不证明 IQtPluginV1 工厂协商或 UI �
 | 长输出明确失败，不误写或覆盖历史 | p4.qt_workspace_output_limit |
 | 无 Qt 检查模块别名创建、数字原文、CAS、冲突/错误线程及关闭重入 | p3.session_module_add |
 
-最终矩阵、红绿复现和恢复后的构建范围见 [M4c2 记录](../../docs/p4-m4c2-development.md)。业务示例和宿主真实装配已完成；仍须 M4c3 的原生页面操作、需求逐项映射和最终收口，不声明物理卸载安全。
+最终矩阵、红绿复现和恢复后的构建范围见 [M4c2 记录](../../docs/p4-m4c2-development.md)。业务示例和宿主真实装配已完成；M4c3 已取得本次用户原生确认和退出码 0，最终范围、工具及原始回执见 [P4 收口](../../docs/p4-closeout.md)，不声明物理卸载安全。

@@ -13,3 +13,4 @@
 *.suo
 *.log
 compile_commands.json
+__pycache__/

@@ -2,11 +2,11 @@
 
 基于 Cordis 思路设计的 C++17 插件内核，目标桌面环境为 Qt 5.15.2 + ElaWidgetTools。
 
-当前已完成 **P1/P2/P3 及第一方 Windows UI 专项**，P3 收口及用户确认见 [阶段审计](docs/p3-closeout.md)。配置工作台支持预览、应用、期望启停、保存和磁盘冲突处理；Home 卡片可打开管理/配置窗口，顶部菜单可添加已注册插件的配置实例。Windows 托管 worker 支持类型化结果及完整退出屏障。
+当前已完成 **P1–P4 及第一方 Windows UI 专项（当前支持矩阵）**，阶段依据见 [P3 收口](docs/p3-closeout.md)和 [P4 收口](docs/p4-closeout.md)。配置工作台支持预览、应用、期望启停、保存和磁盘冲突处理；Home 卡片可打开管理/配置窗口，顶部菜单可添加已注册插件的配置实例。Windows 托管 worker 支持类型化结果及完整退出屏障。
 
 底部工作区支持搜索并执行已注册命令、按平台/插件实例选择真实输出，以及运行问题的筛选、详情和定位。插件通过 `ui.output/v1` 写入隔离通道，见[工作区接入说明](docs/workbench-panel-development.md)。
 
-**P4 进行中**：M1 预检/账目、M2 原生装载及完整业务 ABI 协商已完成，见 [ABI V1](docs/abi-v1.md)。M3 的请求、生命周期、资源/服务、Core 托管和 Kernel/Session 联合链路已收口，见 [M3 记录](docs/p4-m3-development.md)。M4a 预检、M4b Qt root/工厂/实例、[M4c1 共享 SDK](docs/p4-m4c-development.md)及 [M4c2 业务页面 DLL/配置/诊断](docs/p4-m4c2-development.md)已完成；M4c3 原生桌面验收和最终收口继续，P5 受控替换未开始；当前 C++ 源码 SDK 不构成稳定二进制 ABI。
+**P4 已完成（Windows x64 / MSVC / Qt 5.15.2 / 默认驻留）**：原生装载、ABI 请求/资源桥、两个业务服务 DLL、Core/Kernel/Session 与同工具链 UI DLL 已实现；M4c3 的需求映射、用户原生验收和退出回执已归档，见 [最终审计](docs/p4-closeout.md)。P5 受控替换及物理卸载未开始；当前 C++ 源码 SDK 不构成稳定二进制 ABI。
 
 实际 UI DLL 示例入口为 `cordis_qt_workspace_demo`，支持笔记编辑、实例命令/输出、多实例、配置换代/启停和模块诊断；构建与持久化说明见 [独立工作台](examples/qt_workspace/README.md)。
 

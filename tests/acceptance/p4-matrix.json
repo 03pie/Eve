@@ -1,0 +1,68 @@
+{
+  "formatVersion": 1,
+  "scope": "Windows x64 / MSVC / Qt 5.15.2 / shared Core-Qt-Ui / resident modules",
+  "supportTests": ["p3.session_module_add"],
+  "components": [
+    {"id": "M1-manifest", "pattern": "^p4\\.manifest_"},
+    {"id": "M1-ledger", "pattern": "^p4\\.ledger_"},
+    {"id": "M2-abi", "pattern": "^p4\\.(exception_flags|query_layout|business_layout|business_.*)$"},
+    {"id": "M2-native", "pattern": "^p4\\.native_(loaded|business|publication|duplicate|conflict|aliases|untracked|tampered|incompatible|image|lifetime|sharing|threads|dependency|search|budget)$"},
+    {"id": "M3a-requests", "pattern": "^p4\\.request_"},
+    {"id": "M3b-host", "pattern": "^p4\\.native_host_"},
+    {"id": "M3c-resources", "pattern": "^p4\\.native_resource_"},
+    {"id": "M3c-services", "pattern": "^p4\\.native_service_"},
+    {"id": "M3d-catalog", "pattern": "^p4\\.catalog_"},
+    {"id": "M3d-managed", "pattern": "^p4\\.native_managed_"},
+    {"id": "M3d-business", "pattern": "^p4\\.native_qt_"},
+    {"id": "M3d-lifecycle", "pattern": "^p4\\.native_lifecycle_"},
+    {"id": "M4a-preflight", "pattern": "^p4\\.qt_preflight_"},
+    {"id": "M4b-root", "pattern": "^p4\\.qt_load_"},
+    {"id": "M4b-finalizers", "pattern": "^(p4\\.finalizer_|p3\\.kernel_driver_finalizer_failure$)"},
+    {"id": "M4b-runtime", "pattern": "^p4\\.qt_runtime_"},
+    {"id": "M4b-reentry", "pattern": "^p4\\.qt_reentry_"},
+    {"id": "M4c-shared-ui", "pattern": "^p4\\.qt_ui_"},
+    {"id": "M4c-workspace", "pattern": "^p4\\.qt_workspace_"}
+  ],
+  "requirements": [
+    {
+      "id": "A01",
+      "claim": "C ABI layout/negotiation and same-toolchain Qt compatibility reject invalid business activation",
+      "tests": ["p4.query_layout", "p4.business_layout", "p4.business_negotiation", "p4.business_hosts", "p4.business_plugins", "p4.native_incompatible", "p4.native_image", "p4.qt_preflight_compiler", "p4.qt_preflight_runtime", "p4.qt_preflight_iterator", "p4.qt_preflight_pointer", "p4.qt_preflight_qt", "p4.qt_preflight_sdk", "p4.qt_runtime_wrong_core"]
+    },
+    {
+      "id": "A02",
+      "claim": "Retained callbacks, service objects, DLL deleters and Qt roots prevent false quiescence or unloading",
+      "tests": ["p4.ledger_pins", "p4.native_lifetime", "p4.native_resource_retire", "p4.native_service_retire", "p4.native_service_cleanup_failure", "p4.qt_load_drain", "p4.qt_runtime_output", "p4.qt_runtime_tail_failure", "p4.qt_ui_lifetime", "p4.qt_workspace_cleanup_failure"]
+    },
+    {
+      "id": "S06",
+      "claim": "Pending stop cancellation retains completion obligations until the real late DLL result and capture retirement",
+      "tests": ["p4.request_cancel", "p4.request_fence", "p4.native_lifecycle_cancel_stop", "p4.native_lifecycle_pending_stop"]
+    },
+    {
+      "id": "S07",
+      "claim": "Inactive callbacks skip business code while DLL capture destruction and final cross-thread retirement still complete",
+      "tests": ["p4.native_lifecycle_stale_capture", "p4.native_lifecycle_live_capture", "p4.native_lifecycle_failed_capture", "p4.native_host_callback_copy", "p4.qt_ui_lifetime"]
+    },
+    {
+      "id": "P4-SERVICES",
+      "claim": "Two real C ABI service DLLs use Kernel/Session, multi-instance realms, disk persistence and conservative failed cleanup",
+      "tests": ["p4.native_qt_normal", "p4.native_qt_multi", "p4.native_qt_realms", "p4.native_qt_start_failure", "p4.native_qt_cleanup_failure"]
+    },
+    {
+      "id": "P4-UI",
+      "claim": "A production same-toolchain UI DLL contributes real pages, managed commands and isolated output",
+      "tests": ["p4.qt_ui_scheduler", "p4.qt_workspace_normal", "p4.qt_workspace_multi", "p4.qt_workspace_update", "p4.qt_workspace_output_limit"]
+    },
+    {
+      "id": "P4-CONFIG",
+      "claim": "Frozen module identity, configuration ownership, persistence, save-conflict recovery and finalizers remain enforced",
+      "tests": ["p4.native_managed_session", "p4.qt_workspace_add", "p4.qt_workspace_toggle", "p4.qt_workspace_save", "p4.qt_workspace_close_conflict", "p4.qt_workspace_guards", "p3.session_module_add", "p3.kernel_driver_finalizer_failure"]
+    },
+    {
+      "id": "P4-DIAGNOSTICS",
+      "claim": "Read-only module diagnostics report real references, residency and failed resource ownership",
+      "tests": ["p4.ledger_categories", "p4.native_host_stop_failure", "p4.native_resource_expired_scheduler", "p4.qt_workspace_diagnostics", "p4.qt_workspace_cleanup_failure"]
+    }
+  ]
+}

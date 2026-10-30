@@ -18,6 +18,10 @@ option(CORDIS_BUILD_ELA_UI "Build pinned Ela shell and page contribution service
 if(CORDIS_BUILD_ELA_UI AND NOT CORDIS_REQUIRE_QT5152)
     message(FATAL_ERROR "Ela UI requires CORDIS_REQUIRE_QT5152")
 endif()
+if(WIN32 AND CORDIS_BUILD_ELA_UI)
+    enable_language(RC)
+endif()
+include("${PROJECT_SOURCE_DIR}/cmake/EveBrand.cmake")
 
 # 同工具链 Qt 插件与宿主必须使用同一 Core，不能在各 DLL 中复制身份/服务状态。
 set(cordis_shared_core_default OFF)
