@@ -6,7 +6,7 @@
 
 底部工作区支持搜索并执行已注册命令、按平台/插件实例选择真实输出，以及运行问题的筛选、详情和定位。插件通过 `ui.output/v1` 写入隔离通道，见[工作区接入说明](docs/workbench-panel-development.md)。
 
-**P4 已完成（Windows x64 / MSVC / Qt 5.15.2 / 默认驻留）**：原生装载、ABI 请求/资源桥、两个业务服务 DLL、Core/Kernel/Session 与同工具链 UI DLL 已实现；M4c3 的需求映射、用户原生验收和退出回执已归档，见 [最终审计](docs/p4-closeout.md)。P5 受控替换及物理卸载未开始；当前 C++ 源码 SDK 不构成稳定二进制 ABI。
+**P4 已完成（Windows x64 / MSVC / Qt 5.15.2 / 默认驻留）**：原生装载、ABI 请求/资源桥、两个业务服务 DLL、Core/Kernel/Session 与同工具链 UI DLL 已实现；M4c3 的需求映射、用户原生验收和退出回执已归档，见 [最终审计](docs/p4-closeout.md)。[P5 受控替换](docs/p5-development.md)已开始，M1 候选代目录已完成复审修复与验证，完整替换、迁移/恢复、卸载与压力验收继续；当前 C++ 源码 SDK 不构成稳定二进制 ABI。
 
 实际 UI DLL 示例入口为 `cordis_qt_workspace_demo`，支持笔记编辑、实例命令/输出、多实例、配置换代/启停和模块诊断；构建与持久化说明见 [独立工作台](examples/qt_workspace/README.md)。
 

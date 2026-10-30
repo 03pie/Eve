@@ -28,14 +28,14 @@ inline QByteArray read(const QString& path)
     return data;
 }
 inline QString install(const QString& source, const QString& directory, const QString& id, const QJsonArray& plugins,
-                       const QString& loader = "c-abi")
+                       const QString& loader = "c-abi", const QString& version = "1.0.0")
 {
     if (!QDir().mkpath(directory) || !QFile::copy(source, directory + "/module.dll"))
         throw std::runtime_error("cannot install isolated module fixture");
     const QJsonObject manifest{
         {"manifestVersion", 1},
         {"moduleId", id},
-        {"moduleVersion", "1.0.0"},
+        {"moduleVersion", version},
         {"loader", loader},
         {"library", "module.dll"},
         {"sha256", QString::fromLatin1(

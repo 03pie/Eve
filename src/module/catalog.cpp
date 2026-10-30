@@ -2,6 +2,7 @@
  * @brief 共享目录、代次保留及同一 Windows 映像的受限映射；不调用后端握手。
  */
 #include "catalog_p.hpp"
+#include <algorithm>
 
 namespace cordis::module::detail {
 namespace {
@@ -28,6 +29,34 @@ QString imagePath(HMODULE image)
     if (length == 0 || length >= buffer.size())
         return {};
     return QString::fromWCharArray(buffer.data(), static_cast<int>(length));
+}
+enum class ReusePurpose { Discovery, Staging };
+/** @brief 只读内部状态检查，调用方持 generation.mutex，不调用模块代码。 */
+Result<void> reusable(const Generation& generation, ReusePurpose purpose)
+{
+    if (generation.loading)
+        return Result<void>::failure(
+            error(ErrorCode::ModuleLoad, "module.load", "generation load is already in progress"));
+    if (generation.data.failure)
+        return Result<void>::failure(*generation.data.failure);
+    if (purpose == ReusePurpose::Staging && generation.data.businessFailure)
+        return Result<void>::failure(*generation.data.businessFailure);
+    {
+        std::lock_guard<std::mutex> signalLock(generation.businessSignal->mutex);
+        if (generation.businessSignal->error)
+            return Result<void>::failure(*generation.businessSignal->error);
+    }
+    if (generation.data.state != ModuleState::Loaded && generation.data.state != ModuleState::Serving)
+        return Result<void>::failure(
+            error(ErrorCode::ModulePinned, "module.load", "generation no longer accepts activation references"));
+    return Result<void>::success();
+}
+bool sameCatalog(const ModuleManifest& left, const ModuleManifest& right)
+{
+    auto a = left.plugins, b = right.plugins;
+    std::sort(a.begin(), a.end());
+    std::sort(b.begin(), b.end());
+    return left.moduleId == right.moduleId && left.loader == right.loader && a == b;
 }
 } // namespace
 Generation::Generation(const PreflightArtifact& artifact, std::unique_ptr<OpenedPath> file)
@@ -89,53 +118,73 @@ std::vector<std::shared_ptr<Generation>> allGenerations()
     std::lock_guard<std::mutex> lock(catalog.mutex);
     return catalog.generations;
 }
-Result<GenerationReservation> reserveGeneration(VerifiedSource& source)
+Result<GenerationReservation> reserveGeneration(VerifiedSource& source, GenerationId predecessor)
 {
+    using Output = Result<GenerationReservation>;
     const auto& verified = source.artifact;
     auto& artifact = source.library;
-    std::shared_ptr<Generation> generation;
-    bool created = false;
-    {
-        auto& catalog = registry();
-        std::lock_guard<std::mutex> lock(catalog.mutex);
-        for (const auto& item : catalog.generations) {
-            if (item->artifactFile->sameFile(*artifact) && item->data.manifest.moduleId != verified.manifest().moduleId)
-                return Result<GenerationReservation>::failure(error(
-                    ErrorCode::AbiMismatch, "module.identity", "artifact already belongs to another module identity"));
-            if (item->data.manifest.moduleId == verified.manifest().moduleId)
-                generation = item;
+    auto& catalog = registry();
+    // One lock orders reservations across both backends and every manager. No external code runs here.
+    std::lock_guard<std::mutex> lock(catalog.mutex);
+    std::shared_ptr<Generation> current, matching;
+    for (const auto& item : catalog.generations) {
+        std::lock_guard<std::mutex> itemLock(item->mutex);
+        if (item->artifactFile->sameFile(*artifact)) {
+            if (item->data.manifest.moduleId != verified.manifest().moduleId)
+                return Output::failure(error(ErrorCode::AbiMismatch, "module.identity",
+                                             "artifact already belongs to another module identity"));
+            if (!sameManifest(item->data.manifest, verified.manifest()))
+                return Output::failure(error(ErrorCode::ModulePinned, "module.identity",
+                                             "one physical artifact cannot represent different generations"));
         }
-        if (!generation) {
-            if (catalog.generations.size() >= 64)
-                return Result<GenerationReservation>::failure(
-                    error(ErrorCode::ModulePinned, "module.catalog", "resident module catalog budget exhausted"));
-            generation = std::make_shared<Generation>(verified, std::move(artifact));
-            catalog.generations.push_back(generation);
-            created = true;
-        }
+        if (item->data.manifest.moduleId != verified.manifest().moduleId)
+            continue;
+        if (item->data.role == GenerationRole::Current)
+            current = item;
+        if (sameManifest(item->data.manifest, verified.manifest()))
+            matching = item;
     }
-    if (!created) {
-        std::lock_guard<std::mutex> lock(generation->mutex);
-        if (!sameManifest(generation->data.manifest, verified.manifest()))
-            return Result<GenerationReservation>::failure(
-                error(ErrorCode::ModulePinned, "module.identity",
-                      "different content/version/catalog already owns this module ID"));
-        if (generation->loading)
-            return Result<GenerationReservation>::failure(
-                error(ErrorCode::ModuleLoad, "module.load", "generation load is already in progress"));
-        if (generation->data.failure)
-            return Result<GenerationReservation>::failure(*generation->data.failure);
-        {
-            std::lock_guard<std::mutex> signalLock(generation->businessSignal->mutex);
-            if (generation->businessSignal->error)
-                return Result<GenerationReservation>::failure(*generation->businessSignal->error);
-        }
-        if (generation->data.state != ModuleState::Loaded && generation->data.state != ModuleState::Serving)
-            return Result<GenerationReservation>::failure(
-                error(ErrorCode::ModulePinned, "module.load", "generation no longer accepts activation references"));
-        return Result<GenerationReservation>::success({generation, false});
+    if (predecessor.valid()) {
+        if (!current || current->data.generation != predecessor)
+            return Output::failure(error(ErrorCode::ConfigConflict, "module.stage",
+                                         "candidate predecessor is not the current generation of this module"));
+        std::lock_guard<std::mutex> currentLock(current->mutex);
+        auto available = reusable(*current, ReusePurpose::Staging);
+        if (!available.hasValue())
+            return Output::failure(available.error());
+        if (!sameCatalog(current->data.manifest, verified.manifest()))
+            return Output::failure(error(ErrorCode::AbiMismatch, "module.stage",
+                                         "candidate backend or plugin catalog differs from current generation"));
+        if (sameManifest(current->data.manifest, verified.manifest()))
+            return Output::failure(
+                error(ErrorCode::InvalidArgument, "module.stage", "candidate must differ from current generation"));
+    } else if (current) {
+        // Ordinary load continues to name only the current generation, even after candidates exist.
+        std::lock_guard<std::mutex> currentLock(current->mutex);
+        if (!sameManifest(current->data.manifest, verified.manifest()))
+            return Output::failure(error(ErrorCode::ModulePinned, "module.identity",
+                                         "different content/version/catalog already owns this module ID"));
+        auto available = reusable(*current, ReusePurpose::Discovery);
+        return available.hasValue() ? Output::success({current, false}) : Output::failure(available.error());
     }
-    return Result<GenerationReservation>::success({generation, true});
+    if (matching) {
+        std::lock_guard<std::mutex> matchLock(matching->mutex);
+        if (matching->data.role != GenerationRole::Candidate || matching->data.predecessor != predecessor)
+            return Output::failure(error(ErrorCode::ConfigConflict, "module.stage",
+                                         "existing content belongs to another generation lineage"));
+        auto available = reusable(*matching, ReusePurpose::Staging);
+        return available.hasValue() ? Output::success({matching, false}) : Output::failure(available.error());
+    }
+    if (catalog.generations.size() >= 64)
+        return Output::failure(
+            error(ErrorCode::ModulePinned, "module.catalog", "resident module catalog budget exhausted"));
+    auto generation = std::make_shared<Generation>(verified, std::move(artifact));
+    if (predecessor.valid()) {
+        generation->data.role = GenerationRole::Candidate;
+        generation->data.predecessor = predecessor;
+    }
+    catalog.generations.push_back(generation);
+    return Output::success({std::move(generation), true});
 }
 Result<void> mapGenerationImage(const std::shared_ptr<Generation>& generation)
 {

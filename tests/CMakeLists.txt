@@ -504,3 +504,6 @@ set_tests_properties(p3.kernel_driver_finalizer_failure PROPERTIES LABELS "p4;p3
 if(TARGET cordis_module_qt AND TARGET cordis_ui)
     include("${CMAKE_CURRENT_SOURCE_DIR}/qt/qt_ui.cmake")
 endif()
+if(TARGET cordis_module_native)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/qt/module_candidates.cmake")
+endif()

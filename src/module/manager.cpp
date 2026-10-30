@@ -81,6 +81,21 @@ ModuleManager::ModuleManager() : owner_(std::this_thread::get_id()) {}
 Result<ModuleLoadReport> ModuleManager::load(const std::string& pluginRoot, const std::string& manifestPath,
                                              PreflightLimits limits)
 {
+    return loadGeneration(pluginRoot, manifestPath, limits, {});
+}
+Result<ModuleLoadReport> ModuleManager::stage(const std::string& pluginRoot, const std::string& manifestPath,
+                                              GenerationId predecessor, PreflightLimits limits)
+{
+    if (std::this_thread::get_id() != owner_)
+        return Result<ModuleLoadReport>::failure(ownerError());
+    if (!predecessor.valid())
+        return Result<ModuleLoadReport>::failure(
+            error(ErrorCode::InvalidArgument, "module.stage", "candidate requires a current predecessor"));
+    return loadGeneration(pluginRoot, manifestPath, limits, predecessor);
+}
+Result<ModuleLoadReport> ModuleManager::loadGeneration(const std::string& pluginRoot, const std::string& manifestPath,
+                                                       PreflightLimits limits, GenerationId predecessor)
+{
     if (std::this_thread::get_id() != owner_)
         return Result<ModuleLoadReport>::failure(ownerError());
     auto source = detail::verifyModuleSource(pluginRoot, manifestPath, limits);
@@ -90,7 +105,7 @@ Result<ModuleLoadReport> ModuleManager::load(const std::string& pluginRoot, cons
     if (verified.manifest().loader != ModuleLoader::CAbi)
         return Result<ModuleLoadReport>::failure(
             error(ErrorCode::AbiMismatch, "module.loader", "C ABI backend requires c-abi loader"));
-    auto reserved = reserveGeneration(*source.value());
+    auto reserved = reserveGeneration(*source.value(), predecessor);
     if (!reserved.hasValue())
         return Result<ModuleLoadReport>::failure(reserved.error());
     const auto generation = reserved.value().generation;

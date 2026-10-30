@@ -14,6 +14,9 @@ namespace cordis::module {
  */
 Result<ModuleLoadReport> loadQtModule(const std::string& pluginRoot, const std::string& manifestPath,
                                       PreflightLimits limits = {});
+/** @brief 对当前 Qt 代显式暂存另一份产物；root 仍归 loader，不切换业务或卸载旧代。 */
+Result<ModuleLoadReport> stageQtModule(const std::string& pluginRoot, const std::string& manifestPath,
+                                       GenerationId predecessor, PreflightLimits limits = {});
 /** @brief 宿主冻结的同工具链插件契约；不允许 DLL 在创建时扩张依赖或输出声明。 */
 struct QtPlugin {
     std::string id;

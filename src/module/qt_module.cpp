@@ -20,8 +20,8 @@ ErrorInfo error(ErrorCode code, std::string message)
     return value;
 }
 using detail::QtResidency;
-} // namespace
-Result<ModuleLoadReport> loadQtModule(const std::string& root, const std::string& path, PreflightLimits limits)
+Result<ModuleLoadReport> loadGeneration(const std::string& root, const std::string& path, PreflightLimits limits,
+                                        GenerationId predecessor)
 {
     using Output = Result<ModuleLoadReport>;
     auto app = QCoreApplication::instance();
@@ -43,7 +43,7 @@ Result<ModuleLoadReport> loadQtModule(const std::string& root, const std::string
     auto metadata = detail::verifyQtMetadata(artifact, backend->loader);
     if (!metadata.hasValue())
         return Output::failure(metadata.error());
-    auto reservation = detail::reserveGeneration(*source.value());
+    auto reservation = detail::reserveGeneration(*source.value(), predecessor);
     if (!reservation.hasValue())
         return Output::failure(reservation.error());
     const auto generation = reservation.value().generation;
@@ -94,5 +94,22 @@ Result<ModuleLoadReport> loadQtModule(const std::string& root, const std::string
         generation->loading = false;
     }
     return Output::success({generation->data.generation, false});
+}
+} // namespace
+Result<ModuleLoadReport> loadQtModule(const std::string& root, const std::string& path, PreflightLimits limits)
+{
+    return loadGeneration(root, path, limits, {});
+}
+Result<ModuleLoadReport> stageQtModule(const std::string& root, const std::string& path, GenerationId predecessor,
+                                       PreflightLimits limits)
+{
+    auto app = QCoreApplication::instance();
+    if (!app || QCoreApplication::closingDown() || QThread::currentThread() != app->thread())
+        return Result<ModuleLoadReport>::failure(
+            error(ErrorCode::WrongThread, "Qt staging requires application owner"));
+    if (!predecessor.valid())
+        return Result<ModuleLoadReport>::failure(
+            error(ErrorCode::InvalidArgument, "candidate requires a current predecessor"));
+    return loadGeneration(root, path, limits, predecessor);
 }
 } // namespace cordis::module

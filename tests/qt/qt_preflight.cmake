@@ -1,6 +1,7 @@
+include("${PROJECT_SOURCE_DIR}/cmake/QtPluginContract.cmake")
 # Qt-specific fixtures/entry point are independent of native ABI fixture setup.
 foreach(case IN ITEMS good compiler qt runtime iterator pointer sdk missing catalog root_parent root_throw root_reenter)
-    set(toolchain "{\"sdkVersion\":\"${PROJECT_VERSION}\",\"qtVersion\":\"5.15.2\",\"compiler\":\"MSVC\",\"compilerVersion\":\"${CMAKE_CXX_COMPILER_VERSION}\",\"runtime\":\"$<IF:$<CONFIG:Debug>,MDd,MD>\",\"pointerBits\":64,\"cppStandard\":201703,\"iteratorDebug\":$<IF:$<CONFIG:Debug>,2,0>,\"debug\":$<IF:$<CONFIG:Debug>,true,false>}")
+    cordis_qt_toolchain_json(toolchain)
     if(case STREQUAL "compiler")
         string(REPLACE "\"MSVC\"" "\"Other\"" toolchain "${toolchain}")
     elseif(case STREQUAL "qt")

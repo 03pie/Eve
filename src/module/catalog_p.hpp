@@ -28,7 +28,7 @@ struct GenerationReservation {
     std::shared_ptr<Generation> generation;
     bool created;
 };
-Result<GenerationReservation> reserveGeneration(VerifiedSource& source);
+Result<GenerationReservation> reserveGeneration(VerifiedSource& source, GenerationId predecessor = {});
 std::shared_ptr<Generation> findGeneration(GenerationId id);
 std::vector<std::shared_ptr<Generation>> allGenerations();
 Result<ModuleLoadReport> failGeneration(const std::shared_ptr<Generation>& generation, ErrorInfo failure);

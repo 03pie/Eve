@@ -1,6 +1,7 @@
+include("${PROJECT_SOURCE_DIR}/cmake/QtPluginContract.cmake")
 # A production plugin has its own embedded toolchain contract and post-link manifest.
 set(directory "${CMAKE_CURRENT_BINARY_DIR}/plugin/$<CONFIG>")
-set(toolchain "{\"sdkVersion\":\"${PROJECT_VERSION}\",\"qtVersion\":\"5.15.2\",\"compiler\":\"MSVC\",\"compilerVersion\":\"${CMAKE_CXX_COMPILER_VERSION}\",\"runtime\":\"$<IF:$<CONFIG:Debug>,MDd,MD>\",\"pointerBits\":64,\"cppStandard\":201703,\"iteratorDebug\":$<IF:$<CONFIG:Debug>,2,0>,\"debug\":$<IF:$<CONFIG:Debug>,true,false>}")
+cordis_qt_toolchain_json(toolchain)
 file(GENERATE OUTPUT "${directory}/notebook_metadata.json"
     CONTENT "{\"moduleId\":\"org.cordis.example.notebook\",\"moduleVersion\":\"1.0.0\",\"plugins\":[\"example.notebook\"],\"toolchain\":${toolchain}}")
 set(moc_includes "-I${PROJECT_SOURCE_DIR}/sdk/include" "-I${directory}")

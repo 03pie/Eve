@@ -32,6 +32,9 @@ static int await_release(void)
 #ifndef FIXTURE_ID
 #define FIXTURE_ID "org.cordis.good"
 #endif
+#ifndef FIXTURE_VERSION
+#define FIXTURE_VERSION "1.0.0"
+#endif
 #ifdef FIXTURE_DEPENDENT
 __declspec(dllimport) int __cdecl cordis_fixture_dependency(void);
 #endif
@@ -70,8 +73,8 @@ CordisQueryStatus CORDIS_QUERY_CALL cordis_module_query_v1(const CordisModuleQue
     result.flags = CORDIS_MODULE_RESIDENT;
     result.module_id.data = (const uint8_t*)FIXTURE_ID;
     result.module_id.size = sizeof(FIXTURE_ID) - 1;
-    result.module_version.data = (const uint8_t*)"1.0.0";
-    result.module_version.size = 5;
+    result.module_version.data = (const uint8_t*)FIXTURE_VERSION;
+    result.module_version.size = sizeof(FIXTURE_VERSION) - 1;
     result.plugin_count = 1;
     result.plugins = plugins;
 #if FIXTURE_MODE == 1
