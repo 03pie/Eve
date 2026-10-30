@@ -1,63 +1,15 @@
 /** @file service.cpp
  * @brief 实现服务键保留、发布退役、同步/异步调用屏障及显式释放。
  */
-#include <cordis/service.hpp>
-#include <atomic>
+#include "service_p.hpp"
 #include <algorithm>
+#include <atomic>
 #include <limits>
 #include <map>
 #include <set>
 #include <stdexcept>
 
 namespace cordis::detail {
-/** @brief 实例期望依赖与必供输出的精确域键，不持有插件回调或实例。 */
-struct InstanceDeclaration {
-    std::vector<ServiceKey> dependencies;
-    std::vector<ServiceKey> outputs;
-};
-/** @brief 注册表持有绑定，资源未释放时固定整个索引的所有权。 */
-struct ServiceRegistryControl {
-    std::shared_ptr<IScheduler> scheduler;
-    std::map<ServiceKey, std::shared_ptr<BindingControl>> bindings;
-    std::set<RealmId> realms{RealmId{1}};
-    std::shared_ptr<ServiceRegistryControl> pin;
-    std::vector<std::weak_ptr<ScheduledJob>> watchers;
-    std::map<InstanceId, InstanceId> parents;
-    std::map<InstanceId, InstanceDeclaration> declarations;
-};
-/** @brief 绑定的单写状态与在途同步/异步调用计数。 */
-struct BindingControl {
-    std::shared_ptr<IScheduler> scheduler;
-    std::weak_ptr<ServiceRegistryControl> owner;
-    BindingId id;
-    ServiceKey key;
-    BindingState state = BindingState::Staged;
-    std::size_t calls = 0;
-    std::size_t committed = 0;
-    std::shared_ptr<void> object;
-    std::type_index type{typeid(void)};
-    ServiceMetadata metadata;
-    InstanceId provider;
-    std::vector<std::weak_ptr<CommittedLease>> consumers;
-    Promise<void> unused;
-    std::atomic_bool deliveryBlocked{false};
-    /** @brief 读取 owner 线程的不可变诊断副本。 */
-    BindingSnapshot snapshot() const { return {id, key, state, calls, committed, metadata, deliveryBlocked.load()}; }
-};
-
-/** @brief 实例代次持有的绑定保留，普通业务与清理共用该旧绑定。 */
-struct CommittedLease {
-    std::shared_ptr<BindingControl> binding;
-    InstanceId instance;
-    Epoch epoch;
-    bool active = true;
-    std::size_t calls = 0;
-    Promise<void> drained;
-    bool draining = false;
-    std::function<Result<void>()> businessGuard;
-    std::function<void()> invalidated;
-};
-
 /** @brief 退役绑定没有保留与调用时才完成提供者清理前置屏障。 */
 void checkUnused(const std::shared_ptr<BindingControl>& binding)
 {
@@ -65,25 +17,33 @@ void checkUnused(const std::shared_ptr<BindingControl>& binding)
 }
 
 /** @brief 索引通知只排队，投递受阻时调用宿主诊断入口。 */
-void notifyRegistry(const std::shared_ptr<ServiceRegistryControl>& registry)
+bool notifyRegistry(const std::shared_ptr<ServiceRegistryControl>& registry)
 {
     std::vector<std::shared_ptr<ScheduledJob>> jobs;
     for (auto it = registry->watchers.begin(); it != registry->watchers.end();) {
         if (auto job = it->lock()) { jobs.push_back(std::move(job)); ++it; }
         else it = registry->watchers.erase(it);
     }
+    bool delivered = true;
     for (const auto& job : jobs) {
         try { if (registry->scheduler->post(*job)) continue; } catch (...) {}
+        delivered = false;
         if (job->discarded) job->discarded();
     }
+    return delivered;
 }
 
 /** @brief 优先使用已有绑定；缺绑定时仅为唯一必供声明建立候选提供者边。 */
-InstanceId declaredProvider(const ServiceRegistryControl& registry, const ServiceKey& key)
+InstanceId declaredProvider(const ServiceRegistryControl& registry, const ServiceKey& key,
+                            const std::shared_ptr<PublicationControl>& viewer)
 {
-    if (auto binding = registry.bindings.find(key); binding != registry.bindings.end()) return binding->second->provider;
+    if (auto binding = registry.bindings.find(key);
+        binding != registry.bindings.end() && visiblePublication(binding->second->publication, viewer))
+        return binding->second->provider;
     InstanceId provider;
     for (const auto& declaration : registry.declarations) {
+        if (!visiblePublication(declaration.second.publication, viewer))
+            continue;
         for (const auto& output : declaration.second.outputs) if (!(output < key) && !(key < output)) {
             if (provider.valid()) return {};
             provider = declaration.first;
@@ -120,7 +80,7 @@ bool reaches(const ServiceRegistryControl& registry, InstanceId from, InstanceId
         if (auto parent = registry.parents.find(current); parent != registry.parents.end()) add(current, parent->second, "parent");
         if (declared) if (auto node = registry.declarations.find(current); node != registry.declarations.end()) {
             for (const auto& key : node->second.dependencies) {
-                const auto provider = declaredProvider(registry, key);
+                const auto provider = declaredProvider(registry, key, node->second.publication);
                 if (provider.valid()) add(current, provider, "declared service " + key.name + "/v" + std::to_string(key.interfaceMajor) + " realm=" + std::to_string(key.realm.value()));
             }
         }
@@ -192,7 +152,7 @@ Result<void> callCommitted(const std::weak_ptr<CommittedLease>& weak, std::type_
         auto allowed = lease->businessGuard();
         if (!allowed.hasValue()) return allowed;
     }
-    if (binding->state != BindingState::Published && !(cleanup && binding->state == BindingState::Retiring))
+    if (!availableBinding(*binding, lease->publication, cleanup))
         return Result<void>::failure(makeError(ErrorCode::ServiceRetiring, "binding not available for this call"));
     if (binding->type != type) return Result<void>::failure(makeError(ErrorCode::DependencyVersion, "service type mismatch"));
     if (lease->calls == std::numeric_limits<std::size_t>::max()) return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "lease call count exhausted"));
@@ -240,13 +200,15 @@ std::uint64_t nextIdentity(std::atomic<std::uint64_t>& counter)
 
 /** @brief 持有调用屏障并隔离插件回调异常，不向调用者交出服务所有权。 */
 Result<void> callService(const std::weak_ptr<BindingControl>& weak, std::type_index type,
-                         const std::function<void(void*)>& callback)
+                         const std::function<void(void*)>& callback,
+                         const std::shared_ptr<PublicationControl>& publication)
 {
     auto binding = weak.lock();
     if (!binding) return Result<void>::failure(makeError(ErrorCode::StaleContext, "binding expired"));
     if (!binding->scheduler->isCurrentThread()) return Result<void>::failure(makeError(ErrorCode::WrongThread, "service requires owner thread"));
     if (!binding->scheduler->isOpen()) return Result<void>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
-    if (binding->state != BindingState::Published) return Result<void>::failure(makeError(ErrorCode::ServiceRetiring, "binding not published"));
+    if (!availableBinding(*binding, publication))
+        return Result<void>::failure(makeError(ErrorCode::ServiceRetiring, "binding not published"));
     if (binding->type != type) return Result<void>::failure(makeError(ErrorCode::DependencyVersion, "service type mismatch"));
     return invokeBinding(binding, callback);
 }
@@ -286,7 +248,7 @@ struct AsyncServiceCall : std::enable_shared_from_this<AsyncServiceCall> {
 /** @brief 在调用插件前固定异步 CallLease，异常同样通过异步完成路径收敛。 */
 Task<void> invokeService(const std::weak_ptr<BindingControl>& weak, const std::weak_ptr<CommittedLease>& committedLease,
                          bool committed, std::type_index type, std::function<Task<void>(void*)> callback, bool cleanup,
-                         InstanceId instance, Epoch epoch)
+                         InstanceId instance, Epoch epoch, std::shared_ptr<PublicationControl> publication)
 {
     auto lease = committed ? committedLease.lock() : std::shared_ptr<CommittedLease>{};
     auto binding = committed ? (lease ? lease->binding : nullptr) : weak.lock();
@@ -307,7 +269,7 @@ Task<void> invokeService(const std::weak_ptr<BindingControl>& weak, const std::w
     }
     if (cleanup && !lease)
         return failedTask(makeError(ErrorCode::StaleContext, "cleanup requires committed lease"));
-    if (binding->state != BindingState::Published && !(cleanup && binding->state == BindingState::Retiring))
+    if (!availableBinding(*binding, lease ? lease->publication : publication, cleanup))
         return failedTask(makeError(ErrorCode::ServiceRetiring, "binding retiring"));
     if (binding->type != type) return failedTask(makeError(ErrorCode::DependencyVersion, "service type mismatch"));
     if (binding->calls == std::numeric_limits<std::size_t>::max() || (lease && lease->calls == std::numeric_limits<std::size_t>::max()))
@@ -345,7 +307,7 @@ Result<void> ServiceRegistry::validateStaged(const ProviderHandle& output, std::
         return Result<void>::failure(makeError(ErrorCode::WrongThread, "output adoption requires owner thread"));
     const auto& binding = output.binding_;
     if (!binding || binding->owner.lock() != control_ || binding->state != BindingState::Staged ||
-        binding->provider != instance || binding->type != type)
+        binding->provider != instance || binding->type != type || binding->publication != publication_)
         return Result<void>::failure(
             makeError(ErrorCode::InvalidArgument, "foreign, published or incorrectly typed output"));
     return Result<void>::success();
@@ -360,9 +322,14 @@ void ServiceRegistry::forgetInstance(InstanceId instance) const
     detail::notifyRegistry(control_);
 }
 /** @brief 挂载登记只发排队通知，Pending 实例会重新预检新候选形成的环。 */
-void ServiceRegistry::declareInstance(InstanceId instance, std::vector<ServiceKey> dependencies, std::vector<ServiceKey> outputs) const
+void ServiceRegistry::declareInstance(InstanceId instance, std::vector<ServiceKey> dependencies,
+                                      std::vector<ServiceKey> outputs, std::function<Result<void>()> ready,
+                                      std::function<void()> abort) const
 {
-    control_->declarations.emplace(instance, detail::InstanceDeclaration{std::move(dependencies), std::move(outputs)});
+    control_->declarations.emplace(
+        instance, detail::InstanceDeclaration{std::move(dependencies), std::move(outputs), publication_});
+    if (publication_ && publication_->state == PublicationState::Open)
+        publication_->members.emplace(instance, detail::PublicationMember{std::move(ready), std::move(abort)});
     detail::notifyRegistry(control_);
 }
 /** @brief 只拒绝确实返回当前实例的环，路径中的域与边类型保留在错误中。 */
@@ -371,7 +338,7 @@ Result<void> ServiceRegistry::checkDeclarations(InstanceId instance) const
     const auto node = control_->declarations.find(instance);
     if (node == control_->declarations.end()) return Result<void>::success();
     for (const auto& key : node->second.dependencies) {
-        const auto provider = detail::declaredProvider(*control_, key);
+        const auto provider = detail::declaredProvider(*control_, key, node->second.publication);
         std::vector<ErrorInfo> path;
         if (provider.valid() && detail::reaches(*control_, provider, instance, path, true))
             return Result<void>::failure(detail::cycleError(instance, key, provider, path));
@@ -406,6 +373,7 @@ Result<std::shared_ptr<detail::CommittedLease>> ServiceRegistry::commitErased(co
     if (binding->committed == std::numeric_limits<std::size_t>::max()) return Output::failure(makeError(ErrorCode::InvalidArgument, "committed count exhausted"));
     auto lease = std::make_shared<detail::CommittedLease>();
     lease->binding = binding;
+    lease->publication = publication_;
     lease->instance = instance;
     lease->epoch = epoch;
     lease->businessGuard = std::move(businessGuard);
@@ -447,6 +415,9 @@ Result<ProviderHandle> ServiceRegistry::stageErased(ServiceKey key, std::shared_
 {
     if (!control_->scheduler->isCurrentThread()) return Result<ProviderHandle>::failure(makeError(ErrorCode::WrongThread, "stage requires owner thread"));
     if (!control_->scheduler->isOpen()) return Result<ProviderHandle>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
+    auto access = publicationAccess();
+    if (!access.hasValue())
+        return Result<ProviderHandle>::failure(access.error());
     if (!object || key.name.empty() || key.interfaceMajor == 0 || control_->realms.count(key.realm) == 0)
         return Result<ProviderHandle>::failure(makeError(ErrorCode::InvalidArgument, "invalid service or realm"));
     std::set<std::string> capabilities;
@@ -468,6 +439,7 @@ Result<ProviderHandle> ServiceRegistry::stageErased(ServiceKey key, std::shared_
     binding->object = std::move(object);
     binding->type = type;
     binding->metadata = std::move(metadata);
+    binding->publication = publication_;
     control_->bindings.emplace(binding->key, binding);
     control_->pin = control_;
     return Result<ProviderHandle>::success(ProviderHandle(std::move(binding)));
@@ -480,10 +452,13 @@ Result<std::shared_ptr<detail::BindingControl>> ServiceRegistry::findErased(cons
     using Output = Result<std::shared_ptr<detail::BindingControl>>;
     if (!control_->scheduler->isCurrentThread()) return Output::failure(makeError(ErrorCode::WrongThread, "find requires owner thread"));
     if (!control_->scheduler->isOpen()) return Output::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
+    auto access = publicationAccess();
+    if (!access.hasValue())
+        return Output::failure(access.error());
     if (key.name.empty() || key.interfaceMajor == 0 || !containsRealm(key.realm))
         return Output::failure(makeError(ErrorCode::InvalidArgument, "invalid service key or foreign realm"));
     auto found = control_->bindings.find(key);
-    if (found == control_->bindings.end() || found->second->state != BindingState::Published)
+    if (found == control_->bindings.end() || !detail::availableBinding(*found->second, publication_))
         return Output::failure(makeError(ErrorCode::DependencyMissing, "published service missing"));
     if (found->second->type != type) return Output::failure(makeError(ErrorCode::DependencyVersion, "service type mismatch"));
     if (found->second->metadata.minor < minimumMinor) return Output::failure(makeError(ErrorCode::DependencyVersion, "service minor too low: " + key.name));
@@ -509,9 +484,14 @@ Result<void> ProviderHandle::publish() const
 {
     if (!binding_->scheduler->isCurrentThread()) return Result<void>::failure(makeError(ErrorCode::WrongThread, "publish requires owner thread"));
     if (!binding_->scheduler->isOpen()) return Result<void>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
-    if (binding_->state != BindingState::Staged && binding_->state != BindingState::Published)
+    if (binding_->publication && binding_->publication->state == PublicationState::Aborted)
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "publication aborted"));
+    if (binding_->state != BindingState::Staged && binding_->state != BindingState::Published &&
+        binding_->state != BindingState::Held)
         return Result<void>::failure(makeError(ErrorCode::ServiceRetiring, "cannot republish retired binding"));
-    binding_->state = BindingState::Published;
+    binding_->state = binding_->publication && binding_->publication->state == PublicationState::Open
+                          ? BindingState::Held
+                          : BindingState::Published;
     if (auto owner = binding_->owner.lock()) detail::notifyRegistry(owner);
     return Result<void>::success();
 }

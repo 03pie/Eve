@@ -162,7 +162,12 @@ Result<void> NativeServices::bind(const Context& context)
             return obtained;
         consumers.emplace(input.first, std::move(value));
     }
-    self->root->services = registry.value();
+    if (!self->root->services) {
+        auto canonical = registry.value();
+        canonical.publication_.reset();
+        self->root->services = std::move(canonical);
+    }
+    managedIndex = registry.value();
     return Result<void>::success();
 }
 bool NativeServices::uses(const ServiceRegistry& registry, const std::shared_ptr<IScheduler>& scheduler)
@@ -175,6 +180,8 @@ bool NativeServices::same(const ServiceRegistry& first, const ServiceRegistry& s
 }
 ServiceRegistry& NativeServices::index()
 {
+    if (managedIndex)
+        return *managedIndex;
     auto self = owner.lock();
     if (!self->root->services)
         self->root->services.emplace(self->root->scheduler.lock());

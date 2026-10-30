@@ -74,6 +74,8 @@ QString bindingName(BindingState state)
     switch (state) {
     case BindingState::Staged: return QString::fromUtf8("待发布");
     case BindingState::Published: return QString::fromUtf8("已发布");
+    case BindingState::Held:
+        return QString::fromUtf8("等待组发布");
     case BindingState::Retiring: return QString::fromUtf8("退役中");
     case BindingState::Released: return QString::fromUtf8("已释放");
     }

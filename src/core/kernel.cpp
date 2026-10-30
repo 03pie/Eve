@@ -52,13 +52,39 @@ Result<Runtime> Kernel::registerRuntime(std::string name, const Runtime& runtime
 Result<Instance> Kernel::mount(const Runtime& runtime, std::string config, RealmMap realms,
                                std::vector<ServiceRequirement> additionalDependencies)
 {
+    return mountWithRegistry(runtime, std::move(config), std::move(realms), std::move(additionalDependencies),
+                             services_);
+}
+Result<PublicationGroup> Kernel::holdPublication() const
+{
+    if (!scheduler_->isCurrentThread())
+        return Result<PublicationGroup>::failure(
+            makeError(ErrorCode::WrongThread, "publication requires owner thread"));
+    if (closing_)
+        return Result<PublicationGroup>::failure(makeError(ErrorCode::ContextClosing, "kernel closing"));
+    return services_->holdPublication();
+}
+Result<Instance> Kernel::mountHeld(const PublicationGroup& group, const Runtime& runtime, std::string config,
+                                   RealmMap realms, std::vector<ServiceRequirement> additionalDependencies)
+{
+    auto view = services_->publicationView(group);
+    if (!view.hasValue())
+        return Result<Instance>::failure(view.error());
+    return mountWithRegistry(runtime, std::move(config), std::move(realms), std::move(additionalDependencies),
+                             std::make_shared<ServiceRegistry>(std::move(view).value()));
+}
+Result<Instance> Kernel::mountWithRegistry(const Runtime& runtime, std::string config, RealmMap realms,
+                                           std::vector<ServiceRequirement> additionalDependencies,
+                                           std::shared_ptr<ServiceRegistry> services)
+{
     if (!scheduler_->isCurrentThread()) return Result<Instance>::failure(makeError(ErrorCode::WrongThread, "mount requires owner thread"));
     if (closing_) return Result<Instance>::failure(makeError(ErrorCode::ContextClosing, "kernel closing"));
     if (!scheduler_->isOpen()) return Result<Instance>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
     for (const auto& entry : runtimes_) if (entry.second.id() == runtime.id()) {
         try {
-            auto instance = Instance::mount(runtime, scheduler_, std::move(config), services_, std::move(realms),
-                                            std::move(additionalDependencies));
+            auto instance = Instance::mount(runtime, scheduler_, std::move(config), std::move(services),
+                                            std::move(realms), std::move(additionalDependencies));
+            instance.setKernelRegistry(services_);
             instances_.emplace(instance.snapshot().value().instance, instance);
             return Result<Instance>::success(std::move(instance));
         } catch (const std::invalid_argument& error) { return Result<Instance>::failure(makeError(ErrorCode::InvalidArgument, error.what())); }

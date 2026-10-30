@@ -1,5 +1,7 @@
 # Module host
 
+P5-M2b 接入 Core 发布组视图：NativeServices 的托管视图归每个原生实例，模块共享索引保持规范视图；同一 DLL 的组内服务不能泄漏给其他实例。激活后 Held 只对组内消费者可用，全体成员就绪后才公开；放弃仍等待原调用/清理屏障，见 [M2b 记录](../../docs/p5-m2b-development.md)与 [ADR-0043](../../docs/adr/0043-controlled-service-publication.md)。这不是完整模块替换或卸载入口。
+
 P5-M2a 新增独立 Cordis::ModuleInstall / installModuleArtifact，把固定来源的单 DLL 与原始声明复制到 hash 目录，临时验证后不覆盖发布。InstalledArtifact 持有安装目标的文件/目录保护，交给原 stage 路径时仍独立重验；安装不执行 DLL、不接管运行目录或切换业务。只复制声明产物，不隐式打包依赖和旁文件，见 [M2a 记录](../../docs/p5-m2a-development.md)与 [ADR-0042](../../docs/adr/0042-module-artifact-installation.md)。
 
 P5-M1 增加同一目录中的 Current/Candidate 与 predecessor。普通 load/loadQtModule 仍选择当前代；ModuleManager::stage / stageQtModule 显式装载另一份独立目录的候选，保持文件归属、前驱、后端、插件目录、预算和默认驻留约束。暂存不切换业务或授予卸载能力，后续事务/迁移与白名单路线见 [P5 计划](../../docs/p5-development.md)及 [M1 验证](../../docs/p5-m1-development.md)。下文保留 P4 各段历史。

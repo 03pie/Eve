@@ -38,6 +38,7 @@ struct NativeServices : std::enable_shared_from_this<NativeServices> {
 
 private:
     std::weak_ptr<NativeInstanceControl> owner;
+    std::optional<ServiceRegistry> managedIndex;
     std::map<CordisHandle, std::shared_ptr<NativeBinding>> providers;
     std::map<ServiceKey, std::shared_ptr<NativeCommit>> consumers;
     bool released = false;

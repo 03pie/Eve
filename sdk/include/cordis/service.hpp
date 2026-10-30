@@ -2,17 +2,18 @@
  * @brief 声明同工具链服务绑定、隔离域和同步调用门禁。
  */
 #pragma once
+#include <cordis/publication.hpp>
 #include <cordis/scheduler.hpp>
-#include <cordis/task.hpp>
 #include <cordis/state.hpp>
+#include <cordis/task.hpp>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <memory>
 #include <map>
+#include <memory>
 #include <string>
-#include <typeindex>
 #include <type_traits>
+#include <typeindex>
 #include <utility>
 #include <vector>
 
@@ -39,11 +40,13 @@ bool matchesCommitted(const std::shared_ptr<CommittedLease>& lease, const Servic
     const std::shared_ptr<ServiceRegistryControl>& registry);
 /** @brief 检查绑定、线程和类型，持有同步调用计数直到回调退出。 */
 Result<void> callService(const std::weak_ptr<BindingControl>& binding, std::type_index type,
-                         const std::function<void(void*)>& callback);
+                         const std::function<void(void*)>& callback,
+                         const std::shared_ptr<PublicationControl>& publication = {});
 /** @brief 异步调用将绑定与消费者调用保留到源任务完成且 owner 已处理其结果。 */
 Task<void> invokeService(const std::weak_ptr<BindingControl>& binding, const std::weak_ptr<CommittedLease>& lease,
-    bool committed, std::type_index type, std::function<Task<void>(void*)> callback,
-    bool cleanup = false, InstanceId instance = {}, Epoch epoch = 0);
+                         bool committed, std::type_index type, std::function<Task<void>(void*)> callback,
+                         bool cleanup = false, InstanceId instance = {}, Epoch epoch = 0,
+                         std::shared_ptr<PublicationControl> publication = {});
 }
 
 /** @brief 服务名称、接口主版本和精确隔离域构成的键。 */
@@ -114,9 +117,10 @@ public:
         static_assert(std::is_same_v<std::invoke_result_t<F&, T&>, Task<void>>, "async service callback must return Task<void>");
         std::function<Task<void>(T&)> callback(std::forward<F>(function));
         if (!callback) return failedTask(makeError(ErrorCode::InvalidArgument, "empty async service callback"));
-        return detail::invokeService(binding_, lease_, committed_, typeid(T), [callback = std::move(callback)](void* object) {
-            return callback(*static_cast<T*>(object));
-        });
+        return detail::invokeService(
+            binding_, lease_, committed_, typeid(T),
+            [callback = std::move(callback)](void* object) { return callback(*static_cast<T*>(object)); }, false, {}, 0,
+            publication_);
     }
     /** @brief 执行同步服务调用，不允许保存传入引用或用于异步业务。 */
     template<class F> Result<void> withService(F&& function) const
@@ -128,18 +132,23 @@ public:
             callback(*static_cast<T*>(object));
         };
         return committed_ ? detail::callCommitted(lease_, typeid(T), erased, false)
-                          : detail::callService(binding_, typeid(T), erased);
+                          : detail::callService(binding_, typeid(T), erased, publication_);
     }
 private:
     friend class ServiceRegistry;
     friend class Context;
     friend class CleanupContext;
     /** @brief 保存弱绑定，引用本身不延长服务对象生命周期。 */
-    explicit ServiceRef(std::weak_ptr<detail::BindingControl> binding) : binding_(std::move(binding)) {}
+    explicit ServiceRef(std::weak_ptr<detail::BindingControl> binding,
+                        std::shared_ptr<detail::PublicationControl> publication = {})
+        : binding_(std::move(binding)), publication_(std::move(publication))
+    {
+    }
     /** @brief 保存实例提交租约的弱引用，资源保留由实例账目承担。 */
     explicit ServiceRef(std::weak_ptr<detail::CommittedLease> lease) : lease_(std::move(lease)), committed_(true) {}
     std::weak_ptr<detail::BindingControl> binding_;
     std::weak_ptr<detail::CommittedLease> lease_;
+    std::shared_ptr<detail::PublicationControl> publication_;
     bool committed_ = false;
 };
 
@@ -148,7 +157,7 @@ class ProviderHandle {
 public:
     /** @brief 退役后等待消费者保留和所有在途调用归零，不释放对象。 */
     Task<void> whenUnused() const;
-    /** @brief 从 Staged 发布服务；重复发布 Published 绑定是幂等的。 */
+    /** @brief 从 Staged 就绪；开放发布组内变为 Held，普通绑定变为 Published，重复调用幂等。 */
     Result<void> publish() const;
     /** @brief 立即拒绝新业务调用；Staged 回滚也使用该入口。 */
     Result<void> retire() const;
@@ -160,6 +169,7 @@ private:
     friend struct module::detail::NativeServices;
     friend class ServiceRegistry;
     friend struct detail::InstanceControl;
+    friend class PublicationGroup;
     /** @brief 为托管输出标记实例所有者，用于依赖环诊断。 */
     void setOwner(InstanceId owner) const;
     /** @brief 保存绑定控制块，不绕过注册表持有的资源所有权。 */
@@ -179,12 +189,12 @@ public:
     /** @brief 保留完整键并登记 Staged 服务；同键所有未释放状态均冲突。 */
     template<class T> Result<ProviderHandle> stage(ServiceKey key, std::shared_ptr<T> object, ServiceMetadata metadata = {}) const
     { return stageErased(std::move(key), std::move(object), typeid(T), std::move(metadata)); }
-    /** @brief 只查找当前 Published 的同类型、同完整键绑定。 */
+    /** @brief 默认只查 Published；托管发布组视图还可查本组 Held，始终核对类型与完整键。 */
     template<class T> Result<ServiceRef<T>> find(const ServiceKey& key, std::uint32_t minimumMinor = 0, const std::vector<std::string>& capabilities = {}) const
     {
         auto binding = findErased(key, typeid(T), minimumMinor, capabilities);
         if (!binding.hasValue()) return Result<ServiceRef<T>>::failure(binding.error());
-        return Result<ServiceRef<T>>::success(ServiceRef<T>(binding.value()));
+        return Result<ServiceRef<T>>::success(ServiceRef<T>(binding.value(), publication_));
     }
     /** @brief 读取所有尚未释放的绑定，不隐式清理资源。 */
     Result<std::vector<BindingSnapshot>> snapshot() const;
@@ -193,12 +203,18 @@ private:
     friend class Context;
     friend struct detail::InstanceControl;
     friend class Instance;
+    friend class Kernel;
+    Result<PublicationGroup> holdPublication() const;
+    Result<ServiceRegistry> publicationView(const PublicationGroup& group) const;
+    /** @brief 已放弃组禁止业务和新激活；清理通过旧 committed 账目继续。 */
+    Result<void> publicationAccess() const;
     /** @brief 登记子实例到父实例的所有权边，供联合等待环检查。 */
     void attachParent(InstanceId child, InstanceId parent) const;
     /** @brief 实例确认终结后撤销其所有权记录。 */
     void forgetInstance(InstanceId instance) const;
     /** @brief 登记已按域视图解析的强依赖与必供输出，用于激活前环诊断。 */
-    void declareInstance(InstanceId instance, std::vector<ServiceKey> dependencies, std::vector<ServiceKey> outputs) const;
+    void declareInstance(InstanceId instance, std::vector<ServiceKey> dependencies, std::vector<ServiceKey> outputs,
+                         std::function<Result<void>()> ready, std::function<void()> abort) const;
     /** @brief 对确定提供者的声明边和所有权边预检，缺失或歧义提供者不臆测连边。 */
     Result<void> checkDeclarations(InstanceId instance) const;
     /** @brief 检查托管实例与索引是否归属同一调度器。 */
@@ -218,5 +234,6 @@ private:
     Result<std::shared_ptr<detail::BindingControl>> findErased(const ServiceKey& key, std::type_index type,
         std::uint32_t minimumMinor = 0, const std::vector<std::string>& capabilities = {}) const;
     std::shared_ptr<detail::ServiceRegistryControl> control_;
+    std::shared_ptr<detail::PublicationControl> publication_;
 };
 } // namespace cordis

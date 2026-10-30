@@ -74,7 +74,7 @@ public:
                             std::vector<ServiceRequirement> additionalDependencies = {}) const;
     /** @brief 派生只覆盖指定服务的 realm 视图，不修改父上下文，旧 epoch 不得派生能力。 */
     Result<Context> isolate(std::string name, RealmId realm) const;
-    /** @brief 在本代登记托管 Staged 输出，激活完成后才对其他实例发布。 */
+    /** @brief 登记本代 Staged 输出；激活后普通实例公开，发布组内仅就绪为 Held。 */
     template<class T> Result<BindingId> provide(ServiceKey key, std::shared_ptr<T> object) const
     { return provideErased(std::move(key), std::move(object), typeid(T)); }
     /** @brief 从托管注册表消费服务，优先使用激活前固定的声明依赖。 */
@@ -263,6 +263,8 @@ public:
 private:
     friend class Context;
     friend class Kernel;
+    /** @brief 只有 Kernel 挂载入口登记规范索引身份，不将组内子实例收养为顶层实例。 */
+    void setKernelRegistry(const std::shared_ptr<ServiceRegistry>& services) const;
     /** @brief 仅 Kernel 以同一注册表和 Runtime 复制已终结实例的输入，旧实例保持终结。 */
     Result<Instance> remount(const Runtime& runtime, const std::shared_ptr<IScheduler>& scheduler,
                              const std::shared_ptr<ServiceRegistry>& services) const;

@@ -37,4 +37,23 @@
 
 M2a 的完整验证记录见 [开发记录](../../docs/p5-m2a-development.md)。上述安装检查不证明运行切换、业务兼容或页面升级已完成。
 
-M2 后续及 M3–M5 尚待实现和逐项验证：同模块/闭包互斥、旧代未清理不接管服务键、新代输出发布、状态导出/迁移/校验、新代激活失败恢复、旧代恢复失败、消费者恢复失败、晚到回调/析构与卸载、白名单实际卸载、正常/故障下连续 100 次 Windows 替换及随机压力。最终必须把操作报告、实际运行和资源/文件/进程证据分别核对。
+## M2b Core 服务发布组
+
+| 场景 | 实际检查 |
+|---|---|
+| 真实闭包初始化、延迟消费者、全部成员准备后一次公开，组外通知观察全部输出 | p5.publication_closure |
+| 放弃后拒绝新业务，等待异步调用和旧绑定清理，两道屏障均完成才静止 | p5.publication_abort_cleanup |
+| 消费者失败禁止提交；仅为 S09 的 Core 前提，尚非完整 ReplacementReport 验收 | p5.publication_failure |
+| 其他开放组不可消费 Held，公开后按正常依赖恢复 | p5.publication_groups |
+| 已停止成员不从成功条件移除，旧键存活时候选不能抢占 | p5.publication_stopped_member、p5.publication_live_key |
+| 放弃受理不冒称清理完成，清理失败保留 Retiring 与非静止报告 | p5.publication_abort_failure |
+| 子实例继承发布组并计入成员，顶层重挂载不收养子实例 | p5.publication_children |
+| 空/外来组、错误线程、移动后句柄和关闭组入口 | p5.publication_guards |
+| 同视图的声明依赖环在激活前拒绝 | p5.publication_cycle |
+| 通知投递失败保留 Published 与错误，重复提交不能抹掉 | p5.publication_notification_failure |
+| 通知重入看到全部输出，但不能提前完成提交；重赋句柄不改写另一组 | p5.publication_notification_reentry、p5.publication_notification_reassign |
+| 同一真实 C DLL：组内实例与手动外部消费者保持视图隔离，提交后可调用，放弃后不公开 | p5.native_publication_commit、p5.native_publication_abort |
+
+完整验证与审查记录见 [M2b 记录](../../docs/p5-m2b-development.md)。本段未切换 ModuleManager 当前代或迁移业务状态，未将默认驻留修改为可卸载，也未宣称 UI 贡献已纳入发布组。
+
+M2 后续及 M3–M5 尚待实现和逐项验证：同模块/闭包互斥、旧代未清理不接管服务键、服务发布与定义/目录角色的整体切换、UI 贡献可见性、状态导出/迁移/校验、新代激活失败恢复、旧代恢复失败、消费者恢复失败、晚到回调/析构与卸载、白名单实际卸载、正常/故障下连续 100 次 Windows 替换及随机压力。最终必须把操作报告、实际运行和资源/文件/进程证据分别核对。

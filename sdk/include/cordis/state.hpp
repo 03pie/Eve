@@ -17,8 +17,8 @@ enum class InstanceState {
     Disposed
 };
 
-/** @brief 服务绑定的诊断生命周期状态。 */
-enum class BindingState { Staged, Published, Retiring, Released };
+/** @brief 服务绑定生命周期；Held 为发布组内就绪，默认视图尚不可见。 */
+enum class BindingState { Staged, Published, Retiring, Released, Held };
 /** @brief effect 的初始化与清理状态。 */
 enum class EffectState { SettingUp, Live, Closing, Closed };
 /** @brief 用于稳定查询的实例最终结果分类。 */

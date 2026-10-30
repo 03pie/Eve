@@ -123,6 +123,7 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     std::vector<ActiveContextWaiter> activeContexts;
     std::vector<std::shared_ptr<CommittedLease>> committed;
     std::shared_ptr<ServiceRegistry> services;
+    std::weak_ptr<ServiceRegistry> kernelRegistry;
     std::vector<ServiceRequirement> dependencies;
     std::vector<ServiceOutput> declarations;
     RealmMap realms;
@@ -161,10 +162,15 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
         const auto captured = epoch;
         std::function<void()> invalidated;
         if (services && services->control_ == registry.control_) invalidated = [weak] { if (auto self = weak.lock()) self->invalidate(); };
-        auto lease = registry.commitErased(key, type, scheduler, id, epoch, [weak, captured] {
-            auto self = weak.lock();
-            return self ? self->business(captured) : Result<void>::failure(makeError(ErrorCode::StaleContext, "instance expired"));
-        }, std::move(invalidated));
+        const auto& view = services && services->control_ == registry.control_ ? *services : registry;
+        auto lease = view.commitErased(
+            key, type, scheduler, id, epoch,
+            [weak, captured] {
+                auto self = weak.lock();
+                return self ? self->business(captured)
+                            : Result<void>::failure(makeError(ErrorCode::StaleContext, "instance expired"));
+            },
+            std::move(invalidated));
         if (lease.hasValue()) committed.push_back(lease.value());
         return lease;
     }
@@ -202,6 +208,11 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     {
         if (!scheduler->isCurrentThread()) return Result<void>::failure(makeError(ErrorCode::WrongThread, "context requires owner thread"));
         if (!scheduler->isOpen()) return Result<void>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
+        if (services) {
+            auto access = services->publicationAccess();
+            if (!access.hasValue())
+                return access;
+        }
         if (epoch != captured) return Result<void>::failure(makeError(ErrorCode::StaleContext, "old epoch"));
         if (stopping || retiring || dirty) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "epoch closing"));
         for (const auto& effect : scope.snapshot().value().effects)
@@ -805,6 +816,8 @@ Instance Instance::mount(const Runtime& runtime, std::shared_ptr<IScheduler> sch
                          std::vector<ServiceRequirement> additionalDependencies)
 {
     if (!runtime.activate_) throw std::invalid_argument("runtime handle moved from");
+    if (services && !services->publicationAccess().hasValue())
+        throw std::invalid_argument("publication group aborted");
     auto control = std::make_shared<detail::InstanceControl>(std::move(scheduler), runtime.activate_);
     if (services && !services->usesScheduler(control->scheduler)) throw std::invalid_argument("managed registry requires same scheduler");
     for (const auto& entry : realms.overrides())
@@ -825,6 +838,7 @@ Instance Instance::mount(const Runtime& runtime, std::shared_ptr<IScheduler> sch
     control->declarations = runtime.outputs_;
     control->realms = std::move(realms);
     control->services = std::move(services);
+    control->kernelRegistry = control->services;
     if (control->services) {
         std::weak_ptr<detail::InstanceControl> weak = control;
         control->subscription = control->services->watch({
@@ -834,7 +848,27 @@ Instance Instance::mount(const Runtime& runtime, std::shared_ptr<IScheduler> sch
         std::vector<ServiceKey> required, outputs;
         for (const auto& dependency : control->dependencies) required.push_back(control->realms.resolve(dependency.key));
         for (const auto& output : control->declarations) if (output.required) outputs.push_back(control->realms.resolve(output.key));
-        control->services->declareInstance(control->id, std::move(required), std::move(outputs));
+        control->services->declareInstance(
+            control->id, std::move(required), std::move(outputs),
+            [weak] {
+                auto self = weak.lock();
+                if (!self || self->state != InstanceState::Active || self->blocked.load())
+                    return Result<void>::failure(
+                        makeError(ErrorCode::ContextClosing, "publication member is not active"));
+                auto allowed = self->business(self->epoch);
+                if (!allowed.hasValue())
+                    return allowed;
+                const auto snapshot = Instance(self).snapshot();
+                if (!snapshot.hasValue() || snapshot.value().deliveryBlocked ||
+                    snapshot.value().resources.deliveryBlocked)
+                    return Result<void>::failure(
+                        makeError(ErrorCode::SchedulerClosed, "member resource delivery blocked"));
+                return Result<void>::success();
+            },
+            [weak] {
+                if (auto self = weak.lock())
+                    self->stop();
+            });
     }
     control->enqueue();
     return Instance(std::move(control));
@@ -896,6 +930,11 @@ Result<EffectToken> Context::effect(EffectSetup setup, std::string label) const
     auto control = control_.lock();
     if (!control) return Result<EffectToken>::failure(makeError(ErrorCode::StaleContext, "instance context expired"));
     if (!control->scheduler->isCurrentThread()) return Result<EffectToken>::failure(makeError(ErrorCode::WrongThread, "context requires owner thread"));
+    if (control->services) {
+        auto access = control->services->publicationAccess();
+        if (!access.hasValue())
+            return Result<EffectToken>::failure(access.error());
+    }
     if (control->stopping) return Result<EffectToken>::failure(makeError(ErrorCode::ContextClosing, "instance stopping"));
     if (epoch_ != control->epoch) return Result<EffectToken>::failure(makeError(ErrorCode::StaleContext, "old activation epoch"));
     if (control->retiring || control->dirty) return Result<EffectToken>::failure(makeError(ErrorCode::ContextClosing, "activation retiring"));
@@ -939,11 +978,17 @@ Result<OperationHandle> Instance::change(std::string config, ConfigRevision expe
 Result<OperationHandle> Instance::update(std::string config, ConfigRevision expectedRevision) const
 { return change(std::move(config), expectedRevision, true); }
 
+void Instance::setKernelRegistry(const std::shared_ptr<ServiceRegistry>& services) const
+{
+    control_->kernelRegistry = services;
+}
+
 /** @brief 复制的是宿主输入；只有完整停止的实例才允许重新挂载。 */
 Result<Instance> Instance::remount(const Runtime& runtime, const std::shared_ptr<IScheduler>& scheduler,
                                    const std::shared_ptr<ServiceRegistry>& services) const
 {
-    if (control_->scheduler != scheduler || control_->services != services || control_->runtime != runtime.id())
+    if (control_->scheduler != scheduler || control_->kernelRegistry.lock() != services ||
+        control_->runtime != runtime.id())
         return Result<Instance>::failure(makeError(ErrorCode::InvalidArgument, "instance belongs to another kernel"));
     if (control_->state != InstanceState::Disposed || control_->blocked.load())
         return Result<Instance>::failure(

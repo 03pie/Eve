@@ -39,6 +39,11 @@ public:
     /** @brief 挂载已登记 Runtime；附加类型化依赖只能增加或收紧本实例的要求。 */
     Result<Instance> mount(const Runtime& runtime, std::string config = {}, RealmMap realms = {},
                            std::vector<ServiceRequirement> additionalDependencies = {});
+    /** @brief 创建属于本内核索引的发布组；创建本身不激活实例。 */
+    Result<PublicationGroup> holdPublication() const;
+    /** @brief 以同一服务索引的组内视图挂载；正常依赖仍可用，组外不可见候选输出。 */
+    Result<Instance> mountHeld(const PublicationGroup& group, const Runtime& runtime, std::string config = {},
+                               RealmMap realms = {}, std::vector<ServiceRequirement> additionalDependencies = {});
     /** @brief 用本内核已静止实例的最新配置及 realm 创建新 InstanceId，不复活旧实例。 */
     Result<Instance> remount(const Instance& previous);
     /** @brief 请求停止全部实例，共享关闭报告；非静止实例继续保留。 */
@@ -50,6 +55,9 @@ public:
     /** @brief 查询不可变的调度器归属，供宿主适配层拒绝跨 scheduler 绑定。 */
     bool usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const;
 private:
+    Result<Instance> mountWithRegistry(const Runtime& runtime, std::string config, RealmMap realms,
+                                       std::vector<ServiceRequirement> additionalDependencies,
+                                       std::shared_ptr<ServiceRegistry> services);
     std::shared_ptr<IScheduler> scheduler_;
     std::shared_ptr<ServiceRegistry> services_;
     std::map<std::string, Runtime> runtimes_;
