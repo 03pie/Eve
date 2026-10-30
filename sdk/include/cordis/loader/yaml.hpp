@@ -63,7 +63,7 @@ Result<ParsedConfiguration> setEntryConfiguration(const ParsedConfiguration& sou
 /** @brief 追加顶层配置实例，标识/类型按字符串处理，完整结构校验拒绝重复或非法身份。 */
 Result<ParsedConfiguration> addConfigurationEntry(const ParsedConfiguration& source, const std::string& id,
                                                   const std::string& plugin, const std::string& configuration,
-                                                  YamlLimits limits = {});
+                                                  YamlLimits limits = {}, PluginModule module = {});
 /** @brief 宿主提供的内置插件定义；schema 必须无业务副作用，只检查规范 JSON config。 */
 struct PluginDefinition {
     std::string id;

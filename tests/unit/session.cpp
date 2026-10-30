@@ -86,7 +86,7 @@ struct Scene {
     bool failCleanup = false;
     std::function<void()> schemaHook;
     /** @brief 子实例与根共享固定定义，测试不会按候选注册变体。 */
-    Scene()
+    Scene(PluginModule module = {})
     {
         auto runtime =
             kernel
@@ -104,8 +104,8 @@ struct Scene {
                                                 : completedTask();
                                  })
                 .value();
-        auto driver =
-            std::make_shared<KernelReconcileDriver>(scheduler, kernel, std::vector<KernelPlugin>{{"demo", runtime}});
+        auto driver = std::make_shared<KernelReconcileDriver>(scheduler, kernel,
+                                                              std::vector<KernelPlugin>{{"demo", runtime, {}, module}});
         session =
             std::make_shared<ConfigurationSession>(scheduler, driver,
                                                    std::vector<PluginDefinition>{{"demo",
@@ -114,7 +114,8 @@ struct Scene {
                                                                                       if (schemaHook)
                                                                                           schemaHook();
                                                                                       return Result<void>::success();
-                                                                                  }}},
+                                                                                  },
+                                                                                  module}},
                                                    writer, writer->disk);
     }
     /** @brief 不用 sleep 猜测协议阶段。 */
@@ -303,6 +304,32 @@ void shutdownFailure()
     CHECK(!all.tryResult()->value().quiescent);
     scene.scheduler->close();
 }
+/** @brief 冻结目录驱动追加；精确模块、CAS、未知定义和重入不能绕过完整预检。 */
+void moduleAdd()
+{
+    Scene scene({"external", "plugins/notebook/module.json"});
+    CHECK(!scene.session->addInstance("one", "unknown", "{}", 0).hasValue());
+    auto added = scene.session->addInstance("one", "demo", "{integer: 9007199254740993}", 0).value();
+    scene.pump();
+    CHECK(added.settled.tryResult()->value().outcome == PlanOutcome::Applied && scene.activations == 1);
+    auto state = scene.session->snapshot().value();
+    CHECK(state.coordinator.desired->source().structure().modules().at("external") == "plugins/notebook/module.json");
+    CHECK(state.coordinator.desired->source().structure().entries().at("one").module == "external");
+    CHECK(state.coordinator.desired->source().normalizedYaml().find("9007199254740993") != std::string::npos);
+    CHECK(!scene.session->addInstance("two", "demo", "{}", 0).hasValue());
+    CHECK(!scene.session->addInstance("one", "demo", "{}", added.revision).hasValue());
+    auto conflict =
+        addConfigurationEntry(state.coordinator.desired->source(), "two", "demo", "{}", {}, {"external", "other.json"});
+    CHECK(!conflict.hasValue());
+    ErrorCode wrong = ErrorCode::InvalidArgument;
+    std::thread worker([&] { wrong = scene.session->addInstance("two", "demo", "{}", added.revision).error().code; });
+    worker.join();
+    CHECK(wrong == ErrorCode::WrongThread);
+    scene.schemaHook = [&] { scene.session->close(); };
+    CHECK(!scene.session->addInstance("two", "demo", "{}", added.revision).hasValue());
+    scene.pump();
+    CHECK(scene.session->snapshot().value().coordinator.desiredRevision == added.revision && scene.activations == 1);
+}
 /** @brief 每项协议使用独立进程，失败产生明确断言。 */
 int main(int argc, char** argv)
 {
@@ -323,6 +350,8 @@ int main(int argc, char** argv)
             guards();
         else if (name == "shutdown_failure")
             shutdownFailure();
+        else if (name == "module_add")
+            moduleAdd();
         else
             return EXIT_FAILURE;
         return EXIT_SUCCESS;

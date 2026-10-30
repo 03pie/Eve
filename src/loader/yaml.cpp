@@ -430,7 +430,8 @@ namespace {
 /** @brief 受限值树修改不经过浮点 JSON DOM，其他负载中的大整数与小数原文保持。 */
 Result<ParsedConfiguration> changeEntryConfiguration(const ParsedConfiguration& source, const std::string& path,
                                                      const std::string& id, const std::string& plugin,
-                                                     const std::string& configuration, YamlLimits limits)
+                                                     const std::string& configuration, YamlLimits limits,
+                                                     const PluginModule& module = {})
 {
     if (!source.isValid() || (!path.empty() && !source.structure().entries().count(path)))
         return Result<ParsedConfiguration>::failure(
@@ -455,6 +456,33 @@ Result<ParsedConfiguration> changeEntryConfiguration(const ParsedConfiguration& 
                 text->plain = false;
                 text->scalar = value.second;
                 entry->mapping.emplace(value.first, std::move(text));
+            }
+            if (module.alias == "builtin") {
+                if (!module.manifest.empty())
+                    fail("builtin manifest must be empty", {}, id);
+            } else {
+                auto alias = std::make_unique<Node>();
+                alias->plain = false;
+                alias->scalar = module.alias;
+                entry->mapping.emplace("module", std::move(alias));
+                auto& modules = root->mapping["modules"];
+                if (!modules) {
+                    modules = std::make_unique<Node>();
+                    modules->kind = Node::Kind::Mapping;
+                }
+                auto found = modules->mapping.find(module.alias);
+                if (found != modules->mapping.end()) {
+                    if (found->second->mapping.at("manifest")->scalar != module.manifest)
+                        fail("module differs from host catalog", {}, id);
+                } else {
+                    auto declaration = std::make_unique<Node>();
+                    declaration->kind = Node::Kind::Mapping;
+                    auto manifest = std::make_unique<Node>();
+                    manifest->plain = false;
+                    manifest->scalar = module.manifest;
+                    declaration->mapping.emplace("manifest", std::move(manifest));
+                    modules->mapping.emplace(module.alias, std::move(declaration));
+                }
             }
             selected = entry.get();
             sequenceNode->sequence.push_back(std::move(entry));
@@ -498,8 +526,8 @@ Result<ParsedConfiguration> setEntryConfiguration(const ParsedConfiguration& sou
 /** @brief 追加后复用完整解析、结构和调用方的 schema/CAS 校验。 */
 Result<ParsedConfiguration> addConfigurationEntry(const ParsedConfiguration& source, const std::string& id,
                                                   const std::string& plugin, const std::string& configuration,
-                                                  YamlLimits limits)
+                                                  YamlLimits limits, PluginModule module)
 {
-    return changeEntryConfiguration(source, {}, id, plugin, configuration, limits);
+    return changeEntryConfiguration(source, {}, id, plugin, configuration, limits, module);
 }
 } // namespace cordis::loader

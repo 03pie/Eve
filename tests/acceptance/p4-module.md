@@ -213,4 +213,20 @@ Loaded 仅证明此装载层完成，不证明 IQtPluginV1 工厂协商或 UI �
 | 同一工厂多实例页面隔离；停止一个不撤销另一个 | p4.qt_ui_multi |
 | 配置换代完整释放旧页面和业务对象，再创建新 epoch | p4.qt_ui_update |
 
-原静态 Qt 构建的调度负向复现 0/1，改为共享运行库后通过；测试控制导出只用于回归，不属于业务 SDK。此表不代替 M4c2 的真实业务示例/配置/模块诊断或 M4c3 的原生验收，详见 [M4c 记录](../../docs/p4-m4c-development.md)。
+原静态 Qt 构建的调度负向复现 0/1，改为共享运行库后通过；测试控制导出只用于回归，不属于业务 SDK。此表不代替下方 M4c2 的真实业务示例或 M4c3 的原生验收，详见 [M4c 记录](../../docs/p4-m4c-development.md)。
+
+## M4c2 配置驱动的真实业务 UI DLL
+
+| 行为 | 自动化依据 |
+|---|---|
+| 无测试导出的实际 DLL，预览不激活，页面按钮调用注册命令并写入所属输出 | p4.qt_workspace_normal |
+| 同插件两实例页面/编辑/输出隔离 | p4.qt_workspace_multi |
+| 配置换代完整销毁旧页并采用新文本；启停撤回命令/页面后可重新创建 | p4.qt_workspace_update / toggle |
+| 管理适配器新增外部实例使用冻结模块归属，旧修订/重复身份拒绝 | p4.qt_workspace_add / guards |
+| 真实写盘、保存冲突保留 Session 与业务，显式重基后可重试退出 | p4.qt_workspace_save / close_conflict |
+| 普通启动失败回滚；末尾清理失败保留真实业务对象/引用和原因链 | p4.qt_workspace_start_failure / cleanup_failure |
+| 只读模块诊断、引用/映像驻留及刷新；宿主 Runtime 不进入普通管理操作 | p4.qt_workspace_diagnostics / guards |
+| 长输出明确失败，不误写或覆盖历史 | p4.qt_workspace_output_limit |
+| 无 Qt 检查模块别名创建、数字原文、CAS、冲突/错误线程及关闭重入 | p3.session_module_add |
+
+最终矩阵、红绿复现和恢复后的构建范围见 [M4c2 记录](../../docs/p4-m4c2-development.md)。业务示例和宿主真实装配已完成；仍须 M4c3 的原生页面操作、需求逐项映射和最终收口，不声明物理卸载安全。

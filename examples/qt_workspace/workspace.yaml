@@ -1,0 +1,8 @@
+formatVersion: 1
+modules:
+  notebook: {manifest: notebook/module.json}
+plugins:
+  - id: notes
+    plugin: example.notebook
+    module: notebook
+    config: {title: 插件笔记, text: "这是一页来自独立 DLL 的笔记。"}

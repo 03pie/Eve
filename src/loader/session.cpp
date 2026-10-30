@@ -226,6 +226,42 @@ Result<AcceptedTarget> ConfigurationSession::setEnabled(const std::string& path,
         return Result<AcceptedTarget>::failure(draft.error());
     return state->accept(draft.value());
 }
+/** @brief 模块目录属于 Session 的冻结定义，管理界面不能猜测或替换模块来源。 */
+Result<AcceptedTarget> ConfigurationSession::addInstance(const std::string& id, const std::string& plugin,
+                                                         const std::string& configuration, std::uint64_t expected)
+{
+    auto state = control_;
+    auto checked = state->check();
+    if (!checked.hasValue())
+        return Result<AcceptedTarget>::failure(checked.error());
+    detail::SessionControl::Access access(*state);
+    auto current = state->coordinator->snapshot().value();
+    if (current.desiredRevision != expected)
+        return Result<AcceptedTarget>::failure(makeError(ErrorCode::ConfigConflict, "configuration revision changed"));
+    const auto baseline = state->store->snapshot().value().baseline;
+    if (!current.desired && baseline && baseline->version.exists)
+        return Result<AcceptedTarget>::failure(
+            makeError(ErrorCode::ConfigConflict, "apply existing disk configuration before adding an instance"));
+    const PluginDefinition* definition = nullptr;
+    for (const auto& value : state->definitions)
+        if (value.id == plugin) {
+            definition = &value;
+            break;
+        }
+    if (!definition)
+        return Result<AcceptedTarget>::failure(makeError(ErrorCode::InvalidArgument, "plugin is not registered"));
+    auto source = current.desired ? Result<ParsedConfiguration>::success(current.desired->source())
+                                  : parseConfiguration("formatVersion: 1\nplugins: []\n", state->limits);
+    if (!source.hasValue())
+        return Result<AcceptedTarget>::failure(source.error());
+    auto parsed = addConfigurationEntry(source.value(), id, plugin, configuration, state->limits, definition->module);
+    if (!parsed.hasValue())
+        return Result<AcceptedTarget>::failure(parsed.error());
+    auto draft = state->prepare(std::move(parsed).value());
+    if (!draft.hasValue())
+        return Result<AcceptedTarget>::failure(draft.error());
+    return state->accept(draft.value());
+}
 /** @brief 保存与执行相互独立，失败目标仍可按用户意愿持久化。 */
 Result<Task<SaveReport>> ConfigurationSession::save(std::uint64_t expected)
 {

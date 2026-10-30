@@ -6,7 +6,9 @@
 
 底部工作区支持搜索并执行已注册命令、按平台/插件实例选择真实输出，以及运行问题的筛选、详情和定位。插件通过 `ui.output/v1` 写入隔离通道，见[工作区接入说明](docs/workbench-panel-development.md)。
 
-**P4 进行中**：M1 预检/账目、M2 原生装载及完整业务 ABI 协商已审核提交，见 [ABI V1](docs/abi-v1.md)。当前 [M3a 请求组件](docs/p4-m3-development.md)、[M3b 原生生命周期](docs/p4-m3b-development.md)、[M3c1 dispatch/effect](docs/p4-m3c-development.md)及 [M3c2 服务桥](docs/p4-m3c2-development.md)已实现；[M3d1 Core 托管与配置目录](docs/p4-m3d1-development.md)亦已完成，[M3d2a 业务 DLL/真实 Qt 配置链路](docs/p4-m3d2a-development.md)已完成，[M3d2b 分层 S06/S07 验证](docs/p4-m3d2b-development.md)已通过，M3 收口；[M4a 共同产物验证与 Qt 预检](docs/p4-m4a-development.md)已完成；[M4b1 共同目录与 Qt root 装载](docs/p4-m4b1-development.md)已完成；[M4b2 Qt 业务工厂与实例](docs/p4-m4b2-development.md)已完成审查验证；[M4c1 共享 Qt/UI SDK](docs/p4-m4c-development.md)已完成，业务 UI DLL/配置装配与最终验收继续，P5 受控替换未开始；当前 C++ 源码 SDK 不构成稳定二进制 ABI。
+**P4 进行中**：M1 预检/账目、M2 原生装载及完整业务 ABI 协商已完成，见 [ABI V1](docs/abi-v1.md)。M3 的请求、生命周期、资源/服务、Core 托管和 Kernel/Session 联合链路已收口，见 [M3 记录](docs/p4-m3-development.md)。M4a 预检、M4b Qt root/工厂/实例、[M4c1 共享 SDK](docs/p4-m4c-development.md)及 [M4c2 业务页面 DLL/配置/诊断](docs/p4-m4c2-development.md)已完成；M4c3 原生桌面验收和最终收口继续，P5 受控替换未开始；当前 C++ 源码 SDK 不构成稳定二进制 ABI。
+
+实际 UI DLL 示例入口为 `cordis_qt_workspace_demo`，支持笔记编辑、实例命令/输出、多实例、配置换代/启停和模块诊断；构建与持久化说明见 [独立工作台](examples/qt_workspace/README.md)。
 
 当前工作区还已实现受限类型化 Qt 信号投递：数值、枚举与标准/Qt 字符串会在发射时冻结，参数保留至异步业务完成，并沿用 Context/epoch 及原生退出屏障。详情见 [类型化连接决策](docs/adr/0026-typed-qt-connections.md)，示例为 cordis_qt_value_connection_demo。
 

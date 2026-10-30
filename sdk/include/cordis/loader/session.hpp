@@ -76,6 +76,9 @@ public:
     Result<AcceptedTarget> apply(const ConfigurationDraft& draft);
     /** @brief 基于当前目标修改路径的本地启用标志，仍走完整校验和 CAS。 */
     Result<AcceptedTarget> setEnabled(const std::string& path, bool enabled, std::uint64_t expectedRevision);
+    /** @brief 从冻结定义取得模块归属，追加顶层实例并走完整 schema/预检/CAS；不装载新模块。 */
+    Result<AcceptedTarget> addInstance(const std::string& id, const std::string& plugin,
+                                       const std::string& configuration, std::uint64_t expectedRevision);
     /** @brief 排队保存指定当前修订，不等待或改写运行结果。 */
     Result<Task<SaveReport>> save(std::uint64_t expectedRevision);
     /** @brief 用户明确保留目标、采用已捕获冲突文件作为新基线；之后仍需显式保存。 */

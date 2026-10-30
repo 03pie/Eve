@@ -178,20 +178,14 @@ private:
                                   "磁盘中已有配置尚未应用，请先通过“配置文件”窗口检查并应用现有目标，再添加实例。"));
         if (json.size() > 1024 * 1024)
             return fail(makeError(ErrorCode::InvalidArgument, "configuration JSON exceeds input budget"));
-        if (path.empty()) {
-            auto names = session->registeredPlugins();
-            if (!names.hasValue())
-                return fail(names.error());
-            if (std::find(names.value().begin(), names.value().end(), plugin) == names.value().end())
-                return fail(makeError(ErrorCode::InvalidArgument, "plugin is not registered"));
-        }
+        if (path.empty())
+            return convert(session->addInstance(id, plugin, json, expected));
         auto source = snapshot.value().coordinator.desired
                           ? Result<loader::ParsedConfiguration>::success(snapshot.value().coordinator.desired->source())
                           : loader::parseConfiguration("formatVersion: 1\nplugins: []\n");
         if (!source.hasValue())
             return fail(source.error());
-        auto parsed = path.empty() ? loader::addConfigurationEntry(source.value(), id, plugin, json)
-                                   : loader::setEntryConfiguration(source.value(), path, json);
+        auto parsed = loader::setEntryConfiguration(source.value(), path, json);
         if (!parsed.hasValue())
             return fail(parsed.error());
         auto draft = session->preview(parsed.value().normalizedYaml());
