@@ -1,7 +1,7 @@
 /** @file manifest.cpp
  * @brief 严格声明、规范路径和流式 SHA256 预检；不打开任何动态装载器。
  */
-#include "native_file_p.hpp"
+#include "path_p.hpp"
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
@@ -129,33 +129,6 @@ bool inside(const QString& root, const QString& path)
     // 句柄给出的最终路径必须匹配目录边界；精确匹配也保守支持启用大小写敏感的 NTFS 目录。
     return path.startsWith(prefix, Qt::CaseSensitive);
 }
-/** @brief Windows 的 /path 与 C:path 仍依赖当前驱动器/目录，不能作为显式根目录。 */
-bool fullyQualified(QString path)
-{
-    path = QDir::fromNativeSeparators(path);
-    if (path.startsWith(QStringLiteral("//?/UNC/"), Qt::CaseInsensitive))
-        path = QStringLiteral("//") + path.mid(8);
-    else if (path.startsWith(QStringLiteral("//?/")))
-        path = path.mid(4);
-    if (path.size() >= 3 &&
-        ((path[0] >= QLatin1Char('A') && path[0] <= QLatin1Char('Z')) ||
-         (path[0] >= QLatin1Char('a') && path[0] <= QLatin1Char('z'))) &&
-        path[1] == QLatin1Char(':') && path[2] == QLatin1Char('/'))
-        return true;
-    if (!path.startsWith(QStringLiteral("//")))
-        return false;
-    const auto serverEnd = path.indexOf(QLatin1Char('/'), 2);
-    if (serverEnd <= 2)
-        return false;
-    const auto server = path.mid(2, serverEnd - 2);
-    const auto share = path.mid(serverEnd + 1).section(QLatin1Char('/'), 0, 0);
-    return server != QLatin1String(".") && server != QLatin1String("..") && server != QLatin1String("?") &&
-           !share.isEmpty() && share != QLatin1String(".") && share != QLatin1String("..");
-}
-bool inputPath(const std::string& value)
-{
-    return !value.empty() && value.size() <= 32768 && value.find('\0') == std::string::npos && utf8(value);
-}
 } // namespace
 
 Result<ModuleManifest> parseManifest(const std::string& json, PreflightLimits limits)
@@ -232,10 +205,10 @@ Result<PreflightArtifact> preflightModule(const std::string& pluginRoot, const s
     };
     if constexpr (sizeof(void*) != 8)
         return reject("module.path", "only Windows x64 preflight is supported");
-    if (!validLimits(limits) || !inputPath(pluginRoot) || !inputPath(manifestPath))
+    if (!validLimits(limits) || !detail::modulePathInput(pluginRoot) || !detail::modulePathInput(manifestPath))
         return reject("module.path", "invalid limits or UTF-8 path");
     const auto rootInput = QString::fromUtf8(pluginRoot.data(), static_cast<int>(pluginRoot.size()));
-    if (!fullyQualified(rootInput))
+    if (!detail::fullyQualifiedModulePath(rootInput))
         return reject("module.path", "plugin root requires a drive-qualified path or full UNC share");
     const OpenedPath rootHandle(rootInput, true);
     const auto root = rootHandle.finalPath();
@@ -244,7 +217,7 @@ Result<PreflightArtifact> preflightModule(const std::string& pluginRoot, const s
     const auto manifestInput = QString::fromUtf8(manifestPath.data(), static_cast<int>(manifestPath.size()));
     if ((manifestInput.startsWith(QLatin1Char('/')) || manifestInput.startsWith(QLatin1Char('\\')) ||
          manifestInput.contains(QLatin1Char(':'))) &&
-        !fullyQualified(manifestInput))
+        !detail::fullyQualifiedModulePath(manifestInput))
         return reject("module.path", "manifest path cannot depend on the current drive or drive directory");
     const QFileInfo info(QDir(root).absoluteFilePath(manifestInput));
     const OpenedPath file(info.absoluteFilePath(), false);

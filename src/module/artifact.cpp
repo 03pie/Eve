@@ -2,6 +2,7 @@
  * @brief 共享路径固定、二次摘要确认及 PE 校验，不执行后端装载。
  */
 #include "artifact_p.hpp"
+#include "path_p.hpp"
 #include <QFileInfo>
 #include <algorithm>
 
@@ -20,29 +21,6 @@ ErrorInfo error(ErrorCode code, const char* phase, const char* message)
     auto result = makeError(code, message);
     result.phase = phase;
     return result;
-}
-bool protectParents(const QString& file, std::vector<std::unique_ptr<OpenedPath>>& guards)
-{
-    std::vector<QString> paths;
-    auto current = QFileInfo(file).absolutePath();
-    for (;;) {
-        if (paths.size() >= 128)
-            return false;
-        paths.push_back(current);
-        QDir parent(current);
-        if (parent.isRoot())
-            break;
-        if (!parent.cdUp() || parent.absolutePath() == current)
-            return false;
-        current = parent.absolutePath();
-    }
-    for (auto at = paths.rbegin(); at != paths.rend(); ++at) {
-        auto guard = std::make_unique<OpenedPath>(*at, true);
-        if (!guard->valid() || guard->finalPath() != *at)
-            return false;
-        guards.push_back(std::move(guard));
-    }
-    return true;
 }
 bool compatibleImage(const OpenedPath& artifact)
 {
@@ -69,8 +47,10 @@ Result<std::unique_ptr<VerifiedSource>> verifyModuleSource(const std::string& pl
     auto manifestGuard = std::make_unique<OpenedPath>(QString::fromUtf8(initial.manifestPath().c_str()), false);
     std::vector<std::unique_ptr<OpenedPath>> directories;
     if (!artifact->valid() || !manifestGuard->valid() ||
-        !protectParents(QString::fromUtf8(initial.libraryPath().c_str()), directories) ||
-        !protectParents(QString::fromUtf8(initial.manifestPath().c_str()), directories))
+        !protectModuleDirectories(QFileInfo(QString::fromUtf8(initial.libraryPath().c_str())).absolutePath(),
+                                  directories) ||
+        !protectModuleDirectories(QFileInfo(QString::fromUtf8(initial.manifestPath().c_str())).absolutePath(),
+                                  directories))
         return Output::failure(
             error(ErrorCode::ModuleLoad, "module.source", "cannot protect module source or ancestor directories"));
     auto checked = preflightModule(pluginRoot, manifestPath, limits);

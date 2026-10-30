@@ -1,5 +1,7 @@
 # Module host
 
+P5-M2a 新增独立 Cordis::ModuleInstall / installModuleArtifact，把固定来源的单 DLL 与原始声明复制到 hash 目录，临时验证后不覆盖发布。InstalledArtifact 持有安装目标的文件/目录保护，交给原 stage 路径时仍独立重验；安装不执行 DLL、不接管运行目录或切换业务。只复制声明产物，不隐式打包依赖和旁文件，见 [M2a 记录](../../docs/p5-m2a-development.md)与 [ADR-0042](../../docs/adr/0042-module-artifact-installation.md)。
+
 P5-M1 增加同一目录中的 Current/Candidate 与 predecessor。普通 load/loadQtModule 仍选择当前代；ModuleManager::stage / stageQtModule 显式装载另一份独立目录的候选，保持文件归属、前驱、后端、插件目录、预算和默认驻留约束。暂存不切换业务或授予卸载能力，后续事务/迁移与白名单路线见 [P5 计划](../../docs/p5-development.md)及 [M1 验证](../../docs/p5-m1-development.md)。下文保留 P4 各段历史。
 
 P4-M1 提供 Cordis::Module 的宿主分类账目/唯一租约，以及 Windows x64 的 Cordis::ModulePreflight 声明、最终路径与 SHA256 预检。公开头不暴露 Qt；Core 不反向依赖 Module。

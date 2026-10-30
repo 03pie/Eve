@@ -18,4 +18,23 @@
 | 同一物理 DLL 不作两代，失败别名不绕过候选缓存 | p5.native_candidate_physical / aliases |
 | Qt 构造重入观察 Candidate/Validated，重复暂存拒绝 | p5.qt_candidate_reentry |
 
-M2–M5 尚待实现和逐项验证：hash 安装事务、同模块/闭包互斥、旧代未清理不接管服务键、新代输出发布、状态导出/迁移/校验、新代激活失败恢复、旧代恢复失败、消费者恢复失败、晚到回调/析构与卸载、白名单实际卸载、正常/故障下连续 100 次 Windows 替换及随机压力。最终必须把操作报告、实际运行和资源/文件/进程证据分别核对。
+## M2a hash 安装事务
+
+| 场景 | 实际检查 |
+|---|---|
+| 独立复制、原始声明保留、无隐式执行、凭据保护/复制/移动/释放 | p5.install_basic |
+| 已有目录重验和跨线程复用，无 QCoreApplication 前提 | p5.install_reuse |
+| 输入声明名可变，输出为 module.json；多于 64 KiB 的分块复制 | p5.install_manifest_name / multichunk |
+| 显式根、UTF-8、限额、摘要/PE、来源写共享冲突与重试 | p5.install_roots / limits / invalid_source / source_busy |
+| 活动/外来锁不接管，同 hash 并发安装只发布一个目录 | p5.install_lock / concurrent |
+| 占用目录与不同声明身份不覆盖、DLL 名称冲突 | p5.install_occupied / conflict |
+| 扩展长度、带 . / .. 的普通及扩展长度绝对路径、Unicode、根别名 | p5.install_long_path / normalized_root / unicode / store_alias |
+| 原生创建身份在发布后可核对，字节相同的路径替身不是原文件 | p5.install_identity |
+| 回收自有临时文件，外来条目和替身保留并报告不完整清理 | p5.install_rollback / rollback_foreign / rollback_replaced |
+| 实际目录重命名在发布目标已有内容时失败，原内容保留 | p5.install_publish_conflict |
+| 不沿缓存重解析目录、不复用硬链接成员或被篡改字节 | p5.install_redirected / hardlink / tamper |
+| 安装目标经正常 stage 接入同一候选目录，旧 C ABI 业务仍 Started / Qt 当前 root 不变 | p5.install_native_stage / qt_stage |
+
+M2a 的完整验证记录见 [开发记录](../../docs/p5-m2a-development.md)。上述安装检查不证明运行切换、业务兼容或页面升级已完成。
+
+M2 后续及 M3–M5 尚待实现和逐项验证：同模块/闭包互斥、旧代未清理不接管服务键、新代输出发布、状态导出/迁移/校验、新代激活失败恢复、旧代恢复失败、消费者恢复失败、晚到回调/析构与卸载、白名单实际卸载、正常/故障下连续 100 次 Windows 替换及随机压力。最终必须把操作报告、实际运行和资源/文件/进程证据分别核对。

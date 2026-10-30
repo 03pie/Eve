@@ -16,14 +16,30 @@
 #include <Windows.h>
 
 namespace cordis::module::detail {
+/** @brief 对已经限定为绝对路径的内部名称保留 Windows 长路径语义。 */
+inline std::wstring nativeModulePath(const QString& path)
+{
+    if (path.isEmpty())
+        return {};
+    // 扩展命名空间不再解析 . / ..；先保持显式绝对路径原有的词法归一化语义。
+    auto native = QDir::toNativeSeparators(QDir::cleanPath(path));
+    if (!native.startsWith(QStringLiteral("\\\\?\\"))) {
+        if (native.startsWith(QStringLiteral("\\\\")))
+            native = QStringLiteral("\\\\?\\UNC\\") + native.mid(2);
+        else if (native.size() >= 3 && native[1] == QLatin1Char(':') && native[2] == QLatin1Char('\\'))
+            native = QStringLiteral("\\\\?\\") + native;
+    }
+    return native.toStdWString();
+}
 /** @brief 一次预检持续持有同一原生句柄；路径、元数据和字节不能在重开文件时脱节。 */
 class OpenedPath {
 public:
-    explicit OpenedPath(const QString& path, bool directory)
+    explicit OpenedPath(const QString& path, bool directory, bool followReparse = true)
     {
-        const auto native = QDir::toNativeSeparators(path).toStdWString();
+        const auto native = nativeModulePath(path);
         handle_ = CreateFileW(native.c_str(), directory ? FILE_READ_ATTRIBUTES : GENERIC_READ, FILE_SHARE_READ, nullptr,
-                              OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+                              OPEN_EXISTING,
+                              FILE_FLAG_BACKUP_SEMANTICS | (followReparse ? 0 : FILE_FLAG_OPEN_REPARSE_POINT), nullptr);
         if (handle_ == INVALID_HANDLE_VALUE) {
             error_ = GetLastError();
             return;
@@ -36,7 +52,8 @@ public:
             error_ = GetLastError();
             return;
         }
-        if (((initial_.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) != directory) {
+        if (((initial_.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) != directory ||
+            (!followReparse && (initial_.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))) {
             error_ = ERROR_DIRECTORY;
             return;
         }
@@ -56,6 +73,7 @@ public:
     {
         return (static_cast<std::uint64_t>(initial_.nFileSizeHigh) << 32) | initial_.nFileSizeLow;
     }
+    DWORD links() const noexcept { return initial_.nNumberOfLinks; }
     /** @brief Qt 的规范路径不保证展开 junction，查询必须针对稍后实际读取的句柄。 */
     QString finalPath() const
     {
@@ -110,11 +128,15 @@ public:
     /** @brief 比较两个已固定句柄的文件身份，不以路径拼写或模块名猜测同一文件。 */
     bool sameFile(const OpenedPath& other) const noexcept
     {
+        return other.valid_ && other.identityAvailable_ && sameFile(other.identity_);
+    }
+    /** @brief 与创建时保存的原生身份比较，不重新按路径猜测所有权。 */
+    bool sameFile(const FILE_ID_INFO& other) const noexcept
+    {
         static constexpr BYTE zero[16]{};
-        return valid_ && other.valid_ && identityAvailable_ && other.identityAvailable_ &&
-               std::memcmp(identity_.FileId.Identifier, zero, sizeof(zero)) != 0 &&
-               identity_.VolumeSerialNumber == other.identity_.VolumeSerialNumber &&
-               std::memcmp(identity_.FileId.Identifier, other.identity_.FileId.Identifier, sizeof(zero)) == 0;
+        return valid_ && identityAvailable_ && std::memcmp(identity_.FileId.Identifier, zero, sizeof(zero)) != 0 &&
+               identity_.VolumeSerialNumber == other.VolumeSerialNumber &&
+               std::memcmp(identity_.FileId.Identifier, other.FileId.Identifier, sizeof(zero)) == 0;
     }
 
 private:

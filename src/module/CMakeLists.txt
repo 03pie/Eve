@@ -22,6 +22,12 @@ if(WIN32 AND CORDIS_REQUIRE_QT5152)
     target_compile_definitions(cordis_module_preflight PRIVATE QT_NO_KEYWORDS)
     cordis_target_defaults(cordis_module_preflight)
 
+    add_library(cordis_module_install STATIC install.cpp install_directory.cpp)
+    add_library(Cordis::ModuleInstall ALIAS cordis_module_install)
+    target_link_libraries(cordis_module_install PUBLIC Cordis::ModulePreflight PRIVATE Qt5::Core)
+    target_compile_definitions(cordis_module_install PRIVATE QT_NO_KEYWORDS)
+    cordis_target_defaults(cordis_module_install)
+
     if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         add_library(cordis_module_qt_preflight STATIC qt_manifest.cpp)
         add_library(Cordis::ModuleQtPreflight ALIAS cordis_module_qt_preflight)
