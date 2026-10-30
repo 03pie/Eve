@@ -1,5 +1,13 @@
 # 提交前代码审查记录
 
+## P4-M4c1 共享 Qt/UI 运行库提交前审核
+
+日期：2026-10-30。基线 4866657（M4b2 已提交并推送）。由当前代理审核，未使用子代理。检查跨 DLL 的依赖方向、静态状态、页面工厂闭包与对象所有权，真实复现 QtScheduler 私有事件类型因静态链接被复制，造成 DLL 接受投递却不执行；负向调度回归 0/1、页面对照 3/3。收敛共享 Qt/UI 后四项通过，没有向调度器增加后端分支或复制页面系统。
+
+QtUiPluginSdk 仅聚合现有 Core/Qt/Ui/Ela 目标，Module/Loader 仍属宿主。实际 DLL 导入确认具体类型 post 和页面 add 来自共享库，Debug 的 Core/Qt/Ui 均使用 d 后缀；Qt 不依赖 Ui/Module。真实页面多实例/换代检查子对象、工厂捕获先于业务对象析构；停止后释放业务引用，loader root 仍按策略保留。
+
+最终原 MSVC Release/Debug/ASan 全量各 693/693、GCC 257/257；关闭示例 P4 225/225、静态兼容 P4 177/177，恢复原 Release 后五项 5/5。7 项源码/构建快照、17 项 ASan 编译命令（含 1 项生成资源）、编码/格式/引用及只读边界审计通过。未发现阻止本小阶段提交的问题，见 [M4c 记录](p4-m4c-development.md)及 [ADR-0039](adr/0039-shared-qt-ui-runtime.md)。M4c2 业务 UI DLL/配置/诊断和 M4c3 原生验收仍待完成，P4 保持进行中。
+
 ## P4-M4b2 Qt 工厂与业务实例提交前审核
 
 日期：2026-10-30。基线 cd5bf2a。由当前代理审核，未使用子代理。先检查静态 Core 身份复制和并行清理的所有权缺口，再采用共享 Core、实际 Core 身份虚调用握手及通用 afterCleanup 末尾阶段；保留单一模块目录、Core 实例/服务系统和 QObjectResource 完整析构屏障。Core 不依赖 Qt/Module，插件 SDK 不链接模块宿主实现。

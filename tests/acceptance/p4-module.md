@@ -203,3 +203,14 @@ Loaded 仅证明此装载层完成，不证明 IQtPluginV1 工厂协商或 UI �
 | 主作用域为空但末尾清理仍未释放时配置不声明安全 | p3.kernel_driver_finalizer_failure |
 
 另以真实静态 Core 错链 DLL 检查生产握手在 query/create 前拒绝，不只依赖元数据声明；/MT 的插件 SDK 与共享 Core 编译探针均被拒绝。详见 [记录](../../docs/p4-m4b2-development.md)及 [ADR-0038](../../docs/adr/0038-qt-runtime-ownership.md)。本段为 QObject 业务夹具，M4c 的 QWidget 页面 DLL、配置装配和原生验收仍需完成；不声明物理卸载。
+
+## M4c1 共享 Qt/UI SDK 与真实页面 DLL 回归
+
+| 行为 | 自动化依据 |
+|---|---|
+| 宿主队列静止后，DLL 经具体 QtScheduler 类型投递，接受的任务实际执行且无丢弃 | p4.qt_ui_scheduler |
+| 宿主 ui.pages 服务与 DLL Ela QWidget，子对象/工厂捕获先于业务对象完整析构 | p4.qt_ui_lifetime |
+| 同一工厂多实例页面隔离；停止一个不撤销另一个 | p4.qt_ui_multi |
+| 配置换代完整释放旧页面和业务对象，再创建新 epoch | p4.qt_ui_update |
+
+原静态 Qt 构建的调度负向复现 0/1，改为共享运行库后通过；测试控制导出只用于回归，不属于业务 SDK。此表不代替 M4c2 的真实业务示例/配置/模块诊断或 M4c3 的原生验收，详见 [M4c 记录](../../docs/p4-m4c-development.md)。

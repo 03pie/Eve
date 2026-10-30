@@ -2,6 +2,8 @@
 
 启用 CORDIS_BUILD_ELA_UI 后构建 Cordis::Ui，公开 pages.hpp 不依赖 Ela 类型。UiPagesService 登记 Context.effect，工厂返回 QWidget；PageHandle 支持 ready、navigate、close 与诊断。页面和分类按实例/epoch 隔离，关闭等待 Q2 完整删除和工厂载荷释放。
 
+CORDIS_SHARED_CORE=ON 时 Ui 与 Qt 一同共享，Debug 使用 cordis_uid.dll。Cordis::QtUiPluginSdk 聚合共享 Ui/Qt/Core 和 Ela；平台目录、配置驱动及 ConfigUi 仍留在宿主，普通插件只消费已有贡献服务。跨 DLL 页面与完整析构的验证见 [M4c 记录](../../docs/p4-m4c-development.md)。
+
 宿主 ElaShell 使用项目内维护的 ElaWindow 原生页面、展开分组及页脚导航，组件库位于 third_party/ela。延迟滚动、节点选择和动画归属已作本地修正；通用导航门禁接入 Context/epoch，插件不获得 ElaWindow。正常退出先 Kernel.close，再 shell.close，最后停 scheduler 与 Qt。当前决策见 [ADR-0010](../../docs/adr/0010-maintained-ela-navigation.md)。
 
 工作台采用左侧原生活动栏、中央页面页签与页面区、底部命令/输出及状态栏；资源树属于具体插件页。页面页签与动态贡献同步删除，所有页签均可关闭，零页签中央空白；Ctrl+B 和 Ctrl+J 分别切换导航模式、底部面板，分隔条可调整宽高。底部默认收起，通知不会将其打开。面板均由根窗口持有；新增管理/配置窗口也由根窗口或贡献 effect 托管，不允许未托管浮动窗口。
