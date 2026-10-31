@@ -3,6 +3,7 @@
  */
 #pragma once
 #include <cordis/loader/coordinator.hpp>
+#include <cordis/loader/definition_driver.hpp>
 #include <cordis/loader/store.hpp>
 #include <stdexcept>
 #include <utility>
@@ -64,6 +65,10 @@ public:
     ConfigurationSession(std::shared_ptr<IScheduler> scheduler, std::shared_ptr<IReconcileDriver> driver,
                          std::vector<PluginDefinition> definitions, std::shared_ptr<IConfigurationWriter> writer,
                          ConfigurationFileSnapshot baseline, YamlLimits limits = {}, StoreLimits storeLimits = {});
+    /** @brief schema 与 Runtime 均取自驱动的同一不可变目录，拒绝没有完整定义的驱动。 */
+    ConfigurationSession(std::shared_ptr<IScheduler> scheduler, std::shared_ptr<IConfiguredReconcileDriver> driver,
+                         std::shared_ptr<IConfigurationWriter> writer, ConfigurationFileSnapshot baseline,
+                         YamlLimits limits = {}, StoreLimits storeLimits = {});
     /** @brief 释放 facade 不替代显式关闭。 */
     ~ConfigurationSession();
     /** @brief 唯一 facade 不复制协调与保存所有权。 */

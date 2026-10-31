@@ -1,8 +1,9 @@
 /** @file coordinator.cpp
  * @brief 以 owner 队列协调目标接受、最新目标替代及驱动清理，投递故障只在原子门禁和 Promise 上发布。
  */
-#include <cordis/loader/coordinator.hpp>
+#include "definition_driver_p.hpp"
 #include <atomic>
+#include <cordis/loader/coordinator.hpp>
 #include <exception>
 #include <limits>
 #include <map>
@@ -308,8 +309,14 @@ Result<AcceptedTarget> ConfigurationCoordinator::accept(ValidatedCandidate targe
     auto candidate = std::make_shared<const ValidatedCandidate>(std::move(target));
     try {
         detail::CoordinatorControl::DriverAccess access(*state);
+        auto definitions = detail::checkDefinitionSource(*state->driver, *candidate);
+        if (!definitions.hasValue())
+            return Result<AcceptedTarget>::failure(definitions.error());
         auto supported = state->driver->preflight(*candidate);
         if (!supported.hasValue()) return Result<AcceptedTarget>::failure(supported.error());
+        auto after = detail::checkDefinitionSource(*state->driver, *candidate);
+        if (!after.hasValue())
+            return Result<AcceptedTarget>::failure(after.error());
     } catch (const std::exception& error) { return Result<AcceptedTarget>::failure(makeError(ErrorCode::ConfigInvalid, error.what())); }
     catch (...) { return Result<AcceptedTarget>::failure(makeError(ErrorCode::ConfigInvalid, "driver preflight threw")); }
     auto finalCheck = state->business();

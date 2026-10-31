@@ -8,6 +8,9 @@
 #include <QThread>
 #include <QTimer>
 #include <QVariant>
+#include <cordis/loader/kernel_driver.hpp>
+#include <cordis/loader/qt_store.hpp>
+#include <cordis/loader/session.hpp>
 #include <cordis/module/manager.hpp>
 #include <cordis/module/native.hpp>
 #include <cordis/module/runtime.hpp>
@@ -262,6 +265,78 @@ void native(Scene& s, const QString& name)
     }
     scheduler->close();
 }
+template <class Wait>
+void definitionBinding(Scene& s, const Runtime& old, const Runtime& next, const std::shared_ptr<IScheduler>& scheduler,
+                       const std::shared_ptr<Kernel>& kernel, Wait waitFor)
+{
+    using namespace cordis::loader;
+    auto take = [](auto result, const char* phase) {
+        if (!result.hasValue())
+            throw std::runtime_error(std::string(phase) + ": " + result.error().message + " [" + result.error().phase +
+                                     "]");
+        return std::move(result).value();
+    };
+    const auto id = s.qt ? "org.cordis.qt.page" : "org.cordis.plugin";
+    auto schema = [](const std::string& value) {
+        return value == "null" || value == "\"sync\""
+                   ? Result<void>::success()
+                   : Result<void>::failure(makeError(ErrorCode::ConfigInvalid, "bad test config"));
+    };
+    const auto first =
+        take(ConfigurationDefinitions::create({{{id, {}, schema, {"business", "old/module.json"}}, old}}),
+             "old definitions");
+    const auto second =
+        take(ConfigurationDefinitions::create({{{id, {}, schema, {"business", "next/module.json"}}, next}}),
+             "next definitions");
+    auto a = KernelReconcileDriver::configured(scheduler, kernel, first),
+         b = KernelReconcileDriver::configured(scheduler, kernel, second);
+    auto fileA = s.root + "/old.yaml", fileB = s.root + "/next.yaml";
+    ConfigurationSession one(scheduler, a, std::make_shared<QtConfigurationWriter>(fileA),
+                             take(readConfigurationFile(fileA), "old baseline"));
+    ConfigurationSession two(scheduler, b, std::make_shared<QtConfigurationWriter>(fileB),
+                             take(readConfigurationFile(fileB), "next baseline"));
+    auto text = [&](const std::string& path, const std::string& entry) {
+        return "formatVersion: 1\nmodules: {business: {manifest: " + path + "}}\nplugins: [{id: " + entry +
+               ", plugin: " + id + ", module: business, config: " + (s.qt ? "null" : "sync") + "}]\n";
+    };
+    auto draftA = take(one.preview(text("old/module.json", "old")), "old preview");
+    CHECK(first->owns(draftA.candidate()) && !second->owns(draftA.candidate()));
+    CHECK(b->preflight(draftA.candidate()).error().code == ErrorCode::ConfigConflict);
+    CHECK(!readConfigurationFile(fileA).value().version.exists && !readConfigurationFile(fileB).value().version.exists);
+    auto acceptedA = take(one.apply(draftA), "old apply");
+    CHECK(waitFor(acceptedA.settled)->value().outcome == PlanOutcome::Applied);
+    auto draftB = take(two.preview(text("next/module.json", "next")), "next preview");
+    auto acceptedB = take(two.apply(draftB), "next apply");
+    CHECK(waitFor(acceptedB.settled)->value().outcome == PlanOutcome::Applied);
+    CHECK(one.snapshot().value().coordinator.running[0].state == InstanceState::Active &&
+          two.snapshot().value().coordinator.running[0].state == InstanceState::Active);
+    auto savedA = one.save(1).value(), savedB = two.save(1).value();
+    CHECK(waitFor(savedA)->hasValue() && waitFor(savedB)->hasValue());
+    CHECK(readConfigurationFile(fileA).value().text == draftA.candidate().source().normalizedYaml() &&
+          readConfigurationFile(fileB).value().text == draftB.candidate().source().normalizedYaml());
+    CHECK(waitFor(one.close())->hasValue() && waitFor(two.close())->hasValue());
+    CHECK(waitFor(kernel->close())->value().quiescent);
+    s.checkReserved(false);
+}
+void nativeDefinitions(Scene& s)
+{
+    auto scheduler = std::make_shared<testing::FakeScheduler>();
+    auto kernel = std::make_shared<Kernel>(scheduler);
+    auto old = NativeModule::open(s.manager, s.current, scheduler, kernel->services()).value(),
+         next = NativeModule::open(s.manager, s.candidate, scheduler, kernel->services()).value();
+    auto a = old.runtime({"org.cordis.plugin", {}, {}}).value(),
+         b = next.runtime({"org.cordis.plugin", {}, {}}).value();
+    kernel->registerRuntime("old", a).value();
+    kernel->registerRuntime("next", b).value();
+    auto waitFor = [&](const auto& task) {
+        scheduler->runUntilIdle(30000).value();
+        CHECK(task.isReady());
+        return task.tryResult();
+    };
+    definitionBinding(s, a, b, scheduler, kernel, waitFor);
+    CHECK(waitFor(old.close())->value().quiescent && waitFor(next.close())->value().quiescent);
+    scheduler->close();
+}
 #ifdef CORDIS_TEST_QT_RESERVATION
 template <class T> auto wait(const Task<T>& task)
 {
@@ -386,6 +461,17 @@ void qtCase(Scene& s, const QString& name)
     }
     CHECK(scheduler->close().hasValue());
 }
+void qtDefinitions(Scene& s)
+{
+    auto scheduler = std::make_shared<qt::QtScheduler>();
+    auto kernel = std::make_shared<Kernel>(scheduler);
+    auto old = qtRuntime(s.current, {"org.cordis.qt.page", {}, {}}, scheduler).value(),
+         next = qtRuntime(s.candidate, {"org.cordis.qt.page", {}, {}}, scheduler).value();
+    kernel->registerRuntime("old", old).value();
+    kernel->registerRuntime("next", next).value();
+    definitionBinding(s, old, next, scheduler, kernel, [&](const auto& task) { return wait(task); });
+    scheduler->close().value();
+}
 #endif
 int main(int argc, char** argv)
 {
@@ -396,7 +482,14 @@ int main(int argc, char** argv)
         const bool qt = args[1].startsWith("qt_");
         const auto name = args[1].mid(qt ? 3 : 7);
         Scene scene(qt, args[2], args[3].split(';'));
-        if (name == "admission" || name == "candidate_live" || name == "failure" || name.endsWith("reentry")) {
+        if (name == "definitions") {
+#ifdef CORDIS_TEST_QT_RESERVATION
+            if (qt)
+                qtDefinitions(scene);
+            else
+#endif
+                nativeDefinitions(scene);
+        } else if (name == "admission" || name == "candidate_live" || name == "failure" || name.endsWith("reentry")) {
 #ifdef CORDIS_TEST_QT_RESERVATION
             if (qt)
                 qtCase(scene, name);

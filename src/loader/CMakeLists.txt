@@ -14,9 +14,15 @@ add_library(Cordis::ConfigCoordinator ALIAS cordis_config_coordinator)
 target_link_libraries(cordis_config_coordinator PUBLIC Cordis::ConfigYaml Cordis::Core)
 cordis_target_defaults(cordis_config_coordinator)
 
+add_library(cordis_config_definitions STATIC definitions.cpp)
+add_library(Cordis::ConfigDefinitions ALIAS cordis_config_definitions)
+target_link_libraries(cordis_config_definitions PUBLIC Cordis::ConfigYaml Cordis::Core)
+cordis_target_defaults(cordis_config_definitions)
+target_link_libraries(cordis_config_coordinator PUBLIC Cordis::ConfigDefinitions)
+
 add_library(cordis_config_kernel STATIC kernel_driver.cpp)
 add_library(Cordis::ConfigKernel ALIAS cordis_config_kernel)
-target_link_libraries(cordis_config_kernel PUBLIC Cordis::ConfigCoordinator)
+target_link_libraries(cordis_config_kernel PUBLIC Cordis::ConfigCoordinator Cordis::ConfigDefinitions)
 cordis_target_defaults(cordis_config_kernel)
 
 add_library(cordis_config_store STATIC store.cpp)
@@ -26,7 +32,7 @@ cordis_target_defaults(cordis_config_store)
 
 add_library(cordis_config_session STATIC session.cpp)
 add_library(Cordis::ConfigSession ALIAS cordis_config_session)
-target_link_libraries(cordis_config_session PUBLIC Cordis::ConfigCoordinator Cordis::ConfigStore)
+target_link_libraries(cordis_config_session PUBLIC Cordis::ConfigCoordinator Cordis::ConfigStore Cordis::ConfigDefinitions)
 cordis_target_defaults(cordis_config_session)
 
 if(CORDIS_REQUIRE_QT5152)

@@ -118,4 +118,24 @@ M2a 的完整验证记录见 [开发记录](../../docs/p5-m2a-development.md)。
 
 本段使用真实两版本业务 DLL，检查预约与入场，不迁移或提交业务，不以发现/预约代替工厂/schema 验证。完整记录见 [M2c3](../../docs/p5-m2c3-development.md)。
 
+## M2c4 共同定义与候选来源
+
+| 场景 | 实际检查 |
+|---|---|
+| 构造不执行 schema/激活，规范模块来源，独立目录与普通校验身份区分，候选复制/移动 | p5.definitions_basic |
+| 无效/重复/无 schema 定义、错误来源、移后 Runtime、实际 Kernel 归属 | p5.definitions_invalid |
+| 固定依赖不可弱化，额外必需接口须有兼容类型化契约，可选声明不可重复 | p5.definitions_contracts |
+| 实际 Kernel 驱动直接 preflight/plan/apply 拒绝其他目录的候选，无实例副作用 | p5.definitions_driver |
+| 真实 Session 应用/添加/启停/保存及完整关闭，均来自驱动的共同目录 | p5.definitions_session |
+| 完整驱动拒绝独立 schema；保留旧运行时构造，新完整 Session 拒绝旧不完整驱动 | p5.definitions_constructors |
+| Coordinator 在预检前后检查身份，失败不增加 desired 修订 | p5.definitions_foreign、p5.definitions_reentry |
+| 预览后的目录改变使草稿失效；schema 回调改变目录也不发布草稿 | p5.definitions_draft、p5.definitions_schema_reentry |
+| schema 释放最后目录门面，调用栈保留工厂至返回，候选仅保留无回调身份 | p5.definitions_lifetime |
+| 查目录回调关闭并销毁 Session 门面，读取帧保持控制块至返回 | p5.definitions_read_reentry |
+| 驱动快照改变目录或关闭 Session 后，不能发布草稿或登记保存目标 | p5.definitions_snapshot_reentry、p5.definitions_snapshot_close |
+| 查目录异常在预览/枚举/添加处返回失败，目标与文件不变 | p5.definitions_getter_failure |
+| 真实两版本 C ABI/Qt 工厂、独立定义来源和实际文件保存/读回/关闭，模块角色不改变 | p5.native_definition_binding、p5.qt_definition_binding |
+
+边界与审查记录见 [M2c4](../../docs/p5-m2c4-development.md)。协议替身只验证来源门禁，真实双版本场景验证独立绑定，不代表已运行替换；完整事务仍待后续。
+
 M2 后续及 M3–M5 尚待实现和逐项验证：完整 ReplacementOperation、服务发布与冻结定义/目录角色的整体切换、UI 贡献可见性、状态导出/迁移/校验、新代激活失败恢复、旧代恢复失败、消费者恢复失败、晚到回调/析构与卸载、白名单实际卸载、正常/故障下连续 100 次 Windows 替换及随机压力。最终必须把操作报告、实际运行和资源/文件/进程证据分别核对。

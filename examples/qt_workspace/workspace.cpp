@@ -52,21 +52,23 @@ void Workspace::initialize(const QString& root, const QString& file)
         }
         return Result<void>::failure(makeError(ErrorCode::ModulePinned, "notebook module unavailable"));
     };
-    driver = std::make_shared<KernelReconcileDriver>(
-        scheduler, kernel, std::vector<KernelPlugin>{{"example.notebook", *runtime, {}, module, available}});
     const auto baseline = take(readConfigurationFile(file));
     initial = baseline.version.exists ? baseline.text : take(readConfigurationFile(root + "/workspace.yaml")).text;
-    session = std::make_shared<ConfigurationSession>(
-        scheduler, driver,
-        std::vector<PluginDefinition>{{"example.notebook",
-                                       {{"ui.pages"}, {"ui.commands"}, {"ui.output"}},
-                                       [](const std::string& text) {
-                                           auto checked = configuration(text);
-                                           return checked.hasValue() ? Result<void>::success()
-                                                                     : Result<void>::failure(checked.error());
-                                       },
-                                       module}},
-        std::make_shared<QtConfigurationWriter>(file), baseline);
+    auto definitions = take(ConfigurationDefinitions::create({{{"example.notebook",
+                                                                {{"ui.pages"}, {"ui.commands"}, {"ui.output"}},
+                                                                [](const std::string& text) {
+                                                                    auto checked = configuration(text);
+                                                                    return checked.hasValue()
+                                                                               ? Result<void>::success()
+                                                                               : Result<void>::failure(checked.error());
+                                                                },
+                                                                module},
+                                                               *runtime,
+                                                               {},
+                                                               available}}));
+    driver = KernelReconcileDriver::configured(scheduler, kernel, definitions);
+    session = std::make_shared<ConfigurationSession>(scheduler, driver, std::make_shared<QtConfigurationWriter>(file),
+                                                     baseline);
     configurationManagement = createConfigurationManagement(session, scheduler);
     std::weak_ptr<Workspace> weak = shared_from_this();
     auto definition = take(kernel->registerPlugin("host.notebook", [weak](Context context) {

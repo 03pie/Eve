@@ -14,7 +14,7 @@ foreach(version IN ITEMS old next)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/replacement-fixtures")
 endforeach()
 add_executable(cordis_module_reservation_tests qt/module_reservation.cpp)
-target_link_libraries(cordis_module_reservation_tests PRIVATE Cordis::ModuleNative Cordis::ModuleHost Qt5::Core)
+target_link_libraries(cordis_module_reservation_tests PRIVATE Cordis::ModuleNative Cordis::ModuleHost Cordis::ConfigKernel Cordis::ConfigSession Cordis::ConfigStoreQt Qt5::Core)
 cordis_target_defaults(cordis_module_reservation_tests)
 add_dependencies(cordis_module_reservation_tests cordis_fixture_business cordis_reservation_native_next
     cordis_reservation_peer_old cordis_reservation_peer_next cordis_candidate_native_next)
@@ -33,6 +33,12 @@ function(cordis_reservation_cases backend old next third)
             -P "${CMAKE_CURRENT_SOURCE_DIR}/module_native_case.cmake")
         set_tests_properties(p5.${backend}_reservation_${case} PROPERTIES LABELS "p5;module;${backend};replacement_reservation" TIMEOUT 25)
     endforeach()
+    add_test(NAME p5.${backend}_definition_binding COMMAND "${CMAKE_COMMAND}"
+        "-DTEST_EXE=$<TARGET_FILE:cordis_module_reservation_tests>" "-DCASE=${backend}_definitions"
+        "-DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/reservation-cases"
+        "-DFIXTURES=$<TARGET_FILE:${old}>;$<TARGET_FILE:${next}>;$<TARGET_FILE:${third}>;$<TARGET_FILE:cordis_reservation_peer_old>;$<TARGET_FILE:cordis_reservation_peer_next>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/module_native_case.cmake")
+    set_tests_properties(p5.${backend}_definition_binding PROPERTIES LABELS "p5;module;${backend};definitions" TIMEOUT 25)
 endfunction()
 cordis_reservation_cases(native cordis_fixture_business cordis_reservation_native_next cordis_candidate_native_next)
 if(TARGET cordis_module_qt)

@@ -4,9 +4,14 @@
 #pragma once
 #include <cordis/loader/configuration.hpp>
 #include <functional>
+#include <memory>
 #include <utility>
 
 namespace cordis::loader {
+class ConfigurationDefinitions;
+namespace detail {
+struct DefinitionIdentity;
+}
 /** @brief 配置来源的位置；行列从 1 开始，字节偏移不作为文件写入能力。 */
 struct SourcePosition {
     std::size_t line = 1;
@@ -86,13 +91,18 @@ public:
     const ParsedConfiguration& source() const noexcept { return source_; }
     /** @brief 依赖是定义与条目声明的联合，只能增加或收紧。 */
     const std::map<std::string, std::vector<InjectSpec>>& effectiveInject() const noexcept { return inject_; }
+    /** @brief 只比较校验来源，不授予 Runtime、schema 或目录修改能力。 */
+    bool hasDefinitionIdentity() const noexcept { return static_cast<bool>(definitions_); }
+
 private:
+    friend class ConfigurationDefinitions;
     friend Result<ValidatedCandidate> validateCandidate(ParsedConfiguration, std::vector<PluginDefinition>);
     /** @brief 只有完整内置校验入口可发布结果。 */
     ValidatedCandidate(ParsedConfiguration source, std::map<std::string, std::vector<InjectSpec>> inject)
         : source_(std::move(source)), inject_(std::move(inject)) {}
     ParsedConfiguration source_;
     std::map<std::string, std::vector<InjectSpec>> inject_;
+    std::shared_ptr<const detail::DefinitionIdentity> definitions_;
 };
 /** @brief 校验所有条目（含禁用项）的内置定义/schema；外部模块在 P4 接入前拒绝。 */
 Result<ValidatedCandidate> validateCandidate(ParsedConfiguration source, std::vector<PluginDefinition> definitions);

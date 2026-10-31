@@ -1,6 +1,7 @@
 /** @file validation.cpp
  * @brief 以内置定义和无业务副作用 schema 校验配置，合并依赖时保留定义要求。
  */
+#include "definition_validation_p.hpp"
 #include "module_catalog_p.hpp"
 #include <algorithm>
 #include <cordis/loader/yaml.hpp>
@@ -39,11 +40,9 @@ std::vector<InjectSpec> mergeInject(const std::vector<InjectSpec>& definition, c
     return result;
 }
 } // namespace
-/** @brief 参数按值保留来源及 schema 生命周期，结果仅复制宿主值，不持有任何定义回调。 */
-Result<ValidatedCandidate> validateCandidate(ParsedConfiguration source, std::vector<PluginDefinition> definitions)
+Result<std::map<std::string, PluginDefinition>> detail::normalizeDefinitions(std::vector<PluginDefinition> definitions)
 {
-    if (!source.isValid())
-        return Result<ValidatedCandidate>::failure(errorAt(source, "loader.definition", "parsed configuration was moved from"));
+    using Output = Result<std::map<std::string, PluginDefinition>>;
     std::map<std::string, PluginDefinition> catalog;
     std::map<std::string, PluginModule> modules;
     for (auto& definition : definitions) {
@@ -53,7 +52,8 @@ Result<ValidatedCandidate> validateCandidate(ParsedConfiguration source, std::ve
         probe.plugins.push_back(std::move(value));
         auto checked = validateDocument(probe);
         if (!checked.hasValue() || !definition.validateConfig || catalog.count(definition.id))
-            return Result<ValidatedCandidate>::failure(errorAt(source, "loader.definition", "invalid, duplicate or schema-less plugin definition"));
+            return Output::failure(
+                makeError(ErrorCode::ConfigInvalid, "invalid, duplicate or schema-less plugin definition"));
         definition.requiredInject = checked.value().entries().begin()->second.inject;
         const auto id = definition.id;
         modules.emplace(id, definition.module);
@@ -61,7 +61,22 @@ Result<ValidatedCandidate> validateCandidate(ParsedConfiguration source, std::ve
     }
     auto declarations = detail::checkModuleCatalog(modules);
     if (!declarations.hasValue())
-        return Result<ValidatedCandidate>::failure(errorAt(source, "loader.definition", declarations.error().message));
+        return Output::failure(declarations.error());
+    return Output::success(std::move(catalog));
+}
+/** @brief 参数按值保留来源及 schema 生命周期，结果不持有定义回调。 */
+Result<ValidatedCandidate> validateCandidate(ParsedConfiguration source, std::vector<PluginDefinition> definitions)
+{
+    if (!source.isValid())
+        return Result<ValidatedCandidate>::failure(
+            errorAt(source, "loader.definition", "parsed configuration was moved from"));
+    auto normalized = detail::normalizeDefinitions(std::move(definitions));
+    if (!normalized.hasValue())
+        return Result<ValidatedCandidate>::failure(errorAt(source, "loader.definition", normalized.error().message));
+    auto catalog = std::move(normalized).value();
+    std::map<std::string, PluginModule> modules;
+    for (const auto& entry : catalog)
+        modules.emplace(entry.first, entry.second.module);
     auto bindings = detail::checkModuleBindings(source.structure(), modules);
     if (!bindings.hasValue())
         return Result<ValidatedCandidate>::failure(errorAt(source, "loader.definition", bindings.error().message,

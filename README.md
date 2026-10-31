@@ -6,7 +6,7 @@
 
 底部工作区支持搜索并执行已注册命令、按平台/插件实例选择真实输出，以及运行问题的筛选、详情和定位。插件通过 `ui.output/v1` 写入隔离通道，见[工作区接入说明](docs/workbench-panel-development.md)。
 
-**P4 已完成（Windows x64 / MSVC / Qt 5.15.2 / 默认驻留）**：原生装载、ABI 请求/资源桥、两个业务服务 DLL、Core/Kernel/Session 与同工具链 UI DLL 已实现；M4c3 的需求映射、用户原生验收和退出回执已归档，见 [最终审计](docs/p4-closeout.md)。[P5 受控替换](docs/p5-development.md)进行中，M1 候选代目录、[M2a hash 安装](docs/p5-m2a-development.md)、[M2b 服务发布组](docs/p5-m2b-development.md)、[M2c1 实际图与只读闭包](docs/p5-m2c1-development.md)、[M2c2 Core 排他作用域](docs/p5-m2c2-development.md)及 [M2c3 模块预约与创建准入](docs/p5-m2c3-development.md)已完成复审修复与验证。完整运行事务、切换、迁移/恢复、卸载与压力验收继续。当前 C++ 源码 SDK 不构成稳定二进制 ABI；SDK 0.1.1 的宿主与同工具链插件须一起重建，旧 0.1.0 Qt 声明在映射前拒绝，C ABI 版本不变。
+**P4 已完成（Windows x64 / MSVC / Qt 5.15.2 / 默认驻留）**：原生装载、ABI 请求/资源桥、两个业务服务 DLL、Core/Kernel/Session 与同工具链 UI DLL 已实现；M4c3 的需求映射、用户原生验收和退出回执已归档，见 [最终审计](docs/p4-closeout.md)。[P5 受控替换](docs/p5-development.md)进行中，M1 候选代目录、[M2a hash 安装](docs/p5-m2a-development.md)、[M2b 服务发布组](docs/p5-m2b-development.md)、[M2c1 实际图与只读闭包](docs/p5-m2c1-development.md)、[M2c2 Core 排他作用域](docs/p5-m2c2-development.md)、[M2c3 模块预约与创建准入](docs/p5-m2c3-development.md)及 [M2c4 共同定义来源](docs/p5-m2c4-development.md)已完成复审修复与验证。完整运行事务、切换、迁移/恢复、卸载与压力验收继续。当前 C++ 源码 SDK 不构成稳定二进制 ABI；SDK 0.1.1 的宿主与同工具链插件须一起重建，旧 0.1.0 Qt 声明在映射前拒绝，C ABI 版本不变。
 
 实际 UI DLL 示例入口为 `cordis_qt_workspace_demo`，支持笔记编辑、实例命令/输出、多实例、配置换代/启停和模块诊断；构建与持久化说明见 [独立工作台](examples/qt_workspace/README.md)。
 
@@ -44,6 +44,7 @@ Windows/MSVC/Qt 构建默认共享 Core、Qt 及启用的 Ui DLL，宿主与同�
 | `src/core` | 不依赖 Qt/Ela 的内核库起点 |
 | `src/loader` | 独立 Cordis::Loader，配置结构校验与目标差异预览，无运行或文件副作用 |
 | `Cordis::ConfigYaml` | 独立受限 YAML 解析及内置定义/schema 校验层，SDK 不暴露 LibYAML 类型 |
+| `Cordis::ConfigDefinitions` | 不可变 schema/来源/Runtime 共同目录，候选校验身份与实际驱动绑定，不依赖 Module/Qt |
 | `Cordis::ConfigCoordinator` | CAS 目标接受、最新目标/串行动作及关闭协议，宿主运行驱动单独适配 |
 | `Cordis::ConfigKernel` | 内置配置树的真实 Kernel 驱动，类型化依赖、realm 继承/覆盖、父恢复后的子树重建及稳定操作/清理屏障 |
 | `Cordis::ConfigFileQt` | 可选 Qt 配置文件事务，原文/hash 基线、冲突保留及临时文件提交 |

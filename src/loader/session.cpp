@@ -23,6 +23,7 @@ struct SessionDelivery {
 struct SessionControl : std::enable_shared_from_this<SessionControl> {
     std::shared_ptr<IScheduler> scheduler;
     std::shared_ptr<IReconcileDriver> driver;
+    std::shared_ptr<IConfiguredReconcileDriver> configured;
     std::vector<PluginDefinition> definitions;
     YamlLimits limits;
     std::unique_ptr<ConfigurationCoordinator> coordinator;
@@ -34,6 +35,21 @@ struct SessionControl : std::enable_shared_from_this<SessionControl> {
     bool changing = false, closing = false, closed = false;
     bool coordinatorDone = false, storeStarted = false, storeDone = false;
     std::vector<ErrorInfo> closeErrors;
+    Result<std::shared_ptr<const ConfigurationDefinitions>> definitionView() const
+    {
+        using Output = Result<std::shared_ptr<const ConfigurationDefinitions>>;
+        const auto source = configured;
+        if (!source)
+            return Output::success({});
+        try {
+            auto view = source->configurationDefinitions();
+            if (view)
+                return Output::success(std::move(view));
+        } catch (...) {
+            return Output::failure(makeError(ErrorCode::ConfigConflict, "definition lookup threw"));
+        }
+        return Output::failure(makeError(ErrorCode::ConfigConflict, "configured definitions unavailable"));
+    }
     /** @brief 所有可变操作在 owner；诊断保留关闭后的状态。 */
     Result<void> check(bool business = true) const
     {
@@ -108,7 +124,11 @@ struct SessionControl : std::enable_shared_from_this<SessionControl> {
     /** @brief 完整校验候选后再发布差异，来源失效或关闭重入均不发布候选。 */
     Result<ConfigurationDraft> prepare(ParsedConfiguration parsed)
     {
-        auto validated = validateCandidate(std::move(parsed), definitions);
+        auto observed = definitionView();
+        if (!observed.hasValue())
+            return Result<ConfigurationDraft>::failure(observed.error());
+        const auto view = std::move(observed).value();
+        auto validated = view ? view->validate(std::move(parsed)) : validateCandidate(std::move(parsed), definitions);
         if (!validated.hasValue())
             return Result<ConfigurationDraft>::failure(validated.error());
         auto supported = [&]() -> Result<void> {
@@ -122,12 +142,20 @@ struct SessionControl : std::enable_shared_from_this<SessionControl> {
         }();
         if (!supported.hasValue())
             return Result<ConfigurationDraft>::failure(supported.error());
-        if (closing)
-            return Result<ConfigurationDraft>::failure(
-                makeError(ErrorCode::ContextClosing, "session closed during validation"));
+        // snapshot 也会进入外部 driver；所有回调返回后才核对定义和关闭状态。
         auto state = coordinator->snapshot();
         if (!state.hasValue())
             return Result<ConfigurationDraft>::failure(state.error());
+        auto currentView = definitionView();
+        if (!currentView.hasValue())
+            return Result<ConfigurationDraft>::failure(currentView.error());
+        if (currentView.value() ? !currentView.value()->owns(validated.value())
+                                : validated.value().hasDefinitionIdentity())
+            return Result<ConfigurationDraft>::failure(
+                makeError(ErrorCode::ConfigConflict, "definitions changed during validation"));
+        if (closing)
+            return Result<ConfigurationDraft>::failure(
+                makeError(ErrorCode::ContextClosing, "session closed during validation"));
         auto empty = validateDocument(Document{}).value();
         const auto& base = state.value().desired ? state.value().desired->source().structure() : empty;
         auto changes = previewChanges(base, validated.value().source().structure(), state.value().desiredRevision);
@@ -156,6 +184,23 @@ struct SessionControl : std::enable_shared_from_this<SessionControl> {
         return accepted;
     }
 };
+std::shared_ptr<SessionControl> makeSession(std::shared_ptr<IScheduler> scheduler,
+                                            std::shared_ptr<IReconcileDriver> driver,
+                                            std::shared_ptr<IConfigurationWriter> writer,
+                                            ConfigurationFileSnapshot baseline, YamlLimits limits,
+                                            StoreLimits storeLimits)
+{
+    if (!scheduler || !scheduler->isOpen() || !scheduler->isCurrentThread() || !driver)
+        throw std::invalid_argument("configuration session requires open owner scheduler and driver");
+    auto state = std::make_shared<SessionControl>();
+    state->scheduler = std::move(scheduler);
+    state->driver = std::move(driver);
+    state->limits = limits;
+    state->coordinator = std::make_unique<ConfigurationCoordinator>(state->scheduler, state->driver);
+    state->store =
+        std::make_unique<ConfigurationStore>(state->scheduler, std::move(writer), std::move(baseline), storeLimits);
+    return state;
+}
 } // namespace cordis::loader::detail
 
 namespace cordis::loader {
@@ -166,16 +211,26 @@ ConfigurationSession::ConfigurationSession(std::shared_ptr<IScheduler> scheduler
                                            ConfigurationFileSnapshot baseline, YamlLimits limits,
                                            StoreLimits storeLimits)
 {
-    if (!scheduler || !scheduler->isOpen() || !scheduler->isCurrentThread() || !driver)
-        throw std::invalid_argument("configuration session requires open owner scheduler and driver");
-    auto state = std::make_shared<detail::SessionControl>();
-    state->scheduler = std::move(scheduler);
-    state->driver = std::move(driver);
+    auto state = detail::makeSession(std::move(scheduler), std::move(driver), std::move(writer), std::move(baseline),
+                                     limits, storeLimits);
+    auto configured = std::dynamic_pointer_cast<IConfiguredReconcileDriver>(state->driver);
+    if (configured && configured->configurationDefinitions())
+        throw std::invalid_argument(
+            "configured driver owns its schemas; use the shared definition session constructor");
     state->definitions = std::move(definitions);
-    state->limits = limits;
-    state->coordinator = std::make_unique<ConfigurationCoordinator>(state->scheduler, state->driver);
-    state->store =
-        std::make_unique<ConfigurationStore>(state->scheduler, std::move(writer), std::move(baseline), storeLimits);
+    control_ = std::move(state);
+}
+ConfigurationSession::ConfigurationSession(std::shared_ptr<IScheduler> scheduler,
+                                           std::shared_ptr<IConfiguredReconcileDriver> driver,
+                                           std::shared_ptr<IConfigurationWriter> writer,
+                                           ConfigurationFileSnapshot baseline, YamlLimits limits,
+                                           StoreLimits storeLimits)
+{
+    auto state =
+        detail::makeSession(std::move(scheduler), driver, std::move(writer), std::move(baseline), limits, storeLimits);
+    if (!driver->configurationDefinitions())
+        throw std::invalid_argument("complete shared definitions required");
+    state->configured = std::move(driver);
     control_ = std::move(state);
 }
 ConfigurationSession::~ConfigurationSession() = default;
@@ -242,19 +297,25 @@ Result<AcceptedTarget> ConfigurationSession::addInstance(const std::string& id, 
     if (!current.desired && baseline && baseline->version.exists)
         return Result<AcceptedTarget>::failure(
             makeError(ErrorCode::ConfigConflict, "apply existing disk configuration before adding an instance"));
-    const PluginDefinition* definition = nullptr;
-    for (const auto& value : state->definitions)
-        if (value.id == plugin) {
-            definition = &value;
-            break;
-        }
-    if (!definition)
-        return Result<AcceptedTarget>::failure(makeError(ErrorCode::InvalidArgument, "plugin is not registered"));
+    auto module = [&]() -> Result<PluginModule> {
+        auto observed = state->definitionView();
+        if (!observed.hasValue())
+            return Result<PluginModule>::failure(observed.error());
+        const auto view = std::move(observed).value();
+        if (view)
+            return view->module(plugin);
+        for (const auto& definition : state->definitions)
+            if (definition.id == plugin)
+                return Result<PluginModule>::success(definition.module);
+        return Result<PluginModule>::failure(makeError(ErrorCode::InvalidArgument, "plugin is not registered"));
+    }();
+    if (!module.hasValue())
+        return Result<AcceptedTarget>::failure(module.error());
     auto source = current.desired ? Result<ParsedConfiguration>::success(current.desired->source())
                                   : parseConfiguration("formatVersion: 1\nplugins: []\n", state->limits);
     if (!source.hasValue())
         return Result<AcceptedTarget>::failure(source.error());
-    auto parsed = addConfigurationEntry(source.value(), id, plugin, configuration, state->limits, definition->module);
+    auto parsed = addConfigurationEntry(source.value(), id, plugin, configuration, state->limits, module.value());
     if (!parsed.hasValue())
         return Result<AcceptedTarget>::failure(parsed.error());
     auto draft = state->prepare(std::move(parsed).value());
@@ -315,11 +376,17 @@ Result<SessionSnapshot> ConfigurationSession::snapshot() const
 /** @brief 仅复制定义名称，管理界面不能调用或保留插件 schema。 */
 Result<std::vector<std::string>> ConfigurationSession::registeredPlugins() const
 {
-    auto checked = control_->check(false);
+    const auto state = control_;
+    auto checked = state->check(false);
     if (!checked.hasValue())
         return Result<std::vector<std::string>>::failure(checked.error());
+    auto observed = state->definitionView();
+    if (!observed.hasValue())
+        return Result<std::vector<std::string>>::failure(observed.error());
+    if (observed.value())
+        return Result<std::vector<std::string>>::success(observed.value()->plugins());
     std::vector<std::string> names;
-    for (const auto& definition : control_->definitions)
+    for (const auto& definition : state->definitions)
         names.push_back(definition.id);
     return Result<std::vector<std::string>>::success(std::move(names));
 }

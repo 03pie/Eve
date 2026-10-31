@@ -197,12 +197,13 @@ struct Workbench : std::enable_shared_from_this<Workbench> {
                                  ? baseline.text
                                  : std::string("formatVersion: 1\nplugins:\n  - id: notes\n    plugin: demo.notes\n    "
                                                "config: {title: 我的笔记}\n");
-        auto driver = std::make_shared<KernelReconcileDriver>(scheduler, kernel,
-                                                              std::vector<KernelPlugin>{{"demo.notes", notes}});
+        auto definitions =
+            ConfigurationDefinitions::create(
+                {{{"demo.notes", {}, [](const std::string&) { return Result<void>::success(); }}, notes}})
+                .value();
+        auto driver = KernelReconcileDriver::configured(scheduler, kernel, definitions);
         session = std::make_shared<ConfigurationSession>(
             scheduler, driver,
-            std::vector<PluginDefinition>{
-                {"demo.notes", {}, [](const std::string&) { return Result<void>::success(); }}},
             io, baseline);
         auto host =
             kernel

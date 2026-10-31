@@ -1,6 +1,7 @@
 /** @file kernel_driver.cpp
  * @brief 以真实 Kernel 及父代能力执行内置配置树，运行账目与目标、保存状态分别维护。
  */
+#include "definitions_p.hpp"
 #include "module_catalog_p.hpp"
 #include <cordis/loader/kernel_driver.hpp>
 
@@ -141,11 +142,9 @@ struct KernelDelivery {
 struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     std::shared_ptr<IScheduler> scheduler;
     std::shared_ptr<Kernel> kernel;
-    std::map<std::string, Runtime> plugins;
-    std::map<std::string, std::vector<ServiceRequirement>> configurableInject;
-    std::map<std::string, PluginModule> modules;
-    std::map<std::string, std::function<Result<void>()>> availabilityChecks;
-    std::map<std::string, std::size_t> maximumDependencies;
+    std::shared_ptr<const ConfigurationDefinitions> definitions;
+    const auto& plugins() const { return definitions->data_->entries; }
+    const ConfiguredPlugin& plugin(const std::string& id) const { return plugins().at(id); }
     std::map<std::string, RealmId> realms;
     std::map<std::string, KernelRecord> records;
     std::shared_ptr<KernelDelivery> delivery = std::make_shared<KernelDelivery>();
@@ -219,7 +218,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     {
         auto checkEntry = [&](const KernelRecord& item) {
             return item.instance ? item.instance->checkMutation()
-                                 : kernel->checkMount(plugins.at(item.configuration.plugin),
+                                 : kernel->checkMount(plugin(item.configuration.plugin).runtime,
                                                       realmMap(item.configuration), item.requirements);
         };
         auto own = checkEntry(record);
@@ -281,8 +280,8 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
                                                          const std::string& path) const
     {
         using Output = Result<std::vector<ServiceRequirement>>;
-        const auto& fixed = plugins.at(value.plugin).requirements();
-        const auto& optional = configurableInject.at(value.plugin);
+        const auto& fixed = plugin(value.plugin).runtime.requirements();
+        const auto& optional = plugin(value.plugin).configurableInject;
         for (const auto& requirement : fixed) {
             auto found = std::find_if(inject.begin(), inject.end(), [&](const InjectSpec& spec) {
                 return spec.name == requirement.key.name && spec.major == requirement.key.interfaceMajor;
@@ -340,7 +339,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
         for (const auto& entry : entries) {
             degrees.emplace(entry.first, 0);
             auto view = realmMap(entry.second);
-            for (const auto& output : plugins.at(entry.second.plugin).outputs()) {
+            for (const auto& output : plugin(entry.second.plugin).runtime.outputs()) {
                 auto inserted = providers.emplace(view.resolve(output.key), Provider{entry.first, output});
                 if (!inserted.second)
                     return Result<std::vector<std::string>>::failure(driverError(
@@ -398,15 +397,18 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
             return checked;
         if (!target.source().isValid())
             return Result<void>::failure(driverError(ErrorCode::ConfigInvalid, "candidate was moved from"));
-        auto bindings = checkModuleBindings(target.source().structure(), modules);
+        if (!definitions->owns(target))
+            return Result<void>::failure(
+                driverError(ErrorCode::ConfigConflict, "candidate definition identity changed"));
+        auto bindings = checkModuleBindings(target.source().structure(), definitions->data_->modules);
         if (!bindings.hasValue())
             return Result<void>::failure(driverError(bindings.error().code, bindings.error().message,
                                                      bindings.error().entryPath.value_or(std::string{})));
         std::map<std::string, EntryValue> enabled;
         std::map<std::string, std::vector<ServiceRequirement>> contracts;
         for (const auto& entry : runtimeValues(target)) {
-            auto plugin = plugins.find(entry.second.plugin);
-            if (plugin == plugins.end())
+            auto plugin = plugins().find(entry.second.plugin);
+            if (plugin == plugins().end())
                 return Result<void>::failure(
                     driverError(ErrorCode::ConfigInvalid, "plugin is not registered in this driver", entry.first));
             for (const auto& realm : entry.second.realms)
@@ -414,7 +416,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
                     return Result<void>::failure(
                         driverError(ErrorCode::ConfigInvalid, "unknown host realm alias", entry.first));
             auto view = realmMap(entry.second);
-            for (const auto& output : plugin->second.outputs())
+            for (const auto& output : plugin->second.runtime.outputs())
                 if (!kernel->services().ownsRealm(view.resolve(output.key).realm).value())
                     return Result<void>::failure(
                         driverError(ErrorCode::ConfigInvalid, "output uses foreign realm", entry.first));
@@ -425,7 +427,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
             auto typed = requirements(entry.second, effective->second, entry.first);
             if (!typed.hasValue())
                 return Result<void>::failure(typed.error());
-            const auto limit = maximumDependencies.at(entry.second.plugin);
+            const auto limit = plugin->second.maximumDependencies;
             if (limit && typed.value().size() > limit)
                 return Result<void>::failure(
                     driverError(ErrorCode::ConfigInvalid, "plugin dependency budget exceeded", entry.first));
@@ -434,7 +436,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
                     return Result<void>::failure(
                         driverError(ErrorCode::ConfigInvalid, "dependency uses foreign realm", entry.first));
             if (!entry.second.effectiveDisabled) {
-                const auto& gate = availabilityChecks.at(entry.second.plugin);
+                const auto& gate = plugin->second.available;
                 if (gate) {
                     try {
                         auto ready = gate();
@@ -464,12 +466,12 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
                 continue;
             const auto& value = record.second.configuration;
             auto view = realmMap(value);
-            for (const auto& output : plugins.at(value.plugin).outputs())
+            for (const auto& output : plugin(value.plugin).runtime.outputs())
                 owned.emplace(view.resolve(output.key), record.first);
         }
         for (const auto& entry : enabled) {
             auto view = realmMap(entry.second);
-            for (const auto& output : plugins.at(entry.second.plugin).outputs()) {
+            for (const auto& output : plugin(entry.second.plugin).runtime.outputs()) {
                 auto holder = owned.find(view.resolve(output.key));
                 if (holder != owned.end() && holder->second != entry.first)
                     return Result<void>::failure(driverError(
@@ -493,7 +495,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
         }
         for (const auto& entry : enabled)
             if (kindFor(entry.first, entry.second, contracts.at(entry.first)) != ChangeKind::NoOp) {
-                auto gate = kernel->checkMount(plugins.at(entry.second.plugin), realmMap(entry.second),
+                auto gate = kernel->checkMount(plugin(entry.second.plugin).runtime, realmMap(entry.second),
                                                contracts.at(entry.first));
                 if (!gate.hasValue()) {
                     auto error = gate.error();
@@ -570,7 +572,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
         KernelRecord record{value, {}, typed};
         const auto parent = parentPath(path);
         if (parent.empty()) {
-            auto mounted = kernel->mount(plugins.at(value.plugin), value.config, realmMap(value), typed);
+            auto mounted = kernel->mount(plugin(value.plugin).runtime, value.config, realmMap(value), typed);
             if (!mounted.hasValue())
                 return Result<KernelRecord>::failure(mounted.error());
             record.instance.emplace(mounted.value());
@@ -594,7 +596,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
                     return Result<KernelRecord>::failure(isolated.error());
                 context = isolated.value();
             }
-            auto mounted = context.inject(plugins.at(value.plugin), value.config, typed);
+            auto mounted = context.inject(plugin(value.plugin).runtime, value.config, typed);
             if (!mounted.hasValue())
                 return Result<KernelRecord>::failure(mounted.error());
             record.instance.emplace(mounted.value());
@@ -838,6 +840,22 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
 
 KernelReconcileDriver::KernelReconcileDriver(std::shared_ptr<IScheduler> scheduler, std::shared_ptr<Kernel> kernel,
                                              std::vector<KernelPlugin> plugins, std::map<std::string, RealmId> realms)
+    : KernelReconcileDriver(std::move(scheduler), std::move(kernel),
+                            ConfigurationDefinitions::runtimeOnly(std::move(plugins)), std::move(realms),
+                            DefinitionsTag{})
+{
+}
+std::shared_ptr<KernelReconcileDriver>
+KernelReconcileDriver::configured(std::shared_ptr<IScheduler> scheduler, std::shared_ptr<Kernel> kernel,
+                                  std::shared_ptr<const ConfigurationDefinitions> definitions,
+                                  std::map<std::string, RealmId> realms)
+{
+    return std::shared_ptr<KernelReconcileDriver>(new KernelReconcileDriver(
+        std::move(scheduler), std::move(kernel), std::move(definitions), std::move(realms), DefinitionsTag{}));
+}
+KernelReconcileDriver::KernelReconcileDriver(std::shared_ptr<IScheduler> scheduler, std::shared_ptr<Kernel> kernel,
+                                             std::shared_ptr<const ConfigurationDefinitions> definitions,
+                                             std::map<std::string, RealmId> realms, DefinitionsTag)
 {
     if (!scheduler || !scheduler->isCurrentThread() || !scheduler->isOpen() || !kernel ||
         !kernel->usesScheduler(scheduler))
@@ -848,31 +866,13 @@ KernelReconcileDriver::KernelReconcileDriver(std::shared_ptr<IScheduler> schedul
     control_ = std::make_shared<detail::KernelDriverControl>();
     control_->scheduler = std::move(scheduler);
     control_->kernel = std::move(kernel);
-    for (auto& plugin : plugins) {
-        std::set<std::pair<std::string, std::uint32_t>> known;
-        for (const auto& requirement : plugin.runtime.requirements())
-            known.emplace(requirement.key.name, requirement.key.interfaceMajor);
-        for (const auto& optional : plugin.configurableInject) {
-            std::set<std::string> capabilities;
-            if (optional.key.name.empty() || optional.key.interfaceMajor == 0 || !optional.key.realm.valid() ||
-                optional.type == typeid(void) || !known.emplace(optional.key.name, optional.key.interfaceMajor).second)
-                throw std::invalid_argument("invalid, duplicate or fixed configurable inject interface");
-            for (const auto& capability : optional.capabilities)
-                if (capability.empty() || !capabilities.insert(capability).second)
-                    throw std::invalid_argument("invalid configurable inject capabilities");
-        }
-        if (plugin.id.empty() || !plugin.runtime.id().valid() ||
-            std::none_of(snapshot.value().names.begin(), snapshot.value().names.end(),
-                         [&](const RuntimeNameSnapshot& name) { return name.id == plugin.runtime.id(); }) ||
-            !control_->plugins.emplace(plugin.id, std::move(plugin.runtime)).second)
-            throw std::invalid_argument("duplicate, invalid or foreign kernel runtime");
-        control_->configurableInject.emplace(plugin.id, std::move(plugin.configurableInject));
-        control_->modules.emplace(plugin.id, std::move(plugin.module));
-        control_->availabilityChecks.emplace(plugin.id, std::move(plugin.available));
-        control_->maximumDependencies.emplace(plugin.id, plugin.maximumDependencies);
-    }
-    if (!detail::checkModuleCatalog(control_->modules).hasValue())
-        throw std::invalid_argument("invalid host module catalog");
+    if (!definitions)
+        throw std::invalid_argument("definitions are required");
+    control_->definitions = std::move(definitions);
+    for (const auto& entry : control_->plugins())
+        if (std::none_of(snapshot.value().names.begin(), snapshot.value().names.end(),
+                         [&](const auto& name) { return name.id == entry.second.runtime.id(); }))
+            throw std::invalid_argument("foreign kernel runtime");
     for (const auto& realm : realms)
         if (realm.first.empty() || !control_->kernel->services().ownsRealm(realm.second).value())
             throw std::invalid_argument("invalid realm alias");
@@ -880,6 +880,10 @@ KernelReconcileDriver::KernelReconcileDriver(std::shared_ptr<IScheduler> schedul
 }
 
 KernelReconcileDriver::~KernelReconcileDriver() = default;
+std::shared_ptr<const ConfigurationDefinitions> KernelReconcileDriver::configurationDefinitions() const
+{
+    return control_->definitions->data_->identity ? control_->definitions : nullptr;
+}
 
 Result<void> KernelReconcileDriver::preflight(const ValidatedCandidate& target)
 {

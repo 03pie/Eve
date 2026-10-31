@@ -84,11 +84,6 @@ public:
         const PluginModule counterModule{"counter", "counter/module.json"};
         const PluginModule reporterModule{"reporter", "reporter/module.json"};
         const auto second = take(kernel_->services().createRealm());
-        driver_ = std::make_shared<KernelReconcileDriver>(
-            scheduler_, kernel_,
-            std::vector<KernelPlugin>{{"example.counter", counter, {}, counterModule, gate(*counter_), 128},
-                                      {"example.reporter", reporter, {}, reporterModule, gate(*reporter_), 128}},
-            std::map<std::string, RealmId>{{"second", second}});
         auto schema = [](const char* failure) {
             return [failure](const std::string& config) {
                 return config == "null" || config == failure
@@ -96,13 +91,24 @@ public:
                            : Result<void>::failure(makeError(ErrorCode::ConfigInvalid, "unsupported example config"));
             };
         };
+        auto definitions = take(
+            ConfigurationDefinitions::create({{{"example.counter", {}, schema("{\"failCleanup\":true}"), counterModule},
+                                               counter,
+                                               {},
+                                               gate(*counter_),
+                                               128},
+                                              {{"example.reporter",
+                                                {{"example.counter", 1, 1, {"next"}}},
+                                                schema("{\"failStart\":true}"),
+                                                reporterModule},
+                                               reporter,
+                                               {},
+                                               gate(*reporter_),
+                                               128}}));
+        driver_ = KernelReconcileDriver::configured(scheduler_, kernel_, definitions,
+                                                    std::map<std::string, RealmId>{{"second", second}});
         session_ = std::make_unique<ConfigurationSession>(
             scheduler_, driver_,
-            std::vector<PluginDefinition>{{"example.counter", {}, schema("{\"failCleanup\":true}"), counterModule},
-                                          {"example.reporter",
-                                           {{"example.counter", 1, 1, {"next"}}},
-                                           schema("{\"failStart\":true}"),
-                                           reporterModule}},
             std::make_shared<QtConfigurationWriter>(path_), take(readConfigurationFile(path_)));
     }
     void start()
