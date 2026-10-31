@@ -170,7 +170,7 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
                 return self ? self->business(captured)
                             : Result<void>::failure(makeError(ErrorCode::StaleContext, "instance expired"));
             },
-            std::move(invalidated));
+            std::move(invalidated), true);
         if (lease.hasValue()) committed.push_back(lease.value());
         return lease;
     }
@@ -200,6 +200,7 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
         output.setOwner(id);
         const auto binding = output.snapshot().value().id;
         outputs.push_back(std::move(output));
+        outputs.back().markManaged();
         return Result<BindingId>::success(binding);
     }
 
@@ -683,6 +684,7 @@ Result<void> Context::adoptOutput(ProviderHandle output, std::type_index type) c
         if (existing.snapshot().value().id == snapshot.id)
             return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "output already adopted"));
     self->outputs.push_back(std::move(output));
+    self->outputs.back().markManaged();
     return Result<void>::success();
 }
 Result<std::vector<std::pair<ServiceKey, std::shared_ptr<detail::CommittedLease>>>>
@@ -845,11 +847,12 @@ Instance Instance::mount(const Runtime& runtime, std::shared_ptr<IScheduler> sch
             [weak] { if (auto self = weak.lock()) self->enqueue(); },
             [weak] { if (auto self = weak.lock()) self->blocked.store(true); }
         });
-        std::vector<ServiceKey> required, outputs;
+        std::vector<ServiceKey> required, outputs, optionalOutputs;
         for (const auto& dependency : control->dependencies) required.push_back(control->realms.resolve(dependency.key));
-        for (const auto& output : control->declarations) if (output.required) outputs.push_back(control->realms.resolve(output.key));
+        for (const auto& output : control->declarations)
+            (output.required ? outputs : optionalOutputs).push_back(control->realms.resolve(output.key));
         control->services->declareInstance(
-            control->id, std::move(required), std::move(outputs),
+            control->id, std::move(required), std::move(outputs), std::move(optionalOutputs),
             [weak] {
                 auto self = weak.lock();
                 if (!self || self->state != InstanceState::Active || self->blocked.load())
@@ -981,6 +984,16 @@ Result<OperationHandle> Instance::update(std::string config, ConfigRevision expe
 void Instance::setKernelRegistry(const std::shared_ptr<ServiceRegistry>& services) const
 {
     control_->kernelRegistry = services;
+}
+Result<std::vector<Instance>> Instance::ownedChildren() const
+{
+    if (!control_ || !control_->scheduler->isCurrentThread())
+        return Result<std::vector<Instance>>::failure(
+            makeError(ErrorCode::WrongThread, "owned children require owner thread"));
+    std::vector<Instance> result;
+    for (const auto& child : control_->children)
+        result.push_back(Instance(child));
+    return Result<std::vector<Instance>>::success(std::move(result));
 }
 
 /** @brief 复制的是宿主输入；只有完整停止的实例才允许重新挂载。 */

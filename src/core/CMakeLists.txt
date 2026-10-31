@@ -3,7 +3,7 @@ set(cordis_core_type STATIC)
 if(CORDIS_SHARED_CORE)
     set(cordis_core_type SHARED)
 endif()
-add_library(cordis_core ${cordis_core_type} build_info.cpp fake_scheduler.cpp fake_clock.cpp effect.cpp instance.cpp kernel.cpp service.cpp publication.cpp)
+add_library(cordis_core ${cordis_core_type} build_info.cpp fake_scheduler.cpp fake_clock.cpp effect.cpp instance.cpp kernel.cpp service.cpp publication.cpp replacement.cpp)
 add_library(Cordis::Core ALIAS cordis_core)
 target_include_directories(cordis_core PUBLIC
     "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/sdk/include>"

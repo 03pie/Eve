@@ -11,6 +11,7 @@ struct InstanceDeclaration {
     std::vector<ServiceKey> dependencies;
     std::vector<ServiceKey> outputs;
     std::shared_ptr<PublicationControl> publication;
+    std::vector<ServiceKey> optionalOutputs;
 };
 struct PublicationMember {
     std::function<Result<void>()> ready;
@@ -45,6 +46,7 @@ struct BindingControl {
     std::type_index type{typeid(void)};
     ServiceMetadata metadata;
     InstanceId provider;
+    bool managedProvider = false;
     std::vector<std::weak_ptr<CommittedLease>> consumers;
     Promise<void> unused;
     std::atomic_bool deliveryBlocked{false};
@@ -62,6 +64,7 @@ struct CommittedLease {
     std::function<Result<void>()> businessGuard;
     std::function<void()> invalidated;
     std::shared_ptr<PublicationControl> publication;
+    bool managed = false;
 };
 void checkUnused(const std::shared_ptr<BindingControl>& binding);
 bool notifyRegistry(const std::shared_ptr<ServiceRegistryControl>& registry);

@@ -93,6 +93,13 @@ struct ServiceMetadata {
     std::vector<std::string> capabilities;
 };
 
+/** @brief 活跃 committed 消费者的纯值身份，不持有租约或实例。 */
+struct ServiceConsumerSnapshot {
+    InstanceId instance;
+    Epoch epoch;
+    /** @brief 由 Core 实例提交的租约；仍需 Kernel 核对实际所有权。 */
+    bool managed = false;
+};
 /** @brief 不授予调用能力的绑定诊断。 */
 struct BindingSnapshot {
     BindingId id;
@@ -102,6 +109,25 @@ struct BindingSnapshot {
     std::size_t committedLeases;
     ServiceMetadata metadata;
     bool deliveryBlocked;
+};
+/** @brief 仅依赖图请求时收集消费者，不扩大常规绑定快照及调用路径的开销。 */
+struct ServiceBindingSnapshot {
+    BindingSnapshot binding;
+    InstanceId provider;
+    bool managedProvider = false;
+    std::vector<ServiceConsumerSnapshot> consumers;
+};
+/** @brief 已解析 realm 的声明边；包含等待依赖的实例，不持有运行能力。 */
+struct ServiceInstanceSnapshot {
+    InstanceId instance;
+    InstanceId parent;
+    std::vector<ServiceKey> dependencies;
+    std::vector<ServiceKey> outputs;
+    bool publicationHeld = false;
+};
+struct ServiceGraphSnapshot {
+    std::vector<ServiceBindingSnapshot> bindings;
+    std::vector<ServiceInstanceSnapshot> instances;
 };
 namespace detail {
 /** @brief 适配器只读检查已提交绑定的键和类型，不建立或释放保留。 */
@@ -170,8 +196,11 @@ private:
     friend class ServiceRegistry;
     friend struct detail::InstanceControl;
     friend class PublicationGroup;
+    friend class Context;
     /** @brief 为托管输出标记实例所有者，用于依赖环诊断。 */
     void setOwner(InstanceId owner) const;
+    /** @brief 只有 Core 接纳为本代输出后才记录资源所有权，不由原生编号推断。 */
+    void markManaged() const;
     /** @brief 保存绑定控制块，不绕过注册表持有的资源所有权。 */
     explicit ProviderHandle(std::shared_ptr<detail::BindingControl> binding) : binding_(std::move(binding)) {}
     std::shared_ptr<detail::BindingControl> binding_;
@@ -198,6 +227,9 @@ public:
     }
     /** @brief 读取所有尚未释放的绑定，不隐式清理资源。 */
     Result<std::vector<BindingSnapshot>> snapshot() const;
+    /** @brief owner 值快照：实际 committed 边、声明边与父子边，不解析或调用服务对象。 */
+    Result<ServiceGraphSnapshot> dependencyGraph() const;
+
 private:
     friend struct module::detail::NativeServices;
     friend class Context;
@@ -212,9 +244,10 @@ private:
     void attachParent(InstanceId child, InstanceId parent) const;
     /** @brief 实例确认终结后撤销其所有权记录。 */
     void forgetInstance(InstanceId instance) const;
-    /** @brief 登记已按域视图解析的强依赖与必供输出，用于激活前环诊断。 */
+    /** @brief 登记已解析的强依赖及输出；可选输出用于闭包，不参与必供输出的环预检。 */
     void declareInstance(InstanceId instance, std::vector<ServiceKey> dependencies, std::vector<ServiceKey> outputs,
-                         std::function<Result<void>()> ready, std::function<void()> abort) const;
+                         std::vector<ServiceKey> optionalOutputs, std::function<Result<void>()> ready,
+                         std::function<void()> abort) const;
     /** @brief 对确定提供者的声明边和所有权边预检，缺失或歧义提供者不臆测连边。 */
     Result<void> checkDeclarations(InstanceId instance) const;
     /** @brief 检查托管实例与索引是否归属同一调度器。 */
@@ -225,9 +258,10 @@ private:
     /** @brief 弱登记索引变化通知，回调始终经 scheduler 排队。 */
     std::shared_ptr<ScheduledJob> watch(ScheduledJob job) const;
     /** @brief 为指定实例代次固定当前 Published 绑定；要求相同 scheduler。 */
-    Result<std::shared_ptr<detail::CommittedLease>> commitErased(const ServiceKey& key, std::type_index type,
-        const std::shared_ptr<IScheduler>& scheduler, InstanceId instance, Epoch epoch,
-        std::function<Result<void>()> businessGuard, std::function<void()> invalidated = {}) const;
+    Result<std::shared_ptr<detail::CommittedLease>>
+    commitErased(const ServiceKey& key, std::type_index type, const std::shared_ptr<IScheduler>& scheduler,
+                 InstanceId instance, Epoch epoch, std::function<Result<void>()> businessGuard,
+                 std::function<void()> invalidated = {}, bool managed = false) const;
     /** @brief 擦除对象类型后登记，检查参数、完整键冲突与归属域。 */
     Result<ProviderHandle> stageErased(ServiceKey key, std::shared_ptr<void> object, std::type_index type, ServiceMetadata metadata = {}) const;
     /** @brief 在生成弱业务引用之前检查发布状态和 C++ 类型。 */

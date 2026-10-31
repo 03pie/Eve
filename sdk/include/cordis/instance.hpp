@@ -265,6 +265,8 @@ private:
     friend class Kernel;
     /** @brief 只有 Kernel 挂载入口登记规范索引身份，不将组内子实例收养为顶层实例。 */
     void setKernelRegistry(const std::shared_ptr<ServiceRegistry>& services) const;
+    /** @brief Kernel 递归检查真实所有权，不从服务编号猜测子实例。 */
+    Result<std::vector<Instance>> ownedChildren() const;
     /** @brief 仅 Kernel 以同一注册表和 Runtime 复制已终结实例的输入，旧实例保持终结。 */
     Result<Instance> remount(const Runtime& runtime, const std::shared_ptr<IScheduler>& scheduler,
                              const std::shared_ptr<ServiceRegistry>& services) const;

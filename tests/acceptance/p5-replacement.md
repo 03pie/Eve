@@ -56,4 +56,23 @@ M2a 的完整验证记录见 [开发记录](../../docs/p5-m2a-development.md)。
 
 完整验证与审查记录见 [M2b 记录](../../docs/p5-m2b-development.md)。本段未切换 ModuleManager 当前代或迁移业务状态，未将默认驻留修改为可卸载，也未宣称 UI 贡献已纳入发布组。
 
+## M2c1 实际图与只读替换闭包
+
+| 场景 | 实际检查 |
+|---|---|
+| 动态未声明的实际消费者、多级传递闭包和确定性顺序；查询不执行插件或排队任务 | p5.closure_chain |
+| 可选输出尚未出现时仍包含等待消费者，epoch 为 0 | p5.closure_pending |
+| 真实子实例句柄及其消费者，子 Runtime 不必注册为顶层定义 | p5.closure_children |
+| 完整名称/major/realm 隔离、多目标 Runtime；同 Runtime 全部实例，跳过已终结实例 | p5.closure_realms、p5.closure_instances |
+| 共享索引但非本 Kernel 持有的 Core 消费者，实际与等待情况均拒绝 | p5.closure_external、p5.closure_external_pending |
+| 未使用的可选输出声明不覆盖已有宿主真实绑定，不捕获其消费者 | p5.closure_optional_external |
+| Loading/Unloading 拒绝；开放发布组拒绝，提交后可查询 | p5.closure_transitions、p5.closure_publication |
+| 空/无效/外来/重复 Runtime、错误线程、已关闭 Kernel；无实例的合法 Runtime 返回空闭包 | p5.closure_guards |
+| 异步在途调用、停止中的 committed 租约直到真实释放才退出图 | p5.closure_in_flight |
+| 服务完成投递失败但实例仍 Active 时拒绝，保留原故障屏障 | p5.closure_delivery |
+| 联合依赖环拒绝，纯值快照保留旧 epoch/revision 且修改 DTO 不影响运行 | p5.closure_cycle、p5.closure_snapshots |
+| 真实原生托管输出/消费者接入图并继续调用；手动原生消费者不会被误认为 Kernel 所有 | p5.native_replacement_graph、p5.native_replacement_external |
+
+验证与审查见 [M2c1 记录](../../docs/p5-m2c1-development.md)。此查询不是已锁定执行计划或重建指令，不能直接改变当前运行。
+
 M2 后续及 M3–M5 尚待实现和逐项验证：同模块/闭包互斥、旧代未清理不接管服务键、服务发布与定义/目录角色的整体切换、UI 贡献可见性、状态导出/迁移/校验、新代激活失败恢复、旧代恢复失败、消费者恢复失败、晚到回调/析构与卸载、白名单实际卸载、正常/故障下连续 100 次 Windows 替换及随机压力。最终必须把操作报告、实际运行和资源/文件/进程证据分别核对。

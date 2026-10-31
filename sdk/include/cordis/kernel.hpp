@@ -2,9 +2,10 @@
  * @brief 提供 owner 线程的内置插件注册、实例所有权和关闭入口。
  */
 #pragma once
-#include <cordis/instance.hpp>
-#include <map>
 #include <atomic>
+#include <cordis/instance.hpp>
+#include <cordis/replacement.hpp>
+#include <map>
 
 namespace cordis {
 /** @brief 插件名称映射只含宿主值，不包含激活回调或 Runtime 能力。 */
@@ -52,6 +53,10 @@ public:
     Result<KernelSnapshot> snapshot();
     /** @brief 宿主按本内核持有的顶层实例编号查找；未知/已回收编号不返回其他实例。 */
     Result<Instance> findInstance(InstanceId id) const;
+    /** @brief 只读计算替换闭包；包含全部目标 Runtime 实例、子树、实际及等待消费者。
+     * 拒绝未登记 Runtime、外部消费者和开放发布组；不停止、锁定、创建或调用插件。
+     */
+    Result<ReplacementClosure> replacementClosure(const std::vector<RuntimeId>& runtimes) const;
     /** @brief 查询不可变的调度器归属，供宿主适配层拒绝跨 scheduler 绑定。 */
     bool usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const;
 private:

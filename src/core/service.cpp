@@ -323,11 +323,11 @@ void ServiceRegistry::forgetInstance(InstanceId instance) const
 }
 /** @brief 挂载登记只发排队通知，Pending 实例会重新预检新候选形成的环。 */
 void ServiceRegistry::declareInstance(InstanceId instance, std::vector<ServiceKey> dependencies,
-                                      std::vector<ServiceKey> outputs, std::function<Result<void>()> ready,
-                                      std::function<void()> abort) const
+                                      std::vector<ServiceKey> outputs, std::vector<ServiceKey> optionalOutputs,
+                                      std::function<Result<void>()> ready, std::function<void()> abort) const
 {
-    control_->declarations.emplace(
-        instance, detail::InstanceDeclaration{std::move(dependencies), std::move(outputs), publication_});
+    control_->declarations.emplace(instance, detail::InstanceDeclaration{std::move(dependencies), std::move(outputs),
+                                                                         publication_, std::move(optionalOutputs)});
     if (publication_ && publication_->state == PublicationState::Open)
         publication_->members.emplace(instance, detail::PublicationMember{std::move(ready), std::move(abort)});
     detail::notifyRegistry(control_);
@@ -357,9 +357,10 @@ Result<bool> ServiceRegistry::ownsRealm(RealmId realm) const
     return Result<bool>::success(containsRealm(realm));
 }
 /** @brief 在索引与类型校验后增加绑定保留，不允许跨 scheduler 连接消费者。 */
-Result<std::shared_ptr<detail::CommittedLease>> ServiceRegistry::commitErased(const ServiceKey& key, std::type_index type,
-    const std::shared_ptr<IScheduler>& scheduler, InstanceId instance, Epoch epoch,
-    std::function<Result<void>()> businessGuard, std::function<void()> invalidated) const
+Result<std::shared_ptr<detail::CommittedLease>>
+ServiceRegistry::commitErased(const ServiceKey& key, std::type_index type, const std::shared_ptr<IScheduler>& scheduler,
+                              InstanceId instance, Epoch epoch, std::function<Result<void>()> businessGuard,
+                              std::function<void()> invalidated, bool managed) const
 {
     using Output = Result<std::shared_ptr<detail::CommittedLease>>;
     if (scheduler != control_->scheduler) return Output::failure(makeError(ErrorCode::InvalidArgument, "consumer requires same scheduler"));
@@ -374,6 +375,7 @@ Result<std::shared_ptr<detail::CommittedLease>> ServiceRegistry::commitErased(co
     auto lease = std::make_shared<detail::CommittedLease>();
     lease->binding = binding;
     lease->publication = publication_;
+    lease->managed = managed;
     lease->instance = instance;
     lease->epoch = epoch;
     lease->businessGuard = std::move(businessGuard);
@@ -479,6 +481,33 @@ Result<std::vector<BindingSnapshot>> ServiceRegistry::snapshot() const
     return Result<std::vector<BindingSnapshot>>::success(std::move(bindings));
 }
 
+Result<ServiceGraphSnapshot> ServiceRegistry::dependencyGraph() const
+{
+    if (!control_->scheduler->isCurrentThread())
+        return Result<ServiceGraphSnapshot>::failure(
+            makeError(ErrorCode::WrongThread, "service graph requires owner thread"));
+    ServiceGraphSnapshot graph;
+    for (const auto& entry : control_->bindings) {
+        const auto& binding = *entry.second;
+        ServiceBindingSnapshot item{binding.snapshot(), binding.provider, binding.managedProvider, {}};
+        for (const auto& weak : binding.consumers)
+            if (auto lease = weak.lock())
+                if (lease->active)
+                    item.consumers.push_back({lease->instance, lease->epoch, lease->managed});
+        graph.bindings.push_back(std::move(item));
+    }
+    for (const auto& entry : control_->declarations) {
+        auto parent = control_->parents.find(entry.first);
+        graph.instances.push_back(
+            {entry.first, parent == control_->parents.end() ? InstanceId{} : parent->second, entry.second.dependencies,
+             entry.second.outputs,
+             entry.second.publication && entry.second.publication->state == PublicationState::Open});
+        auto& outputs = graph.instances.back().outputs;
+        outputs.insert(outputs.end(), entry.second.optionalOutputs.begin(), entry.second.optionalOutputs.end());
+    }
+    return Result<ServiceGraphSnapshot>::success(std::move(graph));
+}
+
 /** @brief 发布时验证线程和状态，禁止复活 Retiring 或 Released。 */
 Result<void> ProviderHandle::publish() const
 {
@@ -512,6 +541,10 @@ Result<void> ProviderHandle::retire() const
 
 /** @brief 托管绑定只记录非零实例标识，不暴露给插件操纵。 */
 void ProviderHandle::setOwner(InstanceId owner) const { binding_->provider = owner; }
+void ProviderHandle::markManaged() const
+{
+    binding_->managedProvider = true;
+}
 
 /** @brief 等待退役绑定的消费者保留和同步调用全部退出。 */
 Task<void> ProviderHandle::whenUnused() const
