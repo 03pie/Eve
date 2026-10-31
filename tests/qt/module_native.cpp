@@ -61,6 +61,7 @@ int queryCount(const ModuleGenerationSnapshot& value)
 #include "native_publication_cases.hpp"
 #include "native_replacement_cases.hpp"
 #include "native_resource_cases.hpp"
+#include "native_scope_cases.hpp"
 #include "native_service_cases.hpp"
 void loaded()
 {
@@ -358,7 +359,7 @@ int main(int argc, char** argv)
         fixtures = arguments[3];
         if ((native_host_test::run(name) || native_resource_test::run(name) || native_service_test::run(name) ||
              native_managed_test::run(name) || native_publication_test::run(name) ||
-             native_replacement_test::run(name) || native_lifecycle_test::run(name))) {
+             native_replacement_test::run(name) || native_scope_test::run(name) || native_lifecycle_test::run(name))) {
         } else if (name == "loaded")
             loaded();
         else if (name == "business")

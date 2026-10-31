@@ -1,6 +1,7 @@
 /** @file instance.cpp
  * @brief 通过每代 EffectScope 屏障驱动配置收敛、失败回滚与实例终结。
  */
+#include "replacement_scope_p.hpp"
 #include <cordis/instance.hpp>
 
 #include <algorithm>
@@ -78,6 +79,10 @@ template<class Tag> Id<Tag> allocateId()
     } while (!next.compare_exchange_weak(value, value + 1));
     return Id<Tag>(value + 1);
 }
+OperationId nextOperationId()
+{
+    return allocateId<OperationTag>();
+}
 
 /** @brief 构造已失败的查询任务，不运行用户回调。 */
 template<class T> Task<T> queryFailure(ErrorCode code, const char* message)
@@ -123,6 +128,7 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     std::vector<ActiveContextWaiter> activeContexts;
     std::vector<std::shared_ptr<CommittedLease>> committed;
     std::shared_ptr<ServiceRegistry> services;
+    std::weak_ptr<ReplacementScopeControl> replacement;
     std::weak_ptr<ServiceRegistry> kernelRegistry;
     std::vector<ServiceRequirement> dependencies;
     std::vector<ServiceOutput> declarations;
@@ -209,6 +215,8 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     {
         if (!scheduler->isCurrentThread()) return Result<void>::failure(makeError(ErrorCode::WrongThread, "context requires owner thread"));
         if (!scheduler->isOpen()) return Result<void>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
+        if (!replacementAllowsBusiness(replacement))
+            return Result<void>::failure(makeError(ErrorCode::ContextClosing, "replacement business frozen"));
         if (services) {
             auto access = services->publicationAccess();
             if (!access.hasValue())
@@ -469,6 +477,10 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     void start()
     {
         if (stopping || retiring || !dirty) return;
+        if (!replacementAllowsActivation(replacement))
+            return;
+        if (services && !services->replacementContractAccess(runtime, dependencies, declarations, realms).hasValue())
+            return;
         failure.reset();
         childErrors.clear();
         if (!dependencies.empty() && !services) {
@@ -607,11 +619,20 @@ Result<Instance> Context::inject(const Runtime& runtime, std::string config,
     if (!self) return Result<Instance>::failure(makeError(ErrorCode::StaleContext, "instance expired"));
     auto allowed = self->business(epoch_);
     if (!allowed.hasValue()) return Result<Instance>::failure(allowed.error());
+    auto mutableAccess = detail::replacementMutationAccess(self->replacement);
+    if (!mutableAccess.hasValue())
+        return Result<Instance>::failure(mutableAccess.error());
+    if (self->services) {
+        auto admitted = self->services->replacementMountAccess(runtime, realms_, additionalDependencies);
+        if (!admitted.hasValue())
+            return Result<Instance>::failure(admitted.error());
+    }
     try {
-        auto child = Instance::mount(runtime, self->scheduler, std::move(config), self->services, realms_,
-                                     std::move(additionalDependencies));
+        auto child = Instance::prepareMount(runtime, self->scheduler, std::move(config), self->services, realms_,
+                                            std::move(additionalDependencies));
         if (self->services) self->services->attachParent(child.control_->id, self->id);
         self->children.push_back(child.control_);
+        child.startMount();
         return Result<Instance>::success(std::move(child));
     } catch (const std::invalid_argument& error) {
         return Result<Instance>::failure(makeError(ErrorCode::InvalidArgument, error.what()));
@@ -817,9 +838,20 @@ Instance Instance::mount(const Runtime& runtime, std::shared_ptr<IScheduler> sch
                          std::shared_ptr<ServiceRegistry> services, RealmMap realms,
                          std::vector<ServiceRequirement> additionalDependencies)
 {
+    auto instance = prepareMount(runtime, std::move(scheduler), std::move(config), std::move(services),
+                                 std::move(realms), std::move(additionalDependencies));
+    instance.startMount();
+    return instance;
+}
+Instance Instance::prepareMount(const Runtime& runtime, std::shared_ptr<IScheduler> scheduler, std::string config,
+                                std::shared_ptr<ServiceRegistry> services, RealmMap realms,
+                                std::vector<ServiceRequirement> additionalDependencies)
+{
     if (!runtime.activate_) throw std::invalid_argument("runtime handle moved from");
     if (services && !services->publicationAccess().hasValue())
         throw std::invalid_argument("publication group aborted");
+    if (services && !services->replacementMountAccess(runtime, realms, additionalDependencies).hasValue())
+        throw std::invalid_argument("replacement scope reserves runtime or service key");
     auto control = std::make_shared<detail::InstanceControl>(std::move(scheduler), runtime.activate_);
     if (services && !services->usesScheduler(control->scheduler)) throw std::invalid_argument("managed registry requires same scheduler");
     for (const auto& entry : realms.overrides())
@@ -841,6 +873,11 @@ Instance Instance::mount(const Runtime& runtime, std::shared_ptr<IScheduler> sch
     control->realms = std::move(realms);
     control->services = std::move(services);
     control->kernelRegistry = control->services;
+    return Instance(std::move(control));
+}
+void Instance::startMount() const
+{
+    const auto control = control_;
     if (control->services) {
         std::weak_ptr<detail::InstanceControl> weak = control;
         control->subscription = control->services->watch({
@@ -873,8 +910,8 @@ Instance Instance::mount(const Runtime& runtime, std::shared_ptr<IScheduler> sch
                     self->stop();
             });
     }
-    control->enqueue();
-    return Instance(std::move(control));
+    if (!control->stopping)
+        control->enqueue();
 }
 
 /** @brief 读取共享的激活任务。 */
@@ -883,10 +920,20 @@ Task<void> Instance::ready() const { return control_->ready.task(); }
 /** @brief owner 线程请求停止，跨线程不修改实例状态。 */
 Task<CleanupReport> Instance::stop() const
 {
+    if (!control_)
+        return detail::queryFailure<CleanupReport>(ErrorCode::InvalidArgument, "instance moved from");
     if (!control_->scheduler->isCurrentThread()) {
         Promise<CleanupReport> failed;
         failed.reject(makeError(ErrorCode::WrongThread, "instance stop requires owner thread"));
         return failed.task();
+    }
+    if (!control_->stopping) {
+        auto allowed = detail::replacementMutationAccess(control_->replacement);
+        if (!allowed.hasValue()) {
+            Promise<CleanupReport> failed;
+            failed.reject(allowed.error());
+            return failed.task();
+        }
     }
     return control_->stop();
 }
@@ -933,6 +980,8 @@ Result<EffectToken> Context::effect(EffectSetup setup, std::string label) const
     auto control = control_.lock();
     if (!control) return Result<EffectToken>::failure(makeError(ErrorCode::StaleContext, "instance context expired"));
     if (!control->scheduler->isCurrentThread()) return Result<EffectToken>::failure(makeError(ErrorCode::WrongThread, "context requires owner thread"));
+    if (!detail::replacementAllowsBusiness(control->replacement))
+        return Result<EffectToken>::failure(makeError(ErrorCode::ContextClosing, "replacement business frozen"));
     if (control->services) {
         auto access = control->services->publicationAccess();
         if (!access.hasValue())
@@ -949,6 +998,14 @@ Result<OperationHandle> Instance::change(std::string config, ConfigRevision expe
 {
     auto& c = *control_;
     if (!c.scheduler->isCurrentThread()) return Result<OperationHandle>::failure(makeError(ErrorCode::WrongThread, "update requires owner thread"));
+    auto allowed = detail::replacementMutationAccess(c.replacement);
+    if (!allowed.hasValue())
+        return Result<OperationHandle>::failure(allowed.error());
+    if (c.services) {
+        auto contract = c.services->replacementContractAccess(c.runtime, c.dependencies, c.declarations, c.realms);
+        if (!contract.hasValue())
+            return Result<OperationHandle>::failure(contract.error());
+    }
     if (c.stopping) return Result<OperationHandle>::failure(makeError(ErrorCode::InstanceDisposed, "instance terminated"));
     if (!c.scheduler->isOpen()) return Result<OperationHandle>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
     if (c.retirementFailure) return Result<OperationHandle>::failure(makeError(ErrorCode::CleanupFailed, "old resources or children not released"));
@@ -985,6 +1042,48 @@ void Instance::setKernelRegistry(const std::shared_ptr<ServiceRegistry>& service
 {
     control_->kernelRegistry = services;
 }
+Result<void> Instance::checkMutation() const
+{
+    if (!control_)
+        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "instance moved from"));
+    if (!control_->scheduler->isCurrentThread())
+        return Result<void>::failure(makeError(ErrorCode::WrongThread, "mutation check requires owner thread"));
+    if (!control_->scheduler->isOpen())
+        return Result<void>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
+    return detail::replacementMutationAccess(control_->replacement);
+}
+void Instance::setReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const
+{
+    control_->replacement = claim;
+}
+void Instance::clearReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const
+{
+    if (control_->replacement.lock() == claim)
+        control_->replacement.reset();
+}
+void Instance::resumeReplacement() const
+{
+    const auto control = control_;
+    if (!control->stopping && detail::replacementAllowsActivation(control->replacement)) {
+        if (control->state == InstanceState::Active && control->business(control->epoch).hasValue()) {
+            const auto waiting = control->activeContexts;
+            control->publishContext(Context(control, control->epoch, control->config, control->realms), control->epoch,
+                                    waiting);
+        }
+        if (control->dirty)
+            control->enqueue();
+    }
+}
+Task<CleanupReport> Instance::stopForReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const
+{
+    if (!control_->scheduler->isCurrentThread() || control_->replacement.lock() != claim)
+        return detail::queryFailure<CleanupReport>(ErrorCode::InvalidArgument, "foreign replacement stop");
+    return control_->stop();
+}
+Task<CleanupReport> Instance::stopForShutdown() const
+{
+    return control_->stop();
+}
 Result<std::vector<Instance>> Instance::ownedChildren() const
 {
     if (!control_ || !control_->scheduler->isCurrentThread())
@@ -1003,17 +1102,26 @@ Result<Instance> Instance::remount(const Runtime& runtime, const std::shared_ptr
     if (control_->scheduler != scheduler || control_->kernelRegistry.lock() != services ||
         control_->runtime != runtime.id())
         return Result<Instance>::failure(makeError(ErrorCode::InvalidArgument, "instance belongs to another kernel"));
+    auto admitted = checkMutation();
+    if (!admitted.hasValue())
+        return Result<Instance>::failure(admitted.error());
+    auto mountAccess = services->replacementMountAccess(runtime, control_->realms, control_->dependencies);
+    if (!mountAccess.hasValue())
+        return Result<Instance>::failure(mountAccess.error());
     if (control_->state != InstanceState::Disposed || control_->blocked.load())
         return Result<Instance>::failure(
             makeError(ErrorCode::ContextClosing, "remount requires quiescent disposed instance"));
-    return Result<Instance>::success(
-        Instance::mount(runtime, scheduler, control_->config, services, control_->realms, control_->dependencies));
+    return Result<Instance>::success(Instance::prepareMount(runtime, scheduler, control_->config, services,
+                                                            control_->realms, control_->dependencies));
 }
 
 /** @brief 仅在失败回滚完成后重试，不允许绕过清理失败。 */
 Result<OperationHandle> Instance::retry() const
 {
     if (!control_->scheduler->isCurrentThread()) return Result<OperationHandle>::failure(makeError(ErrorCode::WrongThread, "retry requires owner thread"));
+    auto admitted = detail::replacementMutationAccess(control_->replacement);
+    if (!admitted.hasValue())
+        return Result<OperationHandle>::failure(admitted.error());
     if (control_->stopping) return Result<OperationHandle>::failure(makeError(ErrorCode::InstanceDisposed, "instance terminated"));
     if (!control_->failed || control_->retiring || control_->state != InstanceState::Failed)
         return Result<OperationHandle>::failure(makeError(ErrorCode::InvalidArgument, "retry requires quiescent failure"));

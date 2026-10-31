@@ -1,8 +1,8 @@
 /** @file replacement.cpp
  * @brief 从实际 Kernel 所有权及同一服务图计算闭包，不执行或锁定运行资源。
  */
+#include "kernel_p.hpp"
 #include <algorithm>
-#include <cordis/kernel.hpp>
 #include <deque>
 #include <set>
 
@@ -18,9 +18,10 @@ ErrorInfo failure(ErrorCode code, const char* message, InstanceId instance = {})
 }
 } // namespace
 
-Result<ReplacementClosure> Kernel::replacementClosure(const std::vector<RuntimeId>& requested) const
+Result<detail::ReplacementSelection>
+detail::KernelControl::selectReplacement(const std::vector<RuntimeId>& requested) const
 {
-    using Output = Result<ReplacementClosure>;
+    using Output = Result<ReplacementSelection>;
     if (!scheduler_->isCurrentThread())
         return Output::failure(failure(ErrorCode::WrongThread, "replacement closure requires owner thread"));
     if (closing_)
@@ -38,6 +39,7 @@ Result<ReplacementClosure> Kernel::replacementClosure(const std::vector<RuntimeI
         return Output::failure(failure(ErrorCode::InvalidArgument, "replacement requires at least one runtime"));
 
     std::map<InstanceId, ReplacementMember> owned;
+    std::map<InstanceId, Instance> handles;
     std::map<InstanceId, bool> blocked;
     std::vector<std::pair<Instance, InstanceId>> pending;
     for (const auto& entry : instances_)
@@ -57,6 +59,7 @@ Result<ReplacementClosure> Kernel::replacementClosure(const std::vector<RuntimeI
                  .second)
             return Output::failure(failure(ErrorCode::DependencyCycle, "duplicate instance ownership", value.instance));
         blocked.emplace(value.instance, value.deliveryBlocked || value.resources.deliveryBlocked);
+        handles.emplace(value.instance, current.first);
         auto children = current.first.ownedChildren();
         if (!children.hasValue())
             return Output::failure(children.error());
@@ -121,6 +124,13 @@ Result<ReplacementClosure> Kernel::replacementClosure(const std::vector<RuntimeI
         const auto id = queue.front();
         queue.pop_front();
         const auto& node = owned.at(id);
+        // 一个子实例不能脱离仍持有它的祖先单独重建，整个实际拥有单元一起占用。
+        if (node.parent.valid() && affected.insert(node.parent).second) {
+            if (!owned.count(node.parent))
+                return Output::failure(
+                    failure(ErrorCode::ConfigConflict, "owning ancestor is not controlled", node.parent));
+            queue.push_back(node.parent);
+        }
         if (blocked.at(id))
             return Output::failure(failure(ErrorCode::SchedulerClosed, "affected resource delivery blocked", id));
         if (node.state == InstanceState::Loading || node.state == InstanceState::Unloading)
@@ -177,6 +187,19 @@ Result<ReplacementClosure> Kernel::replacementClosure(const std::vector<RuntimeI
         return Output::failure(
             failure(ErrorCode::DependencyCycle, "replacement closure has a service/ownership cycle"));
     result.startOrder.assign(result.stopOrder.rbegin(), result.stopOrder.rend());
-    return Output::success(std::move(result));
+    ReplacementSelection selection{std::move(result), {}, {}};
+    for (const auto id : affected)
+        selection.instances.emplace(id, handles.at(id));
+    for (const auto& output : providers)
+        if (std::any_of(output.second.begin(), output.second.end(),
+                        [&](InstanceId id) { return affected.count(id) != 0; }))
+            selection.outputs.push_back(output.first);
+    return Output::success(std::move(selection));
+}
+Result<ReplacementClosure> detail::KernelControl::replacementClosure(const std::vector<RuntimeId>& requested) const
+{
+    auto selection = selectReplacement(requested);
+    return selection.hasValue() ? Result<ReplacementClosure>::success(std::move(selection).value().closure)
+                                : Result<ReplacementClosure>::failure(selection.error());
 }
 } // namespace cordis

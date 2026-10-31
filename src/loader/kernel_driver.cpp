@@ -157,6 +157,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     std::size_t pendingStops = 0, accesses = 0;
     bool closing = false, closePublished = false;
     bool restoreScheduled = false;
+    std::set<OperationId> replacementWaiters;
     /** @brief 同步重入关闭时，外层实例操作返回前不能完成驱动关闭。 */
     struct Access {
         KernelDriverControl& state;
@@ -212,6 +213,68 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
         for (const auto& entry : value.realms)
             result = result.isolate(entry.first, realms.at(entry.second)).value();
         return result;
+    }
+    /** @brief 实际实例或等待意图均使用 Core 门禁，不从 UI 状态推定占用。 */
+    Result<void> entryAccess(const KernelRecord& record, const std::string& path) const
+    {
+        auto checkEntry = [&](const KernelRecord& item) {
+            return item.instance ? item.instance->checkMutation()
+                                 : kernel->checkMount(plugins.at(item.configuration.plugin),
+                                                      realmMap(item.configuration), item.requirements);
+        };
+        auto own = checkEntry(record);
+        if (!own.hasValue())
+            return own;
+        for (auto parent = parentPath(path); !parent.empty(); parent = parentPath(parent)) {
+            auto at = records.find(parent);
+            if (at != records.end()) {
+                auto allowed = checkEntry(at->second);
+                if (!allowed.hasValue())
+                    return allowed;
+            }
+        }
+        return Result<void>::success();
+    }
+    /** @brief 预检与规划共用分类，未变更的受占用条目只观察，不抢先重建或重试。 */
+    ChangeKind kindFor(const std::string& path, const EntryValue& value,
+                       const std::vector<ServiceRequirement>& required) const
+    {
+        const auto found = records.find(path);
+        if (found == records.end())
+            return ChangeKind::Add;
+        const auto& record = found->second;
+        const bool same = sameIdentity(record.configuration, value) && record.configuration.config == value.config &&
+                          sameRequirements(record.requirements, required);
+        if (same) {
+            const auto gate = entryAccess(record, path);
+            if (!gate.hasValue() && gate.error().code == ErrorCode::ConfigConflict)
+                return ChangeKind::NoOp;
+        }
+        if (!record.instance || record.instance->snapshot().value().state == InstanceState::Disposed)
+            return ChangeKind::Add;
+        if (!sameIdentity(record.configuration, value) || !sameRequirements(record.requirements, required))
+            return ChangeKind::Recreate;
+        if (record.configuration.config != value.config ||
+            record.instance->snapshot().value().state == InstanceState::Failed)
+            return ChangeKind::Restart;
+        return ChangeKind::NoOp;
+    }
+    /** @brief 解除占用后重新检查当前意图；观察没有管理权限，不轮询或创建第二份执行计划。 */
+    void waitReplacement(const ErrorInfo& error)
+    {
+        if (error.code != ErrorCode::ConfigConflict || !error.operation.valid() ||
+            !replacementWaiters.insert(error.operation).second)
+            return;
+        const auto operation = error.operation;
+        std::weak_ptr<KernelDriverControl> weak = shared_from_this();
+        observe(
+            kernel->whenReplacementReleased(operation).thenOn(scheduler, [weak, operation](const Result<void>& result) {
+                if (auto self = weak.lock()) {
+                    self->replacementWaiters.erase(operation);
+                    if (result.hasValue() && !self->closing)
+                        self->requestRestore();
+                }
+            }));
     }
     /** @brief 每个新增接口必须有宿主类型；只对目标值求解，不创建 Runtime 或实例。 */
     Result<std::vector<ServiceRequirement>> requirements(const EntryValue& value, const std::vector<InjectSpec>& inject,
@@ -414,6 +477,30 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
                         "service ownership transfer requires an explicit removal target first", entry.first));
             }
         }
+        for (const auto& record : records) {
+            const auto desired = enabled.find(record.first);
+            const auto kind = desired == enabled.end()
+                                  ? ChangeKind::Remove
+                                  : kindFor(record.first, desired->second, contracts.at(record.first));
+            if (kind != ChangeKind::NoOp) {
+                auto gate = entryAccess(record.second, record.first);
+                if (!gate.hasValue()) {
+                    auto error = gate.error();
+                    error.entryPath = record.first;
+                    return Result<void>::failure(std::move(error));
+                }
+            }
+        }
+        for (const auto& entry : enabled)
+            if (kindFor(entry.first, entry.second, contracts.at(entry.first)) != ChangeKind::NoOp) {
+                auto gate = kernel->checkMount(plugins.at(entry.second.plugin), realmMap(entry.second),
+                                               contracts.at(entry.first));
+                if (!gate.hasValue()) {
+                    auto error = gate.error();
+                    error.entryPath = entry.first;
+                    return Result<void>::failure(std::move(error));
+                }
+            }
         return Result<void>::success();
     }
     /** @brief 所有 Task 回执都由 owner 接收，投递失败不从 worker 改运行表。 */
@@ -584,6 +671,11 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
             if (parentPath(path).empty() || found == records.end() || found->second.failure ||
                 (found->second.instance && found->second.instance->snapshot().value().state != InstanceState::Disposed))
                 continue;
+            const auto admitted = entryAccess(found->second, path);
+            if (!admitted.hasValue() && admitted.error().code == ErrorCode::ConfigConflict) {
+                waitReplacement(admitted.error());
+                continue;
+            }
             auto made = create(path, enabled.at(path), contracts.at(path));
             if (!made.hasValue()) {
                 found->second.failure.emplace(made.error());
@@ -838,21 +930,7 @@ Result<std::vector<EntryOperation>> KernelReconcileDriver::plan(const ValidatedC
         }
     for (const auto& path : newOrder.value()) {
         const auto& value = desired.at(path);
-        auto found = state->records.find(path);
-        auto kind = ChangeKind::Add;
-        if (found != state->records.end()) {
-            if (found->second.instance && found->second.instance->snapshot().value().state != InstanceState::Disposed) {
-                auto snapshot = found->second.instance->snapshot().value();
-                if (!sameIdentity(found->second.configuration, value) ||
-                    !sameRequirements(found->second.requirements, desiredContracts.at(path)))
-                    kind = ChangeKind::Recreate;
-                else if (found->second.configuration.config != value.config || snapshot.state == InstanceState::Failed)
-                    kind = ChangeKind::Restart;
-                else
-                    kind = ChangeKind::NoOp;
-            }
-        }
-        operations.push_back({path, kind});
+        operations.push_back({path, state->kindFor(path, value, desiredContracts.at(path))});
     }
     return Result<std::vector<EntryOperation>>::success(std::move(operations));
 }
@@ -914,7 +992,11 @@ Task<StepReport> KernelReconcileDriver::apply(EntryOperation operation,
         found->second.configuration.config != desired->second.config)
         return failed<StepReport>(
             driverError(ErrorCode::ConfigConflict, "configuration change requires restart", operation.path));
-    if ((operation.kind == ChangeKind::NoOp || operation.kind == ChangeKind::Restart) &&
+    const auto existingAccess =
+        found != state->records.end() ? state->entryAccess(found->second, operation.path) : Result<void>::success();
+    const bool reservedNoOp = operation.kind == ChangeKind::NoOp && !existingAccess.hasValue() &&
+                              existingAccess.error().code == ErrorCode::ConfigConflict;
+    if ((operation.kind == ChangeKind::NoOp || operation.kind == ChangeKind::Restart) && !reservedNoOp &&
         (found == state->records.end() ||
          (parentPath(operation.path).empty() &&
           (!found->second.instance || found->second.instance->snapshot().value().state == InstanceState::Disposed))))
@@ -929,7 +1011,10 @@ Task<StepReport> KernelReconcileDriver::apply(EntryOperation operation,
     state->currentTarget = action->target;
     state->keepAlive = state;
     detail::KernelDriverControl::Access access(*state);
-    if (removing) {
+    if (reservedNoOp) {
+        state->waitReplacement(existingAccess.error());
+        state->finish(action, {StepOutcome::Pending, true, {}});
+    } else if (removing) {
         if (found == state->records.end() || !found->second.instance) {
             state->eraseRecords(action->operation.path, true);
             state->finish(action, {StepOutcome::Applied, true, {}});

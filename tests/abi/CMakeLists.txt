@@ -111,6 +111,14 @@ if(TARGET cordis_module_native)
     foreach(name IN ITEMS good business business_throw resources lifecycle services services_peer blocking bad_header bad_identity bad_reserved bad_null rejected short_table bad_runtime bad_flags bad_catalog bad_span missing throwing dependent dependency)
         add_dependencies(cordis_module_native_tests cordis_fixture_${name})
     endforeach()
+    foreach(case IN ITEMS scope_freeze scope_stop scope_external)
+        add_test(NAME p5.native_${case} COMMAND "${CMAKE_COMMAND}"
+            "-DTEST_EXE=$<TARGET_FILE:cordis_module_native_tests>"
+            "-DFIXTURES=$<TARGET_FILE_DIR:cordis_fixture_good>"
+            "-DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/native-fixtures" "-DCASE=${case}"
+            -P "${PROJECT_SOURCE_DIR}/tests/module_native_case.cmake")
+        set_tests_properties(p5.native_${case} PROPERTIES LABELS "p5;module;native;replacement_scope" TIMEOUT 25)
+    endforeach()
     foreach(case IN ITEMS replacement_graph replacement_external)
         add_test(NAME p5.native_${case} COMMAND "${CMAKE_COMMAND}"
             "-DTEST_EXE=$<TARGET_FILE:cordis_module_native_tests>"

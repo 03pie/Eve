@@ -1,5 +1,7 @@
 # Module host
 
+P5-M2c2 的 Core 排他作用域对原生服务桥同样生效：新增租约冲突返回 BUSY，已冻结的旧业务返回 CLOSED，原清理能力继续有效；见 [记录](../../docs/p5-m2c2-development.md)。尚未授予原生模块换代或卸载入口。源码 SDK 更新到 0.1.1，C++ 宿主与 Qt 插件须一起重建，旧 SDK 声明在映射前拒绝；C ABI 协议不变。
+
 P5-M2b 接入 Core 发布组视图：NativeServices 的托管视图归每个原生实例，模块共享索引保持规范视图；同一 DLL 的组内服务不能泄漏给其他实例。激活后 Held 只对组内消费者可用，全体成员就绪后才公开；放弃仍等待原调用/清理屏障，见 [M2b 记录](../../docs/p5-m2b-development.md)与 [ADR-0043](../../docs/adr/0043-controlled-service-publication.md)。这不是完整模块替换或卸载入口。
 
 P5-M2a 新增独立 Cordis::ModuleInstall / installModuleArtifact，把固定来源的单 DLL 与原始声明复制到 hash 目录，临时验证后不覆盖发布。InstalledArtifact 持有安装目标的文件/目录保护，交给原 stage 路径时仍独立重验；安装不执行 DLL、不接管运行目录或切换业务。只复制声明产物，不隐式打包依赖和旁文件，见 [M2a 记录](../../docs/p5-m2a-development.md)与 [ADR-0042](../../docs/adr/0042-module-artifact-installation.md)。

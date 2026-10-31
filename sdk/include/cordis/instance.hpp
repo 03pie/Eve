@@ -16,6 +16,12 @@ struct ServiceRequirement;
 template<class T> class EventBus;
 namespace detail { struct InstanceControl; }
 namespace detail { struct CleanupAccess; }
+namespace detail {
+struct KernelControl;
+}
+namespace detail {
+struct ReplacementScopeControl;
+}
 
 /** @brief 清理回调所属旧代的不可变信息，不包含新业务能力。 */
 struct CleanupSnapshot {
@@ -260,9 +266,23 @@ public:
     Result<InstanceSnapshot> snapshot() const;
     /** @brief owner 只读检查依赖的精确域、类型、minor 和 capability；不提交新租约。 */
     Result<std::vector<DependencySnapshot>> dependencies() const;
+    /** @brief 只读检查逻辑占用，不证明实例状态允许更新；实际变更仍重验。 */
+    Result<void> checkMutation() const;
+
 private:
     friend class Context;
     friend class Kernel;
+    friend struct detail::KernelControl;
+    friend struct detail::ReplacementScopeControl;
+    static Instance prepareMount(const Runtime& runtime, std::shared_ptr<IScheduler> scheduler, std::string config,
+                                 std::shared_ptr<ServiceRegistry> services, RealmMap realms,
+                                 std::vector<ServiceRequirement> additionalDependencies);
+    void startMount() const;
+    void setReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const;
+    void clearReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const;
+    void resumeReplacement() const;
+    Task<CleanupReport> stopForReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const;
+    Task<CleanupReport> stopForShutdown() const;
     /** @brief 只有 Kernel 挂载入口登记规范索引身份，不将组内子实例收养为顶层实例。 */
     void setKernelRegistry(const std::shared_ptr<ServiceRegistry>& services) const;
     /** @brief Kernel 递归检查真实所有权，不从服务编号猜测子实例。 */

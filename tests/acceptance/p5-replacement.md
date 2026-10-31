@@ -75,4 +75,31 @@ M2a 的完整验证记录见 [开发记录](../../docs/p5-m2a-development.md)。
 
 验证与审查见 [M2c1 记录](../../docs/p5-m2c1-development.md)。此查询不是已锁定执行计划或重建指令，不能直接改变当前运行。
 
-M2 后续及 M3–M5 尚待实现和逐项验证：同模块/闭包互斥、旧代未清理不接管服务键、服务发布与定义/目录角色的整体切换、UI 贡献可见性、状态导出/迁移/校验、新代激活失败恢复、旧代恢复失败、消费者恢复失败、晚到回调/析构与卸载、白名单实际卸载、正常/故障下连续 100 次 Windows 替换及随机压力。最终必须把操作报告、实际运行和资源/文件/进程证据分别核对。
+## M2c2 Core 替换作用域
+
+| 场景 | 实际检查 |
+|---|---|
+| 冲突挂载、实例修改/停止、注入、手动 Core 挂载与发布拒绝；既有 committed 业务仍有效 | p5.scope_admission |
+| 冻结关闭 Context/effect/旧 ServiceRef 业务，绑定仍 Published；撤销恢复同 epoch 等待者 | p5.scope_freeze |
+| 消费者 C→B→A 等待真实清理，冻结期间 CleanupContext 仍可用旧输入 | p5.scope_ordered |
+| 原异步调用未排空不停止提供者；Pending 激活暂停并恢复 | p5.scope_inflight、p5.scope_pending |
+| 不同 realm 独立作用域并行，同消费者及未发布输出键冲突拒绝 | p5.scope_parallel、p5.scope_overlap、p5.scope_unbound |
+| 目标子实例扩展实际祖先拥有单元；外部宿主变化导致冻结重验拒绝 | p5.scope_children、p5.scope_stale |
+| 清理失败保留作用域与提供者；停止前析构撤销，停止后析构保留 | p5.scope_cleanup_failure、p5.scope_abandoned |
+| Kernel 门面先销毁仍可正常停止/释放；错误线程访问拒绝，析构排回 owner | p5.scope_owner_gone、p5.scope_cross_thread |
+| 空/移动后/外来 Runtime、空闭包、重复 release 与关闭门禁 | p5.scope_guards |
+| Kernel.close 取消作用域回执，但自身等待真实异步清理后才解除占用 | p5.scope_shutdown |
+| 挂载/注入通知重入关闭时真实实例已登记；通知重入占用包含 Pending 实例 | p5.scope_mount_close、p5.scope_inject_close、p5.scope_mount_claim |
+| 门面入口强持账目直到 API 返回，回调中销毁 Kernel 不提前释放工厂 | p5.scope_facade_reentry |
+| 解除通知失败保留 Released 与错误；通知重入不会提前报告完成或清除新占用 | p5.scope_release_failure、p5.scope_release_reentry |
+| 未被闭包拥有但契约键冲突的 Pending 实例暂停，解除后恢复 | p5.scope_contract_resume |
+| worker 析构投递被拒绝保留排他，正常 Kernel 关闭可回收 | p5.scope_abandon_rejected |
+| 移动重赋解除旧作用域时重入再次重赋，最终权限不被外层覆盖 | p5.scope_move_reentry |
+| 配置冲突在 CAS/保存登记前拒绝；冻结/已停止条目未变更时其他条目可独立应用 | p5.scope_configuration_cas |
+| 父实例恢复时受占用的等待子意图不抢先创建；解除信号后恢复，目标/保存版本不变 | p5.scope_configuration_restore |
+| 真实 C DLL 冻结/撤销与有序 stop；新手动消费者 BUSY，不新增租约，解除后可调用 | p5.native_scope_freeze、p5.native_scope_stop、p5.native_scope_external |
+| 同工具链但声明旧 SDK 0.1.0 的实际 Qt 元数据 DLL 在映射前拒绝 | p5.scope_legacy_sdk |
+
+验证与边界见 [M2c2 记录](../../docs/p5-m2c2-development.md)。此处不是完整运行升级入口，Session 普通关闭仍须先由上层协调结束替换作用域。
+
+M2 后续及 M3–M5 尚待实现和逐项验证：同模块互斥、服务发布与冻结定义/目录角色的整体切换、UI 贡献可见性、状态导出/迁移/校验、新代激活失败恢复、旧代恢复失败、消费者恢复失败、晚到回调/析构与卸载、白名单实际卸载、正常/故障下连续 100 次 Windows 替换及随机压力。最终必须把操作报告、实际运行和资源/文件/进程证据分别核对。

@@ -1,6 +1,7 @@
 /** @file publication.cpp
  * @brief 同一注册表的发布视图与全部成员就绪后的可见性提交。
  */
+#include "replacement_scope_p.hpp"
 #include "service_p.hpp"
 
 namespace cordis::detail {
@@ -12,6 +13,8 @@ bool visiblePublication(const std::shared_ptr<PublicationControl>& binding,
 }
 bool availableBinding(const BindingControl& binding, const std::shared_ptr<PublicationControl>& viewer, bool cleanup)
 {
+    if (!cleanup && !replacementAllowsBusiness(binding.replacement))
+        return false;
     if (cleanup && binding.state == BindingState::Retiring)
         return true;
     if (!cleanup && viewer && viewer->state == PublicationState::Aborted)

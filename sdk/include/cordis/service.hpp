@@ -22,12 +22,17 @@ namespace module::detail { struct NativeServices; }
 class Context;
 class Instance;
 class CleanupContext;
+class Runtime;
+struct ServiceRequirement;
+struct ServiceOutput;
 struct ServiceKey;
 namespace detail {
 struct BindingControl;
 struct CommittedLease;
 struct ServiceRegistryControl;
 struct InstanceControl;
+struct KernelControl;
+struct ReplacementScopeControl;
 /** @brief 通过已提交租约调用，清理调用额外核对实例和代次。 */
 Result<void> callCommitted(const std::weak_ptr<CommittedLease>& lease, std::type_index type,
     const std::function<void(void*)>& callback, bool cleanup, InstanceId instance = {}, Epoch epoch = 0);
@@ -236,6 +241,12 @@ private:
     friend struct detail::InstanceControl;
     friend class Instance;
     friend class Kernel;
+    friend struct detail::KernelControl;
+    friend struct detail::ReplacementScopeControl;
+    Result<void> replacementMountAccess(const Runtime& runtime, const RealmMap& realms,
+                                        const std::vector<ServiceRequirement>& additionalDependencies) const;
+    Result<void> replacementContractAccess(RuntimeId runtime, const std::vector<ServiceRequirement>& dependencies,
+                                           const std::vector<ServiceOutput>& outputs, const RealmMap& realms) const;
     Result<PublicationGroup> holdPublication() const;
     Result<ServiceRegistry> publicationView(const PublicationGroup& group) const;
     /** @brief 已放弃组禁止业务和新激活；清理通过旧 committed 账目继续。 */

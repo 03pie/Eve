@@ -33,6 +33,10 @@ struct ServiceRegistryControl {
     std::vector<std::weak_ptr<ScheduledJob>> watchers;
     std::map<InstanceId, InstanceId> parents;
     std::map<InstanceId, InstanceDeclaration> declarations;
+    std::map<OperationId, std::shared_ptr<ReplacementScopeControl>> replacements;
+    std::map<RuntimeId, OperationId> replacementRuntimes;
+    std::map<InstanceId, OperationId> replacementInstances;
+    std::map<ServiceKey, OperationId> replacementOutputs;
 };
 struct BindingControl {
     std::shared_ptr<IScheduler> scheduler;
@@ -51,6 +55,7 @@ struct BindingControl {
     Promise<void> unused;
     std::atomic_bool deliveryBlocked{false};
     std::shared_ptr<PublicationControl> publication;
+    std::weak_ptr<ReplacementScopeControl> replacement;
     BindingSnapshot snapshot() const { return {id, key, state, calls, committed, metadata, deliveryBlocked.load()}; }
 };
 struct CommittedLease {

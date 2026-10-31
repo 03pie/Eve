@@ -24,6 +24,7 @@ CordisStatus statusOf(const ErrorInfo& error)
     case ErrorCode::DependencyVersion:
         return CORDIS_E_UNSUPPORTED;
     case ErrorCode::ServiceConflict:
+    case ErrorCode::ConfigConflict:
     case ErrorCode::DependencyCycle:
         return CORDIS_E_BUSY;
     case ErrorCode::ModulePinned:

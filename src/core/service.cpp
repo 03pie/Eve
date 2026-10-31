@@ -1,6 +1,7 @@
 /** @file service.cpp
  * @brief 实现服务键保留、发布退役、同步/异步调用屏障及显式释放。
  */
+#include "replacement_scope_p.hpp"
 #include "service_p.hpp"
 #include <algorithm>
 #include <atomic>
@@ -364,6 +365,9 @@ ServiceRegistry::commitErased(const ServiceKey& key, std::type_index type, const
 {
     using Output = Result<std::shared_ptr<detail::CommittedLease>>;
     if (scheduler != control_->scheduler) return Output::failure(makeError(ErrorCode::InvalidArgument, "consumer requires same scheduler"));
+    auto admitted = detail::replacementOutputAccess(control_, key);
+    if (!admitted.hasValue())
+        return Output::failure(admitted.error());
     auto found = findErased(key, type);
     if (!found.hasValue()) return Output::failure(found.error());
     auto binding = found.value();
@@ -420,6 +424,9 @@ Result<ProviderHandle> ServiceRegistry::stageErased(ServiceKey key, std::shared_
     auto access = publicationAccess();
     if (!access.hasValue())
         return Result<ProviderHandle>::failure(access.error());
+    auto admitted = detail::replacementOutputAccess(control_, key);
+    if (!admitted.hasValue())
+        return Result<ProviderHandle>::failure(admitted.error());
     if (!object || key.name.empty() || key.interfaceMajor == 0 || control_->realms.count(key.realm) == 0)
         return Result<ProviderHandle>::failure(makeError(ErrorCode::InvalidArgument, "invalid service or realm"));
     std::set<std::string> capabilities;

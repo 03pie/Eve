@@ -2,12 +2,14 @@
  * @brief 提供 owner 线程的内置插件注册、实例所有权和关闭入口。
  */
 #pragma once
-#include <atomic>
 #include <cordis/instance.hpp>
 #include <cordis/replacement.hpp>
-#include <map>
+#include <cordis/replacement_scope.hpp>
 
 namespace cordis {
+namespace detail {
+struct KernelControl;
+}
 /** @brief 插件名称映射只含宿主值，不包含激活回调或 Runtime 能力。 */
 struct RuntimeNameSnapshot {
     RuntimeId id;
@@ -36,7 +38,7 @@ public:
     /** @brief 登记宿主已创建的定义并保留 RuntimeId；拒绝重复名称或身份。 */
     Result<Runtime> registerRuntime(std::string name, const Runtime& runtime);
     /** @brief 获取共享索引的宿主句柄，用于隔离域配置和诊断。 */
-    ServiceRegistry services() const { return *services_; }
+    ServiceRegistry services() const;
     /** @brief 挂载已登记 Runtime；附加类型化依赖只能增加或收紧本实例的要求。 */
     Result<Instance> mount(const Runtime& runtime, std::string config = {}, RealmMap realms = {},
                            std::vector<ServiceRequirement> additionalDependencies = {});
@@ -57,18 +59,17 @@ public:
      * 拒绝未登记 Runtime、外部消费者和开放发布组；不停止、锁定、创建或调用插件。
      */
     Result<ReplacementClosure> replacementClosure(const std::vector<RuntimeId>& runtimes) const;
+    /** @brief 重新计算并原子占用真实闭包；返回唯一权限，不信任调用者编辑的旧 DTO。 */
+    Result<ReplacementScope> reserveReplacement(const std::vector<RuntimeId>& runtimes);
+    Result<std::vector<ReplacementScopeSnapshot>> replacements() const;
+    /** @brief 观察仍属于本 Kernel 的逻辑占用解除，不表示业务替换成功。 */
+    Task<void> whenReplacementReleased(OperationId operation) const;
+    /** @brief 只读挂载门禁，用于接受配置前的检查；实际挂载仍重验。 */
+    Result<void> checkMount(const Runtime& runtime, const RealmMap& realms = {},
+                            const std::vector<ServiceRequirement>& additionalDependencies = {}) const;
     /** @brief 查询不可变的调度器归属，供宿主适配层拒绝跨 scheduler 绑定。 */
     bool usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const;
 private:
-    Result<Instance> mountWithRegistry(const Runtime& runtime, std::string config, RealmMap realms,
-                                       std::vector<ServiceRequirement> additionalDependencies,
-                                       std::shared_ptr<ServiceRegistry> services);
-    std::shared_ptr<IScheduler> scheduler_;
-    std::shared_ptr<ServiceRegistry> services_;
-    std::map<std::string, Runtime> runtimes_;
-    std::map<InstanceId, Instance> instances_;
-    bool closing_ = false;
-    Promise<CleanupReport> closed_;
-    std::shared_ptr<std::atomic_bool> blocked_ = std::make_shared<std::atomic_bool>(false);
+    std::shared_ptr<detail::KernelControl> control_;
 };
 } // namespace cordis
