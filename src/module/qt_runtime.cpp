@@ -1,6 +1,7 @@
 /** @file qt_runtime.cpp
  * @brief 同工具链 Qt 工厂接到现有 Core Runtime，末尾清理等待完整 QObject 析构。
  */
+#include "admission_p.hpp"
 #include "qt_module_p.hpp"
 #include <QCoreApplication>
 #include <QThread>
@@ -260,6 +261,9 @@ struct QtDefinition {
             return failedTask(allowed.error());
         if (backend->creating)
             return failedTask(error(ErrorCode::ModuleLoad, "Qt factory creation is already in progress"));
+        auto admission = detail::admitGeneration(generation->data.generation);
+        if (!admission.hasValue())
+            return failedTask(admission.error());
         auto lease = generation->ledger.acquire(ResourceKind::Instance,
                                                 "qt.instance." + std::to_string(identity.value().instance.value()) +
                                                     "." + std::to_string(identity.value().epoch));
@@ -281,6 +285,9 @@ Result<Runtime> qtRuntime(GenerationId id, QtPlugin plugin, std::shared_ptr<qt::
     const auto generation = detail::findGeneration(id);
     if (!generation)
         return Output::failure(error(ErrorCode::InvalidArgument, "unknown Qt generation"));
+    auto admission = detail::admitGeneration(id);
+    if (!admission.hasValue())
+        return Output::failure(admission.error());
     if (generation->data.manifest.loader != ModuleLoader::QtUi)
         return Output::failure(error(ErrorCode::AbiMismatch, "Qt runtime requires qt-ui loader"));
     auto backend = std::dynamic_pointer_cast<QtResidency>(generation->backend);

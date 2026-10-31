@@ -37,7 +37,7 @@ if(WIN32 AND CORDIS_REQUIRE_QT5152)
         cordis_target_defaults(cordis_module_qt_preflight)
     endif()
 
-    add_library(cordis_module_native STATIC manager.cpp catalog.cpp)
+    add_library(cordis_module_native STATIC manager.cpp catalog.cpp reservation.cpp)
     add_library(Cordis::ModuleNative ALIAS cordis_module_native)
     target_link_libraries(cordis_module_native PUBLIC Cordis::ModulePreflight PRIVATE Qt5::Core)
     target_compile_definitions(cordis_module_native PRIVATE QT_NO_KEYWORDS)

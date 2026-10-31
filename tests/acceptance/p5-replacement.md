@@ -102,4 +102,20 @@ M2a 的完整验证记录见 [开发记录](../../docs/p5-m2a-development.md)。
 
 验证与边界见 [M2c2 记录](../../docs/p5-m2c2-development.md)。此处不是完整运行升级入口，Session 普通关闭仍须先由上层协调结束替换作用域。
 
-M2 后续及 M3–M5 尚待实现和逐项验证：同模块互斥、服务发布与冻结定义/目录角色的整体切换、UI 贡献可见性、状态导出/迁移/校验、新代激活失败恢复、旧代恢复失败、消费者恢复失败、晚到回调/析构与卸载、白名单实际卸载、正常/故障下连续 100 次 Windows 替换及随机压力。最终必须把操作报告、实际运行和资源/文件/进程证据分别核对。
+## M2c3 模块预约与创建准入
+
+| 场景 | 实际检查 |
+|---|---|
+| 参数/错误线程、空/移动后权限、跨管理器排他、值快照不影响实际所有权 | p5.native_reservation_guards、p5.qt_reservation_guards |
+| 双版本真实业务、旧定义迟到创建拒绝，已有业务继续；解除后按原 Core 操作重试 | p5.native_reservation_admission、p5.qt_reservation_admission |
+| 当前/候选 drain 与合法暂存拒绝，当前发现可复用，未映射第三份产物；解除后原生正常排空 | p5.native_reservation_drain、p5.qt_reservation_drain |
+| 管理器销毁不撤销预约，权限析构自动解除；worker 接收并释放预约 | p5.native_reservation_released、p5.qt_reservation_released、p5.native_reservation_worker、p5.qt_reservation_worker |
+| 选定候选已有真实业务实例时拒绝，完整关闭后可预约 | p5.native_reservation_candidate_live、p5.qt_reservation_candidate_live |
+| 发现通过但业务协商失败的候选拒绝，健康候选仍可预约 | p5.native_reservation_failure、p5.qt_reservation_failure |
+| 不同模块独立预约，释放一个不清除另一个；两个线程的管理器争同一模块只允许一个 | p5.native_reservation_parallel、p5.native_reservation_race |
+| 真正 Qt 工厂 query/create 重入不能取得预约；结束后可取得 | p5.qt_reservation_query_reentry、p5.qt_reservation_create_reentry |
+| 其他候选正在装载 root 或正在协商工厂时拒绝；已持有预约时其工厂准入也拒绝 | p5.qt_reservation_stage_reentry、p5.qt_reservation_sibling_query_reentry |
+
+本段使用真实两版本业务 DLL，检查预约与入场，不迁移或提交业务，不以发现/预约代替工厂/schema 验证。完整记录见 [M2c3](../../docs/p5-m2c3-development.md)。
+
+M2 后续及 M3–M5 尚待实现和逐项验证：完整 ReplacementOperation、服务发布与冻结定义/目录角色的整体切换、UI 贡献可见性、状态导出/迁移/校验、新代激活失败恢复、旧代恢复失败、消费者恢复失败、晚到回调/析构与卸载、白名单实际卸载、正常/故障下连续 100 次 Windows 替换及随机压力。最终必须把操作报告、实际运行和资源/文件/进程证据分别核对。

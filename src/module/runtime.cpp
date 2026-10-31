@@ -1,6 +1,7 @@
 /** @file runtime.cpp
  * @brief 在既有原生桥之上创建 Core 托管 Runtime，不替换低层 create。
  */
+#include "admission_p.hpp"
 #include "host_services_p.hpp"
 #include "json_p.hpp"
 #include <algorithm>
@@ -28,6 +29,9 @@ Result<Runtime> NativeModule::runtime(NativePlugin plugin) const
             return Output::failure(hostError(ErrorCode::ContextClosing, "native module unavailable"));
     }
     const auto& api = *root->record->api;
+    auto admission = admitGeneration(root->source.generation);
+    if (!admission.hasValue())
+        return Output::failure(admission.error());
     if (std::find(api.plugins.begin(), api.plugins.end(), plugin.id) == api.plugins.end() ||
         plugin.dependencies.size() > 128 || plugin.outputs.size() > 128 ||
         ((!plugin.dependencies.empty() || !plugin.outputs.empty()) && !(api.table.capabilities & CORDIS_CAP_SERVICES)))

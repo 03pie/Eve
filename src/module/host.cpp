@@ -1,6 +1,7 @@
 /** @file host.cpp
  * @brief 稳定基础 HostTable、真实业务生命周期、资源入口与保守失败驻留。
  */
+#include "admission_p.hpp"
 #include "host_p.hpp"
 #include "host_resources_p.hpp"
 #include "host_services_p.hpp"
@@ -546,6 +547,9 @@ Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id,
     if (services && !NativeServices::uses(*services, scheduler))
         return Result<NativeModule>::failure(
             hostError(ErrorCode::InvalidArgument, "native services require same scheduler"));
+    auto admission = admitGeneration(id);
+    if (!admission.hasValue())
+        return Result<NativeModule>::failure(admission.error());
     auto source = acquireNativeSource(id);
     if (!source.hasValue())
         return Result<NativeModule>::failure(source.error());
@@ -648,6 +652,9 @@ Result<NativeInstance> NativeModule::createBound(std::string plugin, std::string
                 return Result<NativeInstance>::failure(
                     hostError(ErrorCode::InvalidArgument, "native activation identity already exists"));
     }
+    auto admission = admitGeneration(root->source.generation);
+    if (!admission.hasValue())
+        return Result<NativeInstance>::failure(admission.error());
     auto lease = root->source.ledger.acquire(ResourceKind::Instance, plugin);
     if (!lease.hasValue())
         return Result<NativeInstance>::failure(lease.error());

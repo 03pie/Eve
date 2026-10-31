@@ -4,6 +4,7 @@
 #pragma once
 #include "artifact_p.hpp"
 #include "failure_p.hpp"
+#include "reservation_p.hpp"
 #include <cordis/module/manager.hpp>
 #include <mutex>
 
@@ -21,6 +22,8 @@ struct Generation {
     ModuleGenerationSnapshot data;
     const std::unique_ptr<OpenedPath> artifactFile;
     bool loading = true;
+    std::size_t admissions = 0;
+    std::weak_ptr<ReplacementReservationControl> replacement;
     HMODULE image = nullptr;
     std::shared_ptr<BackendResidency> backend;
 };

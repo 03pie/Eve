@@ -144,23 +144,7 @@ Result<void> ModuleManager::drain(GenerationId id)
 {
     if (std::this_thread::get_id() != owner_)
         return Result<void>::failure(ownerError());
-    const auto generation = findGeneration(id);
-    if (!generation)
-        return Result<void>::failure(error(ErrorCode::InvalidArgument, "module.drain", "unknown generation ID"));
-    {
-        std::lock_guard<std::mutex> lock(generation->mutex);
-        if (generation->loading)
-            return Result<void>::failure(
-                error(ErrorCode::ContextClosing, "module.drain", "module is still negotiating"));
-        if (!generation->ledger.snapshot().records.empty())
-            return Result<void>::failure(error(ErrorCode::ContextClosing, "module.drain",
-                                               "close native sessions and resources before draining generation"));
-        if (generation->data.state == ModuleState::Loaded || generation->data.state == ModuleState::Serving)
-            generation->data.state = ModuleState::Draining;
-    }
-    generation->ledger.beginDraining();
-    (void)generation->copy();
-    return Result<void>::success();
+    return detail::drainGeneration(id);
 }
 } // namespace cordis::module
 

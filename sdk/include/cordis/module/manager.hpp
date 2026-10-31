@@ -4,6 +4,7 @@
 #pragma once
 #include <cordis/module/ledger.hpp>
 #include <cordis/module/manifest.hpp>
+#include <cordis/module/replacement.hpp>
 #include <optional>
 #include <thread>
 
@@ -35,6 +36,7 @@ struct ModuleGenerationSnapshot {
     std::optional<ErrorInfo> businessFailure;
     GenerationRole role = GenerationRole::Current;
     GenerationId predecessor{};
+    std::optional<ModuleReplacementSnapshot> replacement{};
 };
 /** @brief 每个句柄绑定创建线程；进程内共享唯一驻留目录，最多 64 个已保留代次。
  * 默认驻留至进程退出，析构不调用 DLL 或 FreeLibrary；不提供业务或物理卸载能力。
@@ -56,6 +58,8 @@ public:
     Result<std::vector<ModuleGenerationSnapshot>> snapshot() const;
     /** @brief 停止该代接收引用；无执行引用后转为 Resident，不能再次装载为活动代。 */
     Result<void> drain(GenerationId generation);
+    /** @brief 在唯一进程目录预约同模块的当前/候选代；拒绝其他预约及入场中的创建。 */
+    Result<ReplacementReservation> reserveReplacement(GenerationId current, GenerationId candidate);
 
 private:
     Result<ModuleLoadReport> loadGeneration(const std::string& pluginRoot, const std::string& manifestPath,

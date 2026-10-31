@@ -1,5 +1,7 @@
 # Module host
 
+P5-M2c3 增加 ModuleManager::reserveReplacement 返回的唯一模块预约：在同一目录核对真实当前/候选及前驱，同模块工厂/定义/新宿主、暂存和 drain 共用准入，包含其他候选的装载/协商窗口；已有业务和清理不借此排空。reset 只解除预约，不执行升级，后续 ReplacementOperation 须持有权限直到运行提交/恢复结束，见 [记录](../../docs/p5-m2c3-development.md)及 [ADR-0046](../../docs/adr/0046-module-replacement-reservation.md)。
+
 P5-M2c2 的 Core 排他作用域对原生服务桥同样生效：新增租约冲突返回 BUSY，已冻结的旧业务返回 CLOSED，原清理能力继续有效；见 [记录](../../docs/p5-m2c2-development.md)。尚未授予原生模块换代或卸载入口。源码 SDK 更新到 0.1.1，C++ 宿主与 Qt 插件须一起重建，旧 SDK 声明在映射前拒绝；C ABI 协议不变。
 
 P5-M2b 接入 Core 发布组视图：NativeServices 的托管视图归每个原生实例，模块共享索引保持规范视图；同一 DLL 的组内服务不能泄漏给其他实例。激活后 Held 只对组内消费者可用，全体成员就绪后才公开；放弃仍等待原调用/清理屏障，见 [M2b 记录](../../docs/p5-m2b-development.md)与 [ADR-0043](../../docs/adr/0043-controlled-service-publication.md)。这不是完整模块替换或卸载入口。

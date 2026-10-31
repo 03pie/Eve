@@ -6,6 +6,9 @@
 #ifndef FIXTURE_ID
 #define FIXTURE_ID "org.cordis.business"
 #endif
+#ifndef FIXTURE_VERSION
+#define FIXTURE_VERSION "1.0.0"
+#endif
 #ifdef FIXTURE_THROW_START
 void __cdecl cordis_business_throw(void);
 #endif
@@ -262,8 +265,8 @@ CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_query_v1(uint32_t host_abi, const 
     table.capabilities = host->capabilities & CORDIS_CAP_ALL;
     table.module_id.data = (const uint8_t*)FIXTURE_ID;
     table.module_id.size = sizeof(FIXTURE_ID) - 1;
-    table.module_version.data = (const uint8_t*)"1.0.0";
-    table.module_version.size = 5;
+    table.module_version.data = (const uint8_t*)FIXTURE_VERSION;
+    table.module_version.size = sizeof(FIXTURE_VERSION) - 1;
     table.plugin_count = 1;
     table.plugins = plugin_ids;
     table.create = create_instance;
