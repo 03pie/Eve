@@ -203,7 +203,27 @@ private:
     }
     void finish()
     {
-        take(manager_.drain(reporterId_));
+        if (mode_ != "cleanup_failure")
+            require(take(kernel_->services().snapshot()).empty(), "service keys survived successful close");
+        // close 回执只证明业务静止；定义目录和 Kernel 仍持有可执行工厂，必须先释放宿主所有者。
+        session_.reset();
+        driver_.reset();
+        kernel_.reset();
+        auto reporterDrained = manager_.drain(reporterId_);
+        if (!reporterDrained.hasValue()) {
+            require(mode_ == "cleanup_failure" && reporterDrained.error().code == ErrorCode::ContextClosing,
+                    "reporter references survived successful close");
+            const auto states = take(manager_.snapshot());
+            const auto reporter = std::find_if(states.begin(), states.end(),
+                                               [this](const auto& value) { return value.generation == reporterId_; });
+            require(reporter != states.end() && !reporter->resources.records.empty() &&
+                        std::all_of(reporter->resources.records.begin(), reporter->resources.records.end(),
+                                    [](const auto& record) {
+                                        return record.kind == ResourceKind::ExternalHandle &&
+                                               record.label.rfind("runtime.definition.", 0) == 0;
+                                    }),
+                    "reporter retained business resources");
+        }
         if (mode_ == "cleanup_failure") {
             require(!manager_.drain(counterId_).hasValue(), "failed cleanup falsely drained");
             const auto states = take(manager_.snapshot());
@@ -214,7 +234,6 @@ private:
             std::cout << "failed cleanup retained DLL and execution references\n";
         } else {
             take(manager_.drain(counterId_));
-            require(take(kernel_->services().snapshot()).empty(), "service keys survived successful close");
             for (const auto& state : take(manager_.snapshot()))
                 require(state.state == ModuleState::Resident && state.nativePinned && state.resources.drained(),
                         "module generation did not drain to Resident");

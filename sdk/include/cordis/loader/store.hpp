@@ -49,7 +49,10 @@ struct StoreSnapshot {
     bool closed = false;
     bool deliveryBlocked = false;
 };
-namespace detail { struct StoreControl; }
+namespace detail {
+struct StoreControl;
+struct TargetCommitAccess;
+} // namespace detail
 /** @brief owner 单写 Store；初始基线由宿主读取，目标修订由协调器接受流程分配。 */
 class ConfigurationStore {
 public:
@@ -73,6 +76,7 @@ public:
     /** @brief 同步拒绝新业务，排空已接受保存并刷新最新 dirty 目标；未保存时终结为失败。 */
     Task<void> close();
 private:
+    friend struct detail::TargetCommitAccess;
     std::shared_ptr<detail::StoreControl> control_;
 };
 } // namespace cordis::loader

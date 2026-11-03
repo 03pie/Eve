@@ -18,7 +18,17 @@ target_link_libraries(cordis_module_reservation_tests PRIVATE Cordis::ModuleNati
 cordis_target_defaults(cordis_module_reservation_tests)
 add_dependencies(cordis_module_reservation_tests cordis_fixture_business cordis_reservation_native_next
     cordis_reservation_peer_old cordis_reservation_peer_next cordis_candidate_native_next)
+add_executable(cordis_module_origin_tests qt/module_origin.cpp)
+target_link_libraries(cordis_module_origin_tests PRIVATE Cordis::ModuleNative Cordis::ModuleHost Qt5::Core)
+cordis_target_defaults(cordis_module_origin_tests)
+add_dependencies(cordis_module_origin_tests cordis_fixture_business cordis_reservation_native_next)
 function(cordis_reservation_cases backend old next third)
+    add_test(NAME p5.${backend}_runtime_origin COMMAND "${CMAKE_COMMAND}"
+        "-DTEST_EXE=$<TARGET_FILE:cordis_module_origin_tests>" "-DCASE=${backend}"
+        "-DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/origin-cases"
+        "-DFIXTURES=$<TARGET_FILE:${old}>;$<TARGET_FILE:${next}>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/module_native_case.cmake")
+    set_tests_properties(p5.${backend}_runtime_origin PROPERTIES LABELS "p5;module;${backend};runtime_origin" TIMEOUT 25)
     set(cases guards admission drain released worker candidate_live failure)
     if(backend STREQUAL "native")
         list(APPEND cases parallel race)
@@ -61,7 +71,36 @@ if(TARGET cordis_module_qt)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/replacement-fixtures")
     cordis_target_defaults(cordis_reservation_qt_next)
     target_link_libraries(cordis_module_reservation_tests PRIVATE Cordis::ModuleQt Cordis::Qt)
+    target_link_libraries(cordis_module_origin_tests PRIVATE Cordis::ModuleQt Cordis::Qt)
+    target_compile_definitions(cordis_module_origin_tests PRIVATE CORDIS_TEST_QT_ORIGIN)
+    add_dependencies(cordis_module_origin_tests cordis_qt_business_fixture cordis_reservation_qt_next)
     target_compile_definitions(cordis_module_reservation_tests PRIVATE CORDIS_TEST_QT_RESERVATION)
     add_dependencies(cordis_module_reservation_tests cordis_qt_business_fixture cordis_reservation_qt_next cordis_candidate_qt_next)
     cordis_reservation_cases(qt cordis_qt_business_fixture cordis_reservation_qt_next cordis_candidate_qt_next)
+    foreach(version IN ITEMS old next)
+        add_library(cordis_usage_${version} MODULE "${PROJECT_SOURCE_DIR}/tests/fixtures/module_fixture.c"
+            "${PROJECT_SOURCE_DIR}/tests/fixtures/business_fixture.c")
+        cordis_abi_test_defaults(cordis_usage_${version})
+        target_compile_definitions(cordis_usage_${version} PRIVATE CORDIS_MODULE_EXPORTS CORDIS_ABI_EXPORTS
+            FIXTURE_ID="org.cordis.usage" FIXTURE_VERSION="$<IF:$<STREQUAL:${version},old>,1.0.0,2.0.0>")
+        set_target_properties(cordis_usage_${version} PROPERTIES PREFIX ""
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/replacement-fixtures")
+    endforeach()
+    add_executable(cordis_module_usage_tests qt/module_usage.cpp)
+    target_link_libraries(cordis_module_usage_tests PRIVATE Cordis::ModuleHost Cordis::ModuleQt Cordis::Qt Qt5::Core)
+    cordis_target_defaults(cordis_module_usage_tests)
+    add_dependencies(cordis_module_usage_tests cordis_fixture_business cordis_reservation_native_next
+        cordis_qt_business_fixture cordis_reservation_qt_next cordis_usage_old cordis_usage_next)
+    add_test(NAME p5.module_shared_usage COMMAND "${CMAKE_COMMAND}"
+        "-DTEST_EXE=$<TARGET_FILE:cordis_module_usage_tests>" "-DCASE=shared"
+        "-DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/usage-cases"
+        "-DFIXTURES=$<TARGET_FILE:cordis_fixture_business>;$<TARGET_FILE:cordis_reservation_native_next>;$<TARGET_FILE:cordis_qt_business_fixture>;$<TARGET_FILE:cordis_reservation_qt_next>;$<TARGET_FILE:cordis_usage_old>;$<TARGET_FILE:cordis_usage_next>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/module_native_case.cmake")
+    set_tests_properties(p5.module_shared_usage PROPERTIES LABELS "p5;module;native;qt;replacement_usage" TIMEOUT 25)
+    add_test(NAME p5.module_shared_usage_failure COMMAND "${CMAKE_COMMAND}"
+        "-DTEST_EXE=$<TARGET_FILE:cordis_module_usage_tests>" "-DCASE=failure"
+        "-DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/usage-cases"
+        "-DFIXTURES=$<TARGET_FILE:cordis_fixture_business>;$<TARGET_FILE:cordis_reservation_native_next>;$<TARGET_FILE:cordis_qt_business_fixture>;$<TARGET_FILE:cordis_reservation_qt_next>;$<TARGET_FILE:cordis_usage_old>;$<TARGET_FILE:cordis_usage_next>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/module_native_case.cmake")
+    set_tests_properties(p5.module_shared_usage_failure PROPERTIES LABELS "p5;module;native;qt;replacement_usage" TIMEOUT 25)
 endif()

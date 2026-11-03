@@ -9,6 +9,7 @@
 namespace cordis {
 namespace detail {
 struct PublicationControl;
+struct ReplacementScopeControl;
 }
 enum class PublicationState { Open, Published, Aborted };
 struct PublicationSnapshot {
@@ -32,6 +33,7 @@ public:
 
 private:
     friend class ServiceRegistry;
+    friend struct detail::ReplacementScopeControl;
     explicit PublicationGroup(std::shared_ptr<detail::PublicationControl> control) : control_(std::move(control)) {}
     std::shared_ptr<detail::PublicationControl> control_;
 };

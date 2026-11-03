@@ -4,6 +4,7 @@
 #include "kernel_p.hpp"
 #include "replacement_scope_p.hpp"
 #include "service_p.hpp"
+#include <algorithm>
 #include <memory>
 #include <stdexcept>
 #include <utility>
@@ -48,6 +49,12 @@ Result<Runtime> detail::KernelControl::registerRuntime(std::string name, const R
     for (const auto& entry : runtimes_)
         if (entry.second.id() == runtime.id())
             return Result<Runtime>::failure(makeError(ErrorCode::InvalidArgument, "runtime already registered"));
+    if (const auto at = services_->control_->replacementRuntimes.find(runtime.id());
+        at != services_->control_->replacementRuntimes.end()) {
+        auto error = makeError(ErrorCode::ConfigConflict, "runtime is owned by a replacement");
+        error.operation = at->second;
+        return Result<Runtime>::failure(std::move(error));
+    }
     runtimes_.emplace(std::move(name), runtime);
     return Result<Runtime>::success(runtime);
 }
@@ -85,7 +92,9 @@ Result<Instance> detail::KernelControl::mountWithRegistry(const Runtime& runtime
     if (!scheduler_->isCurrentThread()) return Result<Instance>::failure(makeError(ErrorCode::WrongThread, "mount requires owner thread"));
     if (closing_) return Result<Instance>::failure(makeError(ErrorCode::ContextClosing, "kernel closing"));
     if (!scheduler_->isOpen()) return Result<Instance>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
-    for (const auto& entry : runtimes_) if (entry.second.id() == runtime.id()) {
+    const bool registered = std::any_of(runtimes_.begin(), runtimes_.end(),
+                                        [&](const auto& entry) { return entry.second.id() == runtime.id(); });
+    if (registered || detail::replacementOwnsDefinition(services->publication_, runtime.id())) {
         try {
             auto admitted = services->replacementMountAccess(runtime, realms, additionalDependencies);
             if (!admitted.hasValue())

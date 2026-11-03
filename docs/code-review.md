@@ -1,5 +1,17 @@
 # 提交前代码审查记录
 
+## P5-M2c5 基础设施增量审核
+
+日期：2026-11-03。基线 ae9c045。按本次用户要求审核并提交当前工作区增量；完整 M2c5 仍进行中，本次不作为其出口，也不开始 M3。由当前代理审核，未使用子代理。
+
+审核覆盖 Core 隔离创建/清理、原始重建输入、受影响名称/服务的准备提交，Module 实际工厂/业务来源、独占/共享使用意图和代次角色，以及 Loader 不可变目录合成、Coordinator/Store 同步准备槽和示例释放顺序。状态源保持唯一，Core 不依赖 Module/Loader/Qt/UI，模块锁内不执行插件、调度器、schema 或工厂析构；普通创建与同一作用域的候选创建分开准入。
+
+复现并修复一项 P2：Core Prepared 之后，候选的异步 effect 完成回执投递失败，仅将资源作用域标记为 deliveryBlocked；最终提交只检查实例级门禁，仍返回成功并切换规范定义。新增 p5.commit_resource_delivery_failure 修复前 0/1（build/p5-m2c5-review-red-tests.log）。现由 EffectScope 提供仅 Instance 可用的纯状态检查，最终提交再次核对资源投递状态，不构造快照、不分配或调用调度器。修复后 Core 提交专项 13/13，新增检查确认规范定义不变、释放被拒绝且失败资源真实保留，不把未完成的关闭当作静止。
+
+规范与质量复查：公开句柄布局、既有枚举数值及 C ABI 声明保持；工厂来源租约与原业务租约分别计账，目录行在真实拥有者退出时移除。未改定义共享不可变节点，旧草稿不保留旧工厂；提交准备槽保留退役值，失败撤销不留下半组占用。整理新增 Core/Module 构建源列表，避免继续扩张单行清单。最终验证结果与尚未集成范围见 [M2c5 记录](p5-m2c5-development.md)。
+
+最终 Release/Debug/ASan 全量各 894/894，GCC Debug 全量 364/364；Debug/ASan 按 UI/非 UI 分组执行，并与当前 CTest 清单核对集合无重复、无遗漏。关闭示例的原 Release P4/P5 425/425 及 Session 支持 1/1，GCC Release 静态 Core/关闭示例的提交专项 13/13；原 Release 已恢复示例/共享 Core ON/ON 并完成重建。两个编译器各九个独立公开头、56 项 C++ 格式、61 项源码/构建输入哈希、32 项真实 ASan 编译命令/当前对象及 P4 清单 237 项/54 引用核对通过。日志前缀 build/p5-m2c5-review-*，覆盖集合见 build/p5-m2c5-review-matrix.json，源码快照见 build/p5-m2c5-review-source-sha256.json。未发现其他阻止本次增量提交的问题，随本次提交归档；Driver 实例映射、Session 最终结果、上层整体操作和 M3–M5 仍未完成。
+
 ## P5-M2c4 配置与运行共同定义提交前审核
 
 日期：2026-10-31。基线 fad636a。由当前代理审核，未使用子代理。先检查 schema/Runtime 的来源、驱动内部五份映射、可重入边界及候选的执行引用寿命，再将完整定义收敛到同一不可变目录。新目录向下依赖 ConfigYaml/Core，Session 经配置驱动协议消费目录；ConfigYaml 保持无 Core/Runtime 依赖，Core、C ABI 和原模块账目未改。

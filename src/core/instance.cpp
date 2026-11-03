@@ -131,6 +131,7 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     std::weak_ptr<ReplacementScopeControl> replacement;
     std::weak_ptr<ServiceRegistry> kernelRegistry;
     std::vector<ServiceRequirement> dependencies;
+    std::vector<ServiceRequirement> additionalDependencies;
     std::vector<ServiceOutput> declarations;
     RealmMap realms;
     std::vector<ProviderHandle> outputs;
@@ -215,7 +216,7 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     {
         if (!scheduler->isCurrentThread()) return Result<void>::failure(makeError(ErrorCode::WrongThread, "context requires owner thread"));
         if (!scheduler->isOpen()) return Result<void>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
-        if (!replacementAllowsBusiness(replacement))
+        if (!replacementAllowsBusiness(replacement, services ? services->publication_ : nullptr))
             return Result<void>::failure(makeError(ErrorCode::ContextClosing, "replacement business frozen"));
         if (services) {
             auto access = services->publicationAccess();
@@ -477,7 +478,7 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     void start()
     {
         if (stopping || retiring || !dirty) return;
-        if (!replacementAllowsActivation(replacement))
+        if (!replacementAllowsActivation(replacement, services ? services->publication_ : nullptr))
             return;
         if (services && !services->replacementContractAccess(runtime, dependencies, declarations, realms).hasValue())
             return;
@@ -597,6 +598,22 @@ Result<ContextIdentity> Context::identity() const
     if (!allowed.hasValue()) return Result<ContextIdentity>::failure(allowed.error());
     return Result<ContextIdentity>::success({self->id, epoch_});
 }
+Result<ContextSource> Context::source() const
+{
+    using Output = Result<ContextSource>;
+    const auto self = control_.lock();
+    if (!self)
+        return Output::failure(makeError(ErrorCode::StaleContext, "instance expired"));
+    auto allowed = self->business(epoch_);
+    if (!allowed.hasValue())
+        return Output::failure(allowed.error());
+    ContextSource source{self->id, self->runtime, epoch_, {}};
+    const auto claim = self->replacement.lock();
+    const auto publication = self->services ? self->services->publication_ : nullptr;
+    if (claim && claim->stageOpen(publication) && claim->staged.count(self->id))
+        source.replacement = claim->operation;
+    return Output::success(std::move(source));
+}
 /** @brief 事件记录只捕获弱实例与代次，分发时重新检查退役及清理权限。 */
 Result<std::function<Result<void>()>> Context::eventGuard(const std::shared_ptr<IScheduler>& scheduler) const
 {
@@ -619,9 +636,11 @@ Result<Instance> Context::inject(const Runtime& runtime, std::string config,
     if (!self) return Result<Instance>::failure(makeError(ErrorCode::StaleContext, "instance expired"));
     auto allowed = self->business(epoch_);
     if (!allowed.hasValue()) return Result<Instance>::failure(allowed.error());
-    auto mutableAccess = detail::replacementMutationAccess(self->replacement);
-    if (!mutableAccess.hasValue())
-        return Result<Instance>::failure(mutableAccess.error());
+    if (!detail::replacementViewAllowsStage(self->services ? self->services->publication_ : nullptr)) {
+        auto mutableAccess = detail::replacementMutationAccess(self->replacement);
+        if (!mutableAccess.hasValue())
+            return Result<Instance>::failure(mutableAccess.error());
+    }
     if (self->services) {
         auto admitted = self->services->replacementMountAccess(runtime, realms_, additionalDependencies);
         if (!admitted.hasValue())
@@ -865,15 +884,19 @@ Instance Instance::prepareMount(const Runtime& runtime, std::shared_ptr<ISchedul
     auto dependencies = detail::mergeDependencies(runtime.dependencies_, additionalDependencies, realms);
     for (const auto& dependency : dependencies)
         if (services && !services->containsRealm(realms.resolve(dependency.key).realm)) throw std::invalid_argument("dependency uses foreign realm");
-    control->pin = control;
     control->config = std::move(config);
     control->runtime = runtime.id();
     control->dependencies = std::move(dependencies);
+    control->additionalDependencies = std::move(additionalDependencies);
     control->declarations = runtime.outputs_;
     control->realms = std::move(realms);
     control->services = std::move(services);
     control->kernelRegistry = control->services;
-    return Instance(std::move(control));
+    auto instance = Instance(control);
+    if (control->services)
+        detail::registerReplacementStageInstance(control->services->publication_, instance);
+    control->pin = control;
+    return instance;
 }
 void Instance::startMount() const
 {
@@ -980,7 +1003,8 @@ Result<EffectToken> Context::effect(EffectSetup setup, std::string label) const
     auto control = control_.lock();
     if (!control) return Result<EffectToken>::failure(makeError(ErrorCode::StaleContext, "instance context expired"));
     if (!control->scheduler->isCurrentThread()) return Result<EffectToken>::failure(makeError(ErrorCode::WrongThread, "context requires owner thread"));
-    if (!detail::replacementAllowsBusiness(control->replacement))
+    if (!detail::replacementAllowsBusiness(control->replacement,
+                                           control->services ? control->services->publication_ : nullptr))
         return Result<EffectToken>::failure(makeError(ErrorCode::ContextClosing, "replacement business frozen"));
     if (control->services) {
         auto access = control->services->publicationAccess();
@@ -1064,7 +1088,9 @@ void Instance::clearReplacement(const std::shared_ptr<detail::ReplacementScopeCo
 void Instance::resumeReplacement() const
 {
     const auto control = control_;
-    if (!control->stopping && detail::replacementAllowsActivation(control->replacement)) {
+    if (!control->stopping &&
+        detail::replacementAllowsActivation(control->replacement,
+                                            control->services ? control->services->publication_ : nullptr)) {
         if (control->state == InstanceState::Active && control->business(control->epoch).hasValue()) {
             const auto waiting = control->activeContexts;
             control->publishContext(Context(control, control->epoch, control->config, control->realms), control->epoch,
@@ -1073,6 +1099,19 @@ void Instance::resumeReplacement() const
         if (control->dirty)
             control->enqueue();
     }
+}
+bool Instance::preparedForPublication() const noexcept
+{
+    const auto& control = control_;
+    return control && control->state == InstanceState::Active && !control->blocked.load() && !control->stopping &&
+           !control->retiring && !control->dirty && !control->scope.deliveryBlocked();
+}
+ReplacementInput Instance::captureReplacementInput(InstanceId parent) const
+{
+    const auto& control = control_;
+    return {control->id,     parent,           control->runtime,      {},
+            control->config, control->realms,  control->dependencies, control->additionalDependencies,
+            control->epoch,  control->revision};
 }
 Task<CleanupReport> Instance::stopForReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const
 {
@@ -1105,14 +1144,14 @@ Result<Instance> Instance::remount(const Runtime& runtime, const std::shared_ptr
     auto admitted = checkMutation();
     if (!admitted.hasValue())
         return Result<Instance>::failure(admitted.error());
-    auto mountAccess = services->replacementMountAccess(runtime, control_->realms, control_->dependencies);
+    auto mountAccess = services->replacementMountAccess(runtime, control_->realms, control_->additionalDependencies);
     if (!mountAccess.hasValue())
         return Result<Instance>::failure(mountAccess.error());
     if (control_->state != InstanceState::Disposed || control_->blocked.load())
         return Result<Instance>::failure(
             makeError(ErrorCode::ContextClosing, "remount requires quiescent disposed instance"));
     return Result<Instance>::success(Instance::prepareMount(runtime, scheduler, control_->config, services,
-                                                            control_->realms, control_->dependencies));
+                                                            control_->realms, control_->additionalDependencies));
 }
 
 /** @brief 仅在失败回滚完成后重试，不允许绕过清理失败。 */

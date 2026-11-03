@@ -9,7 +9,7 @@
 namespace cordis::loader::detail {
 struct DefinitionIdentity {};
 struct DefinitionsData {
-    std::map<std::string, ConfiguredPlugin> entries;
+    std::map<std::string, std::shared_ptr<const ConfiguredPlugin>> entries;
     std::map<std::string, PluginModule> modules;
     std::shared_ptr<const DefinitionIdentity> identity;
 };

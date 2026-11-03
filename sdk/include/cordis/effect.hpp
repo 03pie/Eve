@@ -153,6 +153,9 @@ public:
 
 private:
     template<class T> friend class EventBus;
+    friend class Instance;
+    /** @brief owner 提交窗口的纯资源门禁；不分配、不调用调度器或生命周期回调。 */
+    bool deliveryBlocked() const noexcept;
     /** @brief 事件资源必须使用同一 scheduler，避免跨线程修改分发屏障。 */
     bool usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const;
     std::shared_ptr<detail::ScopeControl> control_;

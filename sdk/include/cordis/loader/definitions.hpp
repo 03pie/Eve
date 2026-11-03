@@ -32,6 +32,8 @@ struct ConfiguredPlugin {
 class ConfigurationDefinitions {
 public:
     static Result<std::shared_ptr<const ConfigurationDefinitions>> create(std::vector<ConfiguredPlugin> plugins);
+    /** @brief 以完整新定义替换已知项，返回新的校验来源；原目录不变，未改项共享同一不可变节点。 */
+    Result<std::shared_ptr<const ConfigurationDefinitions>> replacing(std::vector<ConfiguredPlugin> plugins) const;
     ConfigurationDefinitions(const ConfigurationDefinitions&) = delete;
     ConfigurationDefinitions& operator=(const ConfigurationDefinitions&) = delete;
     Result<ValidatedCandidate> validate(ParsedConfiguration source) const;

@@ -1,9 +1,10 @@
 /** @file store.cpp
  * @brief owner 队列维护目标/历史保存状态，失败停止后续写入，投递阻断只跨线程终结 Promise。
  */
-#include <cordis/loader/store.hpp>
+#include "target_commit_p.hpp"
 #include <algorithm>
 #include <atomic>
+#include <cordis/loader/store.hpp>
 #include <deque>
 #include <exception>
 #include <limits>
@@ -92,6 +93,7 @@ struct StoreControl : std::enable_shared_from_this<StoreControl> {
     std::shared_ptr<SaveWork> active;
     bool dirty = false, closing = false, closed = false, finalFlush = false;
     bool scheduled = false, pumping = false, requested = false;
+    bool targetSealed = false;
     /** @brief 诊断允许 scheduler 停止后读取，但任何方法仍须在 owner 调用。 */
     Result<void> thread() const
     {
@@ -104,6 +106,8 @@ struct StoreControl : std::enable_shared_from_this<StoreControl> {
         auto checked = thread();
         if (!checked.hasValue()) return checked;
         if (closing) return Result<void>::failure(storeError(ErrorCode::ContextClosing, "store closing"));
+        if (targetSealed)
+            return Result<void>::failure(storeError(ErrorCode::ConfigConflict, "target commit in progress"));
         if (delivery->blocked.load() || !scheduler->isOpen()) return Result<void>::failure(storeError(ErrorCode::SchedulerClosed, "store delivery unavailable"));
         return Result<void>::success();
     }
@@ -256,6 +260,47 @@ struct StoreControl : std::enable_shared_from_this<StoreControl> {
         catch (...) { complete(work, Result<ConfigurationFileCommit>::failure(storeError(ErrorCode::ConfigIo, "writer threw"))); }
     }
 };
+Result<std::unique_ptr<StoreTargetSlot>>
+TargetCommitAccess::prepareStore(ConfigurationStore& facade, std::shared_ptr<const ValidatedCandidate> target,
+                                 std::uint64_t expected)
+{
+    using Output = Result<std::unique_ptr<StoreTargetSlot>>;
+    const auto state = facade.control_;
+    auto admitted = state->business();
+    if (!admitted.hasValue())
+        return Output::failure(admitted.error());
+    if (!target || !target->source().isValid() || state->desiredRevision != expected ||
+        expected == std::numeric_limits<std::uint64_t>::max())
+        return Output::failure(storeError(ErrorCode::ConfigConflict, "store target revision changed or exhausted"));
+    auto slot = std::make_unique<StoreTargetSlot>();
+    slot->owner = state;
+    slot->scheduler = state->scheduler;
+    slot->baseline = state->desired;
+    slot->target = std::move(target);
+    slot->previous = expected;
+    slot->thread = std::this_thread::get_id();
+    state->targetSealed = true;
+    return Output::success(std::move(slot));
+}
+StoreTargetSlot::~StoreTargetSlot()
+{
+    if (owner)
+        owner->targetSealed = false;
+}
+bool StoreTargetSlot::ready() const noexcept
+{
+    return owner && thread == std::this_thread::get_id() && !published && owner->targetSealed && !owner->closing &&
+           !owner->delivery->blocked.load() && owner->desiredRevision == previous && owner->desired == baseline;
+}
+void StoreTargetSlot::publish() noexcept
+{
+    if (published)
+        return;
+    owner->desired.swap(target);
+    owner->desiredRevision = previous + 1;
+    owner->dirty = true;
+    published = true;
+}
 } // namespace cordis::loader::detail
 
 namespace cordis::loader {

@@ -144,7 +144,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     std::shared_ptr<Kernel> kernel;
     std::shared_ptr<const ConfigurationDefinitions> definitions;
     const auto& plugins() const { return definitions->data_->entries; }
-    const ConfiguredPlugin& plugin(const std::string& id) const { return plugins().at(id); }
+    const ConfiguredPlugin& plugin(const std::string& id) const { return *plugins().at(id); }
     std::map<std::string, RealmId> realms;
     std::map<std::string, KernelRecord> records;
     std::shared_ptr<KernelDelivery> delivery = std::make_shared<KernelDelivery>();
@@ -416,7 +416,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
                     return Result<void>::failure(
                         driverError(ErrorCode::ConfigInvalid, "unknown host realm alias", entry.first));
             auto view = realmMap(entry.second);
-            for (const auto& output : plugin->second.runtime.outputs())
+            for (const auto& output : plugin->second->runtime.outputs())
                 if (!kernel->services().ownsRealm(view.resolve(output.key).realm).value())
                     return Result<void>::failure(
                         driverError(ErrorCode::ConfigInvalid, "output uses foreign realm", entry.first));
@@ -427,7 +427,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
             auto typed = requirements(entry.second, effective->second, entry.first);
             if (!typed.hasValue())
                 return Result<void>::failure(typed.error());
-            const auto limit = plugin->second.maximumDependencies;
+            const auto limit = plugin->second->maximumDependencies;
             if (limit && typed.value().size() > limit)
                 return Result<void>::failure(
                     driverError(ErrorCode::ConfigInvalid, "plugin dependency budget exceeded", entry.first));
@@ -436,7 +436,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
                     return Result<void>::failure(
                         driverError(ErrorCode::ConfigInvalid, "dependency uses foreign realm", entry.first));
             if (!entry.second.effectiveDisabled) {
-                const auto& gate = plugin->second.available;
+                const auto& gate = plugin->second->available;
                 if (gate) {
                     try {
                         auto ready = gate();
@@ -871,7 +871,7 @@ KernelReconcileDriver::KernelReconcileDriver(std::shared_ptr<IScheduler> schedul
     control_->definitions = std::move(definitions);
     for (const auto& entry : control_->plugins())
         if (std::none_of(snapshot.value().names.begin(), snapshot.value().names.end(),
-                         [&](const auto& name) { return name.id == entry.second.runtime.id(); }))
+                         [&](const auto& name) { return name.id == entry.second->runtime.id(); }))
             throw std::invalid_argument("foreign kernel runtime");
     for (const auto& realm : realms)
         if (realm.first.empty() || !control_->kernel->services().ownsRealm(realm.second).value())

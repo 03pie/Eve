@@ -85,7 +85,10 @@ struct CoordinatorSnapshot {
     std::vector<RunningEntry> running;
     std::optional<ErrorInfo> runningError;
 };
-namespace detail { struct CoordinatorControl; }
+namespace detail {
+struct CoordinatorControl;
+struct TargetCommitAccess;
+} // namespace detail
 /** @brief 同时最多一个在途动作和一个最新待执行目标；须在关闭 scheduler 前显式 close。 */
 class ConfigurationCoordinator {
 public:
@@ -104,6 +107,7 @@ public:
     /** @brief 同步关门并优先请求驱动停止，同时等待在途回执和真实关闭证据。 */
     Task<CleanupReport> close();
 private:
+    friend struct detail::TargetCommitAccess;
     std::shared_ptr<detail::CoordinatorControl> control_;
 };
 } // namespace cordis::loader

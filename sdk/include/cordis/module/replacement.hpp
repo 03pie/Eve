@@ -7,9 +7,13 @@
 #include <string>
 #include <utility>
 
+namespace cordis {
+class ReplacementScope;
+}
 namespace cordis::module {
 namespace detail {
 struct ReplacementReservationControl;
+struct ReplacementAccess;
 }
 /** @brief 预约的历史值，不授予权限或承诺读取后仍被占用。 */
 struct ModuleReplacementSnapshot {
@@ -29,10 +33,13 @@ public:
     ReplacementReservation& operator=(ReplacementReservation&& other) noexcept;
     ~ReplacementReservation();
     Result<ModuleReplacementSnapshot> snapshot() const;
+    /** @brief 候选真实清理后仅向原 Core 作用域授权旧代重建，不解除预约或表示恢复完成。 */
+    Result<void> authorizeRecovery(const ReplacementScope& scope) const;
     void reset() noexcept;
 
 private:
     friend class ModuleManager;
+    friend struct detail::ReplacementAccess;
     explicit ReplacementReservation(std::shared_ptr<detail::ReplacementReservationControl> control)
         : control_(std::move(control))
     {

@@ -3,6 +3,7 @@
  */
 #pragma once
 #include "abi_p.hpp"
+#include "instance_origin_p.hpp"
 #include "native_source_p.hpp"
 #include "request_p.hpp"
 #include <cordis/module/native.hpp>
@@ -48,7 +49,7 @@ struct NativeModuleControl : std::enable_shared_from_this<NativeModuleControl> {
 };
 struct NativeInstanceControl : std::enable_shared_from_this<NativeInstanceControl> {
     NativeInstanceControl(std::shared_ptr<NativeModuleControl> module, std::shared_ptr<IScheduler> target,
-                          std::string plugin, InstanceId id, Epoch activation, ModuleLease lease)
+                          std::string plugin, InstanceId id, Epoch activation, InstanceOriginLease lease)
         : root(std::move(module)), channel(std::move(target), root->source.ledger, id, activation),
           pluginId(std::move(plugin)), instance(id), epoch(activation), instanceLease(std::move(lease))
     {
@@ -73,7 +74,7 @@ struct NativeInstanceControl : std::enable_shared_from_this<NativeInstanceContro
     std::size_t hostCalls = 0, logBytes = 0;
     std::vector<NativeLogRecord> logs;
     std::optional<ErrorInfo> failure;
-    ModuleLease instanceLease;
+    InstanceOriginLease instanceLease;
     Promise<void> started, callbacksEmpty;
     Promise<CleanupReport> stopped;
     bool ownerThread() const { return root->ownerThread(); }

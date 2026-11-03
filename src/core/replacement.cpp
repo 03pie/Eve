@@ -18,8 +18,8 @@ ErrorInfo failure(ErrorCode code, const char* message, InstanceId instance = {})
 }
 } // namespace
 
-Result<detail::ReplacementSelection>
-detail::KernelControl::selectReplacement(const std::vector<RuntimeId>& requested) const
+Result<detail::ReplacementSelection> detail::KernelControl::selectReplacement(const std::vector<RuntimeId>& requested,
+                                                                              bool captureInputs) const
 {
     using Output = Result<ReplacementSelection>;
     if (!scheduler_->isCurrentThread())
@@ -187,9 +187,21 @@ detail::KernelControl::selectReplacement(const std::vector<RuntimeId>& requested
         return Output::failure(
             failure(ErrorCode::DependencyCycle, "replacement closure has a service/ownership cycle"));
     result.startOrder.assign(result.stopOrder.rbegin(), result.stopOrder.rend());
-    ReplacementSelection selection{std::move(result), {}, {}};
+    ReplacementSelection selection{std::move(result), {}, {}, {}};
     for (const auto id : affected)
         selection.instances.emplace(id, handles.at(id));
+    if (captureInputs) {
+        selection.inputs.reserve(selection.closure.members.size());
+        for (const auto& member : selection.closure.members) {
+            auto input = handles.at(member.instance).captureReplacementInput(member.parent);
+            const auto definition = std::find_if(runtimes_.begin(), runtimes_.end(), [&](const auto& entry) {
+                return entry.second.id() == member.runtime;
+            });
+            if (definition != runtimes_.end())
+                input.factory = definition->second;
+            selection.inputs.push_back(std::move(input));
+        }
+    }
     for (const auto& output : providers)
         if (std::any_of(output.second.begin(), output.second.end(),
                         [&](InstanceId id) { return affected.count(id) != 0; }))

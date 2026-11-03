@@ -13,7 +13,7 @@ bool visiblePublication(const std::shared_ptr<PublicationControl>& binding,
 }
 bool availableBinding(const BindingControl& binding, const std::shared_ptr<PublicationControl>& viewer, bool cleanup)
 {
-    if (!cleanup && !replacementAllowsBusiness(binding.replacement))
+    if (!cleanup && !replacementAllowsBusiness(binding.replacement, binding.publication))
         return false;
     if (cleanup && binding.state == BindingState::Retiring)
         return true;
@@ -22,6 +22,41 @@ bool availableBinding(const BindingControl& binding, const std::shared_ptr<Publi
     return visiblePublication(binding.publication, viewer) &&
            (binding.state == BindingState::Published ||
             (binding.state == BindingState::Held && binding.publication == viewer));
+}
+Result<PreparedPublication> preparePublication(const std::shared_ptr<PublicationControl>& control)
+{
+    using Output = Result<PreparedPublication>;
+    auto registry = control->registry.lock();
+    if (control->state != PublicationState::Open || !registry || control->members.empty())
+        return Output::failure(makeError(ErrorCode::InvalidArgument, "publication group is aborted, empty or expired"));
+    for (const auto& member : control->members) {
+        auto ready = member.second.ready();
+        if (!ready.hasValue()) {
+            auto error = makeError(ErrorCode::ProvisionIncomplete, "publication member is not ready");
+            error.instance = member.first;
+            error.causes.push_back(ready.error());
+            return Output::failure(std::move(error));
+        }
+    }
+    std::vector<std::shared_ptr<BindingControl>> bindings;
+    for (const auto& entry : registry->bindings)
+        if (entry.second->publication == control) {
+            if (entry.second->state != BindingState::Held || !control->members.count(entry.second->provider) ||
+                entry.second->deliveryBlocked.load())
+                return Output::failure(
+                    makeError(ErrorCode::ProvisionIncomplete, "publication contains unfinished or unowned output"));
+            bindings.push_back(entry.second);
+        }
+    return Output::success({control, std::move(registry), std::move(bindings)});
+}
+void applyPublication(const std::shared_ptr<PublicationControl>& control,
+                      const std::vector<std::shared_ptr<BindingControl>>& bindings) noexcept
+{
+    for (const auto& binding : bindings)
+        binding->state = BindingState::Published;
+    control->state = PublicationState::Published;
+    control->notifying = true;
+    control->deliveryBlocked = true;
 }
 } // namespace cordis::detail
 
@@ -88,34 +123,11 @@ Result<void> PublicationGroup::commit() const
                 makeError(ErrorCode::SchedulerClosed, "publication notification delivery is pending or blocked"));
         return Result<void>::success();
     }
-    auto registry = control->registry.lock();
-    if (control->state != PublicationState::Open || !registry || control->members.empty())
-        return Result<void>::failure(
-            makeError(ErrorCode::InvalidArgument, "publication group is aborted, empty or expired"));
-    for (const auto& member : control->members) {
-        auto ready = member.second.ready();
-        if (!ready.hasValue()) {
-            auto error = makeError(ErrorCode::ProvisionIncomplete, "publication member is not ready");
-            error.instance = member.first;
-            error.causes.push_back(ready.error());
-            return Result<void>::failure(std::move(error));
-        }
-    }
-    std::vector<std::shared_ptr<detail::BindingControl>> bindings;
-    for (const auto& entry : registry->bindings)
-        if (entry.second->publication == control) {
-            if (entry.second->state != BindingState::Held || !control->members.count(entry.second->provider) ||
-                entry.second->deliveryBlocked.load())
-                return Result<void>::failure(
-                    makeError(ErrorCode::ProvisionIncomplete, "publication contains unfinished or unowned output"));
-            bindings.push_back(entry.second);
-        }
-    // 发布循环只改变已验证的宿主状态，不分配或调用外部代码。
-    for (const auto& binding : bindings)
-        binding->state = BindingState::Published;
-    control->state = PublicationState::Published;
-    control->notifying = true;
-    control->deliveryBlocked = true;
+    auto batch = detail::preparePublication(control);
+    if (!batch.hasValue())
+        return Result<void>::failure(batch.error());
+    const auto registry = batch.value().registry;
+    detail::applyPublication(batch.value().control, batch.value().bindings);
     struct Delivery {
         detail::PublicationControl& state;
         ~Delivery() { state.notifying = false; }

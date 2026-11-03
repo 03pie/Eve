@@ -11,6 +11,7 @@ struct ReplacementSelection {
     ReplacementClosure closure;
     std::vector<ServiceKey> outputs;
     std::map<InstanceId, Instance> instances;
+    std::vector<ReplacementInput> inputs;
 };
 struct KernelControl : std::enable_shared_from_this<KernelControl> {
     explicit KernelControl(std::shared_ptr<IScheduler> scheduler);
@@ -30,7 +31,8 @@ struct KernelControl : std::enable_shared_from_this<KernelControl> {
     Result<KernelSnapshot> snapshot();
     Result<Instance> findInstance(InstanceId id) const;
     Result<ReplacementClosure> replacementClosure(const std::vector<RuntimeId>& requested) const;
-    Result<ReplacementSelection> selectReplacement(const std::vector<RuntimeId>& requested) const;
+    Result<ReplacementSelection> selectReplacement(const std::vector<RuntimeId>& requested,
+                                                   bool captureInputs = false) const;
     Result<ReplacementScope> reserveReplacement(const std::vector<RuntimeId>& requested);
     Result<std::vector<ReplacementScopeSnapshot>> replacements() const;
     Task<void> whenReplacementReleased(OperationId operation) const;

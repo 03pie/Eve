@@ -2,6 +2,7 @@
  * @brief 以 owner 队列协调目标接受、最新目标替代及驱动清理，投递故障只在原子门禁和 Promise 上发布。
  */
 #include "definition_driver_p.hpp"
+#include "target_commit_p.hpp"
 #include <atomic>
 #include <cordis/loader/coordinator.hpp>
 #include <exception>
@@ -68,6 +69,7 @@ struct CoordinatorControl : std::enable_shared_from_this<CoordinatorControl> {
     std::shared_ptr<Work> active, pending;
     std::uint64_t revision = 0;
     bool closing = false, unsafe = false, scheduled = false, pumping = false, requested = false;
+    bool targetSealed = false;
     bool driverClosing = false, driverDone = false, closePublished = false;
     std::size_t driverDepth = 0;
     std::optional<CleanupReport> cleanup;
@@ -92,6 +94,8 @@ struct CoordinatorControl : std::enable_shared_from_this<CoordinatorControl> {
         auto checked = thread();
         if (!checked.hasValue()) return checked;
         if (closing) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "coordinator closing"));
+        if (targetSealed)
+            return Result<void>::failure(makeError(ErrorCode::ConfigConflict, "target commit in progress"));
         if (delivery->blocked.load() || !scheduler->isOpen()) return Result<void>::failure(makeError(ErrorCode::SchedulerClosed, "coordinator delivery unavailable"));
         if (unsafe) return Result<void>::failure(makeError(ErrorCode::CleanupFailed, "driver did not establish a safe checkpoint"));
         return Result<void>::success();
@@ -116,6 +120,8 @@ struct CoordinatorControl : std::enable_shared_from_this<CoordinatorControl> {
     {
         if (closePublished || delivery->blocked.load()) return;
         requested = true;
+        if (targetSealed)
+            return;
         if (scheduled || pumping || driverDepth != 0) return;
         scheduled = true;
         auto self = shared_from_this();
@@ -283,6 +289,52 @@ struct CoordinatorControl : std::enable_shared_from_this<CoordinatorControl> {
         } catch (...) { completeStep(work, Result<StepReport>::failure(makeError(ErrorCode::CallbackFailed, "driver apply threw"))); }
     }
 };
+Result<std::unique_ptr<CoordinatorTargetSlot>>
+TargetCommitAccess::prepareCoordinator(ConfigurationCoordinator& facade,
+                                       std::shared_ptr<const ValidatedCandidate> target, std::uint64_t expected)
+{
+    using Output = Result<std::unique_ptr<CoordinatorTargetSlot>>;
+    const auto state = facade.control_;
+    auto admitted = state->business();
+    if (!admitted.hasValue())
+        return Output::failure(admitted.error());
+    if (!target || !target->source().isValid() || state->revision != expected ||
+        expected == std::numeric_limits<std::uint64_t>::max() || state->active || state->pending || state->pumping ||
+        state->driverDepth)
+        return Output::failure(makeError(ErrorCode::ConfigConflict, "target commit requires an idle current revision"));
+    auto slot = std::make_unique<CoordinatorTargetSlot>();
+    slot->owner = state;
+    slot->scheduler = state->scheduler;
+    slot->baseline = state->desired;
+    slot->target = std::move(target);
+    slot->previous = expected;
+    slot->thread = std::this_thread::get_id();
+    state->targetSealed = true;
+    return Output::success(std::move(slot));
+}
+CoordinatorTargetSlot::~CoordinatorTargetSlot()
+{
+    if (!owner)
+        return;
+    owner->targetSealed = false;
+    if (owner->requested)
+        owner->schedule();
+}
+bool CoordinatorTargetSlot::ready() const noexcept
+{
+    return owner && thread == std::this_thread::get_id() && !published && owner->targetSealed && !owner->closing &&
+           !owner->unsafe && !owner->delivery->blocked.load() && owner->revision == previous &&
+           owner->desired == baseline && !owner->active && !owner->pending && !owner->pumping &&
+           owner->driverDepth == 0;
+}
+void CoordinatorTargetSlot::publish() noexcept
+{
+    if (published)
+        return;
+    owner->desired.swap(target);
+    owner->revision = previous + 1;
+    published = true;
+}
 } // namespace cordis::loader::detail
 
 namespace cordis::loader {

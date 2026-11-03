@@ -652,10 +652,10 @@ Result<NativeInstance> NativeModule::createBound(std::string plugin, std::string
                 return Result<NativeInstance>::failure(
                     hostError(ErrorCode::InvalidArgument, "native activation identity already exists"));
     }
-    auto admission = admitGeneration(root->source.generation);
+    auto admission = admitGeneration(root->source.generation, context);
     if (!admission.hasValue())
         return Result<NativeInstance>::failure(admission.error());
-    auto lease = root->source.ledger.acquire(ResourceKind::Instance, plugin);
+    auto lease = retainInstanceOrigin(root->source.generation, plugin, plugin, id, epoch, context);
     if (!lease.hasValue())
         return Result<NativeInstance>::failure(lease.error());
     auto self = std::make_shared<NativeInstanceControl>(root, scheduler, std::move(plugin), id, epoch,
@@ -935,15 +935,27 @@ Task<CleanupReport> NativeModule::close() const
         std::lock_guard<std::mutex> lock(root->mutex);
         if (root->closing)
             return root->stopped.task();
-        for (const auto& pair : root->instances)
-            if (pair.second->managed && !pair.second->managedClosing)
-                return failedCleanupTask(hostError(ErrorCode::ContextClosing, "close owning Core instances first"));
-        root->closing = true;
-        for (const auto& pair : root->instances)
-            instances.push_back(pair.second);
-        root->waiting = instances.size();
     }
-    recordNativePhase(root->source.generation, ModuleState::Draining);
+    {
+        auto admission = admitGenerationLifecycle(root->source.generation);
+        if (!admission.hasValue())
+            return failedCleanupTask(admission.error());
+        {
+            std::lock_guard<std::mutex> lock(root->mutex);
+            if (root->closing)
+                return root->stopped.task();
+            for (const auto& pair : root->instances)
+                if (pair.second->managed && !pair.second->managedClosing)
+                    return failedCleanupTask(hostError(ErrorCode::ContextClosing, "close owning Core instances first"));
+            instances.reserve(root->instances.size());
+            for (const auto& pair : root->instances)
+                instances.push_back(pair.second);
+            root->closing = true;
+            root->waiting = instances.size();
+        }
+        // 发布关闭状态前一直持有准入；退出后才执行真实实例清理及其通知。
+        recordNativePhase(root->source.generation, ModuleState::Draining);
+    }
     if (instances.empty())
         root->finish();
     for (const auto& instance : instances) {

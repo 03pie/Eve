@@ -365,7 +365,7 @@ ServiceRegistry::commitErased(const ServiceKey& key, std::type_index type, const
 {
     using Output = Result<std::shared_ptr<detail::CommittedLease>>;
     if (scheduler != control_->scheduler) return Output::failure(makeError(ErrorCode::InvalidArgument, "consumer requires same scheduler"));
-    auto admitted = detail::replacementOutputAccess(control_, key);
+    auto admitted = detail::replacementOutputAccess(control_, key, publication_);
     if (!admitted.hasValue())
         return Output::failure(admitted.error());
     auto found = findErased(key, type);
@@ -424,7 +424,7 @@ Result<ProviderHandle> ServiceRegistry::stageErased(ServiceKey key, std::shared_
     auto access = publicationAccess();
     if (!access.hasValue())
         return Result<ProviderHandle>::failure(access.error());
-    auto admitted = detail::replacementOutputAccess(control_, key);
+    auto admitted = detail::replacementOutputAccess(control_, key, publication_);
     if (!admitted.hasValue())
         return Result<ProviderHandle>::failure(admitted.error());
     if (!object || key.name.empty() || key.interfaceMajor == 0 || control_->realms.count(key.realm) == 0)
@@ -449,6 +449,8 @@ Result<ProviderHandle> ServiceRegistry::stageErased(ServiceKey key, std::shared_
     binding->type = type;
     binding->metadata = std::move(metadata);
     binding->publication = publication_;
+    if (publication_)
+        binding->replacement = publication_->replacement;
     control_->bindings.emplace(binding->key, binding);
     control_->pin = control_;
     return Result<ProviderHandle>::success(ProviderHandle(std::move(binding)));

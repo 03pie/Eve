@@ -46,7 +46,25 @@ struct Managed : Services {
         }
         CHECK(closed.isReady() && closed.tryResult()->value().quiescent);
         CHECK(kernel->services().snapshot().value().empty());
-        finish();
+        // 本场景仍持有 Kernel、Runtime 或 Driver 定义，关闭业务不能伪报这些执行引用已释放。
+        auto definitions = state().resources.records;
+        definitions.erase(std::remove_if(definitions.begin(), definitions.end(),
+                                         [](const auto& record) {
+                                             return record.kind != ResourceKind::ExternalHandle ||
+                                                    record.label.rfind("runtime.definition.", 0) != 0;
+                                         }),
+                          definitions.end());
+        CHECK(definitions.size() >= 2 && manager.runtimeOrigin(provider.id()).value() &&
+              manager.runtimeOrigin(consumer.id()).value());
+        auto moduleClosed = module.close();
+        pump();
+        CHECK(moduleClosed.isReady() && moduleClosed.tryResult()->value().quiescent);
+        const auto remaining = state().resources.records;
+        CHECK(remaining.size() == definitions.size());
+        for (std::size_t i = 0; i != remaining.size(); ++i)
+            CHECK(remaining[i].id == definitions[i].id && remaining[i].kind == definitions[i].kind &&
+                  remaining[i].label == definitions[i].label);
+        CHECK(!manager.drain(generation).hasValue() && state().nativePinned);
     }
 };
 void flow()

@@ -76,7 +76,7 @@ Result<std::shared_ptr<const detail::DefinitionsData>> prepare(std::vector<Confi
             }
         }
         data->modules.emplace(id, plugin.configuration.module);
-        data->entries.emplace(id, std::move(plugin));
+        data->entries.emplace(id, std::make_shared<const ConfiguredPlugin>(std::move(plugin)));
     }
     auto checked = detail::checkModuleCatalog(data->modules);
     if (!checked.hasValue())
@@ -93,6 +93,34 @@ ConfigurationDefinitions::create(std::vector<ConfiguredPlugin> plugins)
         return Output::failure(data.error());
     return Output::success(
         std::shared_ptr<const ConfigurationDefinitions>(new ConfigurationDefinitions(std::move(data).value())));
+}
+Result<std::shared_ptr<const ConfigurationDefinitions>>
+ConfigurationDefinitions::replacing(std::vector<ConfiguredPlugin> plugins) const
+{
+    using Output = Result<std::shared_ptr<const ConfigurationDefinitions>>;
+    const auto base = data_;
+    if (!base->identity || plugins.empty())
+        return Output::failure(error("replacement requires complete definitions and at least one plugin"));
+    std::set<std::string> changed;
+    for (const auto& plugin : plugins)
+        if (!base->entries.count(plugin.configuration.id) || !changed.insert(plugin.configuration.id).second)
+            return Output::failure(error("replacement contains an unknown or duplicate plugin"));
+    auto updates = prepare(std::move(plugins), true);
+    if (!updates.hasValue())
+        return Output::failure(updates.error());
+    auto next = std::make_shared<detail::DefinitionsData>();
+    next->entries = base->entries;
+    next->modules = base->modules;
+    next->identity = updates.value()->identity;
+    for (const auto& entry : updates.value()->entries) {
+        next->entries.insert_or_assign(entry.first, entry.second);
+        next->modules.insert_or_assign(entry.first, entry.second->configuration.module);
+    }
+    auto modules = detail::checkModuleCatalog(next->modules);
+    if (!modules.hasValue())
+        return Output::failure(modules.error());
+    return Output::success(
+        std::shared_ptr<const ConfigurationDefinitions>(new ConfigurationDefinitions(std::move(next))));
 }
 std::shared_ptr<const ConfigurationDefinitions> ConfigurationDefinitions::runtimeOnly(std::vector<KernelPlugin> plugins)
 {
@@ -115,7 +143,7 @@ Result<ValidatedCandidate> ConfigurationDefinitions::validate(ParsedConfiguratio
         return Result<ValidatedCandidate>::failure(error("runtime-only definitions cannot validate configuration"));
     std::vector<PluginDefinition> definitions;
     for (const auto& entry : data->entries)
-        definitions.push_back(entry.second.configuration);
+        definitions.push_back(entry.second->configuration);
     auto result = validateCandidate(std::move(source), std::move(definitions));
     if (result.hasValue())
         result.value().definitions_ = data->identity;
@@ -136,6 +164,6 @@ Result<PluginModule> ConfigurationDefinitions::module(const std::string& plugin)
 {
     const auto at = data_->entries.find(plugin);
     return at == data_->entries.end() ? Result<PluginModule>::failure(error("unknown plugin definition"))
-                                      : Result<PluginModule>::success(at->second.configuration.module);
+                                      : Result<PluginModule>::success(at->second->configuration.module);
 }
 } // namespace cordis::loader

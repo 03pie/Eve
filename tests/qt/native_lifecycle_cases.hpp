@@ -124,55 +124,59 @@ void pendingStop()
 void captured(bool stale, bool failed)
 {
     Life s(std::make_shared<QtGate>());
-    Kernel kernel(s.gate);
-    auto runtime = s.module.runtime({"org.cordis.plugin", {}, {}}).value();
-    CHECK(kernel.registerRuntime("capture", runtime).hasValue());
-    auto instance = kernel.mount(runtime, failed ? "\"capture-fail\"" : "\"capture\"").value();
-    auto ready = instance.ready();
-    until([&] { return ready.isReady(); });
-    CHECK(ready.tryResult()->hasValue());
-    s.gate->capture = true;
-    CHECK(foreign(s.ledger, [&] { return s.queue(); }) == CORDIS_PENDING && s.gate->retained);
-    CHECK(s.read(0) == 0 && s.read(1) == 0 && s.read(9) == 1);
-    if (!stale) {
-        until([&] { return s.read(2) == 1; });
-        CHECK(s.read(0) == 1 && static_cast<CordisStatus>(s.read(3)) == CORDIS_OK);
+    {
+        Kernel kernel(s.gate);
+        auto runtime = s.module.runtime({"org.cordis.plugin", {}, {}}).value();
+        CHECK(kernel.registerRuntime("capture", runtime).hasValue());
+        auto instance = kernel.mount(runtime, failed ? "\"capture-fail\"" : "\"capture\"").value();
+        auto ready = instance.ready();
+        until([&] { return ready.isReady(); });
+        CHECK(ready.tryResult()->hasValue());
+        s.gate->capture = true;
+        CHECK(foreign(s.ledger, [&] { return s.queue(); }) == CORDIS_PENDING && s.gate->retained);
+        CHECK(s.read(0) == 0 && s.read(1) == 0 && s.read(9) == 1);
+        if (!stale) {
+            until([&] { return s.read(2) == 1; });
+            CHECK(s.read(0) == 1 && static_cast<CordisStatus>(s.read(3)) == CORDIS_OK);
+        }
+        auto stopped = instance.stop();
+        until([&] { return s.read(8) == 1; });
+        CHECK(s.read(0) == (stale ? 0u : 1u) && s.read(2) == 1);
+        CHECK(static_cast<CordisStatus>(s.read(3)) == (stale ? CORDIS_E_CANCELLED : CORDIS_OK));
+        CHECK(s.read(1) == (failed ? 0u : 1u) && s.read(9) == (failed ? 1u : 0u));
+        CHECK(s.read(7) == 0 && !s.manager.drain(s.generation).hasValue());
+        const auto records = s.state().resources.records;
+        CHECK(std::any_of(records.begin(), records.end(),
+                          [](const auto& item) { return item.kind == ResourceKind::Callback; }));
+        CHECK(std::any_of(records.begin(), records.end(),
+                          [](const auto& item) { return item.kind == ResourceKind::QueuePayload; }));
+        const auto logs = s.module.snapshot().value().instances.at(0).logs;
+        CHECK(std::count_if(logs.begin(), logs.end(),
+                            [](const auto& item) { return item.text == "DLL capture destroyed"; }) == (failed ? 0 : 1));
+        if (!failed)
+            CHECK(!stopped.isReady());
+        // The retained host task copy is released on another thread; its final retirement must return to Qt owner.
+        std::thread releaser([&] { s.gate->retained.reset(); });
+        releaser.join();
+        until([&] { return stopped.isReady(); });
+        CHECK(stopped.tryResult()->value().quiescent == !failed && s.read(7) == (failed ? 0u : 1u));
+        auto kernelClosed = kernel.close();
+        until([&] { return kernelClosed.isReady(); });
+        CHECK(kernelClosed.tryResult()->value().quiescent == !failed);
+        if (failed) {
+            auto closed = s.module.close();
+            until([&] { return closed.isReady(); });
+            CHECK(!closed.tryResult()->value().quiescent && s.module.snapshot().value().faulted);
+            CHECK(s.read(1) == 0 && s.read(9) == 1 && !s.manager.drain(s.generation).hasValue());
+            CHECK(s.state().nativePinned && !s.state().resources.records.empty());
+            s.gate->finish();
+        } else {
+            CHECK(s.read(1) == 1 && kernel.services().snapshot().value().empty());
+        }
     }
-    auto stopped = instance.stop();
-    until([&] { return s.read(8) == 1; });
-    CHECK(s.read(0) == (stale ? 0u : 1u) && s.read(2) == 1);
-    CHECK(static_cast<CordisStatus>(s.read(3)) == (stale ? CORDIS_E_CANCELLED : CORDIS_OK));
-    CHECK(s.read(1) == (failed ? 0u : 1u) && s.read(9) == (failed ? 1u : 0u));
-    CHECK(s.read(7) == 0 && !s.manager.drain(s.generation).hasValue());
-    const auto records = s.state().resources.records;
-    CHECK(std::any_of(records.begin(), records.end(),
-                      [](const auto& item) { return item.kind == ResourceKind::Callback; }));
-    CHECK(std::any_of(records.begin(), records.end(),
-                      [](const auto& item) { return item.kind == ResourceKind::QueuePayload; }));
-    const auto logs = s.module.snapshot().value().instances.at(0).logs;
-    CHECK(std::count_if(logs.begin(), logs.end(),
-                        [](const auto& item) { return item.text == "DLL capture destroyed"; }) == (failed ? 0 : 1));
+    // Kernel::close 终结实例；先释放仍持有工厂的登记和局部定义，再证明整个模块引用排空。
     if (!failed)
-        CHECK(!stopped.isReady());
-    // The retained host task copy is released on another thread; its final retirement must return to Qt owner.
-    std::thread releaser([&] { s.gate->retained.reset(); });
-    releaser.join();
-    until([&] { return stopped.isReady(); });
-    CHECK(stopped.tryResult()->value().quiescent == !failed && s.read(7) == (failed ? 0u : 1u));
-    auto kernelClosed = kernel.close();
-    until([&] { return kernelClosed.isReady(); });
-    CHECK(kernelClosed.tryResult()->value().quiescent == !failed);
-    if (failed) {
-        auto closed = s.module.close();
-        until([&] { return closed.isReady(); });
-        CHECK(!closed.tryResult()->value().quiescent && s.module.snapshot().value().faulted);
-        CHECK(s.read(1) == 0 && s.read(9) == 1 && !s.manager.drain(s.generation).hasValue());
-        CHECK(s.state().nativePinned && !s.state().resources.records.empty());
-        s.gate->finish();
-    } else {
-        CHECK(s.read(1) == 1 && kernel.services().snapshot().value().empty());
         s.end();
-    }
 }
 // S06 explicitly exercises the internal production request boundary. NativeModule exposes no public stop-cancel API.
 inline RequestChannel* stopChannel = nullptr;

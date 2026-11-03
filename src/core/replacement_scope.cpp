@@ -65,17 +65,34 @@ void abandonScope(std::shared_ptr<ReplacementScopeControl> control) noexcept
 }
 } // namespace
 
-bool replacementAllowsActivation(const std::weak_ptr<ReplacementScopeControl>& weak)
+bool ReplacementScopeControl::stageOpen(const std::shared_ptr<PublicationControl>& publication) const noexcept
+{
+    return publication && state == ReplacementScopeState::Staging && ownsStageView(publication) &&
+           publication->replacement.lock().get() == this && publication->state == PublicationState::Open &&
+           !cancelled && !blocked.load() && kernel && !kernel->closing_;
+}
+bool replacementViewAllowsStage(const std::shared_ptr<PublicationControl>& publication)
+{
+    if (!publication || !publication->scheduler->isCurrentThread() || !publication->scheduler->isOpen())
+        return false;
+    const auto owner = publication ? publication->replacement.lock() : nullptr;
+    return owner && owner->stageOpen(publication);
+}
+bool replacementAllowsActivation(const std::weak_ptr<ReplacementScopeControl>& weak,
+                                 const std::shared_ptr<PublicationControl>& publication)
 {
     const auto control = weak.lock();
-    return !control || control->state == ReplacementScopeState::Released;
+    return !control || control->state == ReplacementScopeState::Released ||
+           (replacementViewAllowsStage(publication) && publication->replacement.lock() == control);
 }
-bool replacementAllowsBusiness(const std::weak_ptr<ReplacementScopeControl>& weak)
+bool replacementAllowsBusiness(const std::weak_ptr<ReplacementScopeControl>& weak,
+                               const std::shared_ptr<PublicationControl>& publication)
 {
     const auto control = weak.lock();
     return !control || control->state == ReplacementScopeState::Released ||
            (control->state == ReplacementScopeState::Reserved && !control->cancelled && !control->blocked.load() &&
-            control->kernel && !control->kernel->closing_);
+            control->kernel && !control->kernel->closing_) ||
+           (replacementViewAllowsStage(publication) && publication->replacement.lock() == control);
 }
 Result<void> replacementMutationAccess(const std::weak_ptr<ReplacementScopeControl>& weak)
 {
@@ -85,11 +102,15 @@ Result<void> replacementMutationAccess(const std::weak_ptr<ReplacementScopeContr
                : Result<void>::failure(
                      scopeError(ErrorCode::ConfigConflict, "instance reserved by replacement", control->operation));
 }
-Result<void> replacementOutputAccess(const std::shared_ptr<ServiceRegistryControl>& registry, const ServiceKey& key)
+Result<void> replacementOutputAccess(const std::shared_ptr<ServiceRegistryControl>& registry, const ServiceKey& key,
+                                     const std::shared_ptr<PublicationControl>& publication)
 {
     if (!registry->scheduler->isCurrentThread())
         return Result<void>::failure(scopeError(ErrorCode::WrongThread, "service admission requires owner thread"));
     const auto found = registry->replacementOutputs.find(key);
+    if (found != registry->replacementOutputs.end() && replacementViewAllowsStage(publication) &&
+        publication->replacement.lock()->operation == found->second)
+        return Result<void>::success();
     return found == registry->replacementOutputs.end()
                ? Result<void>::success()
                : Result<void>::failure(
@@ -99,7 +120,7 @@ Result<void> replacementOutputAccess(const std::shared_ptr<ServiceRegistryContro
 Result<ReplacementScope> KernelControl::reserveReplacement(const std::vector<RuntimeId>& requested)
 {
     using Output = Result<ReplacementScope>;
-    auto selected = selectReplacement(requested);
+    auto selected = selectReplacement(requested, true);
     if (!selected.hasValue())
         return Output::failure(selected.error());
     const auto registry = services_->control_;
@@ -111,6 +132,13 @@ Result<ReplacementScope> KernelControl::reserveReplacement(const std::vector<Run
     for (const auto id : selection.closure.runtimes)
         if (auto at = registry->replacementRuntimes.find(id); at != registry->replacementRuntimes.end())
             return conflict(at->second);
+    // 消费者停止后已退出活动图，但它的定义仍是原事务的重建输入。
+    // 只阻止将该定义作为换代目标；不同 realm 的事务仍可共享消费者定义。
+    for (const auto& entry : registry->replacements)
+        for (const auto& member : entry.second->selection.closure.members)
+            if (std::find(selection.closure.runtimes.begin(), selection.closure.runtimes.end(), member.runtime) !=
+                selection.closure.runtimes.end())
+                return conflict(entry.first);
     for (const auto& member : selection.closure.members)
         if (auto at = registry->replacementInstances.find(member.instance); at != registry->replacementInstances.end())
             return conflict(at->second);
@@ -213,6 +241,11 @@ bool ReplacementScopeControl::deliveryBlocked() const
         if (!snapshot.hasValue() || snapshot.value().deliveryBlocked || snapshot.value().resources.deliveryBlocked)
             return true;
     }
+    for (const auto& entry : staged) {
+        const auto snapshot = entry.second.snapshot();
+        if (!snapshot.hasValue() || snapshot.value().deliveryBlocked || snapshot.value().resources.deliveryBlocked)
+            return true;
+    }
     if (kernel)
         for (const auto& entry : kernel->services_->control_->bindings)
             if (entry.second->replacement.lock().get() == this && entry.second->deliveryBlocked.load())
@@ -235,6 +268,9 @@ Result<ReplacementScopeSnapshot> ReplacementScopeControl::snapshot() const
         cancelled,
         {},
         {}};
+    std::set<ServiceKey> claimed(selection.outputs.begin(), selection.outputs.end());
+    claimed.insert(stagedOutputs.begin(), stagedOutputs.end());
+    result.reservedOutputs.assign(claimed.begin(), claimed.end());
     if (auto completed = stopped.task().tryResult()) {
         if (completed->hasValue())
             result.cleanup = completed->value();
@@ -243,6 +279,17 @@ Result<ReplacementScopeSnapshot> ReplacementScopeControl::snapshot() const
     }
     if (unavailable && !result.failure)
         result.failure = scopeError(ErrorCode::SchedulerClosed, "replacement resource delivery blocked", operation);
+    if (staging) {
+        if (auto completed = discarded.task().tryResult()) {
+            if (!completed->hasValue())
+                result.failure = completed->error();
+            else if (!completed->value().quiescent) {
+                result.failure =
+                    scopeError(ErrorCode::CleanupFailed, "candidate cleanup retained resources", operation);
+                result.failure->causes = completed->value().errors;
+            }
+        }
+    }
     if (!result.cleanup && ((state == ReplacementScopeState::Failed && !report.quiescent) ||
                             (cancelled && state == ReplacementScopeState::Released)))
         result.cleanup = report;
@@ -272,7 +319,9 @@ Task<CleanupReport> ReplacementScopeControl::stop()
     if (state == ReplacementScopeState::Released && !stopped.task().isReady())
         return failedStop(scopeError(ErrorCode::OperationCancelled, "replacement released before stop", operation));
     if (state == ReplacementScopeState::Released || cancelled || state == ReplacementScopeState::Stopping ||
-        state == ReplacementScopeState::Stopped || state == ReplacementScopeState::Failed)
+        state == ReplacementScopeState::Stopped || state == ReplacementScopeState::Failed ||
+        state == ReplacementScopeState::Staging || state == ReplacementScopeState::Discarding ||
+        state == ReplacementScopeState::Prepared || state == ReplacementScopeState::Committed)
         return stopped.task();
     auto admitted = check();
     if (!admitted.hasValue())
@@ -350,7 +399,7 @@ Result<void> ReplacementScopeControl::release()
         return Result<void>::failure(
             scopeError(ErrorCode::SchedulerClosed, "replacement resource delivery blocked", operation));
     if (state != ReplacementScopeState::Reserved && state != ReplacementScopeState::Frozen &&
-        state != ReplacementScopeState::Stopped)
+        state != ReplacementScopeState::Stopped && state != ReplacementScopeState::Committed)
         return Result<void>::failure(scopeError(ErrorCode::CleanupFailed, "replacement is not quiescent", operation));
     removeClaims(state != ReplacementScopeState::Stopped);
     if (blocked.load())
@@ -364,21 +413,30 @@ void ReplacementScopeControl::removeClaims(bool resume)
     const auto owner = std::move(kernel);
     const auto registry = owner->services_->control_;
     auto instances = std::move(selection.instances);
+    auto candidates = std::move(staged);
+    const auto publication =
+        staging && staging->control_->state == PublicationState::Published ? staging->control_ : nullptr;
     const auto previous = state;
     state = ReplacementScopeState::Released;
     releasing = true;
     struct Finish {
         ReplacementScopeControl& control;
+        std::shared_ptr<PublicationControl> publication;
         bool completed = false;
         ~Finish()
         {
             if (!completed)
                 control.blocked.store(true);
             control.releasing = false;
+            if (publication) {
+                publication->notifying = false;
+                publication->deliveryBlocked = control.blocked.load();
+            }
         }
-    } finish{*this};
-    for (const auto& entry : instances)
-        entry.second.clearReplacement(self);
+    } finish{*this, publication};
+    for (const auto* group : {&instances, &candidates})
+        for (const auto& entry : *group)
+            entry.second.clearReplacement(self);
     for (const auto& entry : registry->bindings)
         if (entry.second->replacement.lock() == self)
             entry.second->replacement.reset();
@@ -386,11 +444,20 @@ void ReplacementScopeControl::removeClaims(bool resume)
         if (auto at = registry->replacementRuntimes.find(id);
             at != registry->replacementRuntimes.end() && at->second == operation)
             registry->replacementRuntimes.erase(at);
-    for (const auto& entry : instances)
-        if (auto at = registry->replacementInstances.find(entry.first);
-            at != registry->replacementInstances.end() && at->second == operation)
-            registry->replacementInstances.erase(at);
+    for (const auto id : stagedRuntimes)
+        if (auto at = registry->replacementRuntimes.find(id);
+            at != registry->replacementRuntimes.end() && at->second == operation)
+            registry->replacementRuntimes.erase(at);
+    for (const auto* group : {&instances, &candidates})
+        for (const auto& entry : *group)
+            if (auto at = registry->replacementInstances.find(entry.first);
+                at != registry->replacementInstances.end() && at->second == operation)
+                registry->replacementInstances.erase(at);
     for (const auto& key : selection.outputs)
+        if (auto at = registry->replacementOutputs.find(key);
+            at != registry->replacementOutputs.end() && at->second == operation)
+            registry->replacementOutputs.erase(at);
+    for (const auto& key : stagedOutputs)
         if (auto at = registry->replacementOutputs.find(key);
             at != registry->replacementOutputs.end() && at->second == operation)
             registry->replacementOutputs.erase(at);
@@ -401,15 +468,17 @@ void ReplacementScopeControl::removeClaims(bool resume)
     else if (previous == ReplacementScopeState::Reserved || previous == ReplacementScopeState::Frozen)
         stopped.reject(scopeError(ErrorCode::OperationCancelled, "replacement released before stop", operation));
     if (resume)
-        for (const auto& entry : instances)
-            entry.second.resumeReplacement();
+        for (const auto* group : {&instances, &candidates})
+            for (const auto& entry : *group)
+                entry.second.resumeReplacement();
     if (!notifyRegistry(registry))
         blocked.store(true);
-    for (const auto& entry : instances) {
-        auto snapshot = entry.second.snapshot();
-        if (!snapshot.hasValue() || snapshot.value().deliveryBlocked || snapshot.value().resources.deliveryBlocked)
-            blocked.store(true);
-    }
+    for (const auto* group : {&instances, &candidates})
+        for (const auto& entry : *group) {
+            auto snapshot = entry.second.snapshot();
+            if (!snapshot.hasValue() || snapshot.value().deliveryBlocked || snapshot.value().resources.deliveryBlocked)
+                blocked.store(true);
+        }
     finish.completed = true;
 }
 void ReplacementScopeControl::shutdown(bool finished, const CleanupReport& outcome)
@@ -419,6 +488,7 @@ void ReplacementScopeControl::shutdown(bool finished, const CleanupReport& outco
     cancelled = true;
     if (!finished) {
         stopped.reject(scopeError(ErrorCode::OperationCancelled, "replacement cancelled by kernel close", operation));
+        discarded.reject(scopeError(ErrorCode::OperationCancelled, "replacement cancelled by kernel close", operation));
         return;
     }
     report = outcome;
@@ -445,11 +515,18 @@ Result<void>
 ServiceRegistry::replacementMountAccess(const Runtime& runtime, const RealmMap& realms,
                                         const std::vector<ServiceRequirement>& additionalDependencies) const
 {
+    if (!control_->scheduler->isCurrentThread())
+        return Result<void>::failure(makeError(ErrorCode::WrongThread, "mount admission requires owner thread"));
+    if (detail::replacementViewAllowsStage(publication_)) {
+        auto claimed = publication_->replacement.lock()->claimStage(runtime, realms, additionalDependencies);
+        if (!claimed.hasValue())
+            return claimed;
+    }
     auto own = replacementContractAccess(runtime.id(), runtime.requirements(), runtime.outputs(), realms);
     if (!own.hasValue())
         return own;
     for (const auto& dependency : additionalDependencies) {
-        auto allowed = detail::replacementOutputAccess(control_, realms.resolve(dependency.key));
+        auto allowed = detail::replacementOutputAccess(control_, realms.resolve(dependency.key), publication_);
         if (!allowed.hasValue())
             return allowed;
     }
@@ -463,16 +540,18 @@ Result<void> ServiceRegistry::replacementContractAccess(RuntimeId runtime,
     if (!control_->scheduler->isCurrentThread())
         return Result<void>::failure(
             detail::scopeError(ErrorCode::WrongThread, "mount admission requires owner thread"));
-    if (auto at = control_->replacementRuntimes.find(runtime); at != control_->replacementRuntimes.end())
+    if (auto at = control_->replacementRuntimes.find(runtime);
+        at != control_->replacementRuntimes.end() && !(detail::replacementViewAllowsStage(publication_) &&
+                                                       publication_->replacement.lock()->operation == at->second))
         return Result<void>::failure(
             detail::scopeError(ErrorCode::ConfigConflict, "runtime reserved by replacement", at->second));
     for (const auto& output : outputs) {
-        auto allowed = detail::replacementOutputAccess(control_, realms.resolve(output.key));
+        auto allowed = detail::replacementOutputAccess(control_, realms.resolve(output.key), publication_);
         if (!allowed.hasValue())
             return allowed;
     }
     for (const auto& dependency : dependencies) {
-        auto allowed = detail::replacementOutputAccess(control_, realms.resolve(dependency.key));
+        auto allowed = detail::replacementOutputAccess(control_, realms.resolve(dependency.key), publication_);
         if (!allowed.hasValue())
             return allowed;
     }
@@ -496,6 +575,20 @@ Result<ReplacementScopeSnapshot> ReplacementScope::snapshot() const
     return control ? control->snapshot()
                    : Result<ReplacementScopeSnapshot>::failure(
                          detail::scopeError(ErrorCode::InvalidArgument, "replacement scope moved from"));
+}
+Result<std::vector<ReplacementInput>> ReplacementScope::inputs() const
+{
+    using Output = Result<std::vector<ReplacementInput>>;
+    const auto control = control_;
+    if (!control)
+        return Output::failure(detail::scopeError(ErrorCode::InvalidArgument, "replacement scope moved from"));
+    auto admitted = control->check();
+    if (!admitted.hasValue())
+        return Output::failure(admitted.error());
+    if (control->state == ReplacementScopeState::Released)
+        return Output::failure(
+            detail::scopeError(ErrorCode::ContextClosing, "replacement released", control->operation));
+    return Output::success(control->selection.inputs);
 }
 Result<void> ReplacementScope::freeze() const
 {

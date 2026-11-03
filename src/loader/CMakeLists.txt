@@ -30,7 +30,7 @@ add_library(Cordis::ConfigStore ALIAS cordis_config_store)
 target_link_libraries(cordis_config_store PUBLIC Cordis::ConfigYaml Cordis::Core)
 cordis_target_defaults(cordis_config_store)
 
-add_library(cordis_config_session STATIC session.cpp)
+add_library(cordis_config_session STATIC session.cpp target_commit.cpp)
 add_library(Cordis::ConfigSession ALIAS cordis_config_session)
 target_link_libraries(cordis_config_session PUBLIC Cordis::ConfigCoordinator Cordis::ConfigStore Cordis::ConfigDefinitions)
 cordis_target_defaults(cordis_config_session)

@@ -368,6 +368,15 @@ Task<CleanupReport> EffectScope::close() const
  * @brief 在所属调度器线程读取作用域及其 effect 的状态。
  * @return 成功时返回作用域快照，非所属线程调用时返回错误。
  */
+bool EffectScope::deliveryBlocked() const noexcept
+{
+    if (!control_)
+        return true;
+    for (const auto& entry : control_->effects)
+        if (entry.second->deliveryBlocked.load())
+            return true;
+    return false;
+}
 Result<ScopeSnapshot> EffectScope::snapshot() const
 {
     if (!control_->scheduler->isCurrentThread()) return Result<ScopeSnapshot>::failure(makeError(ErrorCode::WrongThread, "scope snapshot requires owner thread"));

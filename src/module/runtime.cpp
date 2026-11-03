@@ -4,6 +4,7 @@
 #include "admission_p.hpp"
 #include "host_services_p.hpp"
 #include "json_p.hpp"
+#include "runtime_origin_p.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -58,9 +59,12 @@ Result<Runtime> NativeModule::runtime(NativePlugin plugin) const
                                                                    std::move(output.metadata)));
     }
     try {
+        auto origin = retainRuntimeOrigin(root->source.generation, plugin.id);
+        if (!origin.hasValue())
+            return Output::failure(origin.error());
         auto module = *this;
-        return Output::success(Runtime(
-            [module, id = std::move(plugin.id)](Context context) {
+        auto runtime = Runtime(
+            [module, origin = origin.value(), id = std::move(plugin.id)](Context context) {
                 auto identity = context.identity();
                 if (!identity.hasValue())
                     return failedTask(identity.error());
@@ -68,7 +72,9 @@ Result<Runtime> NativeModule::runtime(NativePlugin plugin) const
                                                   identity.value().instance, identity.value().epoch, &context);
                 return created.hasValue() ? created.value().start() : failedTask(created.error());
             },
-            std::move(requirements), std::move(outputs)));
+            std::move(requirements), std::move(outputs));
+        auto bound = origin.value()->bind(runtime.id());
+        return bound.hasValue() ? Output::success(std::move(runtime)) : Output::failure(bound.error());
     } catch (const std::invalid_argument& error) {
         return Output::failure(hostError(ErrorCode::InvalidArgument, error.what()));
     }

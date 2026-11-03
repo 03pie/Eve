@@ -12,6 +12,7 @@ class NativeModule;
 }
 class Runtime;
 class Instance;
+struct ReplacementInput;
 struct ServiceRequirement;
 template<class T> class EventBus;
 namespace detail { struct InstanceControl; }
@@ -61,6 +62,14 @@ struct ContextIdentity {
     InstanceId instance;
     Epoch epoch;
 };
+/** @brief 从真实业务上下文读取的来源值；副本不授予任何创建或替换权限。 */
+struct ContextSource {
+    InstanceId instance;
+    RuntimeId runtime;
+    Epoch epoch;
+    /** @brief 仅当前作用域的真实隔离候选上下文有值，普通/已发布上下文为空。 */
+    std::optional<OperationId> replacement;
+};
 namespace ui { class UiPagesService; class CommandService; class NotificationService; class OutputService; }
 namespace qt {
 class QtConnection;
@@ -75,6 +84,8 @@ class Context {
 public:
     /** @brief 在业务仍有效时读取实例与代次；不会授予新的业务或清理能力。 */
     Result<ContextIdentity> identity() const;
+    /** @brief owner 线程核对本代业务能力后读取来源；适配器须从实际 Context 读取而非接受外部来源值。 */
+    Result<ContextSource> source() const;
     /** @brief 本代创建子实例，继承域视图/索引，可追加类型化依赖；父退役等待整个子树。 */
     Result<Instance> inject(const Runtime& runtime, std::string config = {},
                             std::vector<ServiceRequirement> additionalDependencies = {}) const;
@@ -281,6 +292,8 @@ private:
     void setReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const;
     void clearReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const;
     void resumeReplacement() const;
+    bool preparedForPublication() const noexcept;
+    ReplacementInput captureReplacementInput(InstanceId parent) const;
     Task<CleanupReport> stopForReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const;
     Task<CleanupReport> stopForShutdown() const;
     /** @brief 只有 Kernel 挂载入口登记规范索引身份，不将组内子实例收养为顶层实例。 */

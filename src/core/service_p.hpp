@@ -20,6 +20,7 @@ struct PublicationMember {
 struct PublicationControl {
     std::shared_ptr<IScheduler> scheduler;
     std::weak_ptr<ServiceRegistryControl> registry;
+    std::weak_ptr<ReplacementScopeControl> replacement;
     PublicationState state = PublicationState::Open;
     std::map<InstanceId, PublicationMember> members;
     bool notifying = false;
@@ -71,6 +72,14 @@ struct CommittedLease {
     std::shared_ptr<PublicationControl> publication;
     bool managed = false;
 };
+struct PreparedPublication {
+    std::shared_ptr<PublicationControl> control;
+    std::shared_ptr<ServiceRegistryControl> registry;
+    std::vector<std::shared_ptr<BindingControl>> bindings;
+};
+Result<PreparedPublication> preparePublication(const std::shared_ptr<PublicationControl>& control);
+void applyPublication(const std::shared_ptr<PublicationControl>& control,
+                      const std::vector<std::shared_ptr<BindingControl>>& bindings) noexcept;
 void checkUnused(const std::shared_ptr<BindingControl>& binding);
 bool notifyRegistry(const std::shared_ptr<ServiceRegistryControl>& registry);
 bool visiblePublication(const std::shared_ptr<PublicationControl>& binding,

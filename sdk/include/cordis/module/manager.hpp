@@ -8,15 +8,25 @@
 #include <optional>
 #include <thread>
 
+namespace cordis {
+class ReplacementScope;
+}
 namespace cordis::module {
 /** @brief Loaded 为发现通过，Serving 为业务宿主会话开放；均不表示 Kernel 已注册或插件已激活。 */
 enum class ModuleState { Validated, Loaded, Serving, Draining, Resident, Failed };
 /** @brief 目录选中的当前代与显式暂存的候选代；装载状态不代表已经切换业务。 */
-enum class GenerationRole { Current, Candidate };
+enum class GenerationRole { Current, Candidate, Retired };
 /** @brief 装载完成回执；相同模块内容重复请求复用一代，不再次调用 DLL。 */
 struct ModuleLoadReport {
     GenerationId generation;
     bool reused;
+};
+/** @brief 实际后端工厂的来源历史值；不含工厂引用，也不授予创建或换代权限。 */
+struct ModuleRuntimeOrigin {
+    RuntimeId runtime;
+    GenerationId generation;
+    std::string moduleId;
+    std::string pluginId;
 };
 /** @brief 一代模块的宿主纯值快照；nativeMapped 指本目录取得的映射引用，不盘点外部加载器。
  * 失败也可能已映射，不能据失败推断已卸载。
@@ -56,10 +66,15 @@ public:
                                    GenerationId predecessor, PreflightLimits limits = {});
     /** @brief owner 线程复制进程内模块诊断；不持有插件指针或返回可调用函数表。 */
     Result<std::vector<ModuleGenerationSnapshot>> snapshot() const;
+    /** @brief owner 线程查询仍被实际 Runtime/实例持有的工厂来源；未知或已释放返回空。 */
+    Result<std::optional<ModuleRuntimeOrigin>> runtimeOrigin(RuntimeId runtime) const;
     /** @brief 停止该代接收引用；无执行引用后转为 Resident，不能再次装载为活动代。 */
     Result<void> drain(GenerationId generation);
     /** @brief 在唯一进程目录预约同模块的当前/候选代；拒绝其他预约及入场中的创建。 */
     Result<ReplacementReservation> reserveReplacement(GenerationId current, GenerationId candidate);
+    /** @brief 将预约关联到真实 Reserved Core 作用域；只允许其真实候选上下文创建候选代。 */
+    Result<ReplacementReservation> reserveReplacement(GenerationId current, GenerationId candidate,
+                                                      const ReplacementScope& scope);
 
 private:
     Result<ModuleLoadReport> loadGeneration(const std::string& pluginRoot, const std::string& manifestPath,

@@ -4,8 +4,10 @@
 #pragma once
 #include "artifact_p.hpp"
 #include "failure_p.hpp"
+#include "instance_origin_p.hpp"
 #include "reservation_p.hpp"
 #include <cordis/module/manager.hpp>
+#include <map>
 #include <mutex>
 
 namespace cordis::module::detail {
@@ -24,6 +26,9 @@ struct Generation {
     bool loading = true;
     std::size_t admissions = 0;
     std::weak_ptr<ReplacementReservationControl> replacement;
+    /** @brief 仅保存宿主值；执行引用由 Runtime 激活闭包的来源租约持有。 */
+    std::map<RuntimeId, std::string> runtimeOrigins;
+    InstanceOrigins instanceOrigins;
     HMODULE image = nullptr;
     std::shared_ptr<BackendResidency> backend;
 };

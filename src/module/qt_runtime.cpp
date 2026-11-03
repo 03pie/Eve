@@ -2,7 +2,9 @@
  * @brief 同工具链 Qt 工厂接到现有 Core Runtime，末尾清理等待完整 QObject 析构。
  */
 #include "admission_p.hpp"
+#include "instance_origin_p.hpp"
 #include "qt_module_p.hpp"
+#include "runtime_origin_p.hpp"
 #include <QCoreApplication>
 #include <QThread>
 #include <algorithm>
@@ -95,7 +97,7 @@ Result<void> negotiate(const std::shared_ptr<Generation>& generation, const std:
 /** @brief 全部业务可变状态只在应用 owner 推进；失败的对象/捕获和租约保持自持。 */
 struct QtBusiness : std::enable_shared_from_this<QtBusiness> {
     QtBusiness(std::shared_ptr<Generation> value, std::shared_ptr<QtResidency> factory,
-               std::shared_ptr<qt::QtScheduler> target, ModuleLease lease)
+               std::shared_ptr<qt::QtScheduler> target, detail::InstanceOriginLease lease)
         : generation(std::move(value)), backend(std::move(factory)), scheduler(std::move(target)),
           instanceLease(std::move(lease))
     {
@@ -103,7 +105,7 @@ struct QtBusiness : std::enable_shared_from_this<QtBusiness> {
     std::shared_ptr<Generation> generation;
     std::shared_ptr<QtResidency> backend;
     std::shared_ptr<qt::QtScheduler> scheduler;
-    ModuleLease instanceLease;
+    detail::InstanceOriginLease instanceLease;
     ModuleLease cleanupLease;
     QObject* identity = nullptr;
     std::optional<qt::QObjectResource> resource;
@@ -245,7 +247,7 @@ struct QtDefinition {
     std::shared_ptr<QtResidency> backend;
     std::weak_ptr<qt::QtScheduler> scheduler;
     std::string plugin;
-    ModuleLease definitionLease;
+    std::shared_ptr<detail::RuntimeOriginControl> origin;
     Task<void> activate(Context context) const
     {
         auto target = scheduler.lock();
@@ -261,12 +263,13 @@ struct QtDefinition {
             return failedTask(allowed.error());
         if (backend->creating)
             return failedTask(error(ErrorCode::ModuleLoad, "Qt factory creation is already in progress"));
-        auto admission = detail::admitGeneration(generation->data.generation);
+        auto admission = detail::admitGeneration(generation->data.generation, &context);
         if (!admission.hasValue())
             return failedTask(admission.error());
-        auto lease = generation->ledger.acquire(ResourceKind::Instance,
-                                                "qt.instance." + std::to_string(identity.value().instance.value()) +
-                                                    "." + std::to_string(identity.value().epoch));
+        auto lease = detail::retainInstanceOrigin(generation->data.generation, plugin,
+                                                  "qt.instance." + std::to_string(identity.value().instance.value()) +
+                                                      "." + std::to_string(identity.value().epoch),
+                                                  identity.value().instance, identity.value().epoch, &context);
         if (!lease.hasValue())
             return failedTask(lease.error());
         auto business = std::make_shared<QtBusiness>(generation, backend, target, std::move(lease.value()));
@@ -304,19 +307,20 @@ Result<Runtime> qtRuntime(GenerationId id, QtPlugin plugin, std::shared_ptr<qt::
             (void)detail::failGeneration(generation, handshake.error());
         return Output::failure(handshake.error());
     }
-    auto lease = generation->ledger.acquire(ResourceKind::ExternalHandle, "qt.runtime.definition");
-    if (!lease.hasValue())
-        return Output::failure(lease.error());
+    auto origin = detail::retainRuntimeOrigin(id, plugin.id);
+    if (!origin.hasValue())
+        return Output::failure(origin.error());
     auto definition = std::make_shared<QtDefinition>();
     definition->generation = generation;
     definition->backend = backend;
     definition->scheduler = scheduler;
     definition->plugin = std::move(plugin.id);
-    definition->definitionLease = std::move(lease.value());
+    definition->origin = origin.value();
     try {
-        return Output::success(
-            Runtime([definition](Context context) { return definition->activate(std::move(context)); },
-                    std::move(plugin.dependencies), std::move(plugin.outputs)));
+        auto runtime = Runtime([definition](Context context) { return definition->activate(std::move(context)); },
+                               std::move(plugin.dependencies), std::move(plugin.outputs));
+        auto bound = origin.value()->bind(runtime.id());
+        return bound.hasValue() ? Output::success(std::move(runtime)) : Output::failure(bound.error());
     } catch (const std::invalid_argument& failure) {
         return Output::failure(error(ErrorCode::InvalidArgument, failure.what()));
     }
