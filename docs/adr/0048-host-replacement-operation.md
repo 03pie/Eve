@@ -1,6 +1,6 @@
 # ADR-0048：由宿主持有整体替换操作
 
-日期：2026-11-03。状态：已接受，M2c5 已实施并完成阶段审计。接续 [共同定义来源](0047-configuration-definition-identity.md)与 [模块预约](0046-module-replacement-reservation.md)。当前增量未完成阶段出口，未提交。
+日期：2026-11-03。状态：已接受，M2c5 已实施并完成阶段审计，已随 `c8ae9a1` 提交并同步。接续 [共同定义来源](0047-configuration-definition-identity.md)与 [模块预约](0046-module-replacement-reservation.md)。
 
 ## 问题
 
