@@ -42,9 +42,7 @@ Result<void> available(const std::shared_ptr<Generation>& generation, const std:
 void fault(const std::shared_ptr<Generation>& generation, const ErrorInfo& failure)
 {
     (void)generation->ledger.pin("qt.businessUncertain");
-    std::lock_guard<std::mutex> lock(generation->businessSignal->mutex);
-    if (!generation->businessSignal->error)
-        generation->businessSignal->error = failure;
+    detail::recordBusinessFailure(generation->data.generation, failure);
 }
 Result<void> negotiate(const std::shared_ptr<Generation>& generation, const std::shared_ptr<QtResidency>& backend)
 {

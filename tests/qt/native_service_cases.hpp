@@ -2,6 +2,7 @@
  * @brief 真实 C DLL 验证生产服务桥、Core 元数据/域、旧代清理与跨模块排空。
  */
 #pragma once
+#include "../../src/core/replacement_inspect_p.hpp"
 namespace native_service_test {
 using namespace native_resource_test;
 CordisBytesV1 span(const std::string& text)
@@ -165,6 +166,77 @@ void withdraw()
     CHECK(s.stat(0, 0) == 1 && s.stat(0, 5) == withdrawn && s.stat(0, 7) == 0);
     CHECK(provider.snapshot().value().services.empty());
     s.finish();
+}
+enum class WithdrawalKind { Service, Effect, Instance, Module };
+void replacementWithdrawal(WithdrawalKind kind)
+{
+    auto scheduler = std::make_shared<FakeScheduler>();
+    Kernel kernel(scheduler);
+    Services s(scheduler, "services", "module", kernel.services());
+    auto provider = s.active(100001), consumer = s.active(100002);
+    const auto effect = s.add();
+    s.provide(effect, 8, 1, "other.service"); // effect 预检须覆盖全部服务，不能先撤回这一项。
+    const auto binding = s.provide(effect);
+    s.add(11, 1);
+    s.pump();
+    auto runtime = kernel.registerPlugin("read.owner", [](Context) { return completedTask(); }).value();
+    auto mountedRoot = kernel.mount(runtime).value();
+    s.pump();
+    CHECK(mountedRoot.ready().tryResult()->hasValue());
+    auto scope = kernel.reserveReplacement({runtime.id()}).value();
+    const auto original = provider.snapshot().value();
+    const auto held = std::find_if(original.services.begin(), original.services.end(),
+                                   [](const auto& value) { return value.key.name == "test.service"; });
+    CHECK(held != original.services.end());
+    cordis::detail::CoreReplacementAccess::sealPlan(scope, kernel, {}, {{held->key, held->id}}).value();
+    const auto records = s.state().resources.records.size();
+    CordisRequestId refused = 99;
+    const bool effectClose = kind == WithdrawalKind::Effect;
+    std::optional<Task<CleanupReport>> refusedClose;
+    CordisStatus status = CORDIS_OK;
+    if (kind == WithdrawalKind::Instance || kind == WithdrawalKind::Module)
+        refusedClose = kind == WithdrawalKind::Instance ? provider.close() : s.module.close();
+    else
+        status = effectClose ? s.close(0, effect, &refused) : s.withdraw(0, binding, &refused);
+    auto after = provider.snapshot().value();
+    CHECK(after.state == NativeInstanceState::Started && !after.uncertain && !after.failure && !after.closing);
+    if (refusedClose) {
+        const auto result = refusedClose->tryResult();
+        CHECK(result && !result->hasValue() && result->error().code == ErrorCode::ConfigConflict &&
+              result->error().operation == scope.snapshot().value().operation);
+    } else
+        CHECK(status == CORDIS_E_BUSY && refused == 0);
+    CHECK(!s.module.snapshot().value().closing && !s.module.snapshot().value().faulted);
+    CHECK(after.pendingHostOperations == original.pendingHostOperations &&
+          s.state().resources.records.size() == records && !s.state().failure);
+    CHECK(after.services.size() == 2 &&
+          std::all_of(after.services.begin(), after.services.end(),
+                      [](const auto& value) { return value.state == BindingState::Published; }));
+    CordisRequestId request = 0;
+    CHECK(s.request(request) == CORDIS_PENDING && request);
+    s.pump();
+    CHECK(s.stat(1, 3) == CORDIS_OK && consumer.snapshot().value().committedServices == 1);
+    scope.release().value();
+    CordisRequestId withdrawn = 0;
+    if (refusedClose) {
+        auto closed = kind == WithdrawalKind::Instance ? provider.close() : s.module.close();
+        s.pump();
+        CHECK(closed.tryResult()->value().quiescent);
+    } else {
+        CHECK((effectClose ? s.close(0, effect, &withdrawn) : s.withdraw(0, binding, &withdrawn)) == CORDIS_PENDING &&
+              withdrawn);
+        s.pump();
+        CHECK(s.stat(0, 5) == withdrawn && s.stat(0, 3) == CORDIS_OK);
+    }
+    after = provider.snapshot().value();
+    CHECK(after.state == (refusedClose ? NativeInstanceState::Destroyed : NativeInstanceState::Started) &&
+          !after.uncertain && !after.failure);
+    CHECK(after.services.size() == (refusedClose || effectClose ? 0U : 1U));
+    CHECK(consumer.closed().tryResult()->value().quiescent);
+    s.finish();
+    auto closed = kernel.close();
+    s.pump();
+    CHECK(closed.tryResult()->value().quiescent);
 }
 void cleanup()
 {
@@ -365,6 +437,14 @@ bool run(const QString& name)
         realms();
     else if (name == "service_withdraw")
         withdraw();
+    else if (name == "service_read_conflict")
+        replacementWithdrawal(WithdrawalKind::Service);
+    else if (name == "service_effect_read_conflict")
+        replacementWithdrawal(WithdrawalKind::Effect);
+    else if (name == "service_instance_read_conflict")
+        replacementWithdrawal(WithdrawalKind::Instance);
+    else if (name == "service_module_read_conflict")
+        replacementWithdrawal(WithdrawalKind::Module);
     else if (name == "service_cleanup")
         cleanup();
     else if (name == "service_cancel_queued")

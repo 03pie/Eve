@@ -262,7 +262,7 @@ struct StoreControl : std::enable_shared_from_this<StoreControl> {
 };
 Result<std::unique_ptr<StoreTargetSlot>>
 TargetCommitAccess::prepareStore(ConfigurationStore& facade, std::shared_ptr<const ValidatedCandidate> target,
-                                 std::uint64_t expected)
+                                 std::uint64_t expected, TargetCommitMode mode)
 {
     using Output = Result<std::unique_ptr<StoreTargetSlot>>;
     const auto state = facade.control_;
@@ -270,7 +270,8 @@ TargetCommitAccess::prepareStore(ConfigurationStore& facade, std::shared_ptr<con
     if (!admitted.hasValue())
         return Output::failure(admitted.error());
     if (!target || !target->source().isValid() || state->desiredRevision != expected ||
-        expected == std::numeric_limits<std::uint64_t>::max())
+        (mode == TargetCommitMode::Advance && expected == std::numeric_limits<std::uint64_t>::max()) ||
+        (mode == TargetCommitMode::Preserve && target != state->desired))
         return Output::failure(storeError(ErrorCode::ConfigConflict, "store target revision changed or exhausted"));
     auto slot = std::make_unique<StoreTargetSlot>();
     slot->owner = state;
@@ -278,6 +279,7 @@ TargetCommitAccess::prepareStore(ConfigurationStore& facade, std::shared_ptr<con
     slot->baseline = state->desired;
     slot->target = std::move(target);
     slot->previous = expected;
+    slot->next = expected + (mode == TargetCommitMode::Advance ? 1 : 0);
     slot->thread = std::this_thread::get_id();
     state->targetSealed = true;
     return Output::success(std::move(slot));
@@ -297,8 +299,9 @@ void StoreTargetSlot::publish() noexcept
     if (published)
         return;
     owner->desired.swap(target);
-    owner->desiredRevision = previous + 1;
-    owner->dirty = true;
+    owner->desiredRevision = next;
+    if (next != previous)
+        owner->dirty = true;
     published = true;
 }
 } // namespace cordis::loader::detail

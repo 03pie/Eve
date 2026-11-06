@@ -5,6 +5,8 @@
 #include "host_p.hpp"
 
 namespace cordis::module::detail {
+/** @brief 原生服务和 effect 准入共用同一 Core 错误映射。 */
+CordisStatus statusOf(const ErrorInfo&);
 struct NativeBinding;
 struct NativeCommit;
 struct HostOperation;
@@ -28,6 +30,7 @@ struct NativeServices : std::enable_shared_from_this<NativeServices> {
     CordisStatus invoke(const CordisServiceKeyV1* key, std::uint32_t minor, CordisBytesV1 capabilities,
                         CordisBytesV1 method, CordisBytesV1 payload, CordisRequestId* output);
     void publishReady();
+    Result<void> retirementAccess(std::optional<CordisHandle> effect = {}) const;
     void retireAll();
     Task<void> retireEffect(CordisHandle effect);
     bool busy() const;
@@ -43,6 +46,7 @@ private:
     std::map<ServiceKey, std::shared_ptr<NativeCommit>> consumers;
     bool released = false;
     ServiceRegistry& index();
+    Result<void> retirementAccess(const std::shared_ptr<NativeBinding>& binding) const;
     void retire(const std::shared_ptr<NativeBinding>& binding);
     void call(const std::shared_ptr<HostOperation>& operation);
 };

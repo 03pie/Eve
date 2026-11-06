@@ -19,6 +19,9 @@ namespace detail { struct InstanceControl; }
 namespace detail { struct CleanupAccess; }
 namespace detail {
 struct KernelControl;
+struct InstanceOwnerIdentity;
+struct InstanceOwnershipAccess;
+class PreparedInstanceOwnership;
 }
 namespace detail {
 struct ReplacementScopeControl;
@@ -285,9 +288,12 @@ private:
     friend class Kernel;
     friend struct detail::KernelControl;
     friend struct detail::ReplacementScopeControl;
+    friend struct detail::InstanceOwnershipAccess;
+    friend class detail::PreparedInstanceOwnership;
     static Instance prepareMount(const Runtime& runtime, std::shared_ptr<IScheduler> scheduler, std::string config,
                                  std::shared_ptr<ServiceRegistry> services, RealmMap realms,
-                                 std::vector<ServiceRequirement> additionalDependencies);
+                                 std::vector<ServiceRequirement> additionalDependencies,
+                                 std::shared_ptr<const detail::InstanceOwnerIdentity> owner = {});
     void startMount() const;
     void setReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const;
     void clearReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const;

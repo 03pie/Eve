@@ -18,8 +18,43 @@ ErrorInfo failure(ErrorCode code, const char* message, InstanceId instance = {})
 }
 } // namespace
 
-Result<detail::ReplacementSelection> detail::KernelControl::selectReplacement(const std::vector<RuntimeId>& requested,
-                                                                              bool captureInputs) const
+Result<detail::KernelOwnership> detail::KernelControl::inspectOwnership() const
+{
+    using Output = Result<KernelOwnership>;
+    if (!scheduler_->isCurrentThread())
+        return Output::failure(failure(ErrorCode::WrongThread, "ownership inspection requires owner thread"));
+    KernelOwnership owned;
+    std::vector<std::pair<Instance, InstanceId>> pending;
+    for (const auto& entry : instances_)
+        pending.emplace_back(entry.second, InstanceId{});
+    while (!pending.empty()) {
+        auto current = std::move(pending.back());
+        pending.pop_back();
+        auto inspected = current.first.snapshot();
+        if (!inspected.hasValue())
+            return Output::failure(inspected.error());
+        const auto& value = inspected.value();
+        if (value.state == InstanceState::Disposed)
+            continue;
+        const ReplacementMember member{value.instance, value.runtime,  current.second,
+                                       value.epoch,    value.revision, value.state};
+        if (!owned
+                 .emplace(value.instance, OwnedInstance{current.first, member,
+                                                        value.deliveryBlocked || value.resources.deliveryBlocked})
+                 .second)
+            return Output::failure(failure(ErrorCode::DependencyCycle, "duplicate instance ownership", value.instance));
+        auto children = current.first.ownedChildren();
+        if (!children.hasValue())
+            return Output::failure(children.error());
+        for (auto& child : children.value())
+            pending.emplace_back(std::move(child), value.instance);
+    }
+    return Output::success(std::move(owned));
+}
+
+Result<detail::ReplacementSelection>
+detail::KernelControl::selectReplacement(const std::vector<RuntimeId>& requested, bool captureInputs,
+                                         const std::vector<InstanceId>& anchors) const
 {
     using Output = Result<ReplacementSelection>;
     if (!scheduler_->isCurrentThread())
@@ -38,34 +73,10 @@ Result<detail::ReplacementSelection> detail::KernelControl::selectReplacement(co
     if (selected.empty())
         return Output::failure(failure(ErrorCode::InvalidArgument, "replacement requires at least one runtime"));
 
-    std::map<InstanceId, ReplacementMember> owned;
-    std::map<InstanceId, Instance> handles;
-    std::map<InstanceId, bool> blocked;
-    std::vector<std::pair<Instance, InstanceId>> pending;
-    for (const auto& entry : instances_)
-        pending.emplace_back(entry.second, InstanceId{});
-    while (!pending.empty()) {
-        auto current = std::move(pending.back());
-        pending.pop_back();
-        auto inspected = current.first.snapshot();
-        if (!inspected.hasValue())
-            return Output::failure(inspected.error());
-        const auto& value = inspected.value();
-        if (value.state == InstanceState::Disposed)
-            continue;
-        if (!owned
-                 .emplace(value.instance, ReplacementMember{value.instance, value.runtime, current.second, value.epoch,
-                                                            value.revision, value.state})
-                 .second)
-            return Output::failure(failure(ErrorCode::DependencyCycle, "duplicate instance ownership", value.instance));
-        blocked.emplace(value.instance, value.deliveryBlocked || value.resources.deliveryBlocked);
-        handles.emplace(value.instance, current.first);
-        auto children = current.first.ownedChildren();
-        if (!children.hasValue())
-            return Output::failure(children.error());
-        for (auto& child : children.value())
-            pending.emplace_back(std::move(child), value.instance);
-    }
+    auto inspectedOwnership = inspectOwnership();
+    if (!inspectedOwnership.hasValue())
+        return Output::failure(inspectedOwnership.error());
+    auto owned = std::move(inspectedOwnership).value();
     auto source = services_->dependencyGraph();
     if (!source.hasValue())
         return Output::failure(source.error());
@@ -78,7 +89,7 @@ Result<detail::ReplacementSelection> detail::KernelControl::selectReplacement(co
         bindings.emplace(item.binding.key, &item);
     for (const auto& item : owned) {
         const auto declaration = declarations.find(item.first);
-        if (declaration == declarations.end() || declaration->second->parent != item.second.parent)
+        if (declaration == declarations.end() || declaration->second->parent != item.second.member.parent)
             return Output::failure(
                 failure(ErrorCode::ConfigConflict, "instance ownership changed during inspection", item.first));
     }
@@ -93,7 +104,7 @@ Result<detail::ReplacementSelection> detail::KernelControl::selectReplacement(co
     for (const auto& item : graph.bindings)
         if (item.managedProvider && owned.count(item.provider)) {
             providers[item.binding.key].insert(item.provider);
-            blocked.at(item.provider) = blocked.at(item.provider) || item.binding.deliveryBlocked;
+            owned.at(item.provider).blocked = owned.at(item.provider).blocked || item.binding.deliveryBlocked;
         }
 
     std::map<InstanceId, std::set<InstanceId>> dependents;
@@ -115,15 +126,20 @@ Result<detail::ReplacementSelection> detail::KernelControl::selectReplacement(co
 
     std::set<InstanceId> affected;
     std::deque<InstanceId> queue;
+    for (const auto id : anchors) {
+        if (!id.valid() || !owned.count(id))
+            return Output::failure(failure(ErrorCode::ConfigConflict, "logical owner is not a live Kernel member", id));
+        if (affected.insert(id).second)
+            queue.push_back(id);
+    }
     for (const auto& item : owned)
-        if (selected.count(item.second.runtime)) {
-            affected.insert(item.first);
+        if (selected.count(item.second.member.runtime) && affected.insert(item.first).second) {
             queue.push_back(item.first);
         }
     while (!queue.empty()) {
         const auto id = queue.front();
         queue.pop_front();
-        const auto& node = owned.at(id);
+        const auto& node = owned.at(id).member;
         // 一个子实例不能脱离仍持有它的祖先单独重建，整个实际拥有单元一起占用。
         if (node.parent.valid() && affected.insert(node.parent).second) {
             if (!owned.count(node.parent))
@@ -131,7 +147,7 @@ Result<detail::ReplacementSelection> detail::KernelControl::selectReplacement(co
                     failure(ErrorCode::ConfigConflict, "owning ancestor is not controlled", node.parent));
             queue.push_back(node.parent);
         }
-        if (blocked.at(id))
+        if (owned.at(id).blocked)
             return Output::failure(failure(ErrorCode::SchedulerClosed, "affected resource delivery blocked", id));
         if (node.state == InstanceState::Loading || node.state == InstanceState::Unloading)
             return Output::failure(failure(ErrorCode::ContextClosing, "affected instance is transitioning", id));
@@ -143,7 +159,7 @@ Result<detail::ReplacementSelection> detail::KernelControl::selectReplacement(co
             if (!consumer.managed || found == owned.end())
                 return Output::failure(
                     failure(ErrorCode::ConfigConflict, "affected service has an external consumer", consumer.instance));
-            if (found->second.epoch != consumer.epoch)
+            if (found->second.member.epoch != consumer.epoch)
                 return Output::failure(failure(ErrorCode::ConfigConflict,
                                                "committed consumer epoch differs from owned instance",
                                                consumer.instance));
@@ -177,7 +193,7 @@ Result<detail::ReplacementSelection> detail::KernelControl::selectReplacement(co
     while (!ready.empty()) {
         const auto id = *ready.begin();
         ready.erase(ready.begin());
-        result.members.push_back(owned.at(id));
+        result.members.push_back(owned.at(id).member);
         result.stopOrder.push_back(id);
         for (const auto provider : upstream[id])
             if (--waiting.at(provider) == 0)
@@ -189,11 +205,12 @@ Result<detail::ReplacementSelection> detail::KernelControl::selectReplacement(co
     result.startOrder.assign(result.stopOrder.rbegin(), result.stopOrder.rend());
     ReplacementSelection selection{std::move(result), {}, {}, {}};
     for (const auto id : affected)
-        selection.instances.emplace(id, handles.at(id));
+        selection.instances.emplace(id, owned.at(id).instance);
+    selection.anchors = anchors;
     if (captureInputs) {
         selection.inputs.reserve(selection.closure.members.size());
         for (const auto& member : selection.closure.members) {
-            auto input = handles.at(member.instance).captureReplacementInput(member.parent);
+            auto input = owned.at(member.instance).instance.captureReplacementInput(member.parent);
             const auto definition = std::find_if(runtimes_.begin(), runtimes_.end(), [&](const auto& entry) {
                 return entry.second.id() == member.runtime;
             });

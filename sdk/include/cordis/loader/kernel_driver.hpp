@@ -13,6 +13,7 @@
 namespace cordis::loader {
 namespace detail {
 struct KernelDriverControl;
+struct DriverCommitAccess;
 }
 /** @brief 内置条目树支持类型化依赖、域继承及父恢复后的自动子树重建。 */
 class KernelReconcileDriver final : public IConfiguredReconcileDriver {
@@ -44,6 +45,7 @@ public:
     Task<CleanupReport> close() override;
 
 private:
+    friend struct detail::DriverCommitAccess;
     struct DefinitionsTag {};
     KernelReconcileDriver(std::shared_ptr<IScheduler> scheduler, std::shared_ptr<Kernel> kernel,
                           std::shared_ptr<const ConfigurationDefinitions> definitions,

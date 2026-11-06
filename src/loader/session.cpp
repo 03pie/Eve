@@ -1,10 +1,14 @@
 /** @file session.cpp
  * @brief 独占连接协调器和 Store，关闭重入不能使已接受目标漏过保存账目。
  */
+#include "session_commit_p.hpp"
+#include "target_commit_p.hpp"
 #include <atomic>
 #include <cordis/loader/session.hpp>
 #include <exception>
 #include <stdexcept>
+#include <thread>
+#include <type_traits>
 #include <utility>
 
 namespace cordis::loader::detail {
@@ -31,9 +35,10 @@ struct SessionControl : std::enable_shared_from_this<SessionControl> {
     std::optional<AcceptedTarget> latest;
     std::shared_ptr<SessionDelivery> delivery = std::make_shared<SessionDelivery>();
     std::shared_ptr<SessionControl> pin;
-    std::size_t accesses = 0;
+    std::size_t accesses = 0, replacementHolds = 0;
+    Promise<void> closingStarted;
     bool changing = false, closing = false, closed = false;
-    bool coordinatorDone = false, storeStarted = false, storeDone = false;
+    bool coordinatorStarted = false, coordinatorDone = false, storeStarted = false, storeDone = false;
     std::vector<ErrorInfo> closeErrors;
     Result<std::shared_ptr<const ConfigurationDefinitions>> definitionView() const
     {
@@ -59,6 +64,10 @@ struct SessionControl : std::enable_shared_from_this<SessionControl> {
             return Result<void>::success();
         if (closing)
             return Result<void>::failure(makeError(ErrorCode::ContextClosing, "configuration session closing"));
+        return available();
+    }
+    Result<void> available() const
+    {
         if (delivery->blocked.load() || !scheduler->isOpen())
             return Result<void>::failure(
                 makeError(ErrorCode::SchedulerClosed, "configuration session delivery unavailable"));
@@ -97,7 +106,26 @@ struct SessionControl : std::enable_shared_from_this<SessionControl> {
     /** @brief 汇合驱动静止和最新目标保存两个独立证明。 */
     void advanceClose()
     {
-        if (!closing || accesses || closed || delivery->blocked.load())
+        if (!closing || replacementHolds || closed || delivery->blocked.load())
+            return;
+        if (!coordinatorStarted) {
+            coordinatorStarted = true;
+            ++accesses;
+            auto self = shared_from_this();
+            observe(coordinator->close().thenOn(scheduler, [self](const Result<CleanupReport>& result) {
+                self->coordinatorDone = true;
+                if (!result.hasValue())
+                    self->closeErrors.push_back(result.error());
+                else if (!result.value().quiescent) {
+                    auto error = makeError(ErrorCode::CleanupFailed, "configuration resources retained");
+                    error.causes = result.value().errors;
+                    self->closeErrors.push_back(std::move(error));
+                }
+                self->advanceClose();
+            }));
+            --accesses;
+        }
+        if (accesses)
             return;
         if (!storeStarted) {
             storeStarted = true;
@@ -200,6 +228,202 @@ std::shared_ptr<SessionControl> makeSession(std::shared_ptr<IScheduler> schedule
     state->store =
         std::make_unique<ConfigurationStore>(state->scheduler, std::move(writer), std::move(baseline), storeLimits);
     return state;
+}
+struct SessionHoldControl {
+    std::shared_ptr<SessionControl> owner;
+    bool released = false;
+    explicit SessionHoldControl(std::shared_ptr<SessionControl> state) : owner(std::move(state))
+    {
+        ++owner->replacementHolds;
+    }
+    void release()
+    {
+        if (!owner->scheduler->isCurrentThread()) {
+            owner->delivery->fail(makeError(ErrorCode::WrongThread, "session replacement release requires owner"));
+            return;
+        }
+        if (released)
+            return;
+        released = true;
+        --owner->replacementHolds;
+        owner->advanceClose();
+    }
+};
+SessionReplacementHold::~SessionReplacementHold()
+{
+    if (control_)
+        control_->release();
+}
+Task<void> SessionReplacementHold::closing() const
+{
+    return control_->owner->closingStarted.task();
+}
+Result<SessionReplacementHold> SessionCommitAccess::hold(ConfigurationSession& facade, const IReconcileDriver& driver,
+                                                         const Task<void>& settled)
+{
+    using Output = Result<SessionReplacementHold>;
+    auto view = inspect(facade, driver);
+    if (!view.hasValue())
+        return Output::failure(view.error());
+    auto state = facade.control_;
+    auto control = std::make_shared<SessionHoldControl>(state);
+    SessionReplacementHold result(control);
+    state->observe(
+        settled.thenOn(state->scheduler, [weak = std::weak_ptr<SessionHoldControl>(control)](const Result<void>&) {
+            if (auto value = weak.lock())
+                value->release();
+        }));
+    return Output::success(std::move(result));
+}
+struct SessionCommitControl {
+    std::shared_ptr<SessionControl> owner;
+    std::shared_ptr<SessionHoldControl> hold;
+    std::unique_ptr<SessionControl::Access> access;
+    std::optional<PreparedTargetCommit> targets;
+    std::optional<AcceptedTarget> next;
+    Promise<PlanReport> done;
+    PlanReport report;
+    std::uint64_t previous = 0;
+    TargetCommitMode mode = TargetCommitMode::Advance;
+    std::thread::id thread = std::this_thread::get_id();
+    bool published = false, finished = false;
+    void release()
+    {
+        targets.reset();
+        access.reset();
+    }
+    ~SessionCommitControl()
+    {
+        release();
+        if (!finished)
+            done.reject(makeError(ErrorCode::OperationCancelled, "configuration replacement completion abandoned"));
+    }
+};
+static_assert(std::is_nothrow_swappable_v<std::optional<AcceptedTarget>>);
+Result<SessionCommitAccess::View> SessionCommitAccess::inspect(ConfigurationSession& facade,
+                                                               const IReconcileDriver& driver,
+                                                               const SessionReplacementHold* hold)
+{
+    using Output = Result<View>;
+    const auto state = facade.control_;
+    auto admitted = state->check();
+    if (!admitted.hasValue() && admitted.error().code != ErrorCode::ContextClosing)
+        return Output::failure(admitted.error());
+    const auto activity = hold ? hold->control_ : nullptr;
+    const bool held = activity && !activity->released && activity->owner == state;
+    if (!admitted.hasValue()) {
+        if (!held)
+            return Output::failure(admitted.error());
+        auto available = state->available();
+        if (!available.hasValue())
+            return Output::failure(available.error());
+    }
+    if (state->driver.get() != &driver || !state->configured || !state->latest || state->accesses)
+        return Output::failure(makeError(ErrorCode::ConfigConflict, "replacement session does not own driver"));
+    SessionControl::Access access(*state);
+    auto current = state->coordinator->snapshot();
+    if (!current.hasValue())
+        return Output::failure(current.error());
+    auto definitions = state->definitionView();
+    if (!definitions.hasValue() || !definitions.value() || !current.value().desired ||
+        !definitions.value()->owns(*current.value().desired))
+        return Output::failure(makeError(ErrorCode::ConfigConflict, "session target definition source differs"));
+    if ((state->closing && (!held || activity->released)) || state->delivery->blocked.load() || !state->latest ||
+        state->latest->revision != current.value().desiredRevision || !current.value().desired)
+        return Output::failure(makeError(ErrorCode::ConfigConflict, "replacement session inspection invalidated"));
+    return Output::success({current.value().desiredRevision, current.value().desired, state->latest->settled,
+                            !current.value().activeRevision && state->latest->settled.isReady()});
+}
+Result<PreparedSessionCommit> SessionCommitAccess::prepare(ConfigurationSession& facade, const IReconcileDriver& driver,
+                                                           std::shared_ptr<const ValidatedCandidate> target,
+                                                           std::uint64_t expected, TargetCommitMode mode,
+                                                           const std::vector<EntryOperation>& applied,
+                                                           const SessionReplacementHold* hold)
+{
+    using Output = Result<PreparedSessionCommit>;
+    const auto state = facade.control_;
+    auto admitted = state->check();
+    if (!admitted.hasValue() && admitted.error().code != ErrorCode::ContextClosing)
+        return Output::failure(admitted.error());
+    const auto activity = hold ? hold->control_ : nullptr;
+    const bool held = activity && !activity->released && activity->owner == state;
+    if (!admitted.hasValue()) {
+        if (!held || mode != TargetCommitMode::Preserve)
+            return Output::failure(admitted.error());
+        auto available = state->available();
+        if (!available.hasValue())
+            return Output::failure(available.error());
+    }
+    if (state->driver.get() != &driver || !state->configured || !state->latest || state->latest->revision != expected ||
+        state->changing || state->accesses || (mode != TargetCommitMode::Advance && mode != TargetCommitMode::Preserve))
+        return Output::failure(
+            makeError(ErrorCode::ConfigConflict, "replacement does not own this configured session"));
+    auto value = std::make_shared<SessionCommitControl>();
+    value->owner = state;
+    if (held)
+        value->hold = activity;
+    value->previous = expected;
+    value->mode = mode;
+    value->access = std::make_unique<SessionControl::Access>(*state);
+    auto targets = TargetCommitAccess::prepare(*state->coordinator, *state->store, std::move(target), expected, mode);
+    if (!targets.hasValue())
+        return Output::failure(targets.error());
+    value->targets.emplace(std::move(targets).value());
+    value->report.revision = value->targets->revision();
+    value->report.outcome = PlanOutcome::Applied;
+    if (mode == TargetCommitMode::Advance) {
+        value->report.entries.reserve(applied.size());
+        for (const auto& operation : applied)
+            value->report.entries.push_back({operation, EntryStatus::Applied, {}});
+        value->next.emplace(AcceptedTarget{value->report.revision, value->done.task()});
+    }
+    PreparedSessionCommit result(std::move(value));
+    if (!result.ready())
+        return Output::failure(makeError(ErrorCode::ConfigConflict, "session replacement preparation invalidated"));
+    return Output::success(std::move(result));
+}
+bool PreparedSessionCommit::ready() const noexcept
+{
+    const auto& value = control_;
+    return value && value->thread == std::this_thread::get_id() && !value->published && !value->finished &&
+           (!value->owner->closing ||
+            (value->mode == TargetCommitMode::Preserve && value->hold && !value->hold->released)) &&
+           !value->owner->delivery->blocked.load() && value->owner->changing && value->owner->accesses == 1 &&
+           value->owner->latest && value->owner->latest->revision == value->previous && value->targets &&
+           value->targets->ready();
+}
+void PreparedSessionCommit::publish() noexcept
+{
+    if (control_->published)
+        return;
+    control_->targets->publish();
+    if (control_->mode == TargetCommitMode::Advance)
+        control_->owner->latest.swap(control_->next);
+    if (!control_->owner->pin)
+        control_->owner->pin = control_->owner;
+    control_->published = true;
+}
+Result<void> PreparedSessionCommit::finish(Result<void> notifications)
+{
+    const auto value = control_;
+    if (!value || value->thread != std::this_thread::get_id())
+        return Result<void>::failure(makeError(ErrorCode::WrongThread, "session completion requires owner"));
+    if (!value->published || value->finished)
+        return Result<void>::failure(makeError(ErrorCode::ConfigConflict, "session completion is not pending"));
+    if (!notifications.hasValue()) {
+        value->report.errors.push_back(notifications.error());
+        value->report.outcome = PlanOutcome::Failed;
+    }
+    value->finished = true;
+    value->release();
+    value->done.resolve(std::move(value->report));
+    return notifications;
+}
+std::optional<AcceptedTarget> PreparedSessionCommit::accepted() const
+{
+    if (!control_ || control_->mode != TargetCommitMode::Advance)
+        return std::nullopt;
+    return AcceptedTarget{control_->report.revision, control_->done.task()};
 }
 } // namespace cordis::loader::detail
 
@@ -402,17 +626,7 @@ Task<void> ConfigurationSession::close()
     state->closing = true;
     state->pin = state;
     ++state->accesses;
-    state->observe(state->coordinator->close().thenOn(state->scheduler, [state](const Result<CleanupReport>& result) {
-        state->coordinatorDone = true;
-        if (!result.hasValue())
-            state->closeErrors.push_back(result.error());
-        else if (!result.value().quiescent) {
-            auto error = makeError(ErrorCode::CleanupFailed, "configuration resources retained");
-            error.causes = result.value().errors;
-            state->closeErrors.push_back(std::move(error));
-        }
-        state->advanceClose();
-    }));
+    state->closingStarted.resolve();
     --state->accesses;
     state->advanceClose();
     return state->delivery->closed.task();

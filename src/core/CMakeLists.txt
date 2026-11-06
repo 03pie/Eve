@@ -4,6 +4,9 @@ if(CORDIS_SHARED_CORE)
     set(cordis_core_type SHARED)
 endif()
 add_library(cordis_core ${cordis_core_type}
+    replacement_borrow.cpp
+    replacement_outputs.cpp
+    replacement_inputs.cpp
     build_info.cpp
     fake_scheduler.cpp
     fake_clock.cpp
@@ -11,11 +14,14 @@ add_library(cordis_core ${cordis_core_type}
     instance.cpp
     kernel.cpp
     service.cpp
+    service_contract.cpp
+    service_plan.cpp
     publication.cpp
     replacement.cpp
     replacement_scope.cpp
     replacement_stage.cpp
     replacement_commit.cpp
+    replacement_inspect.cpp
 )
 add_library(Cordis::Core ALIAS cordis_core)
 target_include_directories(cordis_core PUBLIC

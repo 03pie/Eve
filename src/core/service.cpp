@@ -427,6 +427,12 @@ Result<ProviderHandle> ServiceRegistry::stageErased(ServiceKey key, std::shared_
     auto admitted = detail::replacementOutputAccess(control_, key, publication_);
     if (!admitted.hasValue())
         return Result<ProviderHandle>::failure(admitted.error());
+    if (auto scope = publication_ ? publication_->replacement.lock() : nullptr;
+        scope && scope->planSealed && scope->state != ReplacementScopeState::Released) {
+        auto planned = scope->checkOutputs({key}, publication_);
+        if (!planned.hasValue())
+            return Result<ProviderHandle>::failure(planned.error());
+    }
     if (!object || key.name.empty() || key.interfaceMajor == 0 || control_->realms.count(key.realm) == 0)
         return Result<ProviderHandle>::failure(makeError(ErrorCode::InvalidArgument, "invalid service or realm"));
     std::set<std::string> capabilities;
@@ -537,9 +543,21 @@ Result<void> ProviderHandle::publish() const
 /** @brief 关闭业务入口；即使 scheduler 已关闭仍允许 owner 执行同步撤回。 */
 Result<void> ProviderHandle::retire() const
 {
+    if (!binding_->scheduler->isCurrentThread())
+        return Result<void>::failure(makeError(ErrorCode::WrongThread, "retire requires owner thread"));
+    if (binding_->state == BindingState::Released || binding_->state == BindingState::Retiring)
+        return Result<void>::success();
+    auto allowed = detail::replacementBindingReadAccess(binding_);
+    if (!allowed.hasValue())
+        return allowed;
+    return retireForCleanup();
+}
+Result<void> ProviderHandle::retireForCleanup() const
+{
     if (!binding_->scheduler->isCurrentThread()) return Result<void>::failure(makeError(ErrorCode::WrongThread, "retire requires owner thread"));
     if (binding_->state == BindingState::Released || binding_->state == BindingState::Retiring) return Result<void>::success();
     binding_->state = BindingState::Retiring;
+    detail::invalidateReplacementInputs(binding_);
     std::vector<std::shared_ptr<detail::CommittedLease>> consumers;
     for (const auto& weak : binding_->consumers) if (auto lease = weak.lock()) if (lease->active) consumers.push_back(lease);
     for (const auto& lease : consumers) if (lease->invalidated) lease->invalidated();

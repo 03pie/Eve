@@ -8,6 +8,7 @@
 
 namespace cordis::loader::detail {
 struct TargetCommitAccess;
+enum class TargetCommitMode { Advance, Preserve };
 struct CoordinatorTargetSlot {
     CoordinatorTargetSlot() = default;
     CoordinatorTargetSlot(const CoordinatorTargetSlot&) = delete;
@@ -17,6 +18,7 @@ struct CoordinatorTargetSlot {
     std::shared_ptr<const ValidatedCandidate> baseline;
     std::shared_ptr<const ValidatedCandidate> target;
     std::uint64_t previous = 0;
+    std::uint64_t next = 0;
     std::thread::id thread;
     bool published = false;
     ~CoordinatorTargetSlot();
@@ -32,6 +34,7 @@ struct StoreTargetSlot {
     std::shared_ptr<const ValidatedCandidate> baseline;
     std::shared_ptr<const ValidatedCandidate> target;
     std::uint64_t previous = 0;
+    std::uint64_t next = 0;
     std::thread::id thread;
     bool published = false;
     ~StoreTargetSlot();
@@ -64,12 +67,14 @@ private:
 struct TargetCommitAccess {
     static Result<PreparedTargetCommit> prepare(ConfigurationCoordinator& coordinator, ConfigurationStore& store,
                                                 std::shared_ptr<const ValidatedCandidate> target,
-                                                std::uint64_t expected);
+                                                std::uint64_t expected,
+                                                TargetCommitMode mode = TargetCommitMode::Advance);
 
 private:
-    static Result<std::unique_ptr<CoordinatorTargetSlot>>
-    prepareCoordinator(ConfigurationCoordinator&, std::shared_ptr<const ValidatedCandidate>, std::uint64_t);
+    static Result<std::unique_ptr<CoordinatorTargetSlot>> prepareCoordinator(ConfigurationCoordinator&,
+                                                                             std::shared_ptr<const ValidatedCandidate>,
+                                                                             std::uint64_t, TargetCommitMode);
     static Result<std::unique_ptr<StoreTargetSlot>>
-    prepareStore(ConfigurationStore&, std::shared_ptr<const ValidatedCandidate>, std::uint64_t);
+    prepareStore(ConfigurationStore&, std::shared_ptr<const ValidatedCandidate>, std::uint64_t, TargetCommitMode);
 };
 } // namespace cordis::loader::detail

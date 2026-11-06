@@ -39,7 +39,10 @@ static int await_release(void)
 __declspec(dllimport) int __cdecl cordis_fixture_dependency(void);
 #endif
 static int queries;
-static const CordisQueryBytesV1 plugins[] = {{(const uint8_t*)"org.cordis.plugin", 17}};
+#ifndef FIXTURE_PLUGIN_ID
+#define FIXTURE_PLUGIN_ID "org.cordis.plugin"
+#endif
+static const CordisQueryBytesV1 plugins[] = {{(const uint8_t*)FIXTURE_PLUGIN_ID, sizeof(FIXTURE_PLUGIN_ID) - 1}};
 __declspec(dllexport) int __cdecl cordis_fixture_queries(void)
 {
     return queries;

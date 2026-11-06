@@ -69,7 +69,7 @@ bool ReplacementScopeControl::stageOpen(const std::shared_ptr<PublicationControl
 {
     return publication && state == ReplacementScopeState::Staging && ownsStageView(publication) &&
            publication->replacement.lock().get() == this && publication->state == PublicationState::Open &&
-           !cancelled && !blocked.load() && kernel && !kernel->closing_;
+           !cancelled && !blocked.load() && kernel && !kernel->closing_ && inputsAvailable(recoveringInputs);
 }
 bool replacementViewAllowsStage(const std::shared_ptr<PublicationControl>& publication)
 {
@@ -117,14 +117,20 @@ Result<void> replacementOutputAccess(const std::shared_ptr<ServiceRegistryContro
                      scopeError(ErrorCode::ConfigConflict, "service key reserved by replacement", found->second));
 }
 
-Result<ReplacementScope> KernelControl::reserveReplacement(const std::vector<RuntimeId>& requested)
+Result<ReplacementScope> KernelControl::reserveReplacement(const std::vector<RuntimeId>& requested,
+                                                           const std::vector<InstanceId>& anchors)
 {
     using Output = Result<ReplacementScope>;
-    auto selected = selectReplacement(requested, true);
+    auto selected = selectReplacement(requested, true, anchors);
     if (!selected.hasValue())
         return Output::failure(selected.error());
     const auto registry = services_->control_;
     const auto& selection = selected.value();
+    for (const auto& member : selection.closure.members) {
+        auto allowed = replacementProviderAccess(registry, member.instance);
+        if (!allowed.hasValue())
+            return Output::failure(allowed.error());
+    }
     auto conflict = [](OperationId operation) {
         return Output::failure(
             scopeError(ErrorCode::ConfigConflict, "replacement closure already reserved", operation));
@@ -134,11 +140,11 @@ Result<ReplacementScope> KernelControl::reserveReplacement(const std::vector<Run
             return conflict(at->second);
     // 消费者停止后已退出活动图，但它的定义仍是原事务的重建输入。
     // 只阻止将该定义作为换代目标；不同 realm 的事务仍可共享消费者定义。
-    for (const auto& entry : registry->replacements)
-        for (const auto& member : entry.second->selection.closure.members)
-            if (std::find(selection.closure.runtimes.begin(), selection.closure.runtimes.end(), member.runtime) !=
-                selection.closure.runtimes.end())
+    for (const auto& entry : registry->replacements) {
+        for (const auto runtime : selection.closure.runtimes)
+            if (entry.second->readsDefinition(runtime))
                 return conflict(entry.first);
+    }
     for (const auto& member : selection.closure.members)
         if (auto at = registry->replacementInstances.find(member.instance); at != registry->replacementInstances.end())
             return conflict(at->second);
@@ -303,7 +309,12 @@ Result<void> ReplacementScopeControl::freeze()
     if (state != ReplacementScopeState::Reserved && state != ReplacementScopeState::Frozen)
         return Result<void>::failure(
             scopeError(ErrorCode::ContextClosing, "replacement cannot freeze in this phase", operation));
-    auto latest = kernel->selectReplacement(selection.closure.runtimes);
+    for (const bool recovery : {false, true}) {
+        auto inputs = checkInputs(recovery);
+        if (!inputs.hasValue())
+            return inputs;
+    }
+    auto latest = kernel->selectReplacement(selection.closure.runtimes, false, selection.anchors);
     if (!latest.hasValue())
         return Result<void>::failure(latest.error());
     if (!sameSelection(selection, latest.value()))
@@ -382,16 +393,19 @@ void ReplacementScopeControl::advanceStop()
         }
     });
 }
-Result<void> ReplacementScopeControl::release()
+Result<void> ReplacementScopeControl::release(const std::function<void()>& beforeNotifications)
 {
     if (!scheduler->isCurrentThread())
         return Result<void>::failure(
             scopeError(ErrorCode::WrongThread, "replacement release requires owner thread", operation));
-    if (state == ReplacementScopeState::Released)
+    if (state == ReplacementScopeState::Released) {
+        if (beforeNotifications)
+            beforeNotifications();
         return blocked.load() || releasing
                    ? Result<void>::failure(scopeError(ErrorCode::SchedulerClosed,
                                                       "replacement release delivery pending or failed", operation))
                    : Result<void>::success();
+    }
     auto admitted = check();
     if (!admitted.hasValue())
         return admitted;
@@ -401,6 +415,8 @@ Result<void> ReplacementScopeControl::release()
     if (state != ReplacementScopeState::Reserved && state != ReplacementScopeState::Frozen &&
         state != ReplacementScopeState::Stopped && state != ReplacementScopeState::Committed)
         return Result<void>::failure(scopeError(ErrorCode::CleanupFailed, "replacement is not quiescent", operation));
+    if (beforeNotifications)
+        beforeNotifications();
     removeClaims(state != ReplacementScopeState::Stopped);
     if (blocked.load())
         return Result<void>::failure(
@@ -461,6 +477,8 @@ void ReplacementScopeControl::removeClaims(bool resume)
         if (auto at = registry->replacementOutputs.find(key);
             at != registry->replacementOutputs.end() && at->second == operation)
             registry->replacementOutputs.erase(at);
+    borrowedRuntimes.clear();
+    readBindings.clear();
     registry->replacements.erase(operation);
     released.resolve();
     if (cancelled)
@@ -518,7 +536,8 @@ ServiceRegistry::replacementMountAccess(const Runtime& runtime, const RealmMap& 
     if (!control_->scheduler->isCurrentThread())
         return Result<void>::failure(makeError(ErrorCode::WrongThread, "mount admission requires owner thread"));
     if (detail::replacementViewAllowsStage(publication_)) {
-        auto claimed = publication_->replacement.lock()->claimStage(runtime, realms, additionalDependencies);
+        auto claimed =
+            publication_->replacement.lock()->claimStage(publication_, runtime, realms, additionalDependencies);
         if (!claimed.hasValue())
             return claimed;
     }

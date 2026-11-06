@@ -28,12 +28,50 @@ Task<CleanupReport> rejected(ErrorInfo error)
     return result.task();
 }
 } // namespace
+Result<void> ReplacementScopeControl::beginStage()
+{
+    auto allowed = check();
+    if (!allowed.hasValue())
+        return allowed;
+    if ((state != ReplacementScopeState::Stopped && state != ReplacementScopeState::Staging) || deliveryBlocked())
+        return Result<void>::failure(stageError(ErrorCode::ContextClosing, "old closure is not quiescent", operation));
+    if (state == ReplacementScopeState::Stopped) {
+        auto group = kernel->holdPublication();
+        if (!group.hasValue())
+            return Result<void>::failure(group.error());
+        if (state != ReplacementScopeState::Stopped || blocked.load() || cancelled || kernel->closing_) {
+            (void)group.value().abort();
+            return Result<void>::failure(
+                stageError(ErrorCode::ContextClosing, "stage invalidated while opening group", operation));
+        }
+        staging.emplace(std::move(group).value());
+        staging->control_->replacement = shared_from_this();
+        discarded = Promise<CleanupReport>();
+        stageReport = {true, {}};
+        state = ReplacementScopeState::Staging;
+    }
+    return Result<void>::success();
+}
+Result<ReplacementBuilder> ReplacementScopeControl::builder()
+{
+    auto opened = beginStage();
+    if (!opened.hasValue())
+        return Result<ReplacementBuilder>::failure(opened.error());
+    if (!stageOpen(staging->control_))
+        return Result<ReplacementBuilder>::failure(
+            stageError(ErrorCode::ContextClosing, "construction group is not open", operation));
+    return Result<ReplacementBuilder>::success(ReplacementBuilder(shared_from_this(), staging->control_));
+}
 Result<Instance> ReplacementScopeControl::stage(const Runtime& runtime, std::string config, RealmMap realms,
-                                                std::vector<ServiceRequirement> additionalDependencies)
+                                                std::vector<ServiceRequirement> additionalDependencies,
+                                                const std::shared_ptr<PublicationControl>& permission)
 {
     auto allowed = check();
     if (!allowed.hasValue())
         return Result<Instance>::failure(allowed.error());
+    if (permission && !stageOpen(permission))
+        return Result<Instance>::failure(
+            stageError(ErrorCode::ContextClosing, "construction permission expired", operation));
     if ((state != ReplacementScopeState::Stopped && state != ReplacementScopeState::Staging) || deliveryBlocked())
         return Result<Instance>::failure(
             stageError(ErrorCode::ContextClosing, "old closure is not quiescent", operation));
@@ -42,49 +80,36 @@ Result<Instance> ReplacementScopeControl::stage(const Runtime& runtime, std::str
         !ownsDefinition(runtime.id()))
         return Result<Instance>::failure(
             stageError(ErrorCode::InvalidArgument, "candidate runtime is not registered here", operation));
-    if (state == ReplacementScopeState::Stopped) {
-        auto group = kernel->holdPublication();
-        if (!group.hasValue())
-            return Result<Instance>::failure(group.error());
-        staging.emplace(std::move(group).value());
-        staging->control_->replacement = shared_from_this();
-        discarded = Promise<CleanupReport>();
-        stageReport = {true, {}};
-        state = ReplacementScopeState::Staging;
-    }
-    auto claimed = claimStage(runtime, realms, additionalDependencies, true);
+    auto opened = beginStage();
+    if (!opened.hasValue())
+        return Result<Instance>::failure(opened.error());
+    if (permission && !stageOpen(permission))
+        return Result<Instance>::failure(
+            stageError(ErrorCode::ContextClosing, "construction permission changed", operation));
+    const auto group = *staging;
+    auto claimed = claimStage(group.control_, runtime, realms, additionalDependencies, true);
     if (!claimed.hasValue())
         return Result<Instance>::failure(claimed.error());
-    return kernel->mountHeld(*staging, runtime, std::move(config), std::move(realms),
-                             std::move(additionalDependencies));
+    return kernel->mountHeld(group, runtime, std::move(config), std::move(realms), std::move(additionalDependencies));
 }
-Result<void> ReplacementScopeControl::claimStage(const Runtime& runtime, const RealmMap& realms,
+Result<void> ReplacementScopeControl::claimStage(const std::shared_ptr<PublicationControl>& permission,
+                                                 const Runtime& runtime, const RealmMap& realms,
                                                  const std::vector<ServiceRequirement>& additionalDependencies,
                                                  bool root)
 {
     auto allowed = check();
     if (!allowed.hasValue())
         return allowed;
-    if (state != ReplacementScopeState::Staging || !runtime.id().valid())
+    if (!stageOpen(permission) || !runtime.id().valid())
         return Result<void>::failure(
             stageError(ErrorCode::ContextClosing, "candidate creation is not open", operation));
     const auto registry = kernel->services_->control_;
     std::set<ServiceKey> keys;
     for (const auto& output : runtime.outputs())
         keys.insert(realms.resolve(output.key));
-    for (const auto& key : keys) {
-        if (!kernel->services_->containsRealm(key.realm))
-            return Result<void>::failure(
-                stageError(ErrorCode::InvalidArgument, "candidate output has foreign realm", operation));
-        if (const auto at = registry->bindings.find(key);
-            at != registry->bindings.end() && at->second->publication != staging->control_)
-            return Result<void>::failure(
-                stageError(ErrorCode::ServiceConflict, "candidate output is still owned", operation));
-        if (const auto at = registry->replacementOutputs.find(key);
-            at != registry->replacementOutputs.end() && at->second != operation)
-            return Result<void>::failure(
-                stageError(ErrorCode::ConfigConflict, "candidate output belongs to another replacement", operation));
-    }
+    auto outputsAllowed = checkOutputs(keys, staging->control_);
+    if (!outputsAllowed.hasValue())
+        return outputsAllowed;
     if (const auto at = registry->replacementRuntimes.find(runtime.id());
         at != registry->replacementRuntimes.end() && at->second != operation)
         return Result<void>::failure(
@@ -100,16 +125,21 @@ Result<void> ReplacementScopeControl::claimStage(const Runtime& runtime, const R
                 return Result<void>::failure(
                     stageError(ErrorCode::ConfigConflict, "candidate input belongs to another replacement", operation));
         }
+    if (!stageOpen(permission))
+        return Result<void>::failure(
+            stageError(ErrorCode::ContextClosing, "construction permission changed during checks", operation));
     // 所有分配先完成，随后只交换宿主索引；不在权限发布中调用插件或调度器。
     auto runtimes = registry->replacementRuntimes;
     auto outputs = registry->replacementOutputs;
     auto ownedRuntimes = stagedRuntimes;
     auto ownedOutputs = stagedOutputs;
     // 新顶层工厂占用 RuntimeId；恢复的消费者按真实服务键隔离，不能锁住其他 realm 的同类消费者。
-    const bool replacingRuntime =
-        root && std::none_of(selection.closure.members.begin(), selection.closure.members.end(),
-                             [&](const auto& member) { return member.runtime == runtime.id(); });
+    const bool replacingRuntime = root && !readsDefinition(runtime.id());
     if (replacingRuntime) {
+        for (const auto& entry : registry->replacements)
+            if (entry.first != operation && entry.second->readsDefinition(runtime.id()))
+                return Result<void>::failure(
+                    stageError(ErrorCode::ConfigConflict, "candidate factory has other readers", entry.first));
         runtimes.emplace(runtime.id(), operation);
         ownedRuntimes.insert(runtime.id());
     }
@@ -208,6 +238,15 @@ void ReplacementScopeControl::finishStage(const Result<CleanupReport>& result)
 }
 } // namespace cordis::detail
 namespace cordis {
+Result<Instance> ReplacementBuilder::stage(const Runtime& runtime, std::string config, RealmMap realms,
+                                           std::vector<ServiceRequirement> dependencies) const
+{
+    const auto owner = owner_.lock();
+    const auto permission = publication_.lock();
+    if (!owner || !permission)
+        return Result<Instance>::failure(makeError(ErrorCode::ContextClosing, "construction permission expired"));
+    return owner->stage(runtime, std::move(config), std::move(realms), std::move(dependencies), permission);
+}
 Result<Instance> ReplacementScope::stage(const Runtime& runtime, std::string config, RealmMap realms,
                                          std::vector<ServiceRequirement> additionalDependencies) const
 {

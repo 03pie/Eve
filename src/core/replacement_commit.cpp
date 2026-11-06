@@ -76,6 +76,9 @@ Result<void> ReplacementScopeControl::prepareCommit(ReplacementCommitMode mode)
     if (mode == ReplacementCommitMode::Candidate && candidateDefinitions.size() != selection.closure.runtimes.size())
         return Result<void>::failure(
             commitError(ErrorCode::ConfigConflict, "candidate definitions are not complete", operation));
+    auto inputs = checkInputs(mode == ReplacementCommitMode::Recovery);
+    if (!inputs.hasValue())
+        return inputs;
     const auto owner = kernel;
     std::vector<Instance> members;
     std::vector<std::shared_ptr<BindingControl>> bindings;
@@ -116,6 +119,9 @@ Result<void> ReplacementScopeControl::prepareCommit(ReplacementCommitMode mode)
         (state != ReplacementScopeState::Staging && state != ReplacementScopeState::Stopped))
         return Result<void>::failure(
             commitError(ErrorCode::ContextClosing, "replacement closed during preparation", operation));
+    auto stamp = std::make_shared<PreparedReplacementStamp>();
+    stamp->owner = shared_from_this();
+    preparedStamp = std::move(stamp);
     preparedRuntimes.swap(names);
     preparedBase.swap(baseline);
     preparedMembers.swap(members);
@@ -133,6 +139,9 @@ Result<void> ReplacementScopeControl::commitPrepared()
     if (state != ReplacementScopeState::Prepared || cancelled || blocked.load() || !kernel || kernel->closing_)
         return Result<void>::failure(
             commitError(ErrorCode::ContextClosing, "prepared commit is no longer usable", operation));
+    auto inputs = checkInputs(preparedMode == ReplacementCommitMode::Recovery);
+    if (!inputs.hasValue())
+        return inputs;
     for (const auto& entry : preparedBase) {
         const auto at = kernel->runtimes_.find(entry.first);
         if (at == kernel->runtimes_.end() || at->second.id() != entry.second)

@@ -1,6 +1,7 @@
 /** @file host_services.cpp
  * @brief 原生服务的真实 Core 注册、旧绑定租约、异步调用与逆序退出桥。
  */
+#include "../core/service_p.hpp"
 #include "host_resources_p.hpp"
 #include "host_services_p.hpp"
 #include "json_p.hpp"
@@ -11,7 +12,6 @@
 #include <set>
 
 namespace cordis::module::detail {
-namespace {
 CordisStatus statusOf(const ErrorInfo& error)
 {
     switch (error.code) {
@@ -38,6 +38,7 @@ CordisStatus statusOf(const ErrorInfo& error)
         return CORDIS_E_FAILED;
     }
 }
+namespace {
 CordisStatus copy(CordisBytesV1 value, std::string& text, std::size_t limit, bool json = false)
 {
     if (value.size > limit)
@@ -269,6 +270,21 @@ void NativeServices::publishReady()
         }
     }
 }
+Result<void> NativeServices::retirementAccess(const std::shared_ptr<NativeBinding>& binding) const
+{
+    return cordis::detail::replacementBindingReadAccess(binding->handle->binding_);
+}
+Result<void> NativeServices::retirementAccess(std::optional<CordisHandle> effect) const
+{
+    for (const auto& entry : providers) {
+        if (effect && entry.second->endpoint->effect != *effect)
+            continue;
+        auto allowed = retirementAccess(entry.second);
+        if (!allowed.hasValue())
+            return allowed;
+    }
+    return Result<void>::success();
+}
 void NativeServices::retire(const std::shared_ptr<NativeBinding>& binding)
 {
     if (binding->withdrawing)
@@ -347,6 +363,9 @@ CordisStatus NativeServices::withdraw(CordisHandle id, CordisRequestId* output)
     auto found = providers.find(id);
     if (found == providers.end())
         return CORDIS_E_NOT_FOUND;
+    auto access = retirementAccess(found->second);
+    if (!access.hasValue())
+        return statusOf(access.error());
     auto accepted = resources->operation(false, {});
     if (!accepted.hasValue())
         return CORDIS_E_LIMIT;

@@ -15,6 +15,16 @@ namespace detail {
 struct ReplacementReservationControl;
 struct ReplacementAccess;
 }
+/** @brief 工厂的纯来源定位值；不持有模块或授予执行权限，不伪造 Runtime 身份。 */
+struct ModuleFactorySource {
+    GenerationId generation;
+    std::string pluginId;
+    friend bool operator==(const ModuleFactorySource& a, const ModuleFactorySource& b)
+    {
+        return a.generation == b.generation && a.pluginId == b.pluginId;
+    }
+    friend bool operator!=(const ModuleFactorySource& a, const ModuleFactorySource& b) { return !(a == b); }
+};
 /** @brief 预约的历史值，不授予权限或承诺读取后仍被占用。 */
 struct ModuleReplacementSnapshot {
     std::string moduleId;

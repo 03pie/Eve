@@ -19,6 +19,7 @@ struct KernelPlugin {
 namespace detail {
 struct DefinitionsData;
 struct KernelDriverControl;
+struct DriverCommitAccess;
 } // namespace detail
 /** @brief 完整宿主定义；schema 必需依赖不能削弱 Runtime，额外接口须有类型化契约。 */
 struct ConfiguredPlugin {
@@ -44,6 +45,7 @@ public:
 private:
     friend class KernelReconcileDriver;
     friend struct detail::KernelDriverControl;
+    friend struct detail::DriverCommitAccess;
     explicit ConfigurationDefinitions(std::shared_ptr<const detail::DefinitionsData> data) : data_(std::move(data)) {}
     static std::shared_ptr<const ConfigurationDefinitions> runtimeOnly(std::vector<KernelPlugin> plugins);
     std::shared_ptr<const detail::DefinitionsData> data_;

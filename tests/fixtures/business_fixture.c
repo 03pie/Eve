@@ -25,8 +25,12 @@ typedef struct FixtureInstance {
 static const CordisHostV1* active_host;
 static CordisHandle next_id = 1;
 static unsigned queries;
+static unsigned create_calls;
 static FixtureInstance instances[4];
-static const CordisBytesV1 plugin_ids[] = {{(const uint8_t*)"org.cordis.plugin", 17}};
+#ifndef FIXTURE_PLUGIN_ID
+#define FIXTURE_PLUGIN_ID "org.cordis.plugin"
+#endif
+static const CordisBytesV1 plugin_ids[] = {{(const uint8_t*)FIXTURE_PLUGIN_ID, sizeof(FIXTURE_PLUGIN_ID) - 1}};
 static FixtureInstance* find_instance(CordisHandle id)
 {
     unsigned i;
@@ -43,10 +47,11 @@ static CordisStatus CORDIS_CALL create_instance(CordisHandle context, CordisByte
                                                 CordisHandle* instance)
 {
     unsigned i;
+    ++create_calls;
     if (!instance)
         return CORDIS_E_INVALID_ARGUMENT;
     *instance = 0;
-    if (!active_host || !context || !span_equal(plugin_id, "org.cordis.plugin") || !config.size || !config.data)
+    if (!active_host || !context || !span_equal(plugin_id, FIXTURE_PLUGIN_ID) || !config.size || !config.data)
         return CORDIS_E_INVALID_ARGUMENT;
     if (config.size > sizeof(instances[0].data))
         return CORDIS_E_LIMIT;
@@ -211,6 +216,10 @@ CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_business_fixture_finish(CordisHand
         value->cancelled = cancelled;
     }
     return accepted;
+}
+CORDIS_EXPORT unsigned CORDIS_CALL cordis_business_fixture_creates(void)
+{
+    return create_calls;
 }
 CORDIS_EXPORT unsigned CORDIS_CALL cordis_business_fixture_queries(void)
 {

@@ -20,7 +20,7 @@ target_link_libraries(cordis_config_definitions PUBLIC Cordis::ConfigYaml Cordis
 cordis_target_defaults(cordis_config_definitions)
 target_link_libraries(cordis_config_coordinator PUBLIC Cordis::ConfigDefinitions)
 
-add_library(cordis_config_kernel STATIC kernel_driver.cpp)
+add_library(cordis_config_kernel STATIC kernel_driver.cpp replacement_claim.cpp)
 add_library(Cordis::ConfigKernel ALIAS cordis_config_kernel)
 target_link_libraries(cordis_config_kernel PUBLIC Cordis::ConfigCoordinator Cordis::ConfigDefinitions)
 cordis_target_defaults(cordis_config_kernel)
@@ -34,6 +34,14 @@ add_library(cordis_config_session STATIC session.cpp target_commit.cpp)
 add_library(Cordis::ConfigSession ALIAS cordis_config_session)
 target_link_libraries(cordis_config_session PUBLIC Cordis::ConfigCoordinator Cordis::ConfigStore Cordis::ConfigDefinitions)
 cordis_target_defaults(cordis_config_session)
+
+add_library(cordis_config_replacement STATIC
+    configuration_commit.cpp
+    configuration_reconstruction.cpp
+)
+add_library(Cordis::ConfigReplacement ALIAS cordis_config_replacement)
+target_link_libraries(cordis_config_replacement PUBLIC Cordis::ConfigSession Cordis::ConfigKernel)
+cordis_target_defaults(cordis_config_replacement)
 
 if(CORDIS_REQUIRE_QT5152)
     add_library(cordis_config_file_qt STATIC qt_file.cpp)

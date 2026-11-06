@@ -1,14 +1,15 @@
 /** @file yaml.cpp
  * @brief 从 LibYAML 事件构造有界配置树，拒绝引用/标记并生成确定性的 JSON/YAML 文本。
  */
-#include <cordis/loader/yaml.hpp>
-#include <yaml.h>
+#include "replacement_target_p.hpp"
 #include <algorithm>
 #include <charconv>
+#include <cordis/loader/yaml.hpp>
 #include <initializer_list>
 #include <memory>
 #include <string_view>
 #include <system_error>
+#include <yaml.h>
 
 namespace cordis::loader {
 namespace {
@@ -64,6 +65,47 @@ struct Node {
     std::vector<std::unique_ptr<Node>> sequence;
     std::map<std::string, std::unique_ptr<Node>> mapping;
 };
+/** @brief 所有结构编辑共用规范路径定位，避免各入口重复遍历及丢失子树。 */
+Node* entryAt(Node& document, const std::string& path)
+{
+    Node* sequence = document.mapping.at("plugins").get();
+    Node* selected = nullptr;
+    std::size_t begin = 0;
+    while (begin < path.size()) {
+        const auto slash = path.find('/', begin);
+        const auto id = path.substr(begin, slash == std::string::npos ? slash : slash - begin);
+        selected = nullptr;
+        for (auto& child : sequence->sequence)
+            if (child->mapping.at("id")->scalar == id) {
+                selected = child.get();
+                break;
+            }
+        if (!selected)
+            return nullptr;
+        if (slash == std::string::npos)
+            return selected;
+        const auto children = selected->mapping.find("children");
+        if (children == selected->mapping.end())
+            return nullptr;
+        sequence = children->second.get();
+        begin = slash + 1;
+    }
+    return selected;
+}
+/** @brief 克隆已通过解析预算的值树，保留数字原文和字符串标记。 */
+std::unique_ptr<Node> cloneNode(const Node& node)
+{
+    auto result = std::make_unique<Node>();
+    result->kind = node.kind;
+    result->scalar = node.scalar;
+    result->plain = node.plain;
+    result->source = node.source;
+    for (const auto& child : node.sequence)
+        result->sequence.push_back(cloneNode(*child));
+    for (const auto& child : node.mapping)
+        result->mapping.emplace(child.first, cloneNode(*child.second));
+    return result;
+}
 /** @brief 配置负载采用 JSON 标量类别，其余普通文本按字符串处理。 */
 enum class ScalarKind { String, Null, Boolean, Number };
 /** @brief 识别 JSON 数字文法，不把非有限值、前导零或 YAML 1.1 特殊格式转为数字。 */
@@ -397,25 +439,9 @@ Result<ParsedConfiguration> setEntryEnabled(const ParsedConfiguration& source, c
         if (!limits.maximumInputBytes || source.normalizedYaml().size() > limits.maximumInputBytes)
             fail("normalized text byte limit exceeded", {}, path);
         auto root = readTree(source.normalizedYaml(), limits);
-        Node* sequenceNode = root->mapping.at("plugins").get();
-        Node* selected = nullptr;
-        std::size_t begin = 0;
-        while (begin < path.size()) {
-            const auto end = path.find('/', begin);
-            const auto id = path.substr(begin, end == std::string::npos ? end : end - begin);
-            selected = nullptr;
-            for (auto& child : sequenceNode->sequence)
-                if (child->mapping.at("id")->scalar == id) {
-                    selected = child.get();
-                    break;
-                }
-            if (!selected)
-                fail("configuration path missing from source", {}, path);
-            if (end == std::string::npos)
-                break;
-            sequenceNode = selected->mapping.at("children").get();
-            begin = end + 1;
-        }
+        auto* selected = entryAt(*root, path);
+        if (!selected)
+            fail("configuration path missing from source", {}, path);
         auto disabled = std::make_unique<Node>();
         disabled->scalar = enabled ? "false" : "true";
         selected->mapping.insert_or_assign("disabled", std::move(disabled));
@@ -487,23 +513,9 @@ Result<ParsedConfiguration> changeEntryConfiguration(const ParsedConfiguration& 
             selected = entry.get();
             sequenceNode->sequence.push_back(std::move(entry));
         } else {
-            std::size_t begin = 0;
-            while (begin < path.size()) {
-                const auto end = path.find('/', begin);
-                const auto part = path.substr(begin, end == std::string::npos ? end : end - begin);
-                selected = nullptr;
-                for (auto& child : sequenceNode->sequence)
-                    if (child->mapping.at("id")->scalar == part) {
-                        selected = child.get();
-                        break;
-                    }
-                if (!selected)
-                    fail("configuration path missing from source", {}, path);
-                if (end == std::string::npos)
-                    break;
-                sequenceNode = selected->mapping.at("children").get();
-                begin = end + 1;
-            }
+            selected = entryAt(*root, path);
+            if (!selected)
+                fail("configuration path missing from source", {}, path);
         }
         selected->mapping.insert_or_assign("config", std::move(payload));
         std::string normalized;
@@ -530,4 +542,90 @@ Result<ParsedConfiguration> addConfigurationEntry(const ParsedConfiguration& sou
 {
     return changeEntryConfiguration(source, {}, id, plugin, configuration, limits, module);
 }
+namespace detail {
+Result<ParsedConfiguration> mergeReplacementTarget(const ParsedConfiguration& original,
+                                                   const ParsedConfiguration& proposed,
+                                                   const ParsedConfiguration& latest,
+                                                   const std::set<std::string>& paths, YamlLimits limits)
+{
+    using Output = Result<ParsedConfiguration>;
+    auto conflict = [](const std::string& path) {
+        auto error =
+            makeError(ErrorCode::ConfigConflict, "replacement target changed or has unsupported structural edits");
+        if (!path.empty())
+            error.entryPath = path;
+        return Output::failure(std::move(error));
+    };
+    auto same = [](const EntryValue& a, const EntryValue& b) {
+        if (a.plugin != b.plugin || a.module != b.module || a.disabled != b.disabled ||
+            a.effectiveDisabled != b.effectiveDisabled || a.config != b.config || a.realms != b.realms ||
+            a.inject.size() != b.inject.size())
+            return false;
+        for (std::size_t i = 0; i != a.inject.size(); ++i)
+            if (a.inject[i].name != b.inject[i].name || a.inject[i].major != b.inject[i].major ||
+                a.inject[i].minimumMinor != b.inject[i].minimumMinor ||
+                a.inject[i].capabilities != b.inject[i].capabilities)
+                return false;
+        return true;
+    };
+    if (!original.isValid() || !proposed.isValid() || !latest.isValid())
+        return conflict({});
+    const auto& before = original.structure();
+    const auto& after = proposed.structure();
+    const auto& now = latest.structure();
+    if (before.entries().size() != after.entries().size() || before.modules().size() != after.modules().size())
+        return conflict({});
+    for (const auto& entry : before.entries()) {
+        const auto next = after.entries().find(entry.first);
+        if (next == after.entries().end() || (!paths.count(entry.first) && !same(entry.second, next->second)))
+            return conflict(entry.first);
+    }
+    for (const auto& path : paths) {
+        const auto old = before.entries().find(path), current = now.entries().find(path);
+        if (old == before.entries().end() || current == now.entries().end() || !same(old->second, current->second))
+            return conflict(path);
+    }
+    for (const auto& module : before.modules()) {
+        const auto next = after.modules().find(module.first);
+        if (next == after.modules().end())
+            return conflict({});
+        if (next->second != module.second) {
+            const auto current = now.modules().find(module.first);
+            if (current == now.modules().end() || current->second != module.second)
+                return conflict({});
+        }
+    }
+    try {
+        limits.maximumInputBytes = limits.maximumNormalizedBytes;
+        if (!limits.maximumInputBytes || proposed.normalizedYaml().size() > limits.maximumInputBytes ||
+            latest.normalizedYaml().size() > limits.maximumInputBytes)
+            fail("replacement source exceeds byte budget", {});
+        auto root = readTree(latest.normalizedYaml(), limits);
+        auto patch = readTree(proposed.normalizedYaml(), limits);
+        for (const auto& path : paths) {
+            auto* destination = entryAt(*root, path);
+            const auto* replacement = entryAt(*patch, path);
+            if (!destination || !replacement)
+                return conflict(path);
+            for (auto it = destination->mapping.begin(); it != destination->mapping.end();)
+                if (it->first != "children")
+                    it = destination->mapping.erase(it);
+                else
+                    ++it;
+            for (const auto& attribute : replacement->mapping)
+                if (attribute.first != "children")
+                    destination->mapping.emplace(attribute.first, cloneNode(*attribute.second));
+        }
+        for (const auto& module : before.modules())
+            if (after.modules().at(module.first) != module.second)
+                root->mapping.at("modules")->mapping.at(module.first) =
+                    cloneNode(*patch->mapping.at("modules")->mapping.at(module.first));
+        std::string normalized;
+        encode(*root, normalized, limits.maximumNormalizedBytes);
+        return parseConfiguration(normalized, limits);
+    } catch (const ParseFailure& failure) {
+        return Output::failure(failure.error);
+    }
+}
+} // namespace detail
 } // namespace cordis::loader

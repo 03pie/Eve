@@ -1,5 +1,311 @@
 # 提交前代码审查记录
 
+## P5-M2c5 整阶段收口审计（通过）
+
+对照设计说明书 §12 和 M2c5 的完整运行事务出口，核对当前实现及实际测试体；以下是本阶段的要求映射，不把 M3 状态迁移、M4 物理卸载和 M5 UI/连续 100 次压力算成本阶段已完成。审计期间发现的未托管原生服务来源缺口已按下节修复，当前五配置结果、最终源码与实际产物已核对通过；未发现阻止本阶段提交的剩余问题。以下各轮“未完成”保留当时过程。
+
+| 要求/不变量 | 实现责任 | 当前实际证据（测试名省略 p5 前缀） |
+|---|---|---|
+| 停止前证明真实旧/新工厂、目录、参与者与模块来源；预检拒绝保留旧树 | replacement/preflight、Core 原输入、Driver 重建检查、Module 预约 | 两后端 operation_guards；configuration_commit_preflight/foreign/guards/contract/empty |
+| 一模块一操作；实际闭包、逻辑配置路径及共享工厂读意图 | Core 原作用域、Module 原 replacements/readers、Driver 路径声明 | operation_paths_conflict/parallel、waiting/root/unstarted、configuration_commit_claims/anchors、builder_input_plan |
+| 旧消费者/子树先退出，旧静止后隔离创建；实际父子与新增动态成员完整对应 | Core stop/stage/discard；拥有者仅持阶段弱许可；宿主兑现成员 | operation_subtree/omit/parent/nested/nested_omit/nested_stale；Core builder/stage 专项 |
+| 全局未来契约与 realm/type/minor/capability、父级/服务环在破坏前验证 | 共用 service_plan/service_contract；宿主只合成完整计划 | operation_graph/cycle/conflict、subtree_future_realm/version/missing_service/cycle/child/contract/missing |
+| 候选组外不可见；未来输出写键、实际输入身份读意图不可被普通变更绕过 | 原 Core 绑定、发布组和作用域，sealPlan 同次准备 | operation_outputs/staged/held/retiring、subtree_provider_guard/input_suspend/provider_loss；builder_input_plan |
+| 代次读持有不等于任意插件创建权限，实际成员兑现来源 | 原 Module borrowed/readers 与封存创建集合；真实 Context 准入 | operation_sources_declared/independent/undeclared/mismatch/misattributed/plugin/role/recovery_source/ancestor |
+| 普通读冲突无副作用，不隔离健康实例；实际故障必须中断悬挂拥有者 | Core 主动退役准入、NativeServices、原 Module 短期故障事件 | native_service_{,effect_,instance_,module_}read_conflict；operation_sources_loss/loss_shared/raw_loss |
+| 多参与者先全部准备，发布窗口无业务回调/分配，Core/Module/Driver/目标一起提交 | Module/Core 准备凭据；ConfigReplacement 组合各自原账目 | operation/operation_sessions；configuration_commit_commit/guards/restamp/notification/abandoned；target_commit_commit/abort/busy/reentry |
+| 最新接受目标保留无关改动、定义、模块定位和数值原文；保存仍独立 | 定义节点选择性替换、YAML AST 定向合并、Coordinator/Store 原修订 | operation_merge、operation_paths_parallel、replacement_target_merge/conflict/structure、target_commit_writing |
+| 候选失败先清理再恢复旧配置和消费者；恢复失败诚实保留且不报候选映射 | 原 Scope discard/Recovery 许可；宿主唯一结果接纳和最终映射 | operation_recovery/child_failure/waiting_recovery、owner_recovery_failure/after_create_failure、recovery_mapping、sources_loss_shared/raw_loss |
+| 部分元数据准备异常/取消不留下半组发布或封闭槽 | 各参与者 RAII 准备凭据，原宿主 owner 串行门禁 | operation_sessions_prepare_failure/prepare_cancel；验证第一槽实际取得、旧磁盘/角色不变、恢复后可保存 |
+| Kernel/Session 关闭、拒投、晚到回执不扩大权限或提前声称静止 | 原关闭 Task/会话持有、阶段序号、弱中断、原子投递失败信号 | operation_owner_kernel_close{,_prepared,_stopping}、operation_session_close 系列、owner_delivery、configuration_commit_session_hold/delivery、subtree_nested_stale |
+| Core 不反向依赖 Module/Loader；不新增平行运行/资源索引；删除替代实现 | 独立 Cordis::Replacement；共用拥有视图、服务求解和原账目；宿主转换原生来源 | 源码/CMake 依赖复查；已删除重复图/契约算法、旧故障指针/分散写入、ModuleNative 的 Core 私有拥有视图依赖及测试符号转换重复实现 |
+| 公共句柄/枚举及 C ABI 兼容，支持矩阵覆盖当前源码 | 原 SDK 布局、独立公开头、各配置全目标构建、ABI 测试 | 十项 SDK 输入未变；原两编译器各十头证明可沿用。当前 raw-source-matrix：Release/ASan/Debug 各 833/833、静态 682/682、无 Qt GCC 重建后 392/392；清单与通过名称逐项一致，44 个 ASan 对象当前有效 |
+
+已核对联合选择未遗漏单独带 abi 标签的测试；未选择的 UI/P3 等检查不据此声称通过。主替换后端为 native/Qt；外部原生服务/祖先故障使用真实 C ABI 产物，不扩大为外部 Qt UI 服务及 UI 发布隔离的完整证明。原未封存低层协调路径保留是兼容要求，完整宿主接口强制封存；失败资源/Windows 默认驻留保留是契约，均非待删临时实现。
+
+## P5-M2c5 收口审计：未托管原生服务来源
+
+日期：2026-11-05。整阶段审计未直接通过：Core 输入来源只遍历托管提供者，实际低层 NativeModule.create 发布的服务被跳过。已有四种正常撤回门禁不能证明代次故障传播。真实 services C DLL 让同步回执错误返回 PENDING，提供者已 uncertain，但拥有者仍悬挂，native/Qt 目标 raw-source-red-* 为 0/2，故 M2c5 尚不能收口提交。
+
+先补 [来源适配设计](p5-m2c5-architecture.md#低层原生服务故障的收口审计2026-11-05待实测)，再接入原模块来源读意图/故障通道。Core 私有视图只复制原封存未托管绑定的对象、类型、提供者和阶段用途；宿主从真实 NativeServiceEndpoint/所有者取得来源。托管来源转换也移到同一宿主适配，ModuleNative 删除对 Core 私有拥有视图的依赖，核对原 instanceOrigins 的实际代次、实例/epoch、托管属性及可选 Runtime，复用原 borrowed/readers。未托管来源无 Runtime，不伪造身份，也不另建来源索引；Cordis::Replacement 显式依赖原生宿主适配，Core 依赖方向不变。
+
+首轮修复后新增及相邻 Release/ASan 各 48/48，含旧原生四种正常撤回门禁；随后补确认真实代次 drain 被读意图拒绝，并复用一个 DLL 符号转换助手删除重复实现。最终五配置全目标构建后的结果为 Release/ASan/Debug 各 833/833、静态 682/682、无 Qt GCC 当前源码重建后 392/392（raw-source-matrix-*），清单与通过名称一致。十项公共 SDK 输入未变，C ABI 未改。测试清单仅作排版整理后四配置再构建成功，命令/属性和 ASan 对象哈希不变；格式、差异及最终产物检查通过，本提交完成 M2c5 归档，同步后才开始下一阶段。
+
+## P5-M2c5 模块来源故障中断复查
+
+日期：2026-11-05。先记录来源故障验证及实施设计，真实两后端 source-loss-red-* 在实际 peer 代次已失败后的 settled.isReady 断言 0/2。不是模拟 Module 字段、人工取消或观察超时。候选独有来源故障修复及相邻 Release/ASan 各 40/40，随后共享来源故障 Release 4/4；最终四配置全部目标重建，非 UI 联合 Release/ASan/Debug 各 831/831（整体操作各 153），静态兼容/关闭示例 681/681（原生整体操作 77），选中清单与通过名称逐项一致。详见 [开发记录](p5-m2c5-development.md#模块来源故障中断2026-11-05进行中)。
+
+原代次错误仍为唯一健康状态。native/Qt 两个实际业务故障写入口共用目录适配，候选/恢复用途与最终准备共用 requiresGeneration；通知沿实际 replacements/borrowed 扫描，收集后在目录/信号锁外完成。Execution 拥有短期 Promise，预约只有弱槽，解除预约不触发生产者析构；操作终态释放观察器，不给驻留代次增加永久 Task 观察链。已删除 NativeSource 不再使用的故障指针、原分散错误写入和最终准备内重复用途判定。
+
+冻结前及每阶段构建重验弥补 Prepared/Stopping/Discarding 时通知不直接推进的边界；活跃构建复用原弱中断和 owner 串行门禁。候选独有来源故障允许旧树恢复，恢复也需要的来源故障必须 RecoveryFailed/保留预约，晚到拥有者回执和旧构建许可不能改变结果。真实故障 peer 不确定资源仍按原 quarantine 保留。公开 SDK/C ABI 未改，十项 SDK 输入与前轮一致；86 项格式、105 项输入哈希和 44 个当前 ASan 对象检查及差异检查通过。无 Qt GCC 392 项全量已通过，本改动在该配置无须重编，不能用该结果证明 Windows 动态来源行为。整阶段审计与提交同步仍未完成。
+
+## P5-M2c5 多参与者部分准备撤销复查
+
+日期：2026-11-05。先记录 [验证设计](p5-m2c5-architecture.md#多参与者最终准备撤销的验证设计2026-11-05实施前)，再复用现有真实两版本 DLL、双 Session/Driver 夹具补证据。未增加生产状态、测试开关或新的准备账目；现有每参与者 RAII 准备凭据与宿主最终提交路径保持。
+
+新增 schema 失败和真实取消两种边界，各在 native/Qt 后端执行。第二参与者回调直接检查第一会话因实际准备槽而拒绝诊断、第二会话仍可诊断、两个驱动仍持旧目录、模块角色及两份已保存文件未发布。最终检查完整五成员恢复映射、旧目标与 persisted 修订、dirty、预约解除和重新保存/关闭。一次性 schema 钩子在调用前移出并清空，不保留循环捕获或恢复阶段的旧钩子。
+
+Release/ASan/Debug 新增及相邻整体操作各 14/14、静态兼容配置 7/7（build/p5-m2c5-multipart-*）。补强原因断言时，直接比较异常全文遗漏了 Loader 已有 YAML 行列前缀，使失败分支断言未通过；实际恢复及取消分支已通过。这属于测试断言错误，未认定为产品缺陷。改为同时核对 ConfigInvalid、loader.schema、实际 item 路径和特定异常文本，取消核对 OperationCancelled；最终仅重跑受此断言影响的新场景，Release/ASan/Debug 各 4/4、静态 2/2（multipart-checked-*）。
+
+此次未复现生产缺陷，不为扩大改动修改状态机。与 source-plan 归档逐项比较确认生产输入未变，仅测试和文档变化；SDK/ABI 本增量未改。80 项格式、99 项输入哈希和 40 个实际当前 ASan 对象检查通过，git diff --check 通过。无 Qt GCC 全目标构建/全量回归仍执行中；支持矩阵结果见 [开发记录](p5-m2c5-development.md#收口支持矩阵复核2026-11-05执行中)。这不是 M2c5 整阶段审计或提交完成。
+
+## P5-M2c5 动态工厂来源计划复查
+
+日期：2026-11-05。先细化 [Module 来源设计](p5-m2c5-architecture.md#module-来源权限的实施设计2026-11-05下一增量)，再用真实 primary native/Qt 加 peer C ABI 模块复现“模块仅因提供服务被读持有，却可创建未声明的插件”。真实 C DLL create 调用计数修复前增加，0/2（source-plan-red-*）；没有把创建后丢弃或最终存活数当作创建前拒绝。夹具首轮漏含 C ABI 调用约定头的编译错误已修正，不计产品红测试。
+
+Module SDK 新增不带 RuntimeId 的 ModuleFactorySource，宿主构造/动态描述附可空来源，空值明确表示内置工厂。平台在拥有者预检前取得实际默认来源，拥有者复制或明确改变动态来源；已有恢复成员须保持实际旧来源。已知工厂与逐成员 Prepared 兑现均读实际 runtimeOrigins。来源规范与服务契约分文件，Core 不反向依赖 Module 或宿主层，不捕获临时子工厂。尚未发布的拥有者结构变化要求宿主及使用它的 C++ 代码重建，C ABI 不变。
+
+原预约持有不可变两阶段创建来源计划；生命周期仍归原 borrowed/readers，服务来源读持有不授予任意插件创建权。封存检查实际角色/前驱、目录插件、业务协商、健康/准入/ledger 与其他排他操作；计划与新增代次读持有预分配后一起交换。原先 optional<map 计划> 的无抛出静态断言在 MSVC 失败，因空值交换可能移动 map 并分配哨兵；改为预分配不可变 unique_ptr 并保留静态断言，不删除检查或接受半组发布。局部恢复变量遮蔽成员及重命名漏改调用点的构建错误均已修正。
+
+admitGeneration 使用实际 Context/runtimeOrigins 校验当前阶段的代次/插件集合和真实持有，进入 DLL create 前拒绝未声明来源；完整计划禁止 retainBorrowed 动态扩张，原未封存低层流程保留原语义。最后逐成员比较实际代次/插件，不能仅用全局允许集合掩盖成员错配；允许同一真实来源的新 RuntimeId。
+
+首轮来源/旧嵌套 22 项中四项仅因 Effect 层把阶段改写为 effect.setup 导致诊断断言失败，计数已为零且实际恢复成功；未放宽产品门禁，改为核对具体来源拒绝消息。修正后 22/22，再补独立新模块读持有及同时检查实际 current/candidate 两份 DLL 的 create 计数，24/24（source-plan-checked-*）。覆盖正确声明和不同 RuntimeId、仅有服务读权限的未声明创建、错误实际代次、全局已允许但成员错配、未知插件/非目标 Candidate、恢复来源改变，以及原嵌套恢复。分别核对冻结前、创建前和 Prepared 兑现拒绝，不能混用三类证据。
+
+MSVC/GCC 各十个独立公开头通过（metadata-header-*）。最终两配置全部目标实际重建，Core/Loader/P4/P5 非 UI 联合 Release/ASan 各 823/823（source-plan-final-*），包含真实整体操作各 145；当前选中清单与通过日志逐项一致。GCC 相关目标确认无须重编，重新执行现有回归 82/82；不是 GCC 执行 Windows ModuleNative 路径的证据。80 项 C/C++ 格式、99 项源码/构建/文档哈希及 40 个实际当前 ASan C++ 对象核对通过，git diff --check 通过。组合故障及最终支持矩阵、阶段审计/提交同步仍继续，M2c5 不收口，不进入 M3。
+
+## P5-M2c5 原生主动撤回准入复查
+
+日期：2026-11-05。先形成 [准入设计](p5-m2c5-architecture.md#原生撤回准入的审计要求2026-11-05待真实-abi-回归)。实际 C DLL 的 service_withdraw/effect_close 在真实 Core 绑定读意图下把健康实例置为 Failed，修复前 0/2（native-withdraw-red-*）；调用方审计扩展到 NativeInstance.close/NativeModule.close 后，四个主动入口修复前 0/4（native-withdraw-all-red-*）。测试首轮局部 root 遮蔽全局目录变量的 W4/WX 警告已改为 mountedRoot，属于夹具编译修正，不计产品红测试。
+
+NativeServices 对实际 NativeBinding 的 retirementAccess 共用 Core 原绑定读检查；该声明归入 service 私有接口，已 Retiring/Released 的实际清理保持幂等。服务检查单项，effect/实例/模块预检全部服务，在请求分配、withdrawing、closing/Stopping 和模块 Draining 发布之前拒绝。service/resource 的 Core→ABI 状态映射只保留一份，由两个实际入口共用，不复制读者算法、不增加拒绝状态或公开绕过参数。
+
+实例保留 owner、scheduler、Core 托管归属与重复关闭门禁；在原状态锁外预检，回锁重验后才发布关闭。模块从原实例表取得一个局部真实快照，在原生命周期准入仍有效时检查服务；Core 检查不位于目录/模块/实例锁内，失败不更改模块状态，成功再沿原关闭协议执行。没有另建实例索引或改变 C ABI/SDK 声明。
+
+一个夹具用操作枚举覆盖四个入口：实际 Scope 封存真实服务绑定，effect 中先登记一项未受保护服务、再登记受保护服务，拒绝时两项都保持 Published。核对 BUSY/零请求或带真实读操作号的失败 Task、实例/模块健康、无请求/ledger 残留及服务继续可调用；解除权限后相同撤回/关闭可完成，消费者和模块/Kernel 实际静止。首轮新增四项加原服务十九项 23/23（native-withdraw-green-*）。
+
+最终两配置全部目标实际重建，扩大到 Core/Loader/P4/P5 非 UI 联合，Release/ASan 各 807/807（native-withdraw-final-*）；当前清单与通过日志逐项相同。GCC 相关 Core/配置/闭包目标重建后 82/82。76 项 C/C++ 格式、95 项源码/构建/文档哈希及 38 个实际当前 ASan C++ 对象核对通过；九项 SDK 输入与 module-source 阶段已验哈希完全一致，未重跑独立头或改变 C ABI，git diff --check 通过。
+
+该修正收敛正常拒绝与真实故障的边界，不把普通 BUSY 送入 quarantine；原真实故障清理/保留路径沿原实现并由扩大回归核对。动态模块来源声明和封存后的准入、多参与者/来源故障交错及最终全支持矩阵仍须继续；M2c5 不收口、不提交，不进入 M3。
+
+## P5-M2c5 外部服务模块祖先读意图复查
+
+日期：2026-11-05。先形成 [来源设计](p5-m2c5-architecture.md#module-来源权限的实施设计2026-11-05下一增量)，再用真实 primary native/Qt 模块及 peer C ABI 模块复现：外部服务的提供者是内置动态子实例，其模块祖先不在本次替换闭包中；另一操作仍可预约 peer，修复前 0/2（module-source-red-*）。目标两后端真实，外部祖先均为 C ABI；不能据此声称 Qt 外部提供者全部矩阵已验。
+
+Core 将已有实际拥有树遍历提取为 inspectOwnership，原 owned/handles/blocked 三张平行临时表收敛为一份拥有视图，闭包选择和输入来源适配共同使用；不持久保存第二份运行图，不扩展顶层 findInstance，不捕获临时工厂。输入来源只从实际同 Kernel、封存且 Reserved 的 Scope 取得，核对实际提供者和祖先的 Active/epoch/runtime 及真实绑定身份/可用性。
+
+Module.borrow 与新的真实输入适配共用 borrowSources，匹配唯一 runtimeOrigins 和实际 instanceOrigins 的实例/epoch/托管标记；实际外部来源只接纳 Current，再经原健康/准入/ledger/排他检查合入同一 borrowed/readers。Core 适配在取目录锁之前完成，不在 Module 锁内执行 Core/业务回调；候选 required、恢复 original 及释放沿原机制。前置规范工厂读仍须早于拥有者回调取得，完整输入读在计划封存后取得，两次真实取得各有必要，不用最后一次取得替代前置保护。
+
+首轮相关专项 10/10（module-source-green-*），包含 peer 预约/close/drain 拒绝、取消后解除，及原 Core 输入/输出、故障传播、悬挂拥有者恢复。随后泛化错误文字以包含真实输入用途，最终 Release/ASan 全部目标实际重建后，Core/Loader/P5 非 UI 联合各 598/598，含真实整体操作各 129；选中清单与通过日志逐项一致（module-source-final-*）。GCC 相关目标重建，增加实际闭包十五项后 82/82。70 项 C/C++ 格式、87 项源码/构建/文档哈希与 35 个当前实际 ASan C++ 对象检查通过，git diff --check 通过；九项 SDK 输入与已验证 input-read-source-sha256.json 完全相同，本增量未重新执行独立头编译或改变 C ABI。
+
+审计还发现原生主动 withdraw/effect_close 接到正常读冲突后可能进入既有 quarantine 路径，已记录 [准入方案](p5-m2c5-architecture.md#原生撤回准入的审计要求2026-11-05待真实-abi-回归)，须用真实 ABI 复现并修复。新增动态来源描述与封存后准入收紧、直接原生/Qt 来源及其他故障组合、最终支持矩阵仍继续，M2c5 不收口、不提交。
+
+## P5-M2c5 Core 外部绑定读意图复查
+
+日期：2026-11-05。先形成 [实施设计](p5-m2c5-architecture.md#外部绑定读意图的实施设计2026-11-05)，真实 native/Qt 根及动态子树的外部提供者主动 stop 在预检后仍被接受，修复前 0/2（input-read-red-*）。输入权限属于真实 Scope，绑定到实际 BindingId/BindingControl 并区分候选和恢复用途；扫描原 replacements，不建第二套全局读者索引，不把事务当作虚构实例或污染 committed 消费者图。
+
+结构审查将原输出封存改为完整 sealPlan/planSealed，输入/输出全部检查分配后一起交换；删除独立 sealOutputs/outputsSealed 命名和旧调用，不另加输入封存状态机。全局求解仅返回实际使用的外部身份，没有第二套依赖解析。主动原始退役、提供者及真实祖先 stop/update/checkMutation 和另一 Core Scope 取得权限前拒绝，报告真实读操作；共享读和新消费者继续可用。实例变更共用 mutationAccess，stop 不额外套入 checkMutation 的 scheduler-open 限制，以保留既有关闭后同步清理。
+
+ProviderHandle 的真正状态转换保留一份，原公开 retire 先检查读意图；仅 InstanceControl 调用私有 retireForCleanup 处理真实失效及 Kernel 关闭，不把强指针当作始终有效，也不增加 committed 造成关闭互等。实际 Retiring 后从原目录取读者快照、发候选/恢复失效信号；宿主共用原弱中断观察器，Stopping/Discarding 等原清理，Building/Recovering 的悬挂拥有者可被打断。候选独有来源失败不影响无需该来源的恢复。计划读取先过线程门禁，阶段许可及 Prepared/current/最终纯提交重验绑定；成功提交检查不分配、不执行插件。
+
+首轮源码构建通过，组件夹具误用 get/committed 和 Context.provide 的返回类型、以及给不可赋值 Result 赋值导致测试编译失败；按现有 find/committedLeases/实际 BindingId 和独立结果修正，不计为产品红测试。修正后专项 8/8（input-read-fixed-*）：共享读、错误身份失败无半组输出占用、原始退役及祖先/另一替换保护、Kernel 关闭；真实两后端主动 stop/update、取消后解除，上游真实故障，以及悬挂拥有者候选独有服务失效后的完整旧树恢复。原主动 provider_loss 已改为真实上游故障，不删除来源失败覆盖。最终线程读取边界修正后的全部目标实际重建，Release/ASan 的 Core/Loader/P5 非 UI 联合各 596/596，含真实整体操作各 127 项（input-read-final-*）；当前选中清单与通过日志逐项相等，无遗漏或重复。无 Qt GCC 相关目标重建后 67/67。69 项 C/C++ 格式、86 项源码/构建/文档哈希及 35 个实际当前 ASan C++ 对象核对通过，git diff --check 通过。MSVC/GCC 各九个独立公开头已通过（metadata-header-*），包括 ProviderHandle 的原句柄大小断言；前轮八项 SDK 哈希保持相同并另存 input-read-prior-source-sha256.json。
+
+该增量未更改 C ABI，service.hpp 仅增加私有实现声明和主动退役语义说明，无句柄布局变化；八项既有 SDK 输入与前轮完全相同。本轮仍须完成 Module 外部提供者和新动态工厂的真实可执行来源权限、共享/恢复所需源丢失等组合故障及最终支持矩阵，不能据 Core 绑定保护称完整 M2c5 已完成或作阶段提交。
+
+## P5-M2c5 未来输出写权限复查
+
+日期：2026-11-05。先形成 [未来输出设计](p5-m2c5-architecture.md#未来输出写权限的实施设计)，再通过真实 primary native/Qt 模块和 peer C ABI 模块复现未来键争用，以及外来实际 Staged/Held/Retiring 绑定被忽略，修复前 0/8（output-intent-red-*）。完整候选/恢复输出并集在冻结前经同 Kernel 的真实 Reserved Scope 封存，复用 stagedOutputs/replacementOutputs 和原释放路径。checkOutputs 共用实际 realm、写占用及绑定检查，删除 claimStage 原重复输出检查；预分配后交换，拒绝不能留下半组权限。
+
+封存模式与低层动态模式必须分开：outputsSealed 只表达完整计划已封存，不复制键账目；低层 Scope 原动态入场继续可用。阶段创建和 ServiceRegistry.stageErased 实际入账均使用原检查器，覆盖原生服务先 stage 后 adoptOutput 的适配顺序；不能把输出限制放进依赖读取也会调用的通用入口。已释放历史 Scope 不再读已移出的 Kernel。未新增公开接口或 C ABI。
+
+组件检查最初用另一 Scope 的未登记工厂验证“计划外输出”，会先被登记门禁拒绝；审计后改成已登记额外工厂，并核对 ConfigConflict 和准确错误文本，才作为封存门禁证据。真实 peer 模块安装/装载/Runtime 准备提取到共用 replacement_peer.hpp，路径并发与输出测试同时使用，删除原重复准备；实际关闭仍由调用者完成。
+
+修正组件负向用例后的全部目标重建，Release/ASan 的 Core/Loader/P5 非 UI 联合各 581/581（output-intent-final-*）；最终服务入账门禁补齐后，两配置全部目标重建、操作/输出计划相关各 114/114（output-intent-publish-*）。无 Qt GCC 最终相关目标重建后 66/66。不得把 581 项称为最后入账门禁之后的重跑；后续恢复保真增量再联合验证，见下一节。本增量不代替外部绑定读持有、动态工厂代次来源及整个 M2c5 最终矩阵，尚未阶段提交。
+
+## P5-M2c5 恢复计划保真复查
+
+日期：2026-11-05。先记录 [恢复计划设计](p5-m2c5-architecture.md#恢复计划保真检查2026-11-05实施前设计)。源码审计发现拥有者可覆盖旧动态成员的恢复配置/域/契约，而 Prepared 只比较被覆盖的计划。真实 native/Qt 根及两个动态子节点分别改变恢复 config、完整 RealmMap、有效依赖或输出，修复前均仍接受 begin，0/8（recovery-integrity-red-*）。
+
+检查放在原 planConstruction，已有 previous 的恢复动态成员与 Core 原输入比较配置和完整域映射，并复用 serviceContract/sameContract 比较规范化有效契约；停止前 ConfigConflict 拒绝。候选变化、没有 previous 的明确新增恢复节点、规范工厂原来源规则均保留。没有新增快照、状态机、公共接口或临时工厂捕获；Prepared 原真实兑现检查继续作为另一阶段门禁。
+
+首轮 10/10（recovery-integrity-green-*），包括等价重复依赖的实际旧树恢复。随后增强四项负向场景：原三成员必须保持 Active、无额外激活/清理、模块角色不变且预约解除；修正拥有者描述后同一实际请求可重试并在启动前取消，不能残留 Core/Module 占用。最终全部目标重建后的 Release/ASan，Core/Loader/P5 非 UI 联合各 591/591，包含真实整体操作各 123 项（recovery-integrity-final-*）；当前 CTest 选中名称与通过日志逐项相等，无遗漏或重复。这也是最终服务入账门禁之后的联合证据。67 项 C/C++ 格式、84 项源码/构建/文档哈希及 34 个实际当前 ASan C++ 对象检查通过，八项 SDK 输入与上一轮独立头检查快照完全一致，git diff --check 通过。当前只改 Windows 宿主计划和已有真实模块测试，未修改无 Qt GCC 编译路径；保留未来输出增量最后的 GCC 66/66，不声称本轮重新执行 GCC 或 SDK 独立头检查。本轮无 SDK/C ABI 变更，不进入 M3，不以旧配置保真检查代替版本化状态迁移。
+
+## P5-M2c5 全局服务求解复查
+
+日期：2026-11-05。先形成 [全局求解设计](p5-m2c5-architecture.md#全局服务求解的实施设计)，再提取并同时接入 Driver/宿主两个实际调用者；未使用子代理。真实 native/Qt 拥有者未来声明缺失提供者或包含环时，旧预检仍返回成功，修复前 0/4（global-plan-red-*）。共用算法接通后的原操作专项 93/93（global-plan-release-*）；两个实际拥有单元的真实服务互调、跨单元环、重复提供者另验 6/6（global-plan-cross-release-*）。没有把相同模块的两个拥有单元称为跨模块服务全矩阵。
+
+Core 私有 service_plan 共用精确键提供者索引、类型/minor/能力匹配、父级/服务边与确定性排序。Driver.order 只转换本身目标值，删除原提供者/排序算法，保留普通配置 Pending 和历史停止排序的兼容策略；宿主组合全部规范候选/恢复节点使用 Reject。Core planningContext 从同一真实 Scope/Kernel 的唯一注册表复制闭包外当前可用、非他事务占用的绑定类型/元数据及已有 realm，不接受调用方虚构外部提供者，也不授予权限。旧闭包绑定排除，避免把旧服务当作未来提供者。
+
+宿主删除按旧 startOrder 排新根的分支，实际创建单元顺序来自全局图；子级仍沿真实父 Context 和 Core 依赖门禁创建。预检两图、冻结前两图和构建前重新求解，不持久保存另一份运行图。删除 planConstruction 独立父链遍历，由共用算法校验父级/服务环；保留 Core 原实际闭包选择，因为它证明旧实例、committed 及停止权限，职责不同于未来声明求解。测试夹具按单一 FutureIssue 表达无效未来输入，避免堆叠互斥故障布尔值。
+
+最终两配置全部目标实际重建，Release/ASan 的 Core/Loader/P5 精确非 UI 联合各 572/572，含整体操作各 105/105（global-plan-final-*）；无 Qt GCC 的 Core/配置及普通 KernelDriver 组件重建后 65/65（global-plan-fixed-gcc-*）。新增来源场景验证未知 realm、外部版本不足冻结前拒绝，以及预检后外部提供者停止时冻结前拒绝并保留原业务根。63 项 C/C++ 格式、80 项源码/构建/文档哈希和 32 个实际当前 ASan C++ 对象核对通过；八项 SDK 头与上一轮已验证哈希相同，前轮快照另存 global-plan-prior-source-sha256.json，本增量未改 SDK/C ABI，未重复宣称重新跑过公开头编译。git diff --check 通过。
+
+审计确认尚缺未来服务权限：prepareDefinitions 只占 Runtime，新的输出键在 claimStage 才取得排他；外部绑定目前也仅复制快照，未持有事务读权限。当前重验能拒绝已变化来源，不保证两个未来新键冲突的操作在各自停止前完成互斥；Held/Retiring 等占用也须由真正写权限准备检查，不能仅从可用提供者列表推断。下一段需先设计原 Scope/绑定账目的未来写意图、外部读持有和清理许可，再实现；不得把纯求解结果当作锁。新增动态 DLL 工厂来源、多参与者故障与最终 Debug/静态/关闭示例及完整支持矩阵继续；M2c5 未提交，不进入 M3。
+
+## P5-M2c5 动态未来契约复查
+
+日期：2026-11-04。先完成 [动态未来契约设计](p5-m2c5-architecture.md#动态未来契约的实施设计)，再修改未发布的拥有者协议；未使用子代理。IReplacementOwner.preflight 返回候选/恢复的纯动态描述，已知工厂由真实 Runtime 派生，拥有者不能覆盖；每个旧动态成员都须明确描述，可声明新增子节点，平台规范化局部新 key 和父引用后交给 rebuild。构造计划直接保存规范契约，不新增运行目录或跨阶段图索引。
+
+Core 原 validServiceDescriptor/mergeDependencies 移入 service_contract 的实际共同实现，删除 instance.cpp 原函数体；Core 入场和宿主计划都实际调用。plan.cpp 只负责本拥有单元的纯未来输入、精确域合并、输出描述和父引用校验，不伪装全局服务求解。Prepared 核验现在检查全部成员配置、realm 与规范服务契约，删除额外未声明子实例只要能追溯已报告祖先即可提交的路径；明确声明并报告的新子节点仍可创建，不以禁止形状扩充缩小范围。
+
+首轮集成错误地要求 Prepared 输入保留 factory，两配置操作回归各 29/89（future-contract-{release,asan}-*）；captureReplacementInput 原本有意不暴露临时激活闭包，这属于本次实现的来源假设错误，不计为既有产品缺陷。已改为同次捕获实际纯输出声明，依赖复用原实际 dependencies，临时工厂仍为空；公开 ReplacementInput 追加输出值，宿主及 C++ 插件须一起重建，C ABI 不变。计划值含同工具链类型身份，不作为 M3 可序列化迁移状态。
+
+真实 native/Qt 各补新增子节点、未来描述遗漏的冻结前拒绝，以及实际输出契约与预检不符后的旧代恢复；后者核对具体错误，前者核对原实例仍活动和无候选构建。原动态子树、私有 realm、嵌套业务 DLL、拥有者和配置事务同时回归。修正来源后，原 Release/ASan 目录实际全部目标重建，Core/Loader/P5 精确非 UI 联合各 556/556（future-contract-fixed-*），其中整体操作各 89/89；无 Qt GCC 的 Core/配置与原契约组件重编后 32/32。MSVC/GCC 各八个当前独立公开头和原门面大小检查通过；59 项 C/C++ 格式、76 项源码/构建/文档哈希与 30 个实际当前 ASan C++ 对象核对通过，git diff --check 通过。未将首轮错误失败当作产品回归红证据，也未将这些检查当作完整 Debug/静态/关闭示例或 UI 支持矩阵。动态工厂新增模块来源、全局服务图/外部实际提供者/realm 身份、多参与者故障和阶段最终支持矩阵继续；M2c5 未提交，不进入 M3。
+
+## P5-M2c5 预检关闭与撤销顺序复查
+
+日期：2026-11-04。先在 [关闭持有设计](p5-m2c5-architecture.md#预检关闭与撤销顺序实施设计)明确实际来源、取得时点和撤销顺序，再实现；未使用子代理。最初四项仅发起 close 的场景在旧实现全部通过（preflight-close-red-*），不足以证明缺口；补上拥有者实际推进调度器/原生嵌套事件循环后，native/Qt 正常返回与抛出场景均关闭失败，修复前 0/4（preflight-close-nested-red-*）。没有把首次通过或测试等待超时当作红证据。
+
+SessionReplacementHold 前移至真实 Session/Driver 配对和原修订核验之后、Core 预约之前，覆盖更早的 availability 与拥有者回调；删除预检末尾原取得循环和重复参与者结构检查。宿主 releaseClaims 统一正常结算、整体提交及撤销的权限释放，abortPreparation 统一预检失败和启动投递失败；先解除替换权限，最后释放 Session 持有，防止默认成员逆序析构提前启动 Driver.close。Core 私有释放 SPI 复用原 release 准入，只在真实释放可执行或已完成时调用宿主纯解锁动作，之后才 removeClaims/通知；活动候选和错误线程拒绝不会提前丢失 Module/Driver 保护。公开 Scope.release 与 C ABI 不变，Core 不依赖上层，动作不存入 Scope 或跨异步边界。
+
+无法释放的预检失败保留真实 Execution/Module/Scope，并沿 Kernel 原关闭结果处理；错误链保留清理失败及实际操作编号，不覆盖已有冲突操作身份。Session 持有不无限阻塞自己已经失败的关闭。审查补真实两后端预检 Kernel 关闭：begin 拒绝后 Module 预约仍在，只有真实 Kernel quiescent 后才解除，无候选构建。成功预检关闭检查原文件、另一会话原实例、手动原实例、原修订及实际重新预约；没有用旧配置重建或测试计数冒充状态迁移。
+
+首轮 Release 关闭专项 16/16。补 availability 与 Core 实际释放门禁/通知顺序后，原目录全部目标重建，Release/ASan 的 Loader/P5 精确非 UI 回归各 415/415（preflight-close-final-*）；无 Qt GCC 重新构建 Core/配置组件后 23/23。最后补 Kernel 预检关闭及错误编号保留，两配置实际全部目标重建后的整体操作各 83/83（preflight-close-proof-*）；不能将先前 415 项记为最后修正后全部重跑。56 项 C/C++ 格式、73 项源码/构建/文档哈希及 28 个实际当前 ASan C++ 对象核对通过，git diff --check 通过；本增量未改公开 SDK/C ABI。结构审查已删除三处重复释放和末尾持有循环；未增加新的会话关闭状态或模块索引。动态未来契约/全局新图、多参与者故障及最终支持矩阵仍待完成，M2c5 未提交，不进入 M3。
+
+## P5-M2c5 计划工厂的 Module 读意图复查
+
+日期：2026-11-04。先记录 [实施设计](p5-m2c5-architecture.md#计划工厂的-module-代次读意图实施设计)，再扩展原预约的 borrowed/readers；未使用子代理。真实 native/Qt 主模块在未创建同级 peer 业务实例时，整体操作已经预检成功，低层仍可预约该 peer 模块，修复前 0/2（build/p5-m2c5-factory-read-red-*）。这是实际代次生命周期权限缺口，Runtime 强引用与 Core 定义占用均不能替代。
+
+Module 私有 ReplacementAccess 从唯一 runtimeOrigins 识别候选/恢复计划中的实际工厂代次，重验同操作 Reserved Scope、真实预约、代次健康、准入及 ledger 接受状态；全部检查与分配成功后交换原读者账目，失败不发布部分占用。候选 required 与恢复 original 分开登记，原恢复授权继续统一切换 required。原生命周期、drain、预约、最终提交和释放读取同一账目；自身换代模块保留原排他，不重复登记读者。预约冲突带实际阻塞操作编号，未修改公开 SDK 或 C ABI。
+
+两后端原逻辑路径场景补充冻结前的低层预约、关闭、drain 拒绝，原重试证明操作完成后读权限解除，独立根场景继续证明没有扩大为全局串行。首轮关闭检查误用会推进整个队列的测试等待函数，导致 native 操作已执行后再断言无实例；改为读取关闭请求的即时失败结果，属于测试时序修正，不另计产品缺陷。最终整体操作回归 Release/ASan 各 75/75（factory-read-fixed-*）。实际全部目标重建后的 P4/P5 非 UI 联合各 512/513（factory-read-full-*）：唯一失败是上轮独立 Driver 占用断言误放入普通 commit 用例，在 Scope 已释放后仍要求旧占用错误；上轮针对 claims 的专项并未执行这个误放的断言。现删除该位置的断言，移入实际持有路径权限且未冻结的 claims 场景，不修改生产门禁来迎合错误测试。修正后 Release/ASan 与无 Qt GCC 配置组件各 18/18（factory-read-proof-*），同时真正执行独立 Driver 冲突证明。扩大回归其余 512 项生产代码未再变化，不能把本轮说成最终 513 项整轮重新通过。56 项 C/C++ 格式、73 项源码/构建/文档哈希及 28 个实际当前 ASan C++ 对象核对通过，git diff --check 通过。
+
+结构审查：复用原预约生命周期及读者索引，没有新增镜像目录、公开权限入口或 Core 向上依赖；保留实际创建时的 retainBorrowed，因为动态拥有者尚未知的工厂仍需真实准入时补记，不是本次计划输入登记的替代实现。Session 预检关闭撤销顺序、动态契约/全局新图、多参与者故障及阶段最终支持矩阵仍待完成，M2c5 未提交，不进入 M3。
+
+## P5-M2c5 逻辑占用与规范工厂读意图复查
+
+日期：2026-11-04。先形成 [逻辑占用](p5-m2c5-architecture.md#driver-逻辑重建占用)与 [Core 读意图](p5-m2c5-architecture.md#规范工厂的-core-读意图)方案，再实现；未使用子代理。两个真实模块共享已停止配置祖先时，旧实现允许两个替换同时预检成功，真实 native/Qt 主模块分别复现，修复前 0/2（build/p5-m2c5-paths-red-*）。单独接通 Driver 占用后，独立根并行又暴露旧 Core 将共享的未换代新根工厂当作全局排他，两个后端仍失败（build/p5-m2c5-paths-fixed-release-*）。
+
+Driver 从实际重建检查和配对 Session 的原接受目标准备占用，不能以调用方路径或上次动作目标假冒来源；空会话没有动作目标时仍取真实会话目标。独立 replacement_claim 文件保存路径/模块别名权限和纯目标，Driver 不再扩充另一套配置比较，复用 previewChanges；单节点预分配/merge，不用整表覆盖重入占用。普通预检、直接动作和后台恢复走同一门禁，未创建条目仅 Pending NoOp，不提前登记执行记录。准备窗口重验实际凭据来源，低层缺省调用取得短期凭据，不能跳过已存在占用；完成后先解除 Driver 占用，再释放 Core 通知。
+
+Core 在原 Scope/registry.replacements 上持有规范工厂读意图，多个操作可共享未换代工厂，但换代预约和低层新根排他不能越过原成员或显式借用的读权限。readsDefinition 共用两类真实来源，删除旧成员/借用的重复判断，并避免为已有原成员保存重复读节点；来源校验不放宽。Core 不依赖 Loader/Module；占用不授予服务发布、实例或模块权限。失败保留仍沿原 Scope，真实释放后旧凭据失效。
+
+真实两后端场景各使用主模块两代及独立 peer 业务模块两代：重叠操作在冻结前拒绝、资源撤销后可重试；独立根并行提交到同一 Driver/Session，两个模块的目录、当前代和保存文件共同保留。主模块覆盖 native、Qt，peer 为实际 C ABI；查询与业务夹具复用插件标识宏，删除硬编码，既有 peer 并行预约保持通过。补强后的独立根使用 root/root-peer，验证斜杠边界；组件还独立验证 Driver 占用，无需 Core 借用入口掩盖冲突，并检查普通目标 CAS 前拒绝、无执行记录的 Pending、直接 Add 门禁、无凭据提交拒绝、空会话、读者共享/排他/释放/线程/外 Kernel 及低层原成员读权限。
+
+初轮相关专项 28/28；随后全部目标重建，Release/ASan 的 Loader/P4/P5 联合各 674/674（624 非 UI + 50 精确 ui 标签，build/p5-m2c5-paths-full-*），GCC 无 Qt 相关目标重建后 123/123。最后统一原成员读权限后，两配置实际全部重建、Loader/P5 非 UI 回归各 408/408（paths-final-*）；GCC 最后 Core/配置组件重编后 22/22。只加强测试的路径前缀及独立 Driver 冲突证明另验两配置各 6/6、GCC 2/2（paths-proof-*）；最后样式整理后，两配置与 GCC 的占用组件均另验 2/2（paths-style-*）。53 项 C/C++ 格式、69 项源码/构建/文档哈希、26 个实际当前 ASan C++ 对象及四个当前且启用 ASan 的 peer C 对象核对通过；git diff --check 通过，公开 SDK/C ABI 本轮未修改。不能把 674 项都说成在最后修正后重跑。
+
+已删除重复条件、无用重复读节点与硬编码；保留原实例/输出占用、默认低层准备及各层凭据，因为它们对应不同资源权限。Module 代次读意图、预检回调关闭的撤销顺序、动态契约/全局新图及多参与者失败交错仍待完成，最终支持矩阵与阶段提交未完成；不进入 M3。
+
+## P5-M2c5 Session 关闭持有复查
+
+日期：2026-11-04。先形成 [会话关闭方案](p5-m2c5-architecture.md#session-关闭的持有与恢复协议)，再以真实两后端复现拥有者候选任务悬挂后 Session 关闭不能终结操作的一项 P2：修复前 0/2，日志 build/p5-m2c5-session-close-red-*。后续增加启动前、停止中、最终 schema 关闭及恢复失败，真实两个会话与一个手动实例核对旧代恢复、关闭自身实例、原文件保存、预约及晚到结果，首轮 10/10。
+
+泛型 Session 增加私有 SessionReplacementHold 和关闭通知，不依赖 Module、具体 Kernel 驱动或 ReplacementReport；计数只表达关闭屏障，真实账目仍归原 Driver/Store。close 封闭业务并通知，advanceClose 在持有结束后唯一启动 Coordinator/Store 关闭，删除旧 close 内的重复启动代码。仅同会话尚有效凭据允许 Preserve 准备，Advance、普通业务、外来/已释放凭据仍拒绝；准备窗口重验实际凭据身份与原目标槽，不以纯快照授予权限。
+
+宿主在预检末尾持有真实参与者，开始、阶段推进及候选最终发布核对关闭信号；正常取消和 Session 通知共用取消方法。Kernel/Session 共用跨阶段弱中断投递，删除原 Kernel 专用投递实现，监听同步结算后不再解引用已释放 Execution。结算任务仅释放会话屏障，随后 Driver 原 stop 和 Store 保存各自证明关闭；恢复失败仍保留 Core/Module 资源并解除会话等待，不把 Session 成功关闭解释为全平台已静止。
+
+补两个无 Qt 组件检查，覆盖多持有计数、未兑现任务的放弃、外来及已释放凭据、错误线程、Advance 拒绝/Preserve 准备放弃、worker 成功/失败结算和拒投。持有状态只在 owner 访问，错误线程在读取可变身份前拒绝；异步观察器只弱持持有控制块。最终专项 Release 12/12（build/p5-m2c5-session-close-verified-release-*）。实现期间 Result<void> 不可赋值的编译错误已改为一次构造，不计为产品红测试。
+
+首轮 Release/ASan 全部目标重建后，Loader/P4/P5 联合检查各 665/665（build/p5-m2c5-session-close-full-{release,asan}-*）：612 项无 ui 子串标签的分区及 53 项含该子串标签的分区，后者含 50 项真实 ui 标签和三项 builder。两个分区不重叠，不能把 53 项全部称为 UI 检查。GCC 无 Qt 相关实际目标重编后 29/29（build/p5-m2c5-session-close-gcc-*）。
+
+继续审查复现恢复最后可用性回调关闭会话、报告未登记取消的一项 P2，两后端修复前 0/2（build/p5-m2c5-session-close-recovery-red-*）。全局发布前同步登记真实关闭信号，再沿原候选/恢复门禁判断；删除只在候选分支判断关闭的冗余条件。另删除无配置参与者时无人消费的会话结算观察器。最终全部目标重编后，两配置的替换操作/会话/提交相关回归各 104/104（build/p5-m2c5-session-close-final-{release,asan}-*）。按当前 CTest 清单逐名核对，前轮 665 项与最终 104 项的并集恰覆盖当前 Loader/P4/P5 的 667 个名字；这不表示所有 667 项都在最后两处修正后重跑。47 项格式、63 项源码/构建/文档哈希、24 个实际 ASan 当前对象及 git diff --check 通过；公开 SDK/C ABI 本轮未修改。动态拓扑、其他关闭/清理失败交错、逻辑路径互斥、规范工厂读意图、全局新图和最终支持矩阵仍未完成；M2c5 不提交收口、不进入 M3。
+
+## P5-M2c5 Kernel 关闭中断复查
+
+日期：2026-11-04。先记录 [关闭方案](p5-m2c5-architecture.md#kernel-关闭完成与悬挂拥有者)，再用真实 native/Qt 拥有者任务悬挂复现一项 P2：Kernel 完成 quiescent 清理后操作仍未结算。修复前 0/2，日志 build/p5-m2c5-operation-close-red-*。
+
+Core 私有适配只读取原 closed_ Task，宿主用跨阶段弱观察器接原 owner 调度门禁；只有实际清理静止才解除模块意图及执行输入，不向关闭中的 Kernel 发起恢复。开始前保存 scheduler 并处理监听同步回调后的终态。正常已提交操作的关闭通知被终态检查忽略。删除拥有者/默认完成观察器捕获的完整构造计划，改用稳定单元索引并在阶段序号校验后读取唯一 Execution，避免未兑现任务继续持有工厂计划。
+
+Release/ASan 实际目标重建后全部替换操作各 55/55，通过两项新增关闭回归；其余 Core/配置相关回归各 113/113，合计各 168/168（build/p5-m2c5-close-{release,asan}-* 及 close-related-*）。随后 GCC 无 Qt 相关目标重建后 105/105。复查追加启动前、停止中关闭交错：两后端修复前 0/4（build/p5-m2c5-operation-close-race-red-*）；启动/阶段回执/失败处理及构建循环直接读取原 Kernel closing_，关闭中等待独立清理结果，不增加宿主状态副本。最终实际目标重编后 Release/ASan 联合回归各 172/172（build/p5-m2c5-operation-close-{release,asan}-*）。最后 closing_ 只读适配加入后，GCC Core 最终源码重编及构建许可专项 3/3 通过；前述 105/105 属于该适配加入前的完整组件回归，不冒称宿主操作已在无 Qt 目标运行。46 项 C++ 格式、62 项源码/构建/文档哈希、24 个实际当前 ASan 对象及 git diff --check 通过；公开头和 C ABI 本轮未修改。测试分别等待 Kernel 清理和 owner 调度结算，不能把关闭 Task ready 当作异步操作同步完成。参与 Session 单独关闭、非静止清理和其他阶段关闭交错仍须补齐；不宣称完整关闭故障矩阵或 M2c5 完成。
+
+## P5-M2c5 构建阶段权限复查
+
+日期：2026-11-04。先按 [架构方案](p5-m2c5-architecture.md#构建阶段许可的实施边界)设计权限与寿命，再复现和实现。发现一项 P2：拥有者保留的完整 Scope 可在恢复阶段创建额外根，回执序号不能阻止该调用。真实 C ABI/Qt 两后端修复前 0/2，日志 build/p5-m2c5-builder-red-*，检查明确失败于旧权限未被拒绝。
+
+用实际调用的 ReplacementBuilder 替换拥有者 rebuild 的 Scope 参数；仅保留当次 Scope/发布组弱引用，删除旧接口而不做不安全兼容转接。默认构建也接同一许可。Core 共用发布组初始化，入口、组初始化后及声明准入后检查实际组身份；Kernel 挂载接收已捕获的具体组，避免重入后切换到恢复组。Context.inject 的声明准入带上原组身份。低层 Scope.stage 保留原协调者语义，未新增另一套实例索引或阶段布尔状态。
+
+新增三个 Core 检查覆盖旧/新组、空组丢弃、错误线程、跨 Kernel、准备/发布后拒绝和持有弱许可不延长工厂寿命；加上原两后端失败回归，Release/ASan 首轮均 5/5。相关实际目标重建后两配置各 166/166（build/p5-m2c5-builder-related-{release,asan}-*），包含原 Scope 阶段/输入/准备提交、配置、拥有者及恢复路径。GCC 原相关目标重建后 105/105（build/p5-m2c5-builder-gcc-*）。两个编译器各八个公开头独立编译通过，原 facade 大小检查保持；SDK 新增 Builder，尚未发布的拥有者实现须同步迁移，C ABI 未改。46 项格式、62 项源码/构建/文档哈希、24 个实际 ASan 当前对象及 git diff --check 核对通过。
+
+保留的原工厂/恢复输入和各层准备凭据仍有真实用途；删除了拥有者取得整套 Scope 的通路及一次性迁移脚本。参与 Session 关闭信号、动态未来契约、逻辑路径互斥和借用定义读意图仍待实施，不把阶段许可误报为完整故障或全局新图证明。M2c5 未提交、不进入 M3。
+
+## P5-M2c5 架构与删除复查
+
+日期：2026-11-04。按用户补充原则，先完成 [架构方案](p5-m2c5-architecture.md)再实施本轮结构收敛；依赖方向、账目所有者及公开 SDK/C ABI 不变。本轮不新增功能或模拟内部结构的测试。
+
+删除/替换：撤回没有实际调用链、拥有者契约尚未明确的 contracts 服务图原型；原实例依赖合并与 Core CMake 源内容已恢复到此前验证哈希。ConfigurationWork 不再跨执行阶段保留整套候选/恢复 Driver 检查计划，改为实际使用的 DriverDefinitionChange、原目标与路径；完整检查证据只在 preflight 局部保留到 current 重验。默认/自定义拥有者的计数完成逻辑合并到唯一接纳方法；删除 buildDefault 的无用序号参数及过时 limits 引入。
+
+保留依据：恢复构造输入、旧工厂与模块预约是失败重建必需资源，不能删；Discarding 仍需恢复模式区分；工作线程投递门禁不能被 owner phase 代替；各层准备凭据对应不同资源权限，继续由宿主组合。跨阶段保留最小必要数据，未通过复制另一套执行表来绕过状态问题。
+
+Release/ASan 实际重编后的相关回归各 103/103（build/p5-m2c5-structure-{release,asan}-{build,tests}.log），包括真实两后端、两种拥有者、动态/未创建子树、取消/恢复及共同提交。43 项格式、59 项源码/构建/文档哈希和 22 个实际 ASan 当前对象核对通过；公开声明未改，沿用此前独立头证据。GCC 相关目标重建后 48/48（build/p5-m2c5-structure-gcc-{build,tests}.log）。前轮最后源的 GCC 未执行条目组件最终已通过 14/14，见 build/p5-m2c5-unstarted-final-gcc-tests.log，已补齐当时待验证结果。
+
+全局新图还需先明确动态纯契约、逻辑路径互斥、借用规范工厂/Core 与模块读意图及其撤销/释放协议；现有局部排序不是完整证明。M2c5 仍未收口、未提交，不进入 M3。
+
+## P5-M2c5 未执行条目投影与发布复查
+
+日期：2026-11-04。复查先区分 Session 接受意图、Driver 执行记录和 Core 实际成员。修复预检把已接受但因父项失败而未执行的子项误判为新增配置，两后端独立失败回归先 0/2（build/p5-m2c5-unstarted-red-tests.log）。初次测试编译中声明顺序错误，以及组件测试传入未规范化字符串，均为测试编写错误，已修正，不计为产品缺陷。
+
+Driver 内共用临时重建投影，不在预检期间写入真实记录，不增加永久实例表或把空条目当作真实实例。投影仅补齐原接受目标中启用且插件身份不变的条目，新条目仍拒绝；已知 realm 的变更与现有条目保持一致，原域、类型契约和实际候选核对继续生效。真实祖先仍经 Core 唯一图占用。新记录节点在准备阶段分配，所有权与观察器也在准备中核对，发布时用相同分配器 map 节点转移；原更新记录交换后在锁外退役。
+
+新增四项实际 C ABI/Qt 成功及旧配置恢复检查；组件检查同时覆盖准备放弃无落账、目标外条目拒绝、重新准备和真实发布、已知 realm、修订/保存保持及无调度器边界。相关 Release/ASan 回归各 164/164，日志 build/p5-m2c5-unstarted-related-*；其后身份条件收敛及域兼容性检查的最新源重编专项各 5/5，日志 build/p5-m2c5-unstarted-final-{release,asan}-*。GCC 相关目标先验 48/48，最后源收敛后的组件重链接尚待读取最终结果，不宣称已完成全支持矩阵。源码/ASan 当前对象核对另见本轮审计产物。
+
+当前阶段仍未提交，继续全局新依赖图、祖先/跨模块并发、多参与者准备失败、拥有者晚到/取消及最终支持矩阵；M3–M5 不据此提前完成。
+
+## P5-M2c5 逻辑条目与祖先占用复查
+
+日期：2026-11-04。先检查逻辑记录与真实实例的职责边界：Driver 提供原记录中的祖先选择，Core 从唯一实际图重新核对并原子占用，宿主层组合输入。没有将逻辑条目伪装为活动实例，也没有将某个祖先 Runtime 的全部实例扩为换代目标。新增接口均为宿主私有 SPI；原公开 Kernel/Scope 方法和 C ABI 声明未改。
+
+祖先选择复用 selectReplacement 的父子和消费者闭包，保存在私有 Selection 供 freeze 重新计算；重复选择去重、外 Kernel/失效选择拒绝，冲突不留下部分占用。Driver 预检与准备共享逻辑祖先路径计算。宿主配置来源改为一个可选 ConfiguredSource，分别保留路径、参与者和原记录 ID，移除 parallel keys/originals 与哨兵；已停止旧记录不再被误要求为 Core 当前成员。
+
+真实 C ABI/Qt 各三项操作检查覆盖子项已停止、候选失败旧代重建、祖先也停止的完整重建与磁盘保存。另一个无 Qt Core 检查覆盖子树/实际消费者、重复/外 Kernel 选择、冲突无半组状态及 freeze 重验。初轮新增五项在 Release/ASan 各 5/5；相关回归各 123/123（`build/p5-m2c5-waiting-related-{release,asan}-tests.log`）。之后新增祖先停止场景，两配置当前专项各 7/7，见 `build/p5-m2c5-waiting-root-{release,asan}-*`，没有把较早 123 项表述成包含后两项的重跑。
+
+一次同目录重链在旧回归进程仍运行时触发 Windows LNK1104，占用回归完成后已串行重建并通过，未记为产品缺陷。GCC 原目录相关目标编译链接完成后专项 67/67（build/p5-m2c5-waiting-gcc-{build,tests}.log），包括无 Qt 祖先/冲突/freeze 检查；不当作 GCC/Qt DLL 验收。43 项修改区域格式、57 项源码/构建/文档哈希、22 个实际 ASan 当前编译对象及 git diff --check 核对通过。公开 SDK/C ABI 内容在本增量未变，沿用前轮独立头证据，没有声称本轮完整支持矩阵通过。
+
+当前只是 M2c5 集成增量；从未创建的逻辑子项、祖先定义并发、拥有者晚到/取消、跨模块及多参与者故障交错和最终支持矩阵仍待完成，未提交、不进入 M3。
+
+## P5-M2c5 动态子树拥有者复查
+
+日期：2026-11-03，基线仍为 cfbeb31。先检查父子所有权、权限与已有拥有者协议，再添加实际动态子树证据。本增量只新增独立测试拥有者和场景，没有增加公开接口或改变生产依赖方向；Core 仍持唯一实例/服务图，领域内临时工厂留在宿主拥有者中。
+
+新增十项真实 C ABI/Qt 检查：两后端各覆盖三成员动态链成功、遗漏孙实例、孙实例父级错误，以及宿主内置根下业务 DLL 子实例的成功/遗漏恢复。最终报告逐项对应实际拥有者持有的新句柄，检查旧实例销毁、新实例就绪、父级子数、配置、实际新旧业务 Runtime 身份和激活/清理计数。私有 realm 的真实服务提供者与孙实例声明依赖共同检查域继承、解析成功和关闭后全部清理。
+
+负向控制移除操作层的实际 parent 核对，两后端错误父级场景 0/2，证明回归能检出缺少该门禁；生产源码已按字节恢复并重新构建，日志 `build/p5-m2c5-subtree-negative-*`。测试最初错误使用 Kernel.findInstance 查询动态子实例、以及使用文本 realm，被原接口拒绝；已改用实际拥有者句柄和 ServiceRegistry.createRealm，没有为测试扩大 SDK。上述测试编写错误不记为产品缺陷。
+
+最终私有域依赖检查加入后，原目录 Release/ASan 的操作与目标合并专项各 44/44（41 项实际操作、3 项目标合并），日志 `build/p5-m2c5-subtree-current-{release,asan}-{build,tests}.log`。随后只补齐新测试头的标准库 include，重建并另验两配置新增动态子树各十项，见 `build/p5-m2c5-subtree-verified-*`。40 项 C++ 修改区域格式、源码/构建/文档哈希与 20 个实际 ASan 当前对象、git diff --check 均核对；本增量未改公开 SDK/C ABI，沿用前轮已归档的 GCC/独立头证据，不声称本轮重跑完整支持矩阵。
+
+范围只针对新增动态拥有单元及既有操作回归，不将链式结构当作任意拓扑、晚到异步任务或整个 M2c5 的证明。等待配置条目的闭包扩展、跨模块目录并发、多参与者准备失败交错和完整支持矩阵继续；当前未提交、不进入 M3。
+
+## P5-M2c5 宿主整体操作集成复查
+
+日期：2026-11-03。基线 cfbeb31，当前增量未提交，M2c5 保持进行中。实现前复核职责：整体异步流程放在独立 Cordis::Replacement；Core 保有唯一实例/服务权限，Module 保有代次及预约，Driver/Session/Coordinator/Store 各自管理原账目。没有把模块策略放进 KernelDriver 或增加公开的局部切换入口，详见 [ADR-0048](adr/0048-host-replacement-operation.md)。
+
+已复现并修复：
+
+- P2：最终 schema 重入调用 cancel 已返回成功，但取消标记排在当前推进之后，操作仍提交。真实两后端修复前 0/2。取消即时登记，最终发布再次检查；已真实提交/恢复后拒绝过晚取消。日志 `build/p5-m2c5-operation-cancel-red-*`。
+- P2：恢复失败保留的 Scope 仍处于可创建状态，拥有者保留权限可再次 stage。真实两后端修复前 0/2。终止失败显式封闭 Core 状态；工作线程拒投通过共享原子故障信号同时关闭真实 Scope 准入，信号不保留 Kernel/工厂。日志 `build/p5-m2c5-operation-authority-red-*`。
+- P2：候选映射核对完成后，最终取消引发恢复；恢复子项失败时，公开报告仍列出已销毁候选 ID。真实两后端修复前 0/2。准备映射归 Execution，整体发布时以无分配 swap 进入报告；恢复清理不会暴露暂存映射。日志 `build/p5-m2c5-operation-mapping-red-*`。
+
+复查补齐实际附加依赖核对、拥有者创建前拒绝时的恢复路径，以及恢复成员已创建后失败的清理。两个真实 Session/Driver 的新检查覆盖共同换代与激活失败恢复，验证两边实际条目、定义来源、修订、persisted/dirty、磁盘保存与关闭。YAML 选择性合并复用有界节点和条目定位，不另造 JSON 数值转换或复制路径遍历。
+
+验证范围：
+
+- 本轮完整 Release/ASan 重建后，Loader/P4/P5 联合回归各 614/614，分为非 UI 564 与顺序执行的 UI 50；日志 `build/p5-m2c5-operation-{release,asan}-{nonui,ui}-tests.log`。首次 UI 进程缺少 Qt DLL 路径而无法启动，补齐原工具链 PATH 后两轮各 50/50；不将环境失败记为产品缺陷。
+- 上述联合回归之后，映射修正和双 Session 检查的最终专项在 Release/ASan 各 34/34（31 项实际两后端操作与 3 项纯目标合并），日志 `build/p5-m2c5-operation-sessions-release-all-tests.log`、`build/p5-m2c5-operation-sessions-asan-tests.log`。不把较早 614 项表述为修改后的整套重跑。
+- 无 Qt GCC 相关目标及 YAML/示例补重建后专项 121/121，日志 `build/p5-m2c5-operation-final-gcc-tests.log`。该配置不构建整体宿主操作，不当作 GCC/Qt 业务 DLL 验收。
+- 两编译器各七个公开头独立编译；39 项 C++ 格式及 20 个实际 ASan 当前编译对象核对。源码/构建/文档哈希见 `build/p5-m2c5-metadata-source-sha256.json`，提交差异检查通过。C ABI 声明未改，原 facade 大小保持。
+
+仍须完成真实动态子树的多成员对应、逻辑等待配置条目闭包扩展、另一模块目录并发、多参与者准备失败交错及完整支持矩阵。当前两会话检查不等于上述故障组合全部通过；现有旧配置重建不等于 M3 的版本化状态迁移或 S09 完整矩阵。阶段审计、提交同步后才进入 M3；本轮不能作阶段收口。
+
+## P5-M2c5 冻结前输入与参与者匹配复查
+
+日期：2026-11-03。基线仍为 cfbeb31，当前完整操作尚未完成，未作阶段提交。先检查 Driver 对闭包外拥有者的职责边界，再将跨驱动覆盖策略放到 ConfigReplacement 的独立组合实现；Core 只提供真实句柄/原输入及来源重验，Driver 继续拥有类型、realm 和条目账目。
+
+复查复用不可变定义换代核对及现有依赖排序，避免复制两套契约算法；新目录作为排序的明确只读输入，不临时改写当前目录。旧配置父子对应通过实际 InstanceId 校验，未知拥有者不归为手动，已登记的临时子工厂仍保留拥有者重建义务。参与者组合使用线性遍历与实例索引核对覆盖，不以反复扫描整个闭包实现匹配。检查窗口使用原 Driver Access 门禁，availability 回调后重新检查来源/关闭，不把检查结果当作已冻结计划。
+
+补齐无活动条目的目录检查：Driver 尚未执行动作时 currentTarget 可为空，不能据此拒绝已接受空配置的参与者；仍按捕获值在 current 重验，不擅自补登记目标。关于驱动可复制的初始假设被现有已删除复制构造拒绝，测试改回同一参与者重复输入，没有引入额外的身份去重机制，不将编译失败称为产品缺陷或红测试。
+
+最终源码与受影响目标重建后 Release/ASan 相关回归各 85/85，GCC 59/59；27 项格式、35 项输入哈希和十三项实际 ASan 当前对象通过，六项公开头源哈希与前轮一致。五项新增检查及完整范围见 [M2c5](p5-m2c5-development.md#冻结前重建输入与参与者匹配11-月-3-日进行中)。这些检查不证明完整预检或运行操作完成：尚须 Session 配对、模块实际来源及兼容性、全局新依赖图、拥有者重建协议、目标版本重合并和完整失败保留。当前不作阶段完成或提交声明。
+
+## P5-M2c5 拥有者识别增量复查
+
+日期：2026-11-03。仍基于 cfbeb31 的未提交集成工作区。检查冻结前分类所需的真实拥有关系：原条目表未命中不证明是手动实例，另一个 Driver 管理的实例必须能被识别。私有身份直接附在 InstanceControl，不复制 Core/Driver 的实例索引，也不保存驱动或插件回调；配置创建、实际子实例和 remount 沿原路径设置或继承。
+
+候选归属准备只接受真实 Prepared 子树，不覆盖其他身份；准备撤销不改变标记。身份交换纳入 Loader 最终元数据提交，退役及失败通知后不丢失已提交事实。ready/publish 不调用调度器，旧标记为空或同一无回调身份，不在模块锁内析构业务捕获。Driver 的实例映射仍是实际账目；身份仅用于核对，不能代替路径、Core 闭包或模块来源证明。
+
+新增场景验证配置/手动/另一驱动、实际子实例、激活前读取、重挂载、错误线程、非 Prepared/其他拥有者拒绝，以及会话和驱动释放后的标记寿命。既有提交和配置树恢复补验新实例归属，准备阶段另验候选尚未被接纳。最终源码及受影响示例重建后，Release/ASan 相关专项各 80/80，日志 build/p5-m2c5-owner-current-{release,asan}-*；GCC 最终相关目标重建后 54/54，日志 build/p5-m2c5-owner-current-gcc-*。两编译器各六个受影响公开头、24 项 C++ 格式和十一项实际 ASan 当前对象核对通过。先前 580 项为该身份增量之前的联合回归，不沿用为本轮全量结论。
+
+本轮身份修正不等于完整预检已实现。下一步须同时匹配实际闭包、身份和 Driver 条目，未知拥有者在停止前拒绝；动态子工厂继续由实际拥有者重建。M2c5 及整个 P5 保持进行中，当前不作阶段提交。
+
+## P5-M2c5 Driver / Session 集成增量复查
+
+日期：2026-11-03。基线 cfbeb31。当前代理复查，未使用子代理。此项记录当前增量，不作为完整 M2c5 出口或提交授权替代。
+
+检查 Core 的真实 Prepared 身份、Kernel 归属和重准备失效，Driver 不可变定义/配置树/实例来源与父代映射，Session/Coordinator/Store 的同步准备和取消路径，以及锁内发布与锁外退役、通知的边界。调整 Session 通知失败收尾的异常顺序：先完成可能分配的错误报告，再设置 finished，避免报告分配失败后无法取消未完成任务。KernelRecord 使用逐字段无异常交换，避免 MSVC 的 map 移动构造在提交阶段分配。泛型 Session 准备接口与具体 KernelDriver 桥分别位于私有头，保持依赖向下。
+
+新增六项真实 Core/Driver/Session 检查和四项真实 C ABI/Qt 双版本联合提交/旧代重建检查，覆盖跨 Kernel、映射缺失/重复/错误来源、父代不符、准备身份失效、投递失败、结果完成时查询，以及发布后放弃。两后端检查规范目录数量、实际角色/实例和文件保存；该重建场景未覆盖 M3 状态迁移。新增测试中的回调签名和 GCC 聚合初始化警告已修正，不计为产品缺陷。
+
+原目录 Release/ASan 完整构建后，Loader/P4/P5 联合回归各 580/580；最终测试源码修正及格式化后两套联合提交专项各 10/10。GCC 针对配置提交、目标账目、不可变替换目录、Session 和 Driver 的 56/56 通过；GCC 全量链接中止后改为上述相关目标构建，不宣称本轮 GCC 全量通过。两编译器各五个受影响公开头独立编译；19 项 C++ 格式、源码/构建/文档哈希及九个真实 ASan 当前对象核对通过，证据前缀 build/p5-m2c5-metadata-*。C ABI 声明未改，公开头只增加内部友元/前向声明，未扩大句柄布局。
+
+本轮没有发现阻止该集成增量继续开发的问题；冻结前拥有者重建协议、完整闭包重建、目标重合并和长生命周期操作仍未实现，不能将准备桥当作完整替换入口。M2c5 保持进行中，当前增量未提交，完成整体出口后再进行阶段审计、提交同步。
+
 ## P5-M2c5 基础设施增量审核
 
 日期：2026-11-03。基线 ae9c045。按本次用户要求审核并提交当前工作区增量；完整 M2c5 仍进行中，本次不作为其出口，也不开始 M3。由当前代理审核，未使用子代理。

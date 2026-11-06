@@ -11,6 +11,7 @@
 namespace cordis::loader {
 namespace detail {
 struct SessionControl;
+struct SessionCommitAccess;
 }
 /** @brief 不可伪造的会话候选；基于固定期望修订，编辑变化必须重新预览。 */
 class ConfigurationDraft {
@@ -98,6 +99,7 @@ public:
     Task<void> close();
 
 private:
+    friend struct detail::SessionCommitAccess;
     std::shared_ptr<detail::SessionControl> control_;
 };
 } // namespace cordis::loader

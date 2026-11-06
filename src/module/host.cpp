@@ -2,6 +2,7 @@
  * @brief 稳定基础 HostTable、真实业务生命周期、资源入口与保守失败驻留。
  */
 #include "admission_p.hpp"
+#include "failure_p.hpp"
 #include "host_p.hpp"
 #include "host_resources_p.hpp"
 #include "host_services_p.hpp"
@@ -298,11 +299,7 @@ void NativeInstanceControl::quarantine(ErrorInfo error) noexcept
             std::lock_guard<std::mutex> lock(root->mutex);
             root->faulted = true;
         }
-        {
-            std::lock_guard<std::mutex> lock(root->source.failureSignal->mutex);
-            if (!root->source.failureSignal->error)
-                root->source.failureSignal->error = error;
-        }
+        recordBusinessFailure(root->source.generation, error);
         if (ownerThread())
             recordNativePhase(root->source.generation, ModuleState::Failed, error);
         started.reject(error);
@@ -865,6 +862,14 @@ Task<CleanupReport> NativeInstance::close() const
         self->quarantine(hostError(ErrorCode::SchedulerClosed, "native scheduler is closed"));
         return self->stopped.task();
     }
+    {
+        std::lock_guard<std::mutex> lock(self->mutex);
+        if (self->uncertain || self->closing || self->state == NativeInstanceState::Destroyed)
+            return self->stopped.task();
+    }
+    auto servicesAllowed = self->resources->services->retirementAccess();
+    if (!servicesAllowed.hasValue())
+        return failedCleanupTask(servicesAllowed.error());
     bool pending;
     {
         std::lock_guard<std::mutex> lock(self->mutex);
@@ -935,21 +940,27 @@ Task<CleanupReport> NativeModule::close() const
         std::lock_guard<std::mutex> lock(root->mutex);
         if (root->closing)
             return root->stopped.task();
+        instances.reserve(root->instances.size());
+        for (const auto& pair : root->instances)
+            instances.push_back(pair.second);
     }
     {
         auto admission = admitGenerationLifecycle(root->source.generation);
         if (!admission.hasValue())
             return failedCleanupTask(admission.error());
+        for (const auto& instance : instances)
+            if (instance->managed && !instance->managedClosing)
+                return failedCleanupTask(hostError(ErrorCode::ContextClosing, "close owning Core instances first"));
+        // 生命周期准入仍持有，Core 读权限检查在目录与模块/实例互斥锁外。
+        for (const auto& instance : instances) {
+            auto servicesAllowed = instance->resources->services->retirementAccess();
+            if (!servicesAllowed.hasValue())
+                return failedCleanupTask(servicesAllowed.error());
+        }
         {
             std::lock_guard<std::mutex> lock(root->mutex);
             if (root->closing)
                 return root->stopped.task();
-            for (const auto& pair : root->instances)
-                if (pair.second->managed && !pair.second->managedClosing)
-                    return failedCleanupTask(hostError(ErrorCode::ContextClosing, "close owning Core instances first"));
-            instances.reserve(root->instances.size());
-            for (const auto& pair : root->instances)
-                instances.push_back(pair.second);
             root->closing = true;
             root->waiting = instances.size();
         }

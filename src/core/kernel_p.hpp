@@ -12,7 +12,14 @@ struct ReplacementSelection {
     std::vector<ServiceKey> outputs;
     std::map<InstanceId, Instance> instances;
     std::vector<ReplacementInput> inputs;
+    std::vector<InstanceId> anchors{};
 };
+struct OwnedInstance {
+    Instance instance;
+    ReplacementMember member;
+    bool blocked;
+};
+using KernelOwnership = std::map<InstanceId, OwnedInstance>;
 struct KernelControl : std::enable_shared_from_this<KernelControl> {
     explicit KernelControl(std::shared_ptr<IScheduler> scheduler);
     Result<Runtime> registerPlugin(std::string name, Runtime::Activate activate,
@@ -25,15 +32,18 @@ struct KernelControl : std::enable_shared_from_this<KernelControl> {
                                RealmMap realms, std::vector<ServiceRequirement> additionalDependencies);
     Result<Instance> mountWithRegistry(const Runtime& runtime, std::string config, RealmMap realms,
                                        std::vector<ServiceRequirement> additionalDependencies,
-                                       std::shared_ptr<ServiceRegistry> services);
+                                       std::shared_ptr<ServiceRegistry> services,
+                                       std::shared_ptr<const InstanceOwnerIdentity> owner = {});
     Result<Instance> remount(const Instance& previous);
     Task<CleanupReport> close();
     Result<KernelSnapshot> snapshot();
     Result<Instance> findInstance(InstanceId id) const;
+    Result<KernelOwnership> inspectOwnership() const;
     Result<ReplacementClosure> replacementClosure(const std::vector<RuntimeId>& requested) const;
-    Result<ReplacementSelection> selectReplacement(const std::vector<RuntimeId>& requested,
-                                                   bool captureInputs = false) const;
-    Result<ReplacementScope> reserveReplacement(const std::vector<RuntimeId>& requested);
+    Result<ReplacementSelection> selectReplacement(const std::vector<RuntimeId>& requested, bool captureInputs = false,
+                                                   const std::vector<InstanceId>& anchors = {}) const;
+    Result<ReplacementScope> reserveReplacement(const std::vector<RuntimeId>& requested,
+                                                const std::vector<InstanceId>& anchors = {});
     Result<std::vector<ReplacementScopeSnapshot>> replacements() const;
     Task<void> whenReplacementReleased(OperationId operation) const;
     Result<void> checkMount(const Runtime& runtime, const RealmMap& realms,

@@ -7,13 +7,15 @@ namespace cordis::loader::detail {
 Result<PreparedTargetCommit> TargetCommitAccess::prepare(ConfigurationCoordinator& coordinator,
                                                          ConfigurationStore& store,
                                                          std::shared_ptr<const ValidatedCandidate> target,
-                                                         std::uint64_t expected)
+                                                         std::uint64_t expected, TargetCommitMode mode)
 {
     using Output = Result<PreparedTargetCommit>;
-    auto runtime = prepareCoordinator(coordinator, target, expected);
+    if (mode != TargetCommitMode::Advance && mode != TargetCommitMode::Preserve)
+        return Output::failure(makeError(ErrorCode::InvalidArgument, "unknown target commit mode"));
+    auto runtime = prepareCoordinator(coordinator, target, expected, mode);
     if (!runtime.hasValue())
         return Output::failure(runtime.error());
-    auto persistence = prepareStore(store, std::move(target), expected);
+    auto persistence = prepareStore(store, std::move(target), expected, mode);
     if (!persistence.hasValue())
         return Output::failure(persistence.error());
     if (runtime.value()->scheduler != persistence.value()->scheduler ||
@@ -35,6 +37,6 @@ void PreparedTargetCommit::publish() noexcept
 }
 std::uint64_t PreparedTargetCommit::revision() const noexcept
 {
-    return coordinator_ ? coordinator_->previous + 1 : 0;
+    return coordinator_ ? coordinator_->next : 0;
 }
 } // namespace cordis::loader::detail

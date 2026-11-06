@@ -80,6 +80,8 @@ struct PreparedPublication {
 Result<PreparedPublication> preparePublication(const std::shared_ptr<PublicationControl>& control);
 void applyPublication(const std::shared_ptr<PublicationControl>& control,
                       const std::vector<std::shared_ptr<BindingControl>>& bindings) noexcept;
+/** @brief owner 线程的主动撤回只读准入；已真实退役的清理保持幂等。 */
+Result<void> replacementBindingReadAccess(const std::shared_ptr<BindingControl>& binding);
 void checkUnused(const std::shared_ptr<BindingControl>& binding);
 bool notifyRegistry(const std::shared_ptr<ServiceRegistryControl>& registry);
 bool visiblePublication(const std::shared_ptr<PublicationControl>& binding,

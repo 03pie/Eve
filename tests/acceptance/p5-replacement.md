@@ -138,4 +138,57 @@ M2a 的完整验证记录见 [开发记录](../../docs/p5-m2a-development.md)。
 
 边界与审查记录见 [M2c4](../../docs/p5-m2c4-development.md)。协议替身只验证来源门禁，真实双版本场景验证独立绑定，不代表已运行替换；完整事务仍待后续。
 
-M2 后续及 M3–M5 尚待实现和逐项验证：完整 ReplacementOperation、服务发布与冻结定义/目录角色的整体切换、UI 贡献可见性、状态导出/迁移/校验、新代激活失败恢复、旧代恢复失败、消费者恢复失败、晚到回调/析构与卸载、白名单实际卸载、正常/故障下连续 100 次 Windows 替换及随机压力。最终必须把操作报告、实际运行和资源/文件/进程证据分别核对。
+## M2c5 整体运行事务（已完成）
+
+以下通过公开 `ReplacementOperation` 执行真实 C ABI/Qt 两版本 DLL，不由测试手动推进提交凭据。`native` / `qt` 前缀分别对应两后端。
+
+| 场景 | 检查名称（p5 前缀） |
+|---|---|
+| 配置根、显式子项、手动实例共同换代及真实保存 | `{native,qt}_operation` |
+| 新工厂失败、配置子项失败后的旧配置重建 | `{native,qt}_operation_recovery`、`{native,qt}_operation_child_failure` |
+| 启动前取消、最终 schema 重入取消 | `{native,qt}_operation_cancel`、`{native,qt}_operation_cancel_commit` |
+| 候选核对后恢复失败，报告无已销毁候选映射 | `{native,qt}_operation_recovery_mapping` |
+| 两个实际 Session/Driver 共同发布和旧代重建、修订/保存账目一致 | `{native,qt}_operation_sessions`、`{native,qt}_operation_sessions_recovery` |
+| 第一参与者已取得真实最终准备槽，第二参与者 schema 抛错或取消；角色/磁盘未发布，完整旧代恢复且两会话可再次保存 | `{native,qt}_operation_sessions_prepare_failure`、`{native,qt}_operation_sessions_prepare_cancel` |
+| 实际工厂来源门禁、无关目标编辑合并与大整数原文保存 | `{native,qt}_operation_guards`、`{native,qt}_operation_merge` |
+| 宿主根拥有者协议、创建前拒绝、遗漏附加依赖 | `{native,qt}_operation_owner`、`{native,qt}_operation_owner_before_create`、`{native,qt}_operation_owner_contract` |
+| 旧代恢复创建前/后失败，清理、保留预约与关闭 Scope 权限 | `{native,qt}_operation_owner_recovery_failure`、`{native,qt}_operation_owner_recovery_after_create_failure` |
+| 工作线程完成时拒投，恢复调度器后 Scope 仍拒绝创建 | `native_operation_owner_delivery` |
+| 动态根→子→孙实际对应、遗漏成员或错误父级后的完整旧树恢复 | `{native,qt}_operation_subtree`、`{native,qt}_operation_subtree_omit`、`{native,qt}_operation_subtree_parent` |
+| 宿主内置根包含业务 DLL 子实例及临时孙实例，祖先共同换代/恢复 | `{native,qt}_operation_subtree_nested`、`{native,qt}_operation_subtree_nested_omit` |
+| 已停止配置子项连同活动祖先重建、候选失败恢复；祖先也停止时完整配置树重建 | `{native,qt}_operation_waiting`、`{native,qt}_operation_waiting_recovery`、`{native,qt}_operation_waiting_root` |
+| 无 Qt Core 实际祖先/子树/消费者闭包，重复选择、外 Kernel、冲突与 freeze | `configuration_commit_anchors` |
+| 父项失败致子项未执行，候选成功或失败后按旧配置重建并保存 | `{native,qt}_operation_unstarted`、`{native,qt}_operation_unstarted_recovery` |
+| 未执行条目的准备放弃、目标外新条目拒绝、域兼容和节点发布 | `configuration_commit_unstarted` |
+| 旧候选构建许可不能在恢复阶段创建内置根 | `{native,qt}_operation_subtree_nested_stale` |
+| 构建许可绑定实际组、空组丢弃、错误线程与弱引用寿命 | `builder_phases`、`builder_empty`、`builder_lifetime` |
+| 启动前、停止中及拥有者候选任务悬挂时 Kernel 实际关闭，操作取消、解除意图及拒绝晚到结果 | `{native,qt}_operation_owner_kernel_close`、`{native,qt}_operation_owner_kernel_close_prepared`、`{native,qt}_operation_owner_kernel_close_stopping` |
+| Session 关闭与拥有者悬挂、启动前、停止中、最终 schema、旧代恢复最后回调及恢复失败交错；第二会话/手动实例与文件实际结果 | `{native,qt}_operation_session_close`、`{native,qt}_operation_session_close_{prepared,stopping,commit,recovery_commit,recovery_failure}` |
+| 预检拥有者嵌套事件循环关闭、抛出及更早 availability 关闭；撤销后原文件/其他会话/手动原实例保留；预检 Kernel 关闭须保留预约到真实静止 | `{native,qt}_operation_session_close_preflight{,_throw,_available,_kernel}` |
+| Core 活动候选或错误线程拒绝不得提前解锁，实际释放通知须晚于宿主解锁 | `builder_release_order` |
+| 多持有关闭屏障、外来/已释放凭据拒绝、仅 Preserve、放弃启动、worker 结算与拒投 | `configuration_commit_session_hold`、`configuration_commit_session_hold_delivery` |
+| 两个真实模块共享未创建祖先时预检排他；未创建的计划工厂拒绝低层模块预约/关闭/drain，完成后可重试；独立且有字符串前缀的路径并行提交并保存两模块目录 | `{native,qt}_operation_paths_conflict`、`{native,qt}_operation_paths_parallel` |
+| 无实例路径占用、普通目标 CAS/直接动作门禁、Pending 不写记录、必须持有真实凭据、空会话目标 | `configuration_commit_claims`、`configuration_commit_claims_empty` |
+| 同 Kernel 规范工厂读意图共享/排他/释放/线程/来源及低层原成员读权限 | `builder_readers` |
+| 拥有者声明新增动态子节点并创建；遗漏未来描述冻结前拒绝；实际服务契约不同则恢复原树 | `{native,qt}_operation_subtree_future_{child,missing,contract}` |
+| 完整未来图缺失提供者/环、未知 realm、外部版本不足冻结前拒绝；外部提供者在预检后停止则冻结前重验拒绝并保留原业务根 | `{native,qt}_operation_subtree_future_{missing_service,cycle,realm,version}`、`{native,qt}_operation_subtree_provider_loss` |
+| 两个实际拥有单元的服务依赖与真实激活顺序、跨单元环及重复提供者；不能代替跨模块完整矩阵 | `{native,qt}_operation_graph{,_cycle,_conflict}` |
+| 两个真实模块争用未来输出在冻结前拒绝，取消后重试；外来实际 Staged/Held/Retiring 绑定拒绝 | `{native,qt}_operation_outputs{,_staged,_held,_retiring}` |
+| 同 Kernel 输出封存、错误线程/重复拒绝、失败不落半组权限、计划外已注册工厂拒绝及低层动态兼容 | `builder_output_plan` |
+| 外部绑定读共享、BindingId 重验、输入失败不占用输出、原始退役门禁、祖先 stop/update 与另一替换拒绝、Kernel 关闭及真实失效信号，不伪造 committed 消费者 | `builder_input_plan` |
+| 真实 native/Qt 操作冻结前保护外部提供者 stop/update，取消后解除；上游原始绑定故障传播，冻结前拒绝而原业务根保留 | `{native,qt}_operation_subtree_provider_{guard,loss}` |
+| 拥有者候选任务悬挂时，候选独有外部服务真实故障中断，完整恢复旧树、关闭旧许可及忽略晚到结果 | `{native,qt}_operation_subtree_input_suspend` |
+| 外部提供者是内置动态子实例，其真实 C ABI 模块祖先不在闭包中，预检后另一预约/close/drain 拒绝及取消释放；目标为真实 native/Qt | `{native,qt}_operation_sources_ancestor` |
+| 候选独有的真实 C ABI 工厂来源违反 create 协议，代次故障中断悬挂拥有者并恢复旧树；旧许可/晚到回执拒绝，peer 不确定资源诚实保留 | `{native,qt}_operation_sources_loss` |
+| 提供者真实 Native 模块祖先同时被候选/恢复读取，故障阻止恢复并报告 RecoveryFailed、保留预约及空映射 | `{native,qt}_operation_sources_loss_shared` |
+| 真实低层原生服务不属于 Core 拥有树：从实际端点保护代次读持有；协议 quarantine 中断悬挂拥有者，恢复失败保留资源 | `{native,qt}_operation_sources_raw_loss` |
+| 正确声明同代次/插件的新 RuntimeId；没有已有来源读权限时取得新模块读持有；真实候选完成和模块角色 | `{native,qt}_operation_sources_{declared,independent}` |
+| 仅有服务读持有不授予创建，未声明或实际代次不符在 DLL create 前拒绝，双代实际计数不增并完整恢复 | `{native,qt}_operation_sources_{undeclared,mismatch}` |
+| 未知插件、非目标候选代次或恢复来源改变冻结前拒绝，原三成员仍 Active，权限解除 | `{native,qt}_operation_sources_{plugin,role,recovery_source}` |
+| 全局已允许的来源被放到错误成员，真实 create 发生后 Prepared 逐成员拒绝并恢复，不能误称创建前拒绝 | `{native,qt}_operation_sources_misattributed` |
+| 真实 C ABI 服务/effect/实例/模块主动撤回在绑定读冲突时无副作用拒绝，健康与全部服务保留、零请求/无残留、解除权限后可完成原撤回/关闭 | `native_service_{,effect_,instance_,module_}read_conflict` |
+| 恢复动态成员的配置、域映射、依赖或输出改变在停止前拒绝，修正计划可重试并取消；等价重复依赖可完成旧树恢复 | `{native,qt}_operation_subtree_recovery_{config,realm,requirements,outputs,equivalent}` |
+
+纯目标合并另由 `replacement_target` 标签覆盖，不替代 DLL/运行检查。动态子树检查覆盖链式结构与嵌套业务子实例，不能代替任意拓扑及晚到任务故障；多会话成功/激活失败检查也不代表所有准备失败交错。阶段结果见 [开发记录](../../docs/p5-m2c5-development.md)和 [审查](../../docs/code-review.md#p5-m2c5-动态子树拥有者复查)。
+
+M2c5 的实际模块来源、未托管原生服务、两阶段来源故障、多参与者部分准备失败/取消及最终支持矩阵已补齐；当前阶段审计和范围见 [收口记录](../../docs/p5-m2c5-development.md#阶段收口结论)。M3–M5 的版本化状态迁移、白名单物理卸载、UI 贡献可见性、真实连续 100 次 Windows 替换及随机压力仍待完成，不能据本阶段 Core/Module/配置事务宣称 H01/H02/S09 全范围已通过。

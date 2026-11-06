@@ -1,7 +1,9 @@
 /** @file instance.cpp
  * @brief 通过每代 EffectScope 屏障驱动配置收敛、失败回滚与实例终结。
  */
+#include "instance_ownership_p.hpp"
 #include "replacement_scope_p.hpp"
+#include "service_contract_p.hpp"
 #include <cordis/instance.hpp>
 
 #include <algorithm>
@@ -19,50 +21,6 @@
 #include <vector>
 
 namespace cordis::detail {
-/** @brief 插件固定契约与宿主附加契约共用键、类型及能力名称校验。 */
-bool validServiceDescriptor(const ServiceKey& key, std::type_index type, const std::vector<std::string>& capabilities)
-{
-    if (key.name.empty() || key.interfaceMajor == 0 || !key.realm.valid() || type == typeid(void))
-        return false;
-    std::set<std::string> names;
-    for (const auto& name : capabilities)
-        if (name.empty() || !names.insert(name).second)
-            return false;
-    return true;
-}
-/** @brief 按精确解析域联合依赖，类型必须一致，minor 取最大值、能力取并集。 */
-std::vector<ServiceRequirement> mergeDependencies(const std::vector<ServiceRequirement>& required,
-                                                  const std::vector<ServiceRequirement>& additional,
-                                                  const RealmMap& realms)
-{
-    std::map<ServiceKey, ServiceRequirement> merged;
-    for (const auto* list : {&required, &additional})
-        for (const auto& dependency : *list) {
-            if (!validServiceDescriptor(dependency.key, dependency.type, dependency.capabilities))
-                throw std::invalid_argument("invalid additional service requirement");
-            auto value = dependency;
-            value.key = realms.resolve(value.key);
-            auto found = merged.find(value.key);
-            if (found == merged.end()) {
-                const auto key = value.key;
-                merged.emplace(key, std::move(value));
-            } else {
-                if (found->second.type != value.type)
-                    throw std::invalid_argument("conflicting dependency types for resolved service key");
-                found->second.minimumMinor = std::max(found->second.minimumMinor, value.minimumMinor);
-                auto& capabilities = found->second.capabilities;
-                capabilities.insert(capabilities.end(), value.capabilities.begin(), value.capabilities.end());
-            }
-        }
-    std::vector<ServiceRequirement> result;
-    for (auto& entry : merged) {
-        auto& capabilities = entry.second.capabilities;
-        std::sort(capabilities.begin(), capabilities.end());
-        capabilities.erase(std::unique(capabilities.begin(), capabilities.end()), capabilities.end());
-        result.push_back(std::move(entry.second));
-    }
-    return result;
-}
 /** @brief 一次清理调用的访问窗口；完成可在工作线程原子撤销。 */
 struct CleanupAccess {
     std::weak_ptr<IScheduler> scheduler;
@@ -130,6 +88,7 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     std::shared_ptr<ServiceRegistry> services;
     std::weak_ptr<ReplacementScopeControl> replacement;
     std::weak_ptr<ServiceRegistry> kernelRegistry;
+    std::shared_ptr<const InstanceOwnerIdentity> hostOwner;
     std::vector<ServiceRequirement> dependencies;
     std::vector<ServiceRequirement> additionalDependencies;
     std::vector<ServiceOutput> declarations;
@@ -141,6 +100,14 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     std::vector<std::shared_ptr<InstanceControl>> children;
     std::optional<CleanupReport> retirementFailure;
     std::vector<ErrorInfo> childErrors;
+
+    Result<void> mutationAccess() const
+    {
+        auto own = replacementMutationAccess(replacement);
+        if (!own.hasValue())
+            return own;
+        return services ? services->replacementProviderAccess(id) : Result<void>::success();
+    }
 
     /** @brief 为自动恢复或被覆盖的 Pending 结果建立独立操作，不改变配置修订。 */
     void newOperation()
@@ -384,7 +351,8 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
         scope.requestCancel();
         std::vector<Task<CleanupReport>> childTasks;
         for (const auto& child : children) childTasks.push_back(child->stop());
-        for (const auto& output : outputs) output.retire();
+        for (const auto& output : outputs)
+            output.retireForCleanup();
         auto pending = std::make_shared<std::size_t>(outputs.size());
         Promise<void> unused;
         if (outputs.empty()) unused.resolve();
@@ -648,7 +616,7 @@ Result<Instance> Context::inject(const Runtime& runtime, std::string config,
     }
     try {
         auto child = Instance::prepareMount(runtime, self->scheduler, std::move(config), self->services, realms_,
-                                            std::move(additionalDependencies));
+                                            std::move(additionalDependencies), self->hostOwner);
         if (self->services) self->services->attachParent(child.control_->id, self->id);
         self->children.push_back(child.control_);
         child.startMount();
@@ -864,7 +832,8 @@ Instance Instance::mount(const Runtime& runtime, std::shared_ptr<IScheduler> sch
 }
 Instance Instance::prepareMount(const Runtime& runtime, std::shared_ptr<IScheduler> scheduler, std::string config,
                                 std::shared_ptr<ServiceRegistry> services, RealmMap realms,
-                                std::vector<ServiceRequirement> additionalDependencies)
+                                std::vector<ServiceRequirement> additionalDependencies,
+                                std::shared_ptr<const detail::InstanceOwnerIdentity> owner)
 {
     if (!runtime.activate_) throw std::invalid_argument("runtime handle moved from");
     if (services && !services->publicationAccess().hasValue())
@@ -885,6 +854,7 @@ Instance Instance::prepareMount(const Runtime& runtime, std::shared_ptr<ISchedul
     for (const auto& dependency : dependencies)
         if (services && !services->containsRealm(realms.resolve(dependency.key).realm)) throw std::invalid_argument("dependency uses foreign realm");
     control->config = std::move(config);
+    control->hostOwner = std::move(owner);
     control->runtime = runtime.id();
     control->dependencies = std::move(dependencies);
     control->additionalDependencies = std::move(additionalDependencies);
@@ -951,7 +921,7 @@ Task<CleanupReport> Instance::stop() const
         return failed.task();
     }
     if (!control_->stopping) {
-        auto allowed = detail::replacementMutationAccess(control_->replacement);
+        auto allowed = control_->mutationAccess();
         if (!allowed.hasValue()) {
             Promise<CleanupReport> failed;
             failed.reject(allowed.error());
@@ -1022,7 +992,7 @@ Result<OperationHandle> Instance::change(std::string config, ConfigRevision expe
 {
     auto& c = *control_;
     if (!c.scheduler->isCurrentThread()) return Result<OperationHandle>::failure(makeError(ErrorCode::WrongThread, "update requires owner thread"));
-    auto allowed = detail::replacementMutationAccess(c.replacement);
+    auto allowed = control_->mutationAccess();
     if (!allowed.hasValue())
         return Result<OperationHandle>::failure(allowed.error());
     if (c.services) {
@@ -1074,7 +1044,7 @@ Result<void> Instance::checkMutation() const
         return Result<void>::failure(makeError(ErrorCode::WrongThread, "mutation check requires owner thread"));
     if (!control_->scheduler->isOpen())
         return Result<void>::failure(makeError(ErrorCode::SchedulerClosed, "scheduler closed"));
-    return detail::replacementMutationAccess(control_->replacement);
+    return control_->mutationAccess();
 }
 void Instance::setReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const
 {
@@ -1109,9 +1079,12 @@ bool Instance::preparedForPublication() const noexcept
 ReplacementInput Instance::captureReplacementInput(InstanceId parent) const
 {
     const auto& control = control_;
-    return {control->id,     parent,           control->runtime,      {},
-            control->config, control->realms,  control->dependencies, control->additionalDependencies,
-            control->epoch,  control->revision};
+    return {control->id,           parent,
+            control->runtime,      {},
+            control->config,       control->realms,
+            control->dependencies, control->additionalDependencies,
+            control->epoch,        control->revision,
+            control->declarations};
 }
 Task<CleanupReport> Instance::stopForReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const
 {
@@ -1151,7 +1124,66 @@ Result<Instance> Instance::remount(const Runtime& runtime, const std::shared_ptr
         return Result<Instance>::failure(
             makeError(ErrorCode::ContextClosing, "remount requires quiescent disposed instance"));
     return Result<Instance>::success(Instance::prepareMount(runtime, scheduler, control_->config, services,
-                                                            control_->realms, control_->additionalDependencies));
+                                                            control_->realms, control_->additionalDependencies,
+                                                            control_->hostOwner));
+}
+
+Result<std::shared_ptr<const detail::InstanceOwnerIdentity>>
+detail::InstanceOwnershipAccess::owner(const Instance& instance)
+{
+    using Output = Result<std::shared_ptr<const InstanceOwnerIdentity>>;
+    const auto control = instance.control_;
+    if (!control)
+        return Output::failure(makeError(ErrorCode::InvalidArgument, "ownership source was moved from"));
+    if (!control->scheduler->isCurrentThread())
+        return Output::failure(makeError(ErrorCode::WrongThread, "ownership query requires owner thread"));
+    return Output::success(control->hostOwner);
+}
+Result<detail::PreparedInstanceOwnership>
+detail::InstanceOwnershipAccess::prepare(const Instance& instance, std::shared_ptr<const InstanceOwnerIdentity> owner)
+{
+    using Output = Result<PreparedInstanceOwnership>;
+    if (!owner || owner->thread != std::this_thread::get_id())
+        return Output::failure(makeError(ErrorCode::WrongThread, "ownership preparation requires owner thread"));
+    std::vector<PreparedInstanceOwnership::Member> members;
+    std::vector<Instance> pending{instance};
+    while (!pending.empty()) {
+        auto member = std::move(pending.back());
+        pending.pop_back();
+        auto previous = InstanceOwnershipAccess::owner(member);
+        if (!previous.hasValue())
+            return Output::failure(previous.error());
+        if (previous.value() && previous.value() != owner)
+            return Output::failure(makeError(ErrorCode::ConfigConflict, "instance belongs to another host owner"));
+        const auto claim = member.control_->replacement.lock();
+        if (!claim || claim->state != ReplacementScopeState::Prepared || !member.preparedForPublication())
+            return Output::failure(
+                makeError(ErrorCode::ConfigConflict, "ownership adoption requires prepared candidate"));
+        auto children = member.ownedChildren();
+        if (!children.hasValue())
+            return Output::failure(children.error());
+        for (auto& child : children.value())
+            pending.push_back(std::move(child));
+        members.push_back({std::move(member), std::move(previous).value()});
+    }
+    return Output::success(PreparedInstanceOwnership(std::move(owner), std::move(members)));
+}
+bool detail::PreparedInstanceOwnership::ready() const noexcept
+{
+    if (!owner_ || owner_->thread != std::this_thread::get_id() || published_)
+        return false;
+    for (const auto& member : members_)
+        if (member.instance.control_->hostOwner != member.previous)
+            return false;
+    return true;
+}
+void detail::PreparedInstanceOwnership::publish() noexcept
+{
+    if (published_)
+        return;
+    for (const auto& member : members_)
+        member.instance.control_->hostOwner = owner_;
+    published_ = true;
 }
 
 /** @brief 仅在失败回滚完成后重试，不允许绕过清理失败。 */

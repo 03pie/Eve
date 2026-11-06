@@ -75,6 +75,8 @@ void retainBorrowed(ModuleCatalog& catalog, const Generation& generation, const 
     if (owner == catalog.replacements.end() || owner->first == generation.data.manifest.moduleId)
         return;
     const auto& control = owner->second;
+    if (control->factorySources)
+        return; // 完整宿主计划的持有已取得，禁止在实际创建时扩张。
     const auto existing = control->borrowed.find(generation.data.manifest.moduleId);
     if (existing != control->borrowed.end() &&
         std::any_of(existing->second.begin(), existing->second.end(), [&](const auto& entry) {
@@ -250,9 +252,11 @@ Result<std::shared_ptr<ReplacementReservationControl>> reserveReplacementPair(Ge
     if (catalog.replacements.count(current->data.manifest.moduleId) || current->admissions || candidate->admissions)
         return Output::failure(
             error(ErrorCode::ConfigConflict, "module.replacement", "module is reserved or creation is in progress"));
-    if (borrowed(catalog, current->data.manifest.moduleId))
-        return Output::failure(
-            error(ErrorCode::ConfigConflict, "module.replacement", "module is used by another replacement"));
+    if (borrowed(catalog, current->data.manifest.moduleId)) {
+        auto failure = error(ErrorCode::ConfigConflict, "module.replacement", "module is used by another replacement");
+        failure.operation = *catalog.readers.at(current->data.manifest.moduleId).begin();
+        return Output::failure(std::move(failure));
+    }
     if (operation.valid()) {
         if (!closure)
             return Output::failure(
@@ -409,6 +413,31 @@ Result<GenerationAdmission> admitGeneration(GenerationId id, const Context* cont
             reservation.authorized != id)
             return Output::failure(
                 error(ErrorCode::ConfigConflict, "module.replacement", "module creation is reserved"));
+    }
+    if (source && source->replacement) {
+        const auto owner =
+            std::find_if(catalog.replacements.begin(), catalog.replacements.end(),
+                         [&](const auto& entry) { return entry.second->operation == *source->replacement; });
+        if (owner != catalog.replacements.end() && owner->second->factorySources) {
+            const auto& control = *owner->second;
+            const auto& planned = control.authorized == control.current ? control.factorySources->recovery
+                                                                        : control.factorySources->candidate;
+            const auto allowed = planned.find(id);
+            const auto& plugin = generation->runtimeOrigins.at(source->runtime);
+            bool retained = generation->data.manifest.moduleId == control.moduleId;
+            if (!retained) {
+                const auto held = control.borrowed.find(generation->data.manifest.moduleId);
+                retained = held != control.borrowed.end() &&
+                           std::any_of(held->second.begin(), held->second.end(),
+                                       [&](const auto& entry) { return entry.generation == id && entry.required; });
+            }
+            if (allowed == planned.end() || !allowed->second.count(plugin) || !retained) {
+                auto rejected = error(ErrorCode::ConfigConflict, "module.replacement.sources",
+                                      "factory source is outside sealed plan");
+                rejected.operation = control.operation;
+                return Output::failure(std::move(rejected));
+            }
+        }
     }
     auto ready = generationReusable(*generation, ReusePurpose::Staging);
     if (!ready.hasValue())

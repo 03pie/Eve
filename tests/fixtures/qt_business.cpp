@@ -55,6 +55,8 @@ public:
         ++counts[3];
         contexts[index] = context;
         mode = context.config();
+        if (mode.size() >= 2 && mode.front() == '"' && mode.back() == '"')
+            mode = mode.substr(1, mode.size() - 2); // 配置 Session 传递规范 JSON 字符串；模式名仅含 ASCII。
         auto keep = std::make_shared<Capture>(captureReleased);
         auto accepted = context.onCleanup([this, keep](CleanupContext cleanup) {
             if (!cleanup.snapshot().hasValue())

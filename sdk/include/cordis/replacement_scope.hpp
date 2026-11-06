@@ -14,6 +14,7 @@
 namespace cordis {
 namespace detail {
 struct ReplacementScopeControl;
+struct CoreReplacementAccess;
 }
 enum class ReplacementScopeState {
     Reserved,
@@ -58,6 +59,8 @@ struct ReplacementInput {
     std::vector<ServiceRequirement> additionalDependencies;
     Epoch epoch;
     ConfigRevision revision;
+    /** @brief 实际实例的纯输出声明；不暴露临时激活工厂或授予重放权限。 */
+    std::vector<ServiceOutput> outputs = {};
 };
 struct ReplacementScopeSnapshot {
     OperationId operation;
@@ -107,6 +110,7 @@ public:
 private:
     friend class Kernel;
     friend struct detail::KernelControl;
+    friend struct detail::CoreReplacementAccess;
     explicit ReplacementScope(std::shared_ptr<detail::ReplacementScopeControl> control) : control_(std::move(control))
     {
     }

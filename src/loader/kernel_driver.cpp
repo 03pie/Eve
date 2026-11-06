@@ -1,6 +1,10 @@
 /** @file kernel_driver.cpp
  * @brief 以真实 Kernel 及父代能力执行内置配置树，运行账目与目标、保存状态分别维护。
  */
+#include "../core/instance_ownership_p.hpp"
+#include "../core/replacement_inspect_p.hpp"
+#include "../core/service_plan_p.hpp"
+#include "configuration_commit_p.hpp"
 #include "definitions_p.hpp"
 #include "module_catalog_p.hpp"
 #include <cordis/loader/kernel_driver.hpp>
@@ -15,6 +19,8 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -62,6 +68,30 @@ bool sameIdentity(const EntryValue& a, const EntryValue& b)
 {
     return a.plugin == b.plugin && a.module == b.module && a.realms == b.realms;
 }
+Result<std::set<std::string>>
+changedDefinitions(const std::map<std::string, std::shared_ptr<const ConfiguredPlugin>>& before,
+                   const std::map<std::string, std::shared_ptr<const ConfiguredPlugin>>& after,
+                   const std::vector<RuntimeReplacementIdentity>& definitions, ReplacementCommitMode mode)
+{
+    using Output = Result<std::set<std::string>>;
+    if (before.size() != after.size())
+        return Output::failure(driverError(ErrorCode::ConfigConflict, "replacement definition catalog differs"));
+    std::map<RuntimeId, RuntimeId> replacements;
+    for (const auto& entry : definitions)
+        replacements.emplace(entry.previous,
+                             mode == ReplacementCommitMode::Candidate ? entry.candidate : entry.previous);
+    std::set<std::string> changed;
+    for (const auto& entry : before) {
+        const auto next = after.find(entry.first);
+        const auto swap = replacements.find(entry.second->runtime.id());
+        if (next == after.end() ||
+            (swap == replacements.end() ? next->second != entry.second : next->second->runtime.id() != swap->second))
+            return Output::failure(driverError(ErrorCode::ConfigConflict, "definition change is not owned by Core"));
+        if (swap != replacements.end())
+            changed.insert(entry.first);
+    }
+    return Output::success(std::move(changed));
+}
 /** @brief 规范路径直接取真实父路径，不把相同前缀的其他条目算作祖先。 */
 std::string parentPath(const std::string& path)
 {
@@ -93,6 +123,35 @@ struct KernelRecord {
     std::vector<ServiceRequirement> requirements;
     Epoch parentEpoch = 0;
     std::optional<ErrorInfo> failure{};
+};
+/** @brief 即使子项尚无实例，换代也覆盖其配置祖先；仍由 Core 核对实际拥有单元。 */
+std::set<std::string> reconstructionPaths(const std::map<std::string, KernelRecord>& records,
+                                          const std::set<std::string>& changed)
+{
+    std::set<std::string> paths;
+    for (const auto& entry : records)
+        if (changed.count(entry.second.configuration.plugin))
+            for (auto path = entry.first; !path.empty(); path = parentPath(path))
+                paths.insert(path);
+    return paths;
+}
+/** @brief MSVC map 的移动构造可分配哨兵；提交只交换原有容器，不移动构造整条记录。 */
+void swap(KernelRecord& a, KernelRecord& b) noexcept
+{
+    a.configuration.plugin.swap(b.configuration.plugin);
+    a.configuration.module.swap(b.configuration.module);
+    std::swap(a.configuration.disabled, b.configuration.disabled);
+    std::swap(a.configuration.effectiveDisabled, b.configuration.effectiveDisabled);
+    a.configuration.config.swap(b.configuration.config);
+    a.configuration.realms.swap(b.configuration.realms);
+    a.configuration.inject.swap(b.configuration.inject);
+    a.instance.swap(b.instance);
+    a.requirements.swap(b.requirements);
+    std::swap(a.parentEpoch, b.parentEpoch);
+    a.failure.swap(b.failure);
+}
+struct EpochWatch {
+    std::string path;
 };
 /** @brief 每次动作拥有独立 Promise，投递故障仅跨线程终结 Promise。 */
 struct KernelAction {
@@ -142,11 +201,14 @@ struct KernelDelivery {
 struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     std::shared_ptr<IScheduler> scheduler;
     std::shared_ptr<Kernel> kernel;
+    std::shared_ptr<const cordis::detail::InstanceOwnerIdentity> instanceOwner =
+        std::make_shared<const cordis::detail::InstanceOwnerIdentity>();
     std::shared_ptr<const ConfigurationDefinitions> definitions;
     const auto& plugins() const { return definitions->data_->entries; }
     const ConfiguredPlugin& plugin(const std::string& id) const { return *plugins().at(id); }
     std::map<std::string, RealmId> realms;
     std::map<std::string, KernelRecord> records;
+    DriverReplacementClaims replacementClaims;
     std::shared_ptr<KernelDelivery> delivery = std::make_shared<KernelDelivery>();
     std::shared_ptr<KernelDriverControl> keepAlive;
     std::shared_ptr<KernelAction> active;
@@ -156,7 +218,9 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     std::size_t pendingStops = 0, accesses = 0;
     bool closing = false, closePublished = false;
     bool restoreScheduled = false;
+    bool replacementPrepared = false;
     std::set<OperationId> replacementWaiters;
+    std::map<InstanceId, std::weak_ptr<EpochWatch>> epochWatches;
     /** @brief 同步重入关闭时，外层实例操作返回前不能完成驱动关闭。 */
     struct Access {
         KernelDriverControl& state;
@@ -192,6 +256,8 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
             return Result<void>::failure(driverError(ErrorCode::WrongThread, "kernel driver requires owner thread"));
         if (!business)
             return Result<void>::success();
+        if (replacementPrepared)
+            return Result<void>::failure(driverError(ErrorCode::ConfigConflict, "configuration commit in progress"));
         if (closing)
             return Result<void>::failure(driverError(ErrorCode::ContextClosing, "kernel driver closing"));
         if (delivery->blocked.load() || !scheduler->isOpen())
@@ -216,6 +282,9 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     /** @brief 实际实例或等待意图均使用 Core 门禁，不从 UI 状态推定占用。 */
     Result<void> entryAccess(const KernelRecord& record, const std::string& path) const
     {
+        auto logical = replacementClaims.pathAccess(path);
+        if (!logical.hasValue())
+            return logical;
         auto checkEntry = [&](const KernelRecord& item) {
             return item.instance ? item.instance->checkMutation()
                                  : kernel->checkMount(plugin(item.configuration.plugin).runtime,
@@ -239,8 +308,11 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
                        const std::vector<ServiceRequirement>& required) const
     {
         const auto found = records.find(path);
-        if (found == records.end())
-            return ChangeKind::Add;
+        if (found == records.end()) {
+            const auto gate = replacementClaims.pathAccess(path);
+            return !gate.hasValue() && gate.error().code == ErrorCode::ConfigConflict ? ChangeKind::NoOp
+                                                                                      : ChangeKind::Add;
+        }
         const auto& record = found->second;
         const bool same = sameIdentity(record.configuration, value) && record.configuration.config == value.config &&
                           sameRequirements(record.requirements, required);
@@ -279,9 +351,15 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     Result<std::vector<ServiceRequirement>> requirements(const EntryValue& value, const std::vector<InjectSpec>& inject,
                                                          const std::string& path) const
     {
+        return requirementsFor(plugin(value.plugin), value, inject, path);
+    }
+    Result<std::vector<ServiceRequirement>> requirementsFor(const ConfiguredPlugin& definition, const EntryValue& value,
+                                                            const std::vector<InjectSpec>& inject,
+                                                            const std::string& path) const
+    {
         using Output = Result<std::vector<ServiceRequirement>>;
-        const auto& fixed = plugin(value.plugin).runtime.requirements();
-        const auto& optional = plugin(value.plugin).configurableInject;
+        const auto& fixed = definition.runtime.requirements();
+        const auto& optional = definition.configurableInject;
         for (const auto& requirement : fixed) {
             auto found = std::find_if(inject.begin(), inject.end(), [&](const InjectSpec& spec) {
                 return spec.name == requirement.key.name && spec.major == requirement.key.interfaceMajor;
@@ -326,69 +404,29 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     /** @brief 按真实类型/主版本/域建立提供者索引并做确定性拓扑排序。 */
     Result<std::vector<std::string>> order(const std::map<std::string, EntryValue>& entries,
                                            const std::map<std::string, std::vector<ServiceRequirement>>& contracts,
-                                           bool validateProviders = true) const
+                                           bool validateProviders = true,
+                                           const DefinitionsData* catalogue = nullptr) const
     {
-        /** @brief 服务键索引同时保存路径与类型/版本契约。 */
-        struct Provider {
-            std::string path;
-            ServiceOutput output;
-        };
-        std::map<ServiceKey, Provider> providers;
-        std::map<std::string, std::set<std::string>> edges;
-        std::map<std::string, std::size_t> degrees;
-        for (const auto& entry : entries) {
-            degrees.emplace(entry.first, 0);
-            auto view = realmMap(entry.second);
-            for (const auto& output : plugin(entry.second.plugin).runtime.outputs()) {
-                auto inserted = providers.emplace(view.resolve(output.key), Provider{entry.first, output});
-                if (!inserted.second)
-                    return Result<std::vector<std::string>>::failure(driverError(
-                        ErrorCode::ConfigInvalid, "multiple configured providers for one service key", entry.first));
-            }
-        }
+        std::vector<cordis::detail::ServicePlanNode> nodes;
         for (const auto& entry : entries) {
             auto view = realmMap(entry.second);
             auto parent = parentPath(entry.first);
-            if (!parent.empty() && entries.count(parent) && edges[parent].insert(entry.first).second)
-                ++degrees.at(entry.first);
-            for (const auto& requirement : contracts.at(entry.first)) {
-                auto found = providers.find(view.resolve(requirement.key));
-                if (found == providers.end())
-                    continue;
-                const auto& output = found->second.output;
-                if (validateProviders &&
-                    (output.type != requirement.type || output.metadata.minor < requirement.minimumMinor ||
-                     std::any_of(
-                         requirement.capabilities.begin(), requirement.capabilities.end(),
-                         [&](const std::string& capability) {
-                             return std::find(output.metadata.capabilities.begin(), output.metadata.capabilities.end(),
-                                              capability) == output.metadata.capabilities.end();
-                         })))
-                    return Result<std::vector<std::string>>::failure(
-                        driverError(ErrorCode::ConfigInvalid, "configured provider does not satisfy runtime dependency",
-                                    entry.first));
-                if (edges[found->second.path].insert(entry.first).second)
-                    ++degrees.at(entry.first);
-            }
+            const auto& definition =
+                catalogue ? *catalogue->entries.at(entry.second.plugin) : plugin(entry.second.plugin);
+            cordis::detail::ServicePlanNode node{
+                entry.first, {}, contracts.at(entry.first), definition.runtime.outputs()};
+            if (!parent.empty() && entries.count(parent))
+                node.parent = parent;
+            for (auto& dependency : node.requirements)
+                dependency.key = view.resolve(dependency.key);
+            for (auto& output : node.outputs)
+                output.key = view.resolve(output.key);
+            nodes.push_back(std::move(node));
         }
-        std::set<std::string> ready;
-        for (const auto& degree : degrees)
-            if (degree.second == 0)
-                ready.insert(degree.first);
-        std::vector<std::string> result;
-        while (!ready.empty()) {
-            auto path = *ready.begin();
-            ready.erase(ready.begin());
-            result.push_back(path);
-            for (const auto& consumer : edges[path])
-                if (--degrees.at(consumer) == 0)
-                    ready.insert(consumer);
-        }
-        if (result.size() != entries.size())
-            return Result<std::vector<std::string>>::failure(
-                driverError(ErrorCode::DependencyCycle, "configured runtime dependency cycle"));
-        return Result<std::vector<std::string>>::success(std::move(result));
+        return cordis::detail::planServices(nodes, {}, cordis::detail::MissingServicePolicy::Pending,
+                                            validateProviders);
     }
+
     /** @brief 验证禁用项同样不能携带未实现的配置能力。 */
     Result<void> preflight(const ValidatedCandidate& target) const
     {
@@ -400,6 +438,9 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
         if (!definitions->owns(target))
             return Result<void>::failure(
                 driverError(ErrorCode::ConfigConflict, "candidate definition identity changed"));
+        auto logical = replacementClaims.targetAccess(target);
+        if (!logical.hasValue())
+            return logical;
         auto bindings = checkModuleBindings(target.source().structure(), definitions->data_->modules);
         if (!bindings.hasValue())
             return Result<void>::failure(driverError(bindings.error().code, bindings.error().message,
@@ -503,7 +544,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
                     return Result<void>::failure(std::move(error));
                 }
             }
-        return Result<void>::success();
+        return replacementClaims.targetAccess(target);
     }
     /** @brief 所有 Task 回执都由 owner 接收，投递失败不从 worker 改运行表。 */
     void observe(const Task<void>& receipt, const std::shared_ptr<KernelAction>& action = {})
@@ -572,7 +613,8 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
         KernelRecord record{value, {}, typed};
         const auto parent = parentPath(path);
         if (parent.empty()) {
-            auto mounted = kernel->mount(plugin(value.plugin).runtime, value.config, realmMap(value), typed);
+            auto mounted = cordis::detail::InstanceOwnershipAccess::mount(
+                *kernel, instanceOwner, plugin(value.plugin).runtime, value.config, realmMap(value), typed);
             if (!mounted.hasValue())
                 return Result<KernelRecord>::failure(mounted.error());
             record.instance.emplace(mounted.value());
@@ -608,8 +650,21 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     void watchEpoch(const std::string& path, const Instance& instance, Epoch after = 0)
     {
         const auto id = instance.snapshot().value().instance;
+        for (auto it = epochWatches.begin(); it != epochWatches.end();)
+            it = it->second.expired() ? epochWatches.erase(it) : std::next(it);
+        if (epochWatches.count(id))
+            return;
+        auto lifetime = std::make_shared<EpochWatch>(EpochWatch{path});
+        epochWatches.emplace(id, lifetime);
+        watchNextEpoch(path, instance, after, std::move(lifetime));
+    }
+    void watchNextEpoch(const std::string& path, const Instance& instance, Epoch after,
+                        std::shared_ptr<EpochWatch> lifetime)
+    {
+        const auto id = instance.snapshot().value().instance;
         std::weak_ptr<KernelDriverControl> weak = shared_from_this();
-        observe(instance.whenActiveAfter(after).thenOn(scheduler, [weak, path, id](const Result<Context>& result) {
+        observe(instance.whenActiveAfter(after).thenOn(scheduler, [weak, path, id,
+                                                                   lifetime](const Result<Context>& result) {
             auto self = weak.lock();
             if (!self || self->closing)
                 return;
@@ -624,7 +679,8 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
                 return;
             }
             auto identity = result.value().identity();
-            self->watchEpoch(path, *found->second.instance, identity.hasValue() ? identity.value().epoch : 0);
+            self->watchNextEpoch(path, *found->second.instance, identity.hasValue() ? identity.value().epoch : 0,
+                                 lifetime);
             self->requestRestore();
         }));
     }
@@ -649,7 +705,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     /** @brief 自动恢复只处理曾接受执行的子路径，不抢先创建计划尚未执行的新子项。 */
     void restore()
     {
-        if (closing || active || !currentTarget || backgroundUnsafe || delivery->blocked.load())
+        if (closing || active || replacementPrepared || !currentTarget || backgroundUnsafe || delivery->blocked.load())
             return;
         const auto values = runtimeValues(*currentTarget);
         std::map<std::string, EntryValue> enabled;
@@ -707,7 +763,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     /** @brief 恢复使用独立 FIFO 工作项，活动配置动作结束后再从当前目标检查。 */
     void requestRestore()
     {
-        if (closing || restoreScheduled || !currentTarget)
+        if (closing || replacementPrepared || restoreScheduled || !currentTarget)
             return;
         restoreScheduled = true;
         std::weak_ptr<KernelDriverControl> weak = shared_from_this();
@@ -836,6 +892,580 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
             keepAlive.reset();
     }
 };
+/** @brief 临时重建视图补齐已接受但尚未执行的条目，不写入真实执行账目。 */
+static Result<std::map<std::string, KernelRecord>>
+reconstructionRecords(const KernelDriverControl& state, const std::map<std::string, EntryValue>& desired)
+{
+    using Output = Result<std::map<std::string, KernelRecord>>;
+    auto records = state.records;
+    const auto accepted =
+        state.currentTarget ? runtimeValues(*state.currentTarget) : std::map<std::string, EntryValue>{};
+    for (const auto& entry : desired) {
+        if (entry.second.effectiveDisabled || records.count(entry.first))
+            continue;
+        const auto old = accepted.find(entry.first);
+        if (old == accepted.end() || old->second.effectiveDisabled || old->second.plugin != entry.second.plugin)
+            return Output::failure(
+                driverError(ErrorCode::ConfigConflict, "new entry requires normal reconciliation", entry.first));
+        auto typed =
+            state.requirements(old->second, state.currentTarget->effectiveInject().at(entry.first), entry.first);
+        if (!typed.hasValue())
+            return Output::failure(typed.error());
+        records.emplace(entry.first, KernelRecord{old->second, {}, std::move(typed).value()});
+    }
+    return Output::success(std::move(records));
+}
+struct DriverCommitControl {
+    std::shared_ptr<KernelDriverControl> owner;
+    std::shared_ptr<const ConfigurationDefinitions> baseline, definitions;
+    std::shared_ptr<const ValidatedCandidate> previousTarget, target;
+    cordis::detail::PreparedReplacementView view;
+    std::map<std::string, KernelRecord> updates;
+    std::map<std::string, KernelRecord> additions;
+    std::vector<cordis::detail::PreparedInstanceOwnership> ownership;
+    std::optional<DriverReplacementClaim> temporaryClaim;
+    std::weak_ptr<DriverClaimControl> claim;
+    std::thread::id thread = std::this_thread::get_id();
+    bool published = false;
+    ~DriverCommitControl()
+    {
+        if (!owner)
+            return;
+        owner->replacementPrepared = false;
+        --owner->accesses;
+        owner->requestRestore();
+        owner->checkClosed();
+    }
+};
+static_assert(std::is_nothrow_swappable_v<KernelRecord>);
+PreparedDriverCommit::PreparedDriverCommit(std::unique_ptr<DriverCommitControl> control) : control_(std::move(control))
+{
+}
+PreparedDriverCommit::PreparedDriverCommit(PreparedDriverCommit&&) noexcept = default;
+PreparedDriverCommit::~PreparedDriverCommit() = default;
+ReplacementCommitMode PreparedDriverCommit::mode() const noexcept
+{
+    return control_->view.mode;
+}
+bool PreparedDriverCommit::ready() const noexcept
+{
+    const auto& value = control_;
+    return value && value->thread == std::this_thread::get_id() && !value->published &&
+           cordis::detail::CoreReplacementAccess::current(value->view) &&
+           value->owner->replacementClaims.owns(value->claim, value->view.operation) &&
+           value->owner->replacementPrepared && !value->owner->closing && !value->owner->delivery->blocked.load() &&
+           !value->owner->backgroundUnsafe && !value->owner->active && value->owner->accesses == 1 &&
+           value->owner->pendingStops == 0 && value->owner->definitions == value->baseline &&
+           value->owner->currentTarget == value->previousTarget &&
+           std::all_of(value->ownership.begin(), value->ownership.end(),
+                       [](const auto& slot) { return slot.ready(); }) &&
+           std::none_of(value->additions.begin(), value->additions.end(),
+                        [&](const auto& entry) { return value->owner->records.count(entry.first); });
+}
+void PreparedDriverCommit::publish() noexcept
+{
+    if (control_->published)
+        return;
+    for (auto& slot : control_->ownership)
+        slot.publish();
+    for (auto& entry : control_->updates)
+        swap(control_->owner->records.at(entry.first), entry.second);
+    // 相同分配器的 map 节点转移；std::less<string> 比较不分配，也不执行业务回调。
+    control_->owner->records.merge(control_->additions);
+    control_->owner->definitions.swap(control_->definitions);
+    control_->owner->currentTarget.swap(control_->target);
+    control_->published = true;
+}
+Result<PreparedDriverCommit> DriverCommitAccess::prepare(KernelReconcileDriver& facade, const ReplacementScope& scope,
+                                                         std::shared_ptr<const ConfigurationDefinitions> definitions,
+                                                         std::shared_ptr<const ValidatedCandidate> target,
+                                                         const std::vector<ReplacementEntry>& mappings,
+                                                         const DriverReplacementClaim* claim)
+{
+    using Output = Result<PreparedDriverCommit>;
+    const auto state = facade.control_;
+    auto admitted = state->check();
+    if (!admitted.hasValue())
+        return Output::failure(admitted.error());
+    if (state->replacementPrepared || state->active || state->accesses || state->pendingStops ||
+        !state->definitions->data_->identity || !definitions || !target || !definitions->owns(*target))
+        return Output::failure(driverError(ErrorCode::ConfigConflict, "driver cannot prepare replacement metadata"));
+    auto value = std::make_unique<DriverCommitControl>();
+    value->baseline = state->definitions;
+    value->definitions = std::move(definitions);
+    value->target = std::move(target);
+    value->previousTarget = state->currentTarget;
+    value->owner = state;
+    ++state->accesses;
+    state->replacementPrepared = true;
+    auto inspected = cordis::detail::CoreReplacementAccess::inspect(scope, *state->kernel);
+    if (!inspected.hasValue())
+        return Output::failure(inspected.error());
+    value->view = std::move(inspected).value();
+    const auto& before = value->baseline->data_->entries;
+    const auto& after = value->definitions->data_->entries;
+    if (value->view.mode == ReplacementCommitMode::Recovery && value->baseline != value->definitions)
+        return Output::failure(driverError(ErrorCode::ConfigConflict, "replacement definition catalog differs"));
+    auto changed = changedDefinitions(before, after, value->view.definitions, value->view.mode);
+    if (!changed.hasValue())
+        return Output::failure(changed.error());
+    auto bindings = checkModuleBindings(value->target->source().structure(), value->definitions->data_->modules);
+    if (!bindings.hasValue())
+        return Output::failure(bindings.error());
+    const auto desired = runtimeValues(*value->target);
+    auto projected = reconstructionRecords(*state, desired);
+    if (!projected.hasValue())
+        return Output::failure(projected.error());
+    const auto& records = projected.value();
+    const auto logicalPaths = reconstructionPaths(records, changed.value());
+    auto paths = logicalPaths;
+    std::set<std::string> modules;
+    for (const auto& entry : value->target->source().structure().entries())
+        if (changed.value().count(entry.second.plugin))
+            paths.insert(entry.first);
+    for (const auto& entry : records)
+        if (entry.second.instance && std::any_of(value->view.original.members.begin(),
+                                                 value->view.original.members.end(), [&](const auto& member) {
+                                                     return member.instance ==
+                                                            entry.second.instance->snapshot().value().instance;
+                                                 }))
+            paths.insert(entry.first);
+    for (const auto& id : changed.value()) {
+        const auto& alias = before.at(id)->configuration.module.alias;
+        if (alias != "builtin")
+            modules.insert(alias);
+        const auto& nextAlias = after.at(id)->configuration.module.alias;
+        if (nextAlias != "builtin")
+            modules.insert(nextAlias);
+    }
+    if (claim) {
+        value->claim = claim->control_;
+        if (!state->replacementClaims.owns(value->claim, value->view.operation))
+            return Output::failure(driverError(ErrorCode::ConfigConflict, "driver replacement claim differs"));
+        auto allowed = state->replacementClaims.access(paths, modules, claim);
+        if (!allowed.hasValue())
+            return Output::failure(allowed.error());
+    } else {
+        auto reserved = state->replacementClaims.reserve(
+            value->view.operation, state->kernel->whenReplacementReleased(value->view.operation),
+            state->currentTarget ? state->currentTarget : value->target, std::move(paths), std::move(modules));
+        if (!reserved.hasValue())
+            return Output::failure(reserved.error());
+        value->temporaryClaim.emplace(std::move(reserved).value());
+        value->claim = value->temporaryClaim->control_;
+    }
+    std::map<std::string, const ReplacementEntry*> rows;
+    std::set<InstanceId> used;
+    for (const auto& mapping : mappings)
+        if (!rows.emplace(mapping.path, &mapping).second || !used.insert(mapping.candidate).second)
+            return Output::failure(driverError(ErrorCode::ConfigConflict, "duplicate replacement mapping"));
+    std::map<InstanceId, const cordis::detail::ReplacementInstanceInput*> candidates;
+    std::set<InstanceId> originals;
+    for (const auto& member : value->view.members)
+        candidates.emplace(member.input.instance, &member);
+    for (const auto& member : value->view.original.members)
+        originals.insert(member.instance);
+    std::set<std::string> affected;
+    for (const auto& entry : desired)
+        if (!entry.second.effectiveDisabled && !records.count(entry.first))
+            return Output::failure(driverError(ErrorCode::ConfigConflict,
+                                               "new enabled entry requires normal reconciliation", entry.first));
+    for (const auto& entry : records) {
+        const auto source = desired.find(entry.first);
+        if (source == desired.end() || source->second.effectiveDisabled)
+            return Output::failure(
+                driverError(ErrorCode::ConfigConflict, "replacement cannot remove owned entries", entry.first));
+        const auto& configuration = source->second;
+        if (configuration.plugin != entry.second.configuration.plugin)
+            return Output::failure(
+                driverError(ErrorCode::ConfigConflict, "replacement cannot change entry plugin identity", entry.first));
+        for (const auto& realm : configuration.realms)
+            if (!state->realms.count(realm.second))
+                return Output::failure(driverError(ErrorCode::ConfigInvalid, "unknown replacement realm", entry.first));
+        const auto& definition = *after.at(configuration.plugin);
+        auto typed = state->requirementsFor(definition, configuration, value->target->effectiveInject().at(entry.first),
+                                            entry.first);
+        if (!typed.hasValue())
+            return Output::failure(typed.error());
+        InstanceId previous;
+        bool disposed = true;
+        if (entry.second.instance) {
+            auto snapshot = entry.second.instance->snapshot();
+            if (!snapshot.hasValue())
+                return Output::failure(snapshot.error());
+            previous = snapshot.value().instance;
+            disposed = snapshot.value().state == InstanceState::Disposed;
+        }
+        const bool replacing =
+            originals.count(previous) || logicalPaths.count(entry.first) || affected.count(parentPath(entry.first));
+        if (!replacing) {
+            if (rows.count(entry.first) || !sameIdentity(entry.second.configuration, configuration) ||
+                entry.second.configuration.config != configuration.config ||
+                !sameRequirements(entry.second.requirements, typed.value()))
+                return Output::failure(
+                    driverError(ErrorCode::ConfigConflict, "unrelated configuration changed", entry.first));
+            continue;
+        }
+        affected.insert(entry.first);
+        const auto mapping = rows.find(entry.first);
+        if (mapping == rows.end() || mapping->second->previous != previous || (!originals.count(previous) && !disposed))
+            return Output::failure(
+                driverError(ErrorCode::ConfigConflict, "old entry is not owned by this replacement", entry.first));
+        const auto found = candidates.find(mapping->second->candidate);
+        if (found == candidates.end())
+            return Output::failure(
+                driverError(ErrorCode::ConfigConflict, "entry is not an actual prepared candidate", entry.first));
+        const auto& input = found->second->input;
+        if (input.runtime != definition.runtime.id() || input.config != configuration.config ||
+            input.realms.overrides() != state->realmMap(configuration).overrides() ||
+            !sameRequirements(input.additionalDependencies, typed.value()) ||
+            (definition.maximumDependencies && typed.value().size() > definition.maximumDependencies))
+            return Output::failure(
+                driverError(ErrorCode::ConfigConflict, "candidate inputs differ from configuration", entry.first));
+        Epoch parentEpoch = 0;
+        const auto parent = parentPath(entry.first);
+        if (parent.empty() ? input.parent.valid() : !rows.count(parent) || input.parent != rows.at(parent)->candidate)
+            return Output::failure(
+                driverError(ErrorCode::ConfigConflict, "candidate parent differs from entry ownership", entry.first));
+        if (!parent.empty())
+            parentEpoch = candidates.at(input.parent)->input.epoch;
+        if (definition.available) {
+            try {
+                auto available = definition.available();
+                if (!available.hasValue())
+                    return Output::failure(available.error());
+            } catch (...) {
+                return Output::failure(
+                    driverError(ErrorCode::ConfigInvalid, "replacement availability check threw", entry.first));
+            }
+        }
+        value->updates.emplace(
+            entry.first,
+            KernelRecord{configuration, found->second->instance, std::move(typed).value(), parentEpoch, {}});
+    }
+    if (affected.size() != mappings.size())
+        return Output::failure(driverError(ErrorCode::ConfigConflict, "replacement contains unrelated entry mappings"));
+    for (const auto& entry : value->updates) {
+        auto ownership = cordis::detail::InstanceOwnershipAccess::prepare(*entry.second.instance, state->instanceOwner);
+        if (!ownership.hasValue())
+            return Output::failure(ownership.error());
+        value->ownership.push_back(std::move(ownership).value());
+        const auto watching = state->epochWatches.find(rows.at(entry.first)->candidate);
+        const auto observed = watching == state->epochWatches.end() ? nullptr : watching->second.lock();
+        if (observed && observed->path != entry.first)
+            return Output::failure(
+                driverError(ErrorCode::ConfigConflict, "candidate observer belongs to another entry", entry.first));
+        state->watchEpoch(entry.first, *entry.second.instance,
+                          candidates.at(rows.at(entry.first)->candidate)->input.epoch);
+    }
+    for (auto it = value->updates.begin(); it != value->updates.end();) {
+        if (state->records.count(it->first))
+            ++it;
+        else
+            value->additions.insert(value->updates.extract(it++));
+    }
+    PreparedDriverCommit result(std::move(value));
+    if (!result.ready())
+        return Output::failure(driverError(ErrorCode::ConfigConflict, "driver replacement preparation invalidated"));
+    return Output::success(std::move(result));
+}
+Result<bool> DriverCommitAccess::owns(const KernelReconcileDriver& facade, const Instance& instance)
+{
+    const auto state = facade.control_;
+    auto admitted = state->check(false);
+    if (!admitted.hasValue())
+        return Result<bool>::failure(admitted.error());
+    auto owner = cordis::detail::InstanceOwnershipAccess::owner(instance);
+    if (!owner.hasValue())
+        return Result<bool>::failure(owner.error());
+    return Result<bool>::success(owner.value() == state->instanceOwner);
+}
+Result<std::vector<InstanceId>> DriverCommitAccess::reconstructionOwners(KernelReconcileDriver& facade,
+                                                                         const std::vector<RuntimeId>& replaced)
+{
+    using Output = Result<std::vector<InstanceId>>;
+    const auto state = facade.control_;
+    auto admitted = state->check();
+    if (!admitted.hasValue())
+        return Output::failure(admitted.error());
+    if (state->active || state->accesses || state->pendingStops || state->replacementPrepared)
+        return Output::failure(driverError(ErrorCode::ConfigConflict, "driver cannot inspect logical owners"));
+    KernelDriverControl::Access access(*state);
+    std::set<InstanceId> owners;
+    std::map<std::string, EntryValue> accepted;
+    if (state->currentTarget)
+        accepted = runtimeValues(*state->currentTarget);
+    else
+        for (const auto& entry : state->records)
+            accepted.emplace(entry.first, entry.second.configuration);
+    for (const auto& entry : accepted) {
+        if (entry.second.effectiveDisabled)
+            continue;
+        const auto runtime = state->plugin(entry.second.plugin).runtime.id();
+        if (std::find(replaced.begin(), replaced.end(), runtime) == replaced.end())
+            continue;
+        const auto recorded = state->records.find(entry.first);
+        if (recorded != state->records.end() && recorded->second.instance) {
+            auto current = recorded->second.instance->snapshot();
+            if (!current.hasValue())
+                return Output::failure(current.error());
+            if (current.value().state != InstanceState::Disposed)
+                continue; // 实际目标成员的祖先已经由 Core 图算法包含。
+        }
+        for (auto path = parentPath(entry.first); !path.empty(); path = parentPath(path)) {
+            const auto parent = state->records.find(path);
+            if (parent == state->records.end() && !accepted.count(path))
+                return Output::failure(
+                    driverError(ErrorCode::ConfigConflict, "logical parent record is missing", path));
+            if (parent == state->records.end() || !parent->second.instance)
+                continue;
+            auto current = parent->second.instance->snapshot();
+            if (!current.hasValue())
+                return Output::failure(current.error());
+            if (current.value().state != InstanceState::Disposed) {
+                owners.insert(current.value().instance);
+                break;
+            }
+        }
+    }
+    return Output::success({owners.begin(), owners.end()});
+}
+Result<DriverReconstructionPlan>
+DriverCommitAccess::inspectReconstruction(KernelReconcileDriver& facade, const ReplacementScope& scope,
+                                          std::shared_ptr<const ConfigurationDefinitions> definitions,
+                                          std::shared_ptr<const ValidatedCandidate> target, ReplacementCommitMode mode)
+{
+    using Output = Result<DriverReconstructionPlan>;
+    const auto state = facade.control_;
+    auto admitted = state->check();
+    if (!admitted.hasValue())
+        return Output::failure(admitted.error());
+    if (state->active || state->accesses || state->pendingStops || !state->definitions->data_->identity ||
+        !definitions || !target || !definitions->owns(*target))
+        return Output::failure(driverError(ErrorCode::ConfigConflict, "driver cannot inspect reconstruction inputs"));
+    KernelDriverControl::Access access(*state);
+    auto original = cordis::detail::CoreReplacementAccess::original(scope, *state->kernel);
+    if (!original.hasValue())
+        return Output::failure(original.error());
+    DriverReconstructionPlan plan{std::this_thread::get_id(),
+                                  std::move(original).value(),
+                                  {state->definitions, std::move(definitions), {}},
+                                  state->currentTarget,
+                                  std::move(target),
+                                  {},
+                                  {}};
+    auto changed = changedDefinitions(plan.change.baseline->data_->entries, plan.change.candidate->data_->entries,
+                                      plan.original.definitions, mode);
+    if (!changed.hasValue())
+        return Output::failure(changed.error());
+    plan.change.plugins.assign(changed.value().begin(), changed.value().end());
+    auto bindings = checkModuleBindings(plan.target->source().structure(), plan.change.candidate->data_->modules);
+    if (!bindings.hasValue())
+        return Output::failure(bindings.error());
+    const auto desired = runtimeValues(*plan.target);
+    auto projected = reconstructionRecords(*state, desired);
+    if (!projected.hasValue())
+        return Output::failure(projected.error());
+    const auto& records = projected.value();
+    const auto logicalPaths = reconstructionPaths(records, changed.value());
+    std::map<InstanceId, const cordis::detail::ReplacementInstanceInput*> actual;
+    for (const auto& member : plan.original.members)
+        actual.emplace(member.input.instance, &member);
+    std::map<InstanceId, std::string> configured;
+    std::set<std::string> affected;
+    std::map<std::string, EntryValue> enabled;
+    std::map<std::string, std::vector<ServiceRequirement>> contracts;
+    for (const auto& entry : desired) {
+        if (entry.second.effectiveDisabled)
+            continue;
+        if (!records.count(entry.first))
+            return Output::failure(
+                driverError(ErrorCode::ConfigConflict, "new entry requires normal reconciliation", entry.first));
+        enabled.emplace(entry);
+    }
+    for (const auto& entry : records) {
+        const auto source = enabled.find(entry.first);
+        if (source == enabled.end() || source->second.plugin != entry.second.configuration.plugin)
+            return Output::failure(driverError(ErrorCode::ConfigConflict,
+                                               "replacement cannot remove or change entry identity", entry.first));
+        const auto& configuration = source->second;
+        const auto& definition = *plan.change.candidate->data_->entries.at(configuration.plugin);
+        for (const auto& realm : configuration.realms)
+            if (!state->realms.count(realm.second))
+                return Output::failure(driverError(ErrorCode::ConfigInvalid, "unknown replacement realm", entry.first));
+        auto typed = state->requirementsFor(definition, configuration, plan.target->effectiveInject().at(entry.first),
+                                            entry.first);
+        if (!typed.hasValue())
+            return Output::failure(typed.error());
+        contracts.emplace(entry.first, typed.value());
+        InstanceId previous;
+        bool disposed = true;
+        if (entry.second.instance) {
+            auto snapshot = entry.second.instance->snapshot();
+            if (!snapshot.hasValue())
+                return Output::failure(snapshot.error());
+            previous = snapshot.value().instance;
+            disposed = snapshot.value().state == InstanceState::Disposed;
+        }
+        const bool replacing =
+            actual.count(previous) || logicalPaths.count(entry.first) || affected.count(parentPath(entry.first));
+        if (!replacing) {
+            if (!sameIdentity(entry.second.configuration, configuration) ||
+                entry.second.configuration.config != configuration.config ||
+                !sameRequirements(entry.second.requirements, typed.value()))
+                return Output::failure(
+                    driverError(ErrorCode::ConfigConflict, "unrelated entry changed during replacement", entry.first));
+            continue;
+        }
+        affected.insert(entry.first);
+        if (!disposed && !actual.count(previous))
+            return Output::failure(
+                driverError(ErrorCode::ConfigConflict, "active entry is outside reserved closure", entry.first));
+        if (actual.count(previous)) {
+            const auto& input = actual.at(previous)->input;
+            const auto parent = parentPath(entry.first);
+            InstanceId expectedParent;
+            if (!parent.empty()) {
+                const auto found = records.find(parent);
+                if (found == records.end() || !found->second.instance)
+                    return Output::failure(
+                        driverError(ErrorCode::ConfigConflict, "actual parent record is missing", entry.first));
+                auto snapshot = found->second.instance->snapshot();
+                if (!snapshot.hasValue())
+                    return Output::failure(snapshot.error());
+                expectedParent = snapshot.value().instance;
+            }
+            if (input.runtime != state->plugin(entry.second.configuration.plugin).runtime.id() ||
+                input.parent != expectedParent || input.config != entry.second.configuration.config ||
+                input.realms.overrides() != state->realmMap(entry.second.configuration).overrides() ||
+                !sameRequirements(input.additionalDependencies, entry.second.requirements))
+                return Output::failure(driverError(ErrorCode::ConfigConflict,
+                                                   "actual entry differs from driver ownership inputs", entry.first));
+            configured.emplace(previous, entry.first);
+        }
+        if (definition.maximumDependencies && typed.value().size() > definition.maximumDependencies)
+            return Output::failure(
+                driverError(ErrorCode::ConfigInvalid, "replacement dependency budget exceeded", entry.first));
+        if (definition.available) {
+            try {
+                auto available = definition.available();
+                if (!available.hasValue())
+                    return Output::failure(available.error());
+            } catch (...) {
+                return Output::failure(
+                    driverError(ErrorCode::ConfigInvalid, "replacement availability check threw", entry.first));
+            }
+        }
+        plan.entries.push_back({entry.first, previous, definition.runtime, configuration.config,
+                                state->realmMap(configuration), std::move(typed).value()});
+    }
+    auto order = state->order(enabled, contracts, true, plan.change.candidate->data_.get());
+    if (!order.hasValue())
+        return Output::failure(order.error());
+    for (const auto& member : plan.original.members) {
+        auto owner = cordis::detail::InstanceOwnershipAccess::owner(member.instance);
+        if (!owner.hasValue())
+            return Output::failure(owner.error());
+        if (owner.value() && owner.value() != state->instanceOwner) {
+            plan.ownership.push_back({member.input.instance, ReconstructionKind::ExternalOwner, {}});
+            continue;
+        }
+        const auto row = configured.find(member.input.instance);
+        if (row != configured.end()) {
+            if (owner.value() != state->instanceOwner)
+                return Output::failure(driverError(ErrorCode::ConfigConflict, "configured instance owner differs"));
+            plan.ownership.push_back({member.input.instance, ReconstructionKind::ConfiguredEntry, row->second});
+        } else if (member.input.parent.valid()) {
+            plan.ownership.push_back({member.input.instance, ReconstructionKind::OwnerManagedChild, {}});
+        } else {
+            if (owner.value() || !member.input.factory)
+                return Output::failure(
+                    driverError(ErrorCode::ConfigConflict, "root reconstruction owner is not registered"));
+            plan.ownership.push_back({member.input.instance, ReconstructionKind::ManualRoot, {}});
+        }
+    }
+    // 回调只能发生在准备窗口外。最后重验真实 scope/目录/目标和关闭状态，不返回失效输入。
+    auto current = cordis::detail::CoreReplacementAccess::original(scope, *state->kernel);
+    if (!current.hasValue())
+        return Output::failure(current.error());
+    if (state->closing || state->delivery->blocked.load() || state->backgroundUnsafe || state->active ||
+        state->definitions != plan.change.baseline || state->currentTarget != plan.previousTarget ||
+        current.value().operation != plan.original.operation)
+        return Output::failure(driverError(ErrorCode::ConfigConflict, "reconstruction inspection invalidated"));
+    return Output::success(std::move(plan));
+}
+Result<DriverReplacementClaim> DriverCommitAccess::reserve(KernelReconcileDriver& facade, const ReplacementScope& scope,
+                                                           std::shared_ptr<const ConfigurationDefinitions> definitions,
+                                                           std::shared_ptr<const ValidatedCandidate> target,
+                                                           std::shared_ptr<const ValidatedCandidate> baseline)
+{
+    using Output = Result<DriverReplacementClaim>;
+    auto plan = inspectReconstruction(facade, scope, std::move(definitions), std::move(target));
+    if (!plan.hasValue())
+        return Output::failure(plan.error());
+    const auto state = facade.control_;
+    if (!baseline || !state->definitions->owns(*baseline))
+        return Output::failure(driverError(ErrorCode::ConfigConflict, "driver reservation baseline source differs"));
+    std::set<std::string> paths, modules;
+    for (const auto& entry : plan.value().entries)
+        paths.insert(entry.path);
+    for (const auto& entry : plan.value().target->source().structure().entries())
+        if (std::find(plan.value().change.plugins.begin(), plan.value().change.plugins.end(), entry.second.plugin) !=
+            plan.value().change.plugins.end())
+            paths.insert(entry.first);
+    for (const auto& id : plan.value().change.plugins) {
+        const auto& before = plan.value().change.baseline->data_->entries.at(id)->configuration.module.alias;
+        const auto& after = plan.value().change.candidate->data_->entries.at(id)->configuration.module.alias;
+        if (before != "builtin")
+            modules.insert(before);
+        if (after != "builtin")
+            modules.insert(after);
+    }
+    auto reserved = state->replacementClaims.reserve(
+        plan.value().original.operation, state->kernel->whenReplacementReleased(plan.value().original.operation),
+        std::move(baseline), std::move(paths), std::move(modules));
+    if (!reserved.hasValue())
+        return Output::failure(reserved.error());
+    if (!current(facade, plan.value()))
+        return Output::failure(driverError(ErrorCode::ConfigConflict, "driver claim invalidated during inspection"));
+    return reserved;
+}
+bool DriverCommitAccess::current(const KernelReconcileDriver& facade, const DriverReconstructionPlan& plan) noexcept
+{
+    if (plan.thread != std::this_thread::get_id())
+        return false;
+    const auto& state = facade.control_;
+    return cordis::detail::CoreReplacementAccess::current(plan.original) && !state->closing &&
+           !state->replacementPrepared && !state->delivery->blocked.load() && !state->backgroundUnsafe &&
+           !state->active && !state->accesses && !state->pendingStops && state->definitions == plan.change.baseline &&
+           state->currentTarget == plan.previousTarget;
+}
+Result<std::shared_ptr<const ConfigurationDefinitions>>
+DriverCommitAccess::rebaseDefinitions(KernelReconcileDriver& facade, const DriverDefinitionChange& change,
+                                      ReplacementCommitMode mode)
+{
+    using Output = Result<std::shared_ptr<const ConfigurationDefinitions>>;
+    const auto state = facade.control_;
+    auto admitted = state->check();
+    if (!admitted.hasValue())
+        return Output::failure(admitted.error());
+    if (mode != ReplacementCommitMode::Candidate && mode != ReplacementCommitMode::Recovery)
+        return Output::failure(driverError(ErrorCode::InvalidArgument, "invalid definition rebase mode"));
+    const auto current = state->definitions;
+    std::vector<ConfiguredPlugin> replacements;
+    for (const auto& id : change.plugins) {
+        const auto before = change.baseline->data_->entries.find(id);
+        const auto now = current->data_->entries.find(id);
+        if (before == change.baseline->data_->entries.end() || now == current->data_->entries.end() ||
+            now->second != before->second)
+            return Output::failure(driverError(ErrorCode::ConfigConflict, "reserved plugin definition changed"));
+        if (mode == ReplacementCommitMode::Candidate)
+            replacements.push_back(*change.candidate->data_->entries.at(id));
+    }
+    return mode == ReplacementCommitMode::Recovery || replacements.empty()
+               ? Output::success(current)
+               : current->replacing(std::move(replacements));
+}
 } // namespace detail
 
 KernelReconcileDriver::KernelReconcileDriver(std::shared_ptr<IScheduler> scheduler, std::shared_ptr<Kernel> kernel,
@@ -996,10 +1626,12 @@ Task<StepReport> KernelReconcileDriver::apply(EntryOperation operation,
         found->second.configuration.config != desired->second.config)
         return failed<StepReport>(
             driverError(ErrorCode::ConfigConflict, "configuration change requires restart", operation.path));
-    const auto existingAccess =
-        found != state->records.end() ? state->entryAccess(found->second, operation.path) : Result<void>::success();
+    const auto existingAccess = found != state->records.end() ? state->entryAccess(found->second, operation.path)
+                                                              : state->replacementClaims.pathAccess(operation.path);
     const bool reservedNoOp = operation.kind == ChangeKind::NoOp && !existingAccess.hasValue() &&
                               existingAccess.error().code == ErrorCode::ConfigConflict;
+    if (!existingAccess.hasValue() && !reservedNoOp)
+        return failed<StepReport>(existingAccess.error());
     if ((operation.kind == ChangeKind::NoOp || operation.kind == ChangeKind::Restart) && !reservedNoOp &&
         (found == state->records.end() ||
          (parentPath(operation.path).empty() &&

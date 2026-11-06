@@ -1,6 +1,7 @@
 /** @file kernel.cpp
  * @brief 实现插件登记、实例归属和全量停止结果汇总。
  */
+#include "instance_ownership_p.hpp"
 #include "kernel_p.hpp"
 #include "replacement_scope_p.hpp"
 #include "service_p.hpp"
@@ -66,6 +67,17 @@ Result<Instance> detail::KernelControl::mount(const Runtime& runtime, std::strin
     return mountWithRegistry(runtime, std::move(config), std::move(realms), std::move(additionalDependencies),
                              services_);
 }
+Result<Instance> detail::InstanceOwnershipAccess::mount(Kernel& kernel,
+                                                        std::shared_ptr<const InstanceOwnerIdentity> owner,
+                                                        const Runtime& runtime, std::string config, RealmMap realms,
+                                                        std::vector<ServiceRequirement> requirements)
+{
+    if (!owner || owner->thread != std::this_thread::get_id())
+        return Result<Instance>::failure(makeError(ErrorCode::WrongThread, "owned mount requires owner thread"));
+    const auto control = kernel.control_;
+    return control->mountWithRegistry(runtime, std::move(config), std::move(realms), std::move(requirements),
+                                      control->services_, std::move(owner));
+}
 Result<PublicationGroup> detail::KernelControl::holdPublication() const
 {
     if (!scheduler_->isCurrentThread())
@@ -87,7 +99,8 @@ Result<Instance> detail::KernelControl::mountHeld(const PublicationGroup& group,
 }
 Result<Instance> detail::KernelControl::mountWithRegistry(const Runtime& runtime, std::string config, RealmMap realms,
                                                           std::vector<ServiceRequirement> additionalDependencies,
-                                                          std::shared_ptr<ServiceRegistry> services)
+                                                          std::shared_ptr<ServiceRegistry> services,
+                                                          std::shared_ptr<const detail::InstanceOwnerIdentity> owner)
 {
     if (!scheduler_->isCurrentThread()) return Result<Instance>::failure(makeError(ErrorCode::WrongThread, "mount requires owner thread"));
     if (closing_) return Result<Instance>::failure(makeError(ErrorCode::ContextClosing, "kernel closing"));
@@ -99,8 +112,9 @@ Result<Instance> detail::KernelControl::mountWithRegistry(const Runtime& runtime
             auto admitted = services->replacementMountAccess(runtime, realms, additionalDependencies);
             if (!admitted.hasValue())
                 return Result<Instance>::failure(admitted.error());
-            auto instance = Instance::prepareMount(runtime, scheduler_, std::move(config), std::move(services),
-                                                   std::move(realms), std::move(additionalDependencies));
+            auto instance =
+                Instance::prepareMount(runtime, scheduler_, std::move(config), std::move(services), std::move(realms),
+                                       std::move(additionalDependencies), std::move(owner));
             instance.setKernelRegistry(services_);
             instances_.emplace(instance.snapshot().value().instance, instance);
             instance.startMount();

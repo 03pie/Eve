@@ -21,3 +21,11 @@ Q4e2 已通过宿主协议统一 Home/管理路由，路径启停经 Session 而
 P4-M3d1 新增宿主冻结的 PluginModule 目录：PluginDefinition 与 KernelPlugin 缺省仍为 builtin；原生模块由宿主先验证/装载，再固定插件标识、别名和 manifest 定位文本。校验器和驱动分别核对所有声明（包括未使用声明），预览不读取或执行 DLL。KernelPlugin.available 与 maximumDependencies 在启用/挂载前检查，失效模块仍可显式停用；Loader 不增加 Module/Qt 依赖。真实 NativeModule/Kernel/Session 夹具验证与使用边界见 [M3d1 记录](../../docs/p4-m3d1-development.md)；Q4b 的外部模块拒绝描述为其历史状态。
 
 P5-M2c4 的 Cordis::ConfigDefinitions 将完整 schema、来源、Runtime 与激活约束合并为不可变 ConfigurationDefinitions。配置宿主通过 `ConfigurationDefinitions::create`、`KernelReconcileDriver::configured` 和不再接收独立 schema 的 Session 构造装配；旧 vector<KernelPlugin> 入口保留用于静态装配。候选只持无回调的校验身份，驱动、Coordinator 和 Session 在可重入边界核对来源，失效草稿不能进入目标/保存账目。ConfigYaml 继续无 Core/Runtime 依赖，新目录也不依赖 Module/Qt。尚不提供局部 setDefinitions 或完整升级入口，见 [ADR-0047](../../docs/adr/0047-configuration-definition-identity.md)及 [M2c4 记录](../../docs/p5-m2c4-development.md)。
+
+P5-M2c5 增量提供宿主私有的最终提交准备。`Cordis::ConfigReplacement` 连接 ConfigKernel 与 ConfigSession，按同一 Kernel 的实际 Prepared 成员核对并准备受影响实例映射；泛型 Session 仅管理自身及 Coordinator/Store 的准备槽，不依赖具体驱动或 Module。真正的 Core/模块提交成功后，同步交换预分配元数据，退出模块锁、解除预约并发送 Core 通知后才完成计划结果。旧代重建保留原目标修订和保存状态。独立宿主层 `Cordis::Replacement` 已组合这些凭据并完成 M2c5 整阶段审计及验证，不改变 Loader 的依赖方向，见 [M2c5 开发记录](../../docs/p5-m2c5-development.md)。
+
+最终目标的私有选择性合并复用 ConfigYaml 的有界节点和条目定位，保留最新无关子树、模块及精确数字原文；它不读取 DLL，也不取得运行权限。Driver 的目录重合并只接纳本次冻结节点，其余节点沿当前目录保留，不能用旧完整目录覆盖其他独立提交。
+
+SessionReplacementHold 是宿主替换的私有关闭屏障：Session.close 先封闭业务并发出通知，待操作清理/恢复结算、全部持有释放后再关闭自己的 Coordinator/Store。仅同会话有效凭据允许关闭期间的 Preserve 恢复，普通业务和候选 Advance 不放行。任务结算只释放屏障，实际资源与保存结果仍由原驱动和 Store 汇合；没有持有时保持原关闭语义，不增加 Module 依赖。详见 [架构方案](../../docs/p5-m2c5-architecture.md#session-关闭的持有与恢复协议)。
+
+DriverReplacementClaim 占用实际重建路径及变更模块别名，包括没有实例的配置祖先。权限簿独立于运行记录，目标差异复用 previewChanges；普通配置、直接动作和后台恢复不能越过占用，未创建条目只能 Pending，不提前写执行记录。ConfigReplacement 桥从配对 Session 读取原接受目标，因此空目标和无动作会话也有真实基线；最终准备校验同驱动/同 Scope 的活跃凭据。Core 的规范定义读意图、Driver 路径占用与宿主接入的 Module 计划代次读意图各管自身资源，Loader 不直接依赖 Module。 KernelDriver 的提供者匹配与父级/服务拓扑排序改为调用 Core 私有共同求解器；普通配置仍容许缺失服务进入 Pending，历史停止排序保留原策略。宿主替换对自己的完整未来计划使用严格缺失策略，不改变普通配置语义。

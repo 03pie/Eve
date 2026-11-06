@@ -471,6 +471,9 @@ CordisStatus NativeResources::effectClose(CordisHandle id, CordisRequestId* outp
     const auto found = effects.find(id);
     if (found == effects.end())
         return CORDIS_E_NOT_FOUND;
+    auto servicesAllowed = services->retirementAccess(id);
+    if (!servicesAllowed.hasValue())
+        return statusOf(servicesAllowed.error());
     auto accepted = operation(false, {});
     if (!accepted.hasValue())
         return CORDIS_E_LIMIT;

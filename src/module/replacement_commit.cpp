@@ -116,14 +116,7 @@ Result<PreparedModuleCommit> ReplacementAccess::prepare(const ReplacementReserva
         held->authorized != (recovery ? held->current : held->candidate))
         return Output::failure(error(ErrorCode::ConfigConflict, "module lineage or creation mode changed"));
     for (const auto& generation : value->generations) {
-        if (recovery && generation == value->candidate)
-            continue;
-        if (generation != value->current && generation != value->candidate &&
-            std::none_of(held->borrowed.begin(), held->borrowed.end(), [&](const auto& usage) {
-                return std::any_of(usage.second.begin(), usage.second.end(), [&](const auto& entry) {
-                    return entry.generation == generation->data.generation && entry.required;
-                });
-            }))
+        if (!requiresGeneration(*held, generation->data.generation, recovery))
             continue;
         auto healthy = generationReusableLockedSignal(*generation, ReusePurpose::Staging);
         if (!healthy.hasValue())

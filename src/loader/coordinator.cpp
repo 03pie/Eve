@@ -291,7 +291,8 @@ struct CoordinatorControl : std::enable_shared_from_this<CoordinatorControl> {
 };
 Result<std::unique_ptr<CoordinatorTargetSlot>>
 TargetCommitAccess::prepareCoordinator(ConfigurationCoordinator& facade,
-                                       std::shared_ptr<const ValidatedCandidate> target, std::uint64_t expected)
+                                       std::shared_ptr<const ValidatedCandidate> target, std::uint64_t expected,
+                                       TargetCommitMode mode)
 {
     using Output = Result<std::unique_ptr<CoordinatorTargetSlot>>;
     const auto state = facade.control_;
@@ -299,8 +300,9 @@ TargetCommitAccess::prepareCoordinator(ConfigurationCoordinator& facade,
     if (!admitted.hasValue())
         return Output::failure(admitted.error());
     if (!target || !target->source().isValid() || state->revision != expected ||
-        expected == std::numeric_limits<std::uint64_t>::max() || state->active || state->pending || state->pumping ||
-        state->driverDepth)
+        (mode == TargetCommitMode::Advance && expected == std::numeric_limits<std::uint64_t>::max()) ||
+        (mode == TargetCommitMode::Preserve && target != state->desired) || state->active || state->pending ||
+        state->pumping || state->driverDepth)
         return Output::failure(makeError(ErrorCode::ConfigConflict, "target commit requires an idle current revision"));
     auto slot = std::make_unique<CoordinatorTargetSlot>();
     slot->owner = state;
@@ -308,6 +310,7 @@ TargetCommitAccess::prepareCoordinator(ConfigurationCoordinator& facade,
     slot->baseline = state->desired;
     slot->target = std::move(target);
     slot->previous = expected;
+    slot->next = expected + (mode == TargetCommitMode::Advance ? 1 : 0);
     slot->thread = std::this_thread::get_id();
     state->targetSealed = true;
     return Output::success(std::move(slot));
@@ -332,7 +335,7 @@ void CoordinatorTargetSlot::publish() noexcept
     if (published)
         return;
     owner->desired.swap(target);
-    owner->revision = previous + 1;
+    owner->revision = next;
     published = true;
 }
 } // namespace cordis::loader::detail

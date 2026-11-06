@@ -9,6 +9,8 @@
 namespace cordis {
 namespace detail {
 struct KernelControl;
+struct CoreReplacementAccess;
+struct InstanceOwnershipAccess;
 }
 /** @brief 插件名称映射只含宿主值，不包含激活回调或 Runtime 能力。 */
 struct RuntimeNameSnapshot {
@@ -70,6 +72,8 @@ public:
     /** @brief 查询不可变的调度器归属，供宿主适配层拒绝跨 scheduler 绑定。 */
     bool usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const;
 private:
+    friend struct detail::CoreReplacementAccess;
+    friend struct detail::InstanceOwnershipAccess;
     std::shared_ptr<detail::KernelControl> control_;
 };
 } // namespace cordis

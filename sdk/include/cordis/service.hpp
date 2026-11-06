@@ -190,7 +190,7 @@ public:
     Task<void> whenUnused() const;
     /** @brief 从 Staged 就绪；开放发布组内变为 Held，普通绑定变为 Published，重复调用幂等。 */
     Result<void> publish() const;
-    /** @brief 立即拒绝新业务调用；Staged 回滚也使用该入口。 */
+    /** @brief 主动退役先尊重替换读意图；通过后立即拒绝新业务调用，也用于 Staged 回滚。 */
     Result<void> retire() const;
     /** @brief 仅在 Retiring 且无同步调用及 committed 保留时释放对象所有权及键；不自动重试。 */
     Result<void> release() const;
@@ -206,6 +206,8 @@ private:
     void setOwner(InstanceId owner) const;
     /** @brief 只有 Core 接纳为本代输出后才记录资源所有权，不由原生编号推断。 */
     void markManaged() const;
+    /** @brief 仅真实实例故障/清理可绕过主动变更读保护，共用原退役状态转换。 */
+    Result<void> retireForCleanup() const;
     /** @brief 保存绑定控制块，不绕过注册表持有的资源所有权。 */
     explicit ProviderHandle(std::shared_ptr<detail::BindingControl> binding) : binding_(std::move(binding)) {}
     std::shared_ptr<detail::BindingControl> binding_;
@@ -274,6 +276,7 @@ private:
                  InstanceId instance, Epoch epoch, std::function<Result<void>()> businessGuard,
                  std::function<void()> invalidated = {}, bool managed = false) const;
     /** @brief 擦除对象类型后登记，检查参数、完整键冲突与归属域。 */
+    Result<void> replacementProviderAccess(InstanceId instance) const;
     Result<ProviderHandle> stageErased(ServiceKey key, std::shared_ptr<void> object, std::type_index type, ServiceMetadata metadata = {}) const;
     /** @brief 在生成弱业务引用之前检查发布状态和 C++ 类型。 */
     Result<std::shared_ptr<detail::BindingControl>> findErased(const ServiceKey& key, std::type_index type,

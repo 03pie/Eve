@@ -1,5 +1,7 @@
 # Module host
 
+M2c5 的原生主动服务撤回、effect 关闭及实例/模块关闭共用 Core 绑定读准入。在绑定读门禁处被拒绝时，服务/effect ABI 返回 BUSY 且 request 为零，实例/模块关闭 Task 保留实际读操作编号；不分配请求、不发布关闭状态、不隔离健康实例。完整 effect/实例/模块先检查全部服务，解除权限后仍沿原清理路径完成；真实故障的保留语义不变。见 [审查](../../docs/code-review.md#p5-m2c5-原生主动撤回准入复查)。
+
 P5-M2c3 增加 ModuleManager::reserveReplacement 返回的唯一模块预约：在同一目录核对真实当前/候选及前驱，同模块工厂/定义/新宿主、暂存和 drain 共用准入，包含其他候选的装载/协商窗口；已有业务和清理不借此排空。reset 只解除预约，不执行升级，后续 ReplacementOperation 须持有权限直到运行提交/恢复结束，见 [记录](../../docs/p5-m2c3-development.md)及 [ADR-0046](../../docs/adr/0046-module-replacement-reservation.md)。
 
 P5-M2c2 的 Core 排他作用域对原生服务桥同样生效：新增租约冲突返回 BUSY，已冻结的旧业务返回 CLOSED，原清理能力继续有效；见 [记录](../../docs/p5-m2c2-development.md)。尚未授予原生模块换代或卸载入口。源码 SDK 更新到 0.1.1，C++ 宿主与 Qt 插件须一起重建，旧 SDK 声明在映射前拒绝；C ABI 协议不变。

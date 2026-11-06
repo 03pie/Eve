@@ -42,6 +42,8 @@ if(WIN32 AND CORDIS_REQUIRE_QT5152)
         catalog.cpp
         catalog_registry.cpp
         reservation.cpp
+        replacement_borrow.cpp
+        replacement_sources.cpp
         replacement_commit.cpp
         runtime_origin.cpp
         instance_origin.cpp

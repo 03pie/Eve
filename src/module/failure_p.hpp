@@ -10,4 +10,6 @@ struct GenerationFailureSignal {
     std::mutex mutex;
     std::optional<ErrorInfo> error;
 };
+/** @brief 写入原代次错误并在目录/信号锁外通知实际替换操作。 */
+void recordBusinessFailure(GenerationId, const ErrorInfo&);
 } // namespace cordis::module::detail

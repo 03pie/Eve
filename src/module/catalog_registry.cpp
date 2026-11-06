@@ -2,6 +2,7 @@
  * @brief 进程目录只有一个状态源；模块事务与装载共用同一锁和健康检查。
  */
 #include "catalog_registry_p.hpp"
+#include "replacement_commit_p.hpp"
 
 namespace cordis::module::detail {
 ModuleCatalog& moduleCatalog()
@@ -42,5 +43,41 @@ Result<void> generationReusableLockedSignal(const Generation& generation, ReuseP
     if (generation.data.state != ModuleState::Loaded && generation.data.state != ModuleState::Serving)
         return failure(ErrorCode::ModulePinned, "generation no longer accepts activation references");
     return Result<void>::success();
+}
+void recordBusinessFailure(GenerationId id, const ErrorInfo& error)
+{
+    struct Notification {
+        std::shared_ptr<ReplacementSourceEvents> events;
+        bool candidate, recovery;
+    };
+    std::vector<Notification> notifications;
+    ErrorInfo failure = error;
+    {
+        auto& catalog = moduleCatalog();
+        std::lock_guard<std::mutex> directory(catalog.mutex);
+        const auto generation = catalogGenerationLocked(catalog, id);
+        if (!generation)
+            return;
+        {
+            std::lock_guard<std::mutex> signal(generation->businessSignal->mutex);
+            if (!generation->businessSignal->error)
+                generation->businessSignal->error = error;
+            failure = *generation->businessSignal->error;
+        }
+        notifications.reserve(catalog.replacements.size());
+        for (const auto& entry : catalog.replacements) {
+            const auto& held = *entry.second;
+            const bool candidate = requiresGeneration(held, id, false), recovery = requiresGeneration(held, id, true);
+            if (candidate || recovery)
+                if (auto events = held.sourceEvents.lock())
+                    notifications.push_back({std::move(events), candidate, recovery});
+        }
+    }
+    for (const auto& notification : notifications) {
+        if (notification.candidate)
+            notification.events->candidate.reject(failure);
+        if (notification.recovery)
+            notification.events->recovery.reject(failure);
+    }
 }
 } // namespace cordis::module::detail

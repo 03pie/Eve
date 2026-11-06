@@ -1,6 +1,8 @@
 /** @file module_reservation.cpp
  * @brief 双版本真实 DLL 上的进程级预约、创建准入、排空和重入。
  */
+#include "../../src/loader/configuration_commit_p.hpp"
+#include "../../src/module/replacement_commit_p.hpp"
 #include "../support/module_artifacts.hpp"
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -41,7 +43,8 @@ namespace files = cordis::testing::modules;
 static_assert(!std::is_copy_constructible_v<ReplacementReservation> &&
               std::is_nothrow_move_constructible_v<ReplacementReservation>);
 struct Scene {
-    ModuleManager manager;
+    std::shared_ptr<ModuleManager> managerOwner = std::make_shared<ModuleManager>();
+    ModuleManager& manager = *managerOwner;
     bool qt;
     QString root;
     QStringList dlls;
@@ -171,8 +174,8 @@ void generic(Scene& s, const QString& name)
         }
     } else if (name == "parallel") {
         auto peerOld =
-            files::install(s.dlls[3], s.root + "/peer-old", "org.cordis.peer", {"org.cordis.plugin"}, "c-abi");
-        auto peerNext = files::install(s.dlls[4], s.root + "/peer-next", "org.cordis.peer", {"org.cordis.plugin"},
+            files::install(s.dlls[3], s.root + "/peer-old", "org.cordis.peer", {"org.cordis.peer.plugin"}, "c-abi");
+        auto peerNext = files::install(s.dlls[4], s.root + "/peer-next", "org.cordis.peer", {"org.cordis.peer.plugin"},
                                        "c-abi", "2.0.0");
         const auto a = s.manager.load(s.root.toStdString(), peerOld.toStdString()).value().generation;
         const auto b = s.manager.stage(s.root.toStdString(), peerNext.toStdString(), a).value().generation;
@@ -318,24 +321,190 @@ void definitionBinding(Scene& s, const Runtime& old, const Runtime& next, const 
     CHECK(waitFor(kernel->close())->value().quiescent);
     s.checkReserved(false);
 }
-void nativeDefinitions(Scene& s)
+template <class Wait>
+void configurationCommit(Scene& s, const Runtime& old, const Runtime& next,
+                         const std::shared_ptr<IScheduler>& scheduler, const std::shared_ptr<Kernel>& kernel,
+                         Wait waitFor, bool recovering)
 {
-    auto scheduler = std::make_shared<testing::FakeScheduler>();
+    using namespace cordis::loader;
+    const auto id = s.qt ? "org.cordis.qt.page" : "org.cordis.plugin";
+    auto schema = [](const std::string&) { return Result<void>::success(); };
+    auto stable = kernel->registerPlugin("stable", [](Context) { return completedTask(); }).value();
+    auto first = ConfigurationDefinitions::create(
+                     {{{id, {}, schema, {"business", "old/module.json"}}, old}, {{"builtin", {}, schema}, stable}})
+                     .value();
+    Runtime fake([](Context) { return completedTask(); });
+    const auto& selected = recovering ? fake : next;
+    auto second = first->replacing({{{id, {}, schema, {"business", "next/module.json"}}, selected}}).value();
+    auto driver = KernelReconcileDriver::configured(scheduler, kernel, first);
+    const auto file = s.root + "/upgrade.yaml";
+    ConfigurationSession session(scheduler, driver, std::make_shared<QtConfigurationWriter>(file),
+                                 readConfigurationFile(file).value());
+    auto text = [&](const char* folder) {
+        return std::string("formatVersion: 1\nmodules: {business: {manifest: ") + folder +
+               "/module.json}}\nplugins: [{id: item, plugin: " + id +
+               ", module: business, config: " + (s.qt ? "null" : "sync") + "}, {id: stay, plugin: builtin}]\n";
+    };
+    auto initial = session.apply(session.preview(text("old")).value()).value();
+    CHECK(waitFor(initial.settled)->value().outcome == PlanOutcome::Applied);
+    CHECK(waitFor(session.save(1).value())->hasValue());
+    const auto previousFile = readConfigurationFile(file).value();
+    const auto records = driver->snapshot().value();
+    auto item = std::find_if(records.begin(), records.end(), [](const auto& row) { return row.path == "item"; });
+    auto stay = std::find_if(records.begin(), records.end(), [](const auto& row) { return row.path == "stay"; });
+    CHECK(item != records.end() && stay != records.end());
+    auto scope = kernel->reserveReplacement({old.id()}).value();
+    scope.prepareDefinitions({{old.id(), selected}}).value();
+    auto reservation = s.manager.reserveReplacement(s.current, s.candidate, scope).value();
+    CHECK(waitFor(scope.stop())->value().quiescent);
+    auto replacement = scope.stage(selected, s.qt ? "null" : "\"sync\"").value();
+    CHECK(waitFor(replacement.ready())->hasValue());
+    scope.prepareCommit().value();
+    auto target =
+        std::make_shared<const ValidatedCandidate>(second->validate(parseConfiguration(text("next")).value()).value());
+    if (recovering) {
+        {
+            auto metadata = loader::detail::ConfigurationCommitAccess::prepare(
+                                session, *driver, scope, second, target,
+                                {{"item", item->instance, replacement.snapshot().value().instance}}, 1)
+                                .value();
+            CHECK(metadata.ready());
+            CHECK(!module::detail::ReplacementAccess::prepare(reservation, scope).hasValue());
+        }
+        CHECK(driver->configurationDefinitions() == first &&
+              session.snapshot().value().coordinator.desiredRevision == 1);
+        CHECK(s.state(s.current).role == GenerationRole::Current &&
+              s.state(s.candidate).role == GenerationRole::Candidate);
+        CHECK(waitFor(scope.discard())->value().quiescent);
+        reservation.authorizeRecovery(scope).value();
+        auto restored = scope.stage(old, s.qt ? "null" : "\"sync\"").value();
+        CHECK(waitFor(restored.ready())->hasValue());
+        scope.prepareCommit(ReplacementCommitMode::Recovery).value();
+        auto desired = session.snapshot().value().coordinator.desired;
+        auto metadata = loader::detail::ConfigurationCommitAccess::prepare(
+                            session, *driver, scope, first, desired,
+                            {{"item", item->instance, restored.snapshot().value().instance}}, 1)
+                            .value();
+        CHECK(!metadata.accepted());
+        {
+            auto modules = module::detail::ReplacementAccess::prepare(reservation, scope).value();
+            CHECK(metadata.ready());
+            modules.publish().value();
+            metadata.publish();
+        }
+        reservation.reset();
+        metadata.finish(scope.release()).value();
+        const auto state = session.snapshot().value();
+        CHECK(state.coordinator.desiredRevision == 1 && state.store.persistedRevision == 1 && !state.store.dirty);
+        const auto actual = driver->snapshot().value();
+        CHECK(std::any_of(actual.begin(), actual.end(), [&](const auto& row) {
+            return row.path == "item" && row.instance == restored.snapshot().value().instance;
+        }));
+        CHECK(readConfigurationFile(file).value().text == previousFile.text);
+        CHECK(waitFor(session.close())->hasValue() && waitFor(kernel->close())->value().quiescent);
+        s.checkReserved(false);
+        return;
+    }
+    auto metadata = loader::detail::ConfigurationCommitAccess::prepare(
+                        session, *driver, scope, second, target,
+                        {{"item", item->instance, replacement.snapshot().value().instance}}, 1)
+                        .value();
+    auto accepted = *metadata.accepted();
+    CHECK(driver->configurationDefinitions() == first && !accepted.settled.isReady());
+    CHECK(readConfigurationFile(file).value().version.sha256 == previousFile.version.sha256);
+    {
+        auto modules = module::detail::ReplacementAccess::prepare(reservation, scope).value();
+        CHECK(metadata.ready());
+        modules.publish().value();
+        metadata.publish();
+    }
+    reservation.reset();
+    metadata.finish(scope.release()).value();
+    CHECK(waitFor(accepted.settled)->value().outcome == PlanOutcome::Applied);
+    const auto current = driver->snapshot().value();
+    auto changed = std::find_if(current.begin(), current.end(), [](const auto& row) { return row.path == "item"; });
+    auto same = std::find_if(current.begin(), current.end(), [](const auto& row) { return row.path == "stay"; });
+    CHECK(changed != current.end() && changed->instance == replacement.snapshot().value().instance &&
+          changed->state == InstanceState::Active);
+    CHECK(same != current.end() && same->instance == stay->instance);
+    CHECK(driver->configurationDefinitions() == second && session.snapshot().value().coordinator.desiredRevision == 2);
+    CHECK(s.state(s.current).role == GenerationRole::Retired && s.state(s.candidate).role == GenerationRole::Current);
+    const auto names = kernel->snapshot().value().names;
+    CHECK(names.size() == 2 &&
+          std::count_if(names.begin(), names.end(), [&](const auto& row) { return row.id == next.id(); }) == 1);
+    CHECK(waitFor(session.save(2).value())->hasValue());
+    CHECK(readConfigurationFile(file).value().text == target->source().normalizedYaml());
+    CHECK(waitFor(session.close())->hasValue() && waitFor(kernel->close())->value().quiescent);
+    CHECK(!s.state(s.current).replacement && !s.state(s.candidate).replacement);
+}
+#include "../support/replacement_graph.hpp"
+#include "../support/replacement_operation.hpp"
+#include "../support/replacement_outputs.hpp"
+#include "../support/replacement_paths.hpp"
+#include "../support/replacement_session_close.hpp"
+#include "../support/replacement_sources.hpp"
+#include "../support/replacement_subtree.hpp"
+#include "../support/replacement_waiting.hpp"
+void nativeDefinitions(Scene& s, bool replacing = false, bool recovering = false, const QString& operation = {})
+{
+    auto queue = std::make_shared<testing::FakeScheduler>();
+    std::shared_ptr<IScheduler> scheduler =
+        operation == "operation_owner_delivery"
+            ? std::static_pointer_cast<IScheduler>(std::make_shared<OperationRejectingScheduler>(queue))
+            : queue;
     auto kernel = std::make_shared<Kernel>(scheduler);
     auto old = NativeModule::open(s.manager, s.current, scheduler, kernel->services()).value(),
          next = NativeModule::open(s.manager, s.candidate, scheduler, kernel->services()).value();
     auto a = old.runtime({"org.cordis.plugin", {}, {}}).value(),
          b = next.runtime({"org.cordis.plugin", {}, {}}).value();
-    kernel->registerRuntime("old", a).value();
-    kernel->registerRuntime("next", b).value();
+    kernel->registerRuntime(replacing ? "canonical" : "old", a).value();
+    if (!replacing)
+        kernel->registerRuntime("next", b).value();
     auto waitFor = [&](const auto& task) {
-        scheduler->runUntilIdle(30000).value();
+        queue->runUntilIdle(30000).value();
         CHECK(task.isReady());
         return task.tryResult();
     };
-    definitionBinding(s, a, b, scheduler, kernel, waitFor);
+    if (operation.startsWith("operation_paths"))
+        operationPathsCase(s, a, b, scheduler, kernel, waitFor, operation.endsWith("_parallel"));
+    else if (operation.startsWith("operation_session_close")) {
+        if (operationSessionCloseCase(s, a, b, scheduler, kernel, waitFor, operation)) {
+            CHECK(!old.close().tryResult()->hasValue());
+            queue->close();
+            return;
+        }
+    } else if (operation.startsWith("operation_waiting") || operation.startsWith("operation_unstarted"))
+        operationWaitingCase(s, a, b, scheduler, kernel, waitFor, operation);
+    else if (operation.startsWith("operation_sources")) {
+        if (operationSourcesCase(s, a, b, scheduler, kernel, waitFor, operation)) {
+            CHECK(!old.close().tryResult()->hasValue());
+            queue->close();
+            return;
+        }
+    } else if (operation.startsWith("operation_outputs"))
+        operationOutputsCase(s, a, b, scheduler, kernel, waitFor, operation);
+    else if (operation.startsWith("operation_graph"))
+        operationGraphCase(s, a, b, scheduler, kernel, waitFor, operation);
+    else if (operation.startsWith("operation_subtree"))
+        operationSubtreeCase(s, a, b, scheduler, kernel, waitFor, operation);
+    else if (operation.startsWith("operation_owner")) {
+        if (operationOwnerCase(s, a, b, scheduler, kernel, waitFor, operation)) {
+            CHECK(!old.close().tryResult()->hasValue());
+            queue->close();
+            return;
+        }
+    } else if (!operation.isEmpty()) {
+        if (operationCase(s, a, b, scheduler, kernel, waitFor, operation)) {
+            CHECK(!old.close().tryResult()->hasValue());
+            queue->close();
+            return;
+        }
+    } else if (replacing)
+        configurationCommit(s, a, b, scheduler, kernel, waitFor, recovering);
+    else
+        definitionBinding(s, a, b, scheduler, kernel, waitFor);
     CHECK(waitFor(old.close())->value().quiescent && waitFor(next.close())->value().quiescent);
-    scheduler->close();
+    queue->close();
 }
 #ifdef CORDIS_TEST_QT_RESERVATION
 template <class T> auto wait(const Task<T>& task)
@@ -461,15 +630,40 @@ void qtCase(Scene& s, const QString& name)
     }
     CHECK(scheduler->close().hasValue());
 }
-void qtDefinitions(Scene& s)
+void qtDefinitions(Scene& s, bool replacing = false, bool recovering = false, const QString& operation = {})
 {
     auto scheduler = std::make_shared<qt::QtScheduler>();
     auto kernel = std::make_shared<Kernel>(scheduler);
     auto old = qtRuntime(s.current, {"org.cordis.qt.page", {}, {}}, scheduler).value(),
          next = qtRuntime(s.candidate, {"org.cordis.qt.page", {}, {}}, scheduler).value();
-    kernel->registerRuntime("old", old).value();
-    kernel->registerRuntime("next", next).value();
-    definitionBinding(s, old, next, scheduler, kernel, [&](const auto& task) { return wait(task); });
+    kernel->registerRuntime(replacing ? "canonical" : "old", old).value();
+    if (!replacing)
+        kernel->registerRuntime("next", next).value();
+    if (operation.startsWith("operation_paths"))
+        operationPathsCase(
+            s, old, next, scheduler, kernel, [&](const auto& task) { return wait(task); },
+            operation.endsWith("_parallel"));
+    else if (operation.startsWith("operation_session_close"))
+        operationSessionCloseCase(
+            s, old, next, scheduler, kernel, [&](const auto& task) { return wait(task); }, operation);
+    else if (operation.startsWith("operation_waiting") || operation.startsWith("operation_unstarted"))
+        operationWaitingCase(s, old, next, scheduler, kernel, [&](const auto& task) { return wait(task); }, operation);
+    else if (operation.startsWith("operation_sources"))
+        operationSourcesCase(s, old, next, scheduler, kernel, [&](const auto& task) { return wait(task); }, operation);
+    else if (operation.startsWith("operation_outputs"))
+        operationOutputsCase(s, old, next, scheduler, kernel, [&](const auto& task) { return wait(task); }, operation);
+    else if (operation.startsWith("operation_graph"))
+        operationGraphCase(s, old, next, scheduler, kernel, [&](const auto& task) { return wait(task); }, operation);
+    else if (operation.startsWith("operation_subtree"))
+        operationSubtreeCase(s, old, next, scheduler, kernel, [&](const auto& task) { return wait(task); }, operation);
+    else if (operation.startsWith("operation_owner"))
+        operationOwnerCase(s, old, next, scheduler, kernel, [&](const auto& task) { return wait(task); }, operation);
+    else if (!operation.isEmpty())
+        operationCase(s, old, next, scheduler, kernel, [&](const auto& task) { return wait(task); }, operation);
+    else if (replacing)
+        configurationCommit(s, old, next, scheduler, kernel, [&](const auto& task) { return wait(task); }, recovering);
+    else
+        definitionBinding(s, old, next, scheduler, kernel, [&](const auto& task) { return wait(task); });
     scheduler->close().value();
 }
 #endif
@@ -482,13 +676,16 @@ int main(int argc, char** argv)
         const bool qt = args[1].startsWith("qt_");
         const auto name = args[1].mid(qt ? 3 : 7);
         Scene scene(qt, args[2], args[3].split(';'));
-        if (name == "definitions") {
+        if (name.startsWith("operation") || name == "definitions" || name == "configuration_commit" ||
+            name == "configuration_recovery") {
 #ifdef CORDIS_TEST_QT_RESERVATION
             if (qt)
-                qtDefinitions(scene);
+                qtDefinitions(scene, name != "definitions", name == "configuration_recovery",
+                              name.startsWith("operation") ? name : QString{});
             else
 #endif
-                nativeDefinitions(scene);
+                nativeDefinitions(scene, name != "definitions", name == "configuration_recovery",
+                                  name.startsWith("operation") ? name : QString{});
         } else if (name == "admission" || name == "candidate_live" || name == "failure" || name.endsWith("reentry")) {
 #ifdef CORDIS_TEST_QT_RESERVATION
             if (qt)
