@@ -18,17 +18,25 @@ bool operationCase(SceneType& scene, const cordis::Runtime& old, const cordis::R
         return std::move(result).value();
     };
     bool failChild = false;
-    auto builtin =
-        kernel
-            ->registerPlugin("builtin",
-                             [&](Context) {
-                                 if (failChild) {
-                                     failChild = false;
-                                     return failedTask(makeError(ErrorCode::ActivationFailed, "child failed once"));
-                                 }
-                                 return completedTask();
-                             })
-            .value();
+    Runtime::Activate activateBuiltin = [&](Context context) {
+        if (mode == "operation_state_guard")
+            context
+                .state({[] { return Result<std::string>::success("42"); },
+                        [](std::string_view) { return Result<void>::success(); }})
+                .value();
+        if (failChild) {
+            failChild = false;
+            return failedTask(makeError(ErrorCode::ActivationFailed, "child failed once"));
+        }
+        return completedTask();
+    };
+    auto builtinDefinition =
+        mode == "operation_state_guard"
+            ? Runtime::stateful(activateBuiltin,
+                                {{"builtin.state", 1},
+                                 [](const StateSnapshot& value) { return Result<std::string>::success(value.json); }})
+            : Runtime(activateBuiltin);
+    auto builtin = kernel->registerRuntime("builtin", builtinDefinition).value();
     const auto id = scene.qt ? "org.cordis.qt.page" : "org.cordis.plugin";
     auto schema = [](const std::string&) { return Result<void>::success(); };
     auto first = take(ConfigurationDefinitions::create({{{id, {}, schema, {"business", "old/module.json"}}, old},
@@ -99,7 +107,24 @@ bool operationCase(SceneType& scene, const cordis::Runtime& old, const cordis::R
             value.configurations.push_back({otherSession, otherDriver, following, target, 1});
         return value;
     };
-    if (mode == "operation_guards") {
+    if (mode == "operation_state_guard") {
+        const auto before = driver->snapshot().value();
+        auto rejected = ReplacementOperation::begin(request());
+        CHECK(!rejected.hasValue() && rejected.error().code == ErrorCode::ConfigInvalid && rejected.error().instance);
+        CHECK(kernel->replacements().value().empty());
+        CHECK(!scene.state(scene.current).replacement && !scene.state(scene.candidate).replacement);
+        CHECK(scene.state(scene.current).role == module::GenerationRole::Current &&
+              scene.state(scene.candidate).role == module::GenerationRole::Candidate);
+        const auto after = driver->snapshot().value();
+        CHECK(after.size() == before.size());
+        for (std::size_t index = 0; index < before.size(); ++index) {
+            CHECK(after[index].instance == before[index].instance && after[index].state == InstanceState::Active);
+            auto instance = kernel->findInstance(after[index].instance).value();
+            CHECK(waitFor(instance.whenActiveAfter())->value().identity().hasValue());
+        }
+        CHECK(session->snapshot().value().coordinator.desiredRevision == 1 &&
+              readConfigurationFile(file).value().text == originalFile);
+    } else if (mode == "operation_guards") {
         auto invalid = request();
         invalid.definitions[0].candidate = Runtime([](Context) { return completedTask(); });
         CHECK(!ReplacementOperation::begin(std::move(invalid)).hasValue());

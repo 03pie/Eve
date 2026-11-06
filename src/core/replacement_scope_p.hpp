@@ -81,7 +81,8 @@ struct ReplacementScopeControl : std::enable_shared_from_this<ReplacementScopeCo
     Result<ReplacementBuilder> builder();
     Result<Instance> stage(const Runtime& runtime, std::string config, RealmMap realms,
                            std::vector<ServiceRequirement> additionalDependencies,
-                           const std::shared_ptr<PublicationControl>& permission = {});
+                           const std::shared_ptr<PublicationControl>& permission = {},
+                           std::optional<StateSnapshot> input = {});
     Result<void> claimStage(const std::shared_ptr<PublicationControl>& permission, const Runtime& runtime,
                             const RealmMap& realms, const std::vector<ServiceRequirement>& additionalDependencies,
                             bool root = false);

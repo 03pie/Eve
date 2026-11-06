@@ -95,7 +95,8 @@ public:
     Task<CleanupReport> stop() const;
     /** @brief 仅旧闭包静止后在本作用域的隔离发布视图创建候选，普通挂载不能复用此权限。 */
     Result<Instance> stage(const Runtime& runtime, std::string config = {}, RealmMap realms = {},
-                           std::vector<ServiceRequirement> additionalDependencies = {}) const;
+                           std::vector<ServiceRequirement> additionalDependencies = {},
+                           std::optional<StateSnapshot> state = {}) const;
     /** @brief 放弃候选发布组并等待真实清理；失败保留全部占用，不表示旧代已经恢复。 */
     Task<CleanupReport> discard() const;
     /** @brief 全部候选就绪后准备 Core 提交；冻结候选业务，不运行外部通知。 */
@@ -108,6 +109,7 @@ public:
     Result<void> release() const;
 
 private:
+    friend struct detail::InstanceStateAccess;
     friend class Kernel;
     friend struct detail::KernelControl;
     friend struct detail::CoreReplacementAccess;

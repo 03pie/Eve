@@ -76,6 +76,7 @@ function(cordis_reservation_cases backend old next third)
         operation_sessions_prepare_failure
         operation_sessions_prepare_cancel
         operation_guards
+        operation_state_guard
         operation_merge
         operation_owner
         operation_owner_before_create

@@ -15,7 +15,8 @@ class ReplacementBuilder {
 public:
     /** @brief 只允许向取得许可时的发布组创建；组已准备/丢弃/发布或作用域关闭时拒绝。 */
     Result<Instance> stage(const Runtime&, std::string config = {}, RealmMap realms = {},
-                           std::vector<ServiceRequirement> additionalDependencies = {}) const;
+                           std::vector<ServiceRequirement> additionalDependencies = {},
+                           std::optional<StateSnapshot> state = {}) const;
 
 private:
     friend struct detail::ReplacementScopeControl;

@@ -3,6 +3,7 @@
  */
 #pragma once
 #include <cordis/effect.hpp>
+#include <cordis/migration_state.hpp>
 #include <cordis/service.hpp>
 #include <optional>
 
@@ -21,6 +22,7 @@ namespace detail {
 struct KernelControl;
 struct InstanceOwnerIdentity;
 struct InstanceOwnershipAccess;
+struct InstanceStateAccess;
 class PreparedInstanceOwnership;
 }
 namespace detail {
@@ -91,7 +93,10 @@ public:
     Result<ContextSource> source() const;
     /** @brief 本代创建子实例，继承域视图/索引，可追加类型化依赖；父退役等待整个子树。 */
     Result<Instance> inject(const Runtime& runtime, std::string config = {},
-                            std::vector<ServiceRequirement> additionalDependencies = {}) const;
+                            std::vector<ServiceRequirement> additionalDependencies = {},
+                            std::optional<StateSnapshot> state = {}) const;
+    /** @brief Loading 中登记本 epoch 唯一状态参与者；如有迁移输入，在返回前校验并导入。 */
+    Result<void> state(StateParticipant) const;
     /** @brief 派生只覆盖指定服务的 realm 视图，不修改父上下文，旧 epoch 不得派生能力。 */
     Result<Context> isolate(std::string name, RealmId realm) const;
     /** @brief 登记本代 Staged 输出；激活后普通实例公开，发布组内仅就绪为 Held。 */
@@ -192,12 +197,19 @@ public:
     using Activate = std::function<Task<void>(Context)>;
     /** @brief 创建插件定义；全部输出须声明，空输出表禁止 provide；无效描述抛 invalid_argument。 */
     explicit Runtime(Activate activate, std::vector<ServiceRequirement> dependencies = {}, std::vector<ServiceOutput> outputs = {});
+    /** @brief 创建显式有状态定义；无效契约抛 invalid_argument，副本共享不可变契约。 */
+    static Runtime stateful(Activate, StateContract, std::vector<ServiceRequirement> dependencies = {},
+                            std::vector<ServiceOutput> outputs = {});
+    /** @brief 纯契约描述；不执行插件校验，也不授予实例状态访问。 */
+    std::optional<StateSchema> stateSchema() const;
+
 private:
     friend class Instance;
     std::shared_ptr<const Activate> activate_;
     RuntimeId id_;
     std::vector<ServiceRequirement> dependencies_;
     std::vector<ServiceOutput> outputs_;
+    std::shared_ptr<const StateContract> state_;
 };
 
 /** @brief 实例当前代次、目标修订及资源的诊断视图。 */
@@ -259,7 +271,8 @@ public:
     /** @brief 排队激活插件；要求开放的 owner-thread scheduler，否则抛 invalid_argument。 */
     static Instance mount(const Runtime& runtime, std::shared_ptr<IScheduler> scheduler, std::string config = {},
                           std::shared_ptr<ServiceRegistry> services = {}, RealmMap realms = {},
-                          std::vector<ServiceRequirement> additionalDependencies = {});
+                          std::vector<ServiceRequirement> additionalDependencies = {},
+                          std::optional<StateSnapshot> state = {});
     /** @brief 在期望修订匹配时替换目标配置；返回独立稳定结果观察句柄。 */
     Result<OperationHandle> update(std::string config, ConfigRevision expectedRevision) const;
     /** @brief 对失败且已静止的实例重新激活，保留配置修订并分配新操作。 */
@@ -290,10 +303,12 @@ private:
     friend struct detail::ReplacementScopeControl;
     friend struct detail::InstanceOwnershipAccess;
     friend class detail::PreparedInstanceOwnership;
+    friend struct detail::InstanceStateAccess;
     static Instance prepareMount(const Runtime& runtime, std::shared_ptr<IScheduler> scheduler, std::string config,
                                  std::shared_ptr<ServiceRegistry> services, RealmMap realms,
                                  std::vector<ServiceRequirement> additionalDependencies,
-                                 std::shared_ptr<const detail::InstanceOwnerIdentity> owner = {});
+                                 std::shared_ptr<const detail::InstanceOwnerIdentity> owner = {},
+                                 std::optional<StateSnapshot> state = {});
     void startMount() const;
     void setReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const;
     void clearReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const;

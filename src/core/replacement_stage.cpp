@@ -64,7 +64,8 @@ Result<ReplacementBuilder> ReplacementScopeControl::builder()
 }
 Result<Instance> ReplacementScopeControl::stage(const Runtime& runtime, std::string config, RealmMap realms,
                                                 std::vector<ServiceRequirement> additionalDependencies,
-                                                const std::shared_ptr<PublicationControl>& permission)
+                                                const std::shared_ptr<PublicationControl>& permission,
+                                                std::optional<StateSnapshot> input)
 {
     auto allowed = check();
     if (!allowed.hasValue())
@@ -90,7 +91,8 @@ Result<Instance> ReplacementScopeControl::stage(const Runtime& runtime, std::str
     auto claimed = claimStage(group.control_, runtime, realms, additionalDependencies, true);
     if (!claimed.hasValue())
         return Result<Instance>::failure(claimed.error());
-    return kernel->mountHeld(group, runtime, std::move(config), std::move(realms), std::move(additionalDependencies));
+    return kernel->mountHeld(group, runtime, std::move(config), std::move(realms), std::move(additionalDependencies),
+                             std::move(input));
 }
 Result<void> ReplacementScopeControl::claimStage(const std::shared_ptr<PublicationControl>& permission,
                                                  const Runtime& runtime, const RealmMap& realms,
@@ -239,19 +241,23 @@ void ReplacementScopeControl::finishStage(const Result<CleanupReport>& result)
 } // namespace cordis::detail
 namespace cordis {
 Result<Instance> ReplacementBuilder::stage(const Runtime& runtime, std::string config, RealmMap realms,
-                                           std::vector<ServiceRequirement> dependencies) const
+                                           std::vector<ServiceRequirement> dependencies,
+                                           std::optional<StateSnapshot> state) const
 {
     const auto owner = owner_.lock();
     const auto permission = publication_.lock();
     if (!owner || !permission)
         return Result<Instance>::failure(makeError(ErrorCode::ContextClosing, "construction permission expired"));
-    return owner->stage(runtime, std::move(config), std::move(realms), std::move(dependencies), permission);
+    return owner->stage(runtime, std::move(config), std::move(realms), std::move(dependencies), permission,
+                        std::move(state));
 }
 Result<Instance> ReplacementScope::stage(const Runtime& runtime, std::string config, RealmMap realms,
-                                         std::vector<ServiceRequirement> additionalDependencies) const
+                                         std::vector<ServiceRequirement> additionalDependencies,
+                                         std::optional<StateSnapshot> state) const
 {
     const auto control = control_;
-    return control ? control->stage(runtime, std::move(config), std::move(realms), std::move(additionalDependencies))
+    return control ? control->stage(runtime, std::move(config), std::move(realms), std::move(additionalDependencies),
+                                    {}, std::move(state))
                    : Result<Instance>::failure(makeError(ErrorCode::InvalidArgument, "replacement scope moved from"));
 }
 Task<CleanupReport> ReplacementScope::discard() const

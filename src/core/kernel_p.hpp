@@ -29,11 +29,13 @@ struct KernelControl : std::enable_shared_from_this<KernelControl> {
                            std::vector<ServiceRequirement> additionalDependencies);
     Result<PublicationGroup> holdPublication() const;
     Result<Instance> mountHeld(const PublicationGroup& group, const Runtime& runtime, std::string config,
-                               RealmMap realms, std::vector<ServiceRequirement> additionalDependencies);
+                               RealmMap realms, std::vector<ServiceRequirement> additionalDependencies,
+                               std::optional<StateSnapshot> state = {});
     Result<Instance> mountWithRegistry(const Runtime& runtime, std::string config, RealmMap realms,
                                        std::vector<ServiceRequirement> additionalDependencies,
                                        std::shared_ptr<ServiceRegistry> services,
-                                       std::shared_ptr<const InstanceOwnerIdentity> owner = {});
+                                       std::shared_ptr<const InstanceOwnerIdentity> owner = {},
+                                       std::optional<StateSnapshot> state = {});
     Result<Instance> remount(const Instance& previous);
     Task<CleanupReport> close();
     Result<KernelSnapshot> snapshot();

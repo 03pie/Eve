@@ -12,6 +12,7 @@ add_library(cordis_core ${cordis_core_type}
     fake_clock.cpp
     effect.cpp
     instance.cpp
+    state.cpp
     kernel.cpp
     service.cpp
     service_contract.cpp

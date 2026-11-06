@@ -2,8 +2,10 @@
  * @brief 通过每代 EffectScope 屏障驱动配置收敛、失败回滚与实例终结。
  */
 #include "instance_ownership_p.hpp"
+#include "instance_state_p.hpp"
 #include "replacement_scope_p.hpp"
 #include "service_contract_p.hpp"
+#include "state_p.hpp"
 #include <cordis/instance.hpp>
 
 #include <algorithm>
@@ -100,6 +102,36 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     std::vector<std::shared_ptr<InstanceControl>> children;
     std::optional<CleanupReport> retirementFailure;
     std::vector<ErrorInfo> childErrors;
+    std::shared_ptr<const StateContract> stateContract;
+    std::optional<StateSnapshot> stateInput;
+    std::optional<EpochState> epochState;
+    bool stateCalling = false, retireDeferred = false;
+
+    /** @brief 回调期间关闭准入但延后实际资源释放，返回后拒收重入失效的结果。 */
+    template <class F> auto stateCall(F action) -> decltype(action())
+    {
+        using Output = decltype(action());
+        if (stateCalling)
+            return Output::failure(makeError(ErrorCode::ContextClosing, "state callback already in progress"));
+        const auto captured = epoch;
+        stateCalling = true;
+        auto result = [&]() -> Output {
+            try {
+                return action();
+            } catch (...) {
+                auto error = makeError(ErrorCode::CallbackFailed, "state callback threw");
+                error.phase = "instance.state";
+                error.instance = id;
+                return Output::failure(std::move(error));
+            }
+        }();
+        stateCalling = false;
+        if (std::exchange(retireDeferred, false))
+            retire();
+        if (captured != epoch || stopping || retiring || dirty || blocked.load() || !scheduler->isOpen())
+            return Output::failure(makeError(ErrorCode::ContextClosing, "state callback invalidated"));
+        return result;
+    }
 
     Result<void> mutationAccess() const
     {
@@ -237,6 +269,8 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
             state = InstanceState::Disposed;
             target.resolve(StableReport{StableOutcome::Disposed, revision, targetEpoch});
             activate.reset();
+            stateContract.reset();
+            stateInput.reset();
             subscription.reset();
             if (services) services->forgetInstance(id);
             pin.reset();
@@ -302,6 +336,7 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     void finishFinalizers(CleanupReport report)
     {
         activation.reset();
+        epochState.reset();
         for (const auto& output : outputs) {
             auto released = output.release();
             if (!released.hasValue()) {
@@ -344,6 +379,10 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     void retire()
     {
         if (retiring) return;
+        if (stateCalling) {
+            retireDeferred = true;
+            return;
+        }
         retiring = true;
         if (auto it = active.find(epoch); it != active.end())
             it->second.reject(makeError(ErrorCode::OperationCancelled, "epoch retired before activation"));
@@ -493,6 +532,8 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
         active.emplace(epoch, Promise<ActiveReport>());
         const auto captured = epoch;
         state = InstanceState::Loading;
+        epochState.emplace(stateContract, std::move(stateInput));
+        stateInput.reset();
         for (const auto& dependency : dependencies) {
             auto lease = commit(*services, realms.resolve(dependency.key), dependency.type);
             if (!lease.hasValue()) {
@@ -502,14 +543,22 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
             }
         }
         auto self = shared_from_this();
-        auto accepted = scope.effect([self, captured](EffectSetupContext) {
-            return (*self->activate)(Context(self, captured, self->config, self->realms));
-        }, "instance.activation");
+        auto accepted = scope.effect(
+            [self, captured](EffectSetupContext) {
+                auto prepared = self->stateCall([&] { return self->epochState->prepare(); });
+                if (!prepared.hasValue())
+                    return failedTask(prepared.error());
+                return (*self->activate)(Context(self, captured, self->config, self->realms));
+            },
+            "instance.activation");
         if (!accepted.hasValue()) { failure.emplace(accepted.error()); ready.reject(accepted.error()); stop(); return; }
         activation.emplace(accepted.value());
         watch(activation->ready().thenOn(scheduler, [self, captured](const Result<void>& result) {
             if (self->stopping || self->retiring || self->dirty || self->epoch != captured) return;
             if (result.hasValue()) {
+                auto stateReady = self->epochState->ready();
+                if (!self->provisionError && !stateReady.hasValue())
+                    self->provisionError.emplace(stateReady.error());
                 if (!self->provisionError) for (const auto& declaration : self->declarations) {
                     if (!declaration.required) continue;
                     const auto key = self->realms.resolve(declaration.key);
@@ -557,6 +606,47 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
 } // namespace cordis::detail
 
 namespace cordis {
+Result<void> Context::state(StateParticipant participant) const
+{
+    auto self = control_.lock();
+    if (!self)
+        return Result<void>::failure(makeError(ErrorCode::StaleContext, "instance expired"));
+    auto allowed = self->business(epoch_);
+    if (!allowed.hasValue())
+        return allowed;
+    if (self->state != InstanceState::Loading || !self->epochState)
+        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "state registration requires activation"));
+    auto bound = self->stateCall([&] { return self->epochState->bind(std::move(participant)); });
+    if (!bound.hasValue())
+        self->provisionError.emplace(bound.error());
+    return bound;
+}
+Result<std::optional<StateSnapshot>> detail::InstanceStateAccess::capture(const ReplacementScope& scope,
+                                                                          const Instance& instance)
+{
+    using Output = Result<std::optional<StateSnapshot>>;
+    const auto claim = scope.control_;
+    const auto self = instance.control_;
+    if (!claim || !self)
+        return Output::failure(makeError(ErrorCode::InvalidArgument, "missing state owner"));
+    auto allowed = claim->check();
+    if (!allowed.hasValue())
+        return Output::failure(allowed.error());
+    const auto at = claim->selection.instances.find(self->id);
+    if (claim->state != ReplacementScopeState::Frozen || at == claim->selection.instances.end() ||
+        at->second.control_ != self || self->replacement.lock() != claim || self->state != InstanceState::Active ||
+        self->stopping || self->retiring || self->dirty || self->blocked.load() || !self->epochState)
+        return Output::failure(makeError(ErrorCode::ContextClosing, "state capture requires a frozen active member"));
+    auto captured = self->stateCall([&] { return self->epochState->capture(); });
+    if (!captured.hasValue())
+        return captured;
+    auto current = claim->check();
+    if (!current.hasValue())
+        return Output::failure(current.error());
+    if (claim->state != ReplacementScopeState::Frozen || self->replacement.lock() != claim)
+        return Output::failure(makeError(ErrorCode::ContextClosing, "state scope changed during capture"));
+    return captured;
+}
 /** @brief 资源命名先验证 owner/epoch/门禁，避免用旧 Context 创建新贡献。 */
 Result<ContextIdentity> Context::identity() const
 {
@@ -598,7 +688,8 @@ Result<std::function<Result<void>()>> Context::eventGuard(const std::shared_ptr<
 }
 /** @brief 子实例沿用父视图与索引，排队激活前即纳入父代所有权。 */
 Result<Instance> Context::inject(const Runtime& runtime, std::string config,
-                                 std::vector<ServiceRequirement> additionalDependencies) const
+                                 std::vector<ServiceRequirement> additionalDependencies,
+                                 std::optional<StateSnapshot> state) const
 {
     auto self = control_.lock();
     if (!self) return Result<Instance>::failure(makeError(ErrorCode::StaleContext, "instance expired"));
@@ -616,7 +707,7 @@ Result<Instance> Context::inject(const Runtime& runtime, std::string config,
     }
     try {
         auto child = Instance::prepareMount(runtime, self->scheduler, std::move(config), self->services, realms_,
-                                            std::move(additionalDependencies), self->hostOwner);
+                                            std::move(additionalDependencies), self->hostOwner, std::move(state));
         if (self->services) self->services->attachParent(child.control_->id, self->id);
         self->children.push_back(child.control_);
         child.startMount();
@@ -819,23 +910,39 @@ Runtime::Runtime(Activate activate, std::vector<ServiceRequirement> dependencies
     dependencies_ = std::move(dependencies);
     outputs_ = std::move(outputs);
 }
+Runtime Runtime::stateful(Activate activate, StateContract contract, std::vector<ServiceRequirement> dependencies,
+                          std::vector<ServiceOutput> outputs)
+{
+    if (!detail::validStateSchema(contract.schema) || !contract.validate)
+        throw std::invalid_argument("invalid state contract");
+    auto runtime = Runtime(std::move(activate), std::move(dependencies), std::move(outputs));
+    runtime.state_ = std::make_shared<const StateContract>(std::move(contract));
+    return runtime;
+}
+std::optional<StateSchema> Runtime::stateSchema() const
+{
+    return state_ ? std::optional<StateSchema>(state_->schema) : std::nullopt;
+}
 
 /** @brief 在调用用户代码前建立实例与激活所有权。 */
 Instance Instance::mount(const Runtime& runtime, std::shared_ptr<IScheduler> scheduler, std::string config,
                          std::shared_ptr<ServiceRegistry> services, RealmMap realms,
-                         std::vector<ServiceRequirement> additionalDependencies)
+                         std::vector<ServiceRequirement> additionalDependencies, std::optional<StateSnapshot> state)
 {
     auto instance = prepareMount(runtime, std::move(scheduler), std::move(config), std::move(services),
-                                 std::move(realms), std::move(additionalDependencies));
+                                 std::move(realms), std::move(additionalDependencies), {}, std::move(state));
     instance.startMount();
     return instance;
 }
 Instance Instance::prepareMount(const Runtime& runtime, std::shared_ptr<IScheduler> scheduler, std::string config,
                                 std::shared_ptr<ServiceRegistry> services, RealmMap realms,
                                 std::vector<ServiceRequirement> additionalDependencies,
-                                std::shared_ptr<const detail::InstanceOwnerIdentity> owner)
+                                std::shared_ptr<const detail::InstanceOwnerIdentity> owner,
+                                std::optional<StateSnapshot> state)
 {
     if (!runtime.activate_) throw std::invalid_argument("runtime handle moved from");
+    if (state && (!runtime.state_ || !detail::checkStateSnapshot(*state).hasValue()))
+        throw std::invalid_argument("state input requires a valid snapshot and stateful runtime");
     if (services && !services->publicationAccess().hasValue())
         throw std::invalid_argument("publication group aborted");
     if (services && !services->replacementMountAccess(runtime, realms, additionalDependencies).hasValue())
@@ -856,6 +963,8 @@ Instance Instance::prepareMount(const Runtime& runtime, std::shared_ptr<ISchedul
     control->config = std::move(config);
     control->hostOwner = std::move(owner);
     control->runtime = runtime.id();
+    control->stateContract = runtime.state_;
+    control->stateInput = std::move(state);
     control->dependencies = std::move(dependencies);
     control->additionalDependencies = std::move(additionalDependencies);
     control->declarations = runtime.outputs_;
