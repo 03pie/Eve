@@ -1,5 +1,5 @@
 /** @file manager.hpp
- * @brief Windows 原生模块的只读握手、进程驻留和宿主诊断；不暴露加载器或 ABI 指针。
+ * @brief Windows 原生模块的首次装载策略、只读握手和宿主诊断；不暴露加载器或 ABI 指针。
  */
 #pragma once
 #include <cordis/module/ledger.hpp>
@@ -16,6 +16,14 @@ namespace cordis::module {
 enum class ModuleState { Validated, Loaded, Serving, Draining, Resident, Failed };
 /** @brief 目录选中的当前代与显式暂存的候选代；装载状态不代表已经切换业务。 */
 enum class GenerationRole { Current, Candidate, Retired };
+/** @brief 首次映射前固定的实际策略；ApprovedNative 仍须完整资源证明，不能直接卸载。 */
+enum class ModuleLoadPolicy { Resident, ApprovedNative };
+/** @brief 宿主明确批准的 C ABI 产物；按重新固定的模块身份和 SHA256 精确匹配。 */
+struct NativeUnloadApproval {
+    std::string moduleId;
+    std::string sha256;
+};
+using NativeUnloadWhitelist = std::vector<NativeUnloadApproval>;
 /** @brief 装载完成回执；相同模块内容重复请求复用一代，不再次调用 DLL。 */
 struct ModuleLoadReport {
     GenerationId generation;
@@ -47,6 +55,8 @@ struct ModuleGenerationSnapshot {
     GenerationRole role = GenerationRole::Current;
     GenerationId predecessor{};
     std::optional<ModuleReplacementSnapshot> replacement{};
+    /** @brief 从真实代次固定策略派生，nativePinned=false 单独不构成卸载许可。 */
+    ModuleLoadPolicy loadPolicy = ModuleLoadPolicy::Resident;
 };
 /** @brief 每个句柄绑定创建线程；进程内共享唯一驻留目录，最多 64 个已保留代次。
  * 默认驻留至进程退出，析构不调用 DLL 或 FreeLibrary；不提供业务或物理卸载能力。
@@ -56,14 +66,17 @@ public:
     ModuleManager();
     ModuleManager(const ModuleManager&) = delete;
     ModuleManager& operator=(const ModuleManager&) = delete;
-    /** @brief 重新预检并固定来源，受限搜索装载、只读描述握手；已映射失败保守驻留。 */
+    /** @brief 重新固定来源、选择首次策略并进行受限装载/发现；显式声明须精确白名单批准。
+     * resident 声明不被白名单升级；已映射失败保守保留，不自动释放。
+     */
     Result<ModuleLoadReport> load(const std::string& pluginRoot, const std::string& manifestPath,
-                                  PreflightLimits limits = {});
+                                  PreflightLimits limits = {}, const NativeUnloadWhitelist& whitelist = {});
     /** @brief 对当前代显式暂存另一份兼容目录的 C ABI 产物；不切换运行实例。
      * 来源须已放在独立目录；仍重新固定文件、校验和驻留。相同候选复用，普通 load 不选择候选。
      */
     Result<ModuleLoadReport> stage(const std::string& pluginRoot, const std::string& manifestPath,
-                                   GenerationId predecessor, PreflightLimits limits = {});
+                                   GenerationId predecessor, PreflightLimits limits = {},
+                                   const NativeUnloadWhitelist& whitelist = {});
     /** @brief owner 线程复制进程内模块诊断；不持有插件指针或返回可调用函数表。 */
     Result<std::vector<ModuleGenerationSnapshot>> snapshot() const;
     /** @brief owner 线程查询仍被实际 Runtime/实例持有的工厂来源；未知或已释放返回空。 */
@@ -78,7 +91,8 @@ public:
 
 private:
     Result<ModuleLoadReport> loadGeneration(const std::string& pluginRoot, const std::string& manifestPath,
-                                            PreflightLimits limits, GenerationId predecessor);
+                                            PreflightLimits limits, GenerationId predecessor,
+                                            const NativeUnloadWhitelist& whitelist);
     const std::thread::id owner_;
 };
 } // namespace cordis::module

@@ -21,7 +21,9 @@ extern "C" {
 
 #define CORDIS_MODULE_QUERY_MAJOR UINT32_C(1)
 #define CORDIS_MODULE_QUERY_MINOR UINT32_C(0)
+#define CORDIS_MODULE_QUERY_EXPLICIT_UNLOAD_MINOR UINT32_C(1)
 #define CORDIS_MODULE_RESIDENT UINT64_C(1)
+#define CORDIS_MODULE_EXPLICIT_UNLOAD UINT64_C(2)
 #define CORDIS_QUERY_OK INT32_C(0)
 #define CORDIS_QUERY_UNSUPPORTED (-INT32_C(1))
 #define CORDIS_QUERY_INVALID_ARGUMENT (-INT32_C(2))
@@ -41,7 +43,10 @@ typedef struct CordisQueryBytesV1 {
     uint64_t size;
 } CordisQueryBytesV1;
 
-/* Borrowed only during query. Flags and reserved fields must be zero in V1. */
+/* Borrowed only during query. Flags and reserved fields remain zero.
+ * Header minor 0 requests RESIDENT; minor 1 requests EXPLICIT_UNLOAD.
+ * The independent runtime/business ABI remains 1.0 for either request.
+ */
 typedef struct CordisModuleQueryV1 {
     CordisQueryHeaderV1 header;
     uint32_t runtime_abi_major;
@@ -51,7 +56,10 @@ typedef struct CordisModuleQueryV1 {
 
 /* Returned spans/array stay immutable and valid for the mapped module lifetime.
  * IDs use the manifest's ASCII rules. Maximum: 128 bytes per ID, 64 bytes per
- * version, 64 unique plugin IDs. reserved must be zero. flags is RESIDENT only.
+ * version, 64 unique plugin IDs. reserved must be zero. Header minor must match
+ * the accepted request. Minor 0 requires exactly RESIDENT; minor 1 requires
+ * exactly EXPLICIT_UNLOAD. The two flags are mutually exclusive, not hints.
+ * An explicit declaration does not grant host approval or prove safe unloading.
  */
 typedef struct CordisModuleDescriptorV1 {
     CordisQueryHeaderV1 header;

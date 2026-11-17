@@ -4,6 +4,9 @@
 
 _Static_assert(sizeof(CordisQueryStatus) == 4, "status");
 _Static_assert(sizeof(CordisQueryHeaderV1) == 16, "header");
+_Static_assert(CORDIS_MODULE_QUERY_MINOR == 0, "resident discovery remains 1.0");
+_Static_assert(CORDIS_MODULE_QUERY_EXPLICIT_UNLOAD_MINOR == 1, "explicit discovery is 1.1");
+_Static_assert(CORDIS_MODULE_RESIDENT == 1 && CORDIS_MODULE_EXPLICIT_UNLOAD == 2, "policy flags remain distinct");
 #if UINTPTR_MAX == UINT64_MAX
 _Static_assert(sizeof(CordisQueryBytesV1) == 16, "bytes");
 _Static_assert(sizeof(CordisModuleQueryV1) == 32, "request");

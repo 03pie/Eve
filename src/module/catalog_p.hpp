@@ -16,7 +16,9 @@ struct BackendResidency {
     virtual ~BackendResidency() = default;
 };
 struct Generation {
-    Generation(const PreflightArtifact& artifact, std::unique_ptr<OpenedPath> file);
+    Generation(const PreflightArtifact& artifact, std::unique_ptr<OpenedPath> file, ModuleLoadPolicy selected);
+    const ModuleLoadPolicy policy;
+    const std::thread::id ownerThread = std::this_thread::get_id();
     ModuleGenerationSnapshot copy();
     GenerationLedger ledger;
     std::shared_ptr<GenerationFailureSignal> businessSignal = std::make_shared<GenerationFailureSignal>();
@@ -36,10 +38,11 @@ struct GenerationReservation {
     std::shared_ptr<Generation> generation;
     bool created;
 };
-Result<GenerationReservation> reserveGeneration(VerifiedSource& source, GenerationId predecessor = {});
+Result<GenerationReservation> reserveGeneration(VerifiedSource& source, GenerationId predecessor = {},
+                                                ModuleLoadPolicy policy = ModuleLoadPolicy::Resident);
 std::shared_ptr<Generation> findGeneration(GenerationId id);
 std::vector<std::shared_ptr<Generation>> allGenerations();
 Result<ModuleLoadReport> failGeneration(const std::shared_ptr<Generation>& generation, ErrorInfo failure);
-/** @brief 受限搜索取得本目录映射、永久 PIN 并核对实际映像；不能在目录锁内调用。 */
+/** @brief 受限搜索取得本目录映射，按首次策略 PIN 并核对实际映像；不能在目录锁内调用。 */
 Result<void> mapGenerationImage(const std::shared_ptr<Generation>& generation);
 } // namespace cordis::module::detail

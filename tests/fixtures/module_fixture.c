@@ -39,6 +39,7 @@ static int await_release(void)
 __declspec(dllimport) int __cdecl cordis_fixture_dependency(void);
 #endif
 static int queries;
+static uint32_t last_query_minor = UINT32_MAX;
 #ifndef FIXTURE_PLUGIN_ID
 #define FIXTURE_PLUGIN_ID "org.cordis.plugin"
 #endif
@@ -47,6 +48,10 @@ __declspec(dllexport) int __cdecl cordis_fixture_queries(void)
 {
     return queries;
 }
+__declspec(dllexport) uint32_t __cdecl cordis_fixture_last_query_minor(void)
+{
+    return last_query_minor;
+}
 
 CordisQueryStatus CORDIS_QUERY_CALL cordis_module_query_v1(const CordisModuleQueryV1* request,
                                                            CordisModuleDescriptorV1* output)
@@ -54,10 +59,20 @@ CordisQueryStatus CORDIS_QUERY_CALL cordis_module_query_v1(const CordisModuleQue
     CordisModuleDescriptorV1 result;
     uint32_t capacity;
     ++queries;
+    last_query_minor =
+        request && request->header.struct_size >= sizeof(*request) ? request->header.query_minor : UINT32_MAX;
     if (!request || !output || request->header.struct_size < sizeof(*request) || request->header.query_major != 1 ||
-        request->header.query_minor != 0 || request->header.reserved || request->runtime_abi_major != 1 ||
-        request->runtime_abi_minor != 0 || request->flags)
+        request->header.reserved || request->runtime_abi_major != 1 || request->runtime_abi_minor != 0 ||
+        request->flags)
         return CORDIS_QUERY_UNSUPPORTED;
+#ifdef FIXTURE_EXPLICIT_UNLOAD
+    if (request->header.query_minor != CORDIS_MODULE_QUERY_MINOR &&
+        request->header.query_minor != CORDIS_MODULE_QUERY_EXPLICIT_UNLOAD_MINOR)
+        return CORDIS_QUERY_UNSUPPORTED;
+#else
+    if (request->header.query_minor != CORDIS_MODULE_QUERY_MINOR)
+        return CORDIS_QUERY_UNSUPPORTED;
+#endif
     capacity = output->header.struct_size;
     if (capacity < sizeof(*output))
         return CORDIS_QUERY_INVALID_ARGUMENT;
@@ -74,6 +89,17 @@ CordisQueryStatus CORDIS_QUERY_CALL cordis_module_query_v1(const CordisModuleQue
     result.header.query_major = 1;
     result.runtime_abi_major = 1;
     result.flags = CORDIS_MODULE_RESIDENT;
+#ifdef FIXTURE_EXPLICIT_UNLOAD
+    result.header.query_minor = request->header.query_minor;
+    if (request->header.query_minor == CORDIS_MODULE_QUERY_EXPLICIT_UNLOAD_MINOR)
+        result.flags = CORDIS_MODULE_EXPLICIT_UNLOAD;
+#ifdef FIXTURE_BAD_FLAGS
+    result.flags = CORDIS_MODULE_RESIDENT | CORDIS_MODULE_EXPLICIT_UNLOAD;
+#endif
+#ifdef FIXTURE_BAD_MINOR
+    result.header.query_minor = CORDIS_MODULE_QUERY_MINOR;
+#endif
+#endif
     result.module_id.data = (const uint8_t*)FIXTURE_ID;
     result.module_id.size = sizeof(FIXTURE_ID) - 1;
     result.module_version.data = (const uint8_t*)FIXTURE_VERSION;

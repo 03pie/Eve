@@ -30,6 +30,9 @@ int main(int argc, char** argv)
             if (value.generation == result.value().generation)
                 std::cout << "Discovery accepted; no business plugin activated\nModule: " << value.manifest.moduleId
                           << "\nGeneration: " << value.generation.value() << "\nLibrary: " << value.libraryPath
+                          << "\nLoad policy: "
+                          << (value.loadPolicy == cordis::module::ModuleLoadPolicy::Resident ? "resident"
+                                                                                             : "approved native")
                           << "\nResident until process exit: "
                           << (value.nativePinned ? "yes" : "loader reference retained") << '\n';
         }
@@ -44,6 +47,10 @@ int main(int argc, char** argv)
     std::cout << "Preflight passed (library not loaded)\nModule: " << artifact.manifest().moduleId
               << "\nVersion: " << artifact.manifest().moduleVersion << "\nLibrary: " << artifact.libraryPath()
               << "\nSHA256: " << artifact.manifest().sha256 << "\nBytes: " << artifact.libraryBytes() << '\n';
+    std::cout << "Declared unload policy: "
+              << (artifact.manifest().unloadPolicy == cordis::module::ModuleUnloadPolicy::Resident ? "resident"
+                                                                                                   : "explicit")
+              << '\n';
     for (const auto& plugin : artifact.manifest().plugins)
         std::cout << "Plugin: " << plugin << '\n';
     return 0;

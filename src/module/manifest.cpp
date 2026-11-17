@@ -162,8 +162,13 @@ Result<ModuleManifest> parseManifest(const std::string& json, PreflightLimits li
         return reject("unsupported module loader");
     if (root.value("platform") != QJsonValue(QStringLiteral("windows-x64")))
         return reject("unsupported module platform");
-    if (root.value("unloadPolicy") != QJsonValue(QStringLiteral("resident")))
-        return reject("only resident policy is supported");
+    const auto unloadPolicy = root.value("unloadPolicy");
+    if (unloadPolicy != QJsonValue(QStringLiteral("resident")) &&
+        unloadPolicy != QJsonValue(QStringLiteral("explicit")))
+        return reject("unsupported unload policy");
+    if (root.value("loader") == QJsonValue(QStringLiteral("qt-ui")) &&
+        unloadPolicy == QJsonValue(QStringLiteral("explicit")))
+        return reject("Qt UI modules require resident policy");
     if (!root.value("abi").isObject())
         return reject("abi must be an object");
     const auto abi = root.value("abi").toObject();
@@ -189,6 +194,8 @@ Result<ModuleManifest> parseManifest(const std::string& json, PreflightLimits li
                           {}};
     std::set<QString> seen;
     result.loader = root.value("loader").toString() == QLatin1String("qt-ui") ? ModuleLoader::QtUi : ModuleLoader::CAbi;
+    result.unloadPolicy = unloadPolicy.toString() == QLatin1String("explicit") ? ModuleUnloadPolicy::Explicit
+                                                                               : ModuleUnloadPolicy::Resident;
     for (const auto& plugin : plugins) {
         if (!plugin.isString() || !identifier(plugin.toString()) || !seen.insert(plugin.toString()).second)
             return reject("plugin identifiers must be valid and unique");

@@ -37,8 +37,9 @@ Result<ModuleLoadReport> loadGeneration(const std::string& root, const std::stri
     if (!source.hasValue())
         return Output::failure(source.error());
     const auto& artifact = source.value()->artifact;
-    if (artifact.manifest().loader != ModuleLoader::QtUi)
-        return Output::failure(error(ErrorCode::AbiMismatch, "Qt backend requires qt-ui loader"));
+    if (artifact.manifest().loader != ModuleLoader::QtUi ||
+        artifact.manifest().unloadPolicy != ModuleUnloadPolicy::Resident)
+        return Output::failure(error(ErrorCode::AbiMismatch, "Qt backend requires resident qt-ui loader"));
     auto backend = std::make_shared<QtResidency>(artifact.libraryPath());
     auto metadata = detail::verifyQtMetadata(artifact, backend->loader);
     if (!metadata.hasValue())

@@ -97,20 +97,22 @@ void retainBorrowed(ModuleCatalog& catalog, const Generation& generation, const 
     catalog.readers.swap(readers);
 }
 } // namespace
-Generation::Generation(const PreflightArtifact& artifact, std::unique_ptr<OpenedPath> file)
-    : data{ledger.snapshot().generation,
-           ModuleState::Validated,
-           artifact.manifest(),
-           artifact.manifestPath(),
-           artifact.libraryPath(),
-           false,
-           false,
-           false,
-           {},
-           ledger.snapshot()},
+Generation::Generation(const PreflightArtifact& artifact, std::unique_ptr<OpenedPath> file, ModuleLoadPolicy selected)
+    : policy(selected), data{ledger.snapshot().generation,
+                             ModuleState::Validated,
+                             artifact.manifest(),
+                             artifact.manifestPath(),
+                             artifact.libraryPath(),
+                             false,
+                             false,
+                             false,
+                             {},
+                             ledger.snapshot()},
       artifactFile(std::move(file))
 {
-    (void)ledger.pin("residentPolicy");
+    data.loadPolicy = policy;
+    if (policy == ModuleLoadPolicy::Resident)
+        (void)ledger.pin("residentPolicy");
 }
 ModuleGenerationSnapshot Generation::copy()
 {
@@ -119,6 +121,7 @@ ModuleGenerationSnapshot Generation::copy()
     if (data.state == ModuleState::Draining && resources.drained())
         data.state = ModuleState::Resident;
     auto value = data;
+    value.loadPolicy = policy;
     value.resources = std::move(resources);
     if (const auto reserved = replacement.lock(); reserved && !reserved->released.load())
         value.replacement = reserved->snapshot();
@@ -158,10 +161,17 @@ std::vector<std::shared_ptr<Generation>> allGenerations()
     std::lock_guard<std::mutex> lock(catalog.mutex);
     return catalog.generations;
 }
-Result<GenerationReservation> reserveGeneration(VerifiedSource& source, GenerationId predecessor)
+Result<GenerationReservation> reserveGeneration(VerifiedSource& source, GenerationId predecessor,
+                                                ModuleLoadPolicy policy)
 {
     using Output = Result<GenerationReservation>;
     const auto& verified = source.artifact;
+    const bool approved = policy == ModuleLoadPolicy::ApprovedNative;
+    if ((policy != ModuleLoadPolicy::Resident && !approved) ||
+        approved != (verified.manifest().unloadPolicy == ModuleUnloadPolicy::Explicit) ||
+        (approved && verified.manifest().loader != ModuleLoader::CAbi))
+        return Output::failure(
+            error(ErrorCode::AbiMismatch, "module.policy", "load policy differs from backend or declaration"));
     auto& artifact = source.library;
     auto& catalog = moduleCatalog();
     // One lock orders reservations across both backends and every manager. No external code runs here.
@@ -207,6 +217,9 @@ Result<GenerationReservation> reserveGeneration(VerifiedSource& source, Generati
         if (!sameManifest(current->data.manifest, verified.manifest()))
             return Output::failure(error(ErrorCode::ModulePinned, "module.identity",
                                          "different content/version/catalog already owns this module ID"));
+        if (current->policy != policy)
+            return Output::failure(
+                error(ErrorCode::ModulePinned, "module.policy", "existing generation load policy is fixed"));
         auto available = generationReusable(*current, ReusePurpose::Discovery);
         return available.hasValue() ? Output::success({current, false}) : Output::failure(available.error());
     }
@@ -215,13 +228,16 @@ Result<GenerationReservation> reserveGeneration(VerifiedSource& source, Generati
         if (matching->data.role != GenerationRole::Candidate || matching->data.predecessor != predecessor)
             return Output::failure(error(ErrorCode::ConfigConflict, "module.stage",
                                          "existing content belongs to another generation lineage"));
+        if (matching->policy != policy)
+            return Output::failure(
+                error(ErrorCode::ModulePinned, "module.policy", "existing candidate load policy is fixed"));
         auto available = generationReusable(*matching, ReusePurpose::Staging);
         return available.hasValue() ? Output::success({matching, false}) : Output::failure(available.error());
     }
     if (catalog.generations.size() >= 64)
         return Output::failure(
             error(ErrorCode::ModulePinned, "module.catalog", "resident module catalog budget exhausted"));
-    auto generation = std::make_shared<Generation>(verified, std::move(artifact));
+    auto generation = std::make_shared<Generation>(verified, std::move(artifact), policy);
     if (predecessor.valid()) {
         generation->data.role = GenerationRole::Candidate;
         generation->data.predecessor = predecessor;
@@ -521,6 +537,9 @@ Result<void> drainGeneration(GenerationId id)
 Result<void> mapGenerationImage(const std::shared_ptr<Generation>& generation)
 {
     const auto& verified = generation->data;
+    if (generation->policy == ModuleLoadPolicy::ApprovedNative && verified.manifest.loader != ModuleLoader::CAbi)
+        return Result<void>::failure(
+            error(ErrorCode::AbiMismatch, "module.policy", "approved native policy requires C ABI backend"));
     const auto nativePath = QDir::toNativeSeparators(QString::fromUtf8(verified.libraryPath.c_str())).toStdWString();
     if (GetModuleHandleW(nativePath.c_str()))
         return Result<void>::failure(error(ErrorCode::ModulePinned, "module.existing",
@@ -535,17 +554,19 @@ Result<void> mapGenerationImage(const std::shared_ptr<Generation>& generation)
         generation->image = image;
         generation->data.nativeMapped = true;
     }
-    HMODULE pinned = nullptr;
-    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
-                            reinterpret_cast<LPCWSTR>(image), &pinned) ||
-        pinned != image)
-        return Result<void>::failure(error(ErrorCode::ModulePinned, "module.pin",
-                                           "native process pin failed; original loader reference retained"));
-    {
-        std::lock_guard<std::mutex> lock(generation->mutex);
-        generation->data.nativePinned = true;
+    if (generation->policy == ModuleLoadPolicy::Resident) {
+        HMODULE pinned = nullptr;
+        if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+                                reinterpret_cast<LPCWSTR>(image), &pinned) ||
+            pinned != image)
+            return Result<void>::failure(error(ErrorCode::ModulePinned, "module.pin",
+                                               "native process pin failed; original loader reference retained"));
+        {
+            std::lock_guard<std::mutex> lock(generation->mutex);
+            generation->data.nativePinned = true;
+        }
+        (void)generation->ledger.pin("nativeProcessPin");
     }
-    (void)generation->ledger.pin("nativeProcessPin");
     const OpenedPath actual(imagePath(image), false);
     if (!generation->artifactFile->sameFile(actual) ||
         actual.finalPath().toUtf8().toStdString() != verified.libraryPath)

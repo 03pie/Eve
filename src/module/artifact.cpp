@@ -13,7 +13,8 @@ bool sameManifest(const ModuleManifest& left, const ModuleManifest& right)
     std::sort(a.begin(), a.end());
     std::sort(b.begin(), b.end());
     return left.moduleId == right.moduleId && left.moduleVersion == right.moduleVersion &&
-           left.sha256 == right.sha256 && left.loader == right.loader && a == b;
+           left.sha256 == right.sha256 && left.loader == right.loader && left.unloadPolicy == right.unloadPolicy &&
+           a == b;
 }
 namespace {
 ErrorInfo error(ErrorCode code, const char* phase, const char* message)

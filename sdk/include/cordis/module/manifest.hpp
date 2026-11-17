@@ -11,7 +11,9 @@
 
 namespace cordis::module {
 enum class ModuleLoader { CAbi, QtUi };
-/** @brief windows-x64 / 接口声明 1.0 / resident；装载类型由后端显式核对。 */
+/** @brief 插件的卸载声明；Explicit 只是请求，不能代替宿主白名单授权。 */
+enum class ModuleUnloadPolicy { Resident, Explicit };
+/** @brief windows-x64 / 接口声明 1.0；装载类型和实际策略由后端显式核对。 */
 struct ModuleManifest {
     std::string moduleId;
     std::string moduleVersion;
@@ -19,6 +21,7 @@ struct ModuleManifest {
     std::string sha256;
     std::vector<std::string> plugins;
     ModuleLoader loader = ModuleLoader::CAbi;
+    ModuleUnloadPolicy unloadPolicy = ModuleUnloadPolicy::Resident;
 };
 
 /** @brief 所有限额均须为正；文件读取采用分块而非完整映射 DLL。 */

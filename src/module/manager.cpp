@@ -28,7 +28,19 @@ bool matches(CordisQueryBytesV1 bytes, const std::string& expected, std::uint64_
     return bytes.data && bytes.size > 0 && bytes.size <= maximum && bytes.size == expected.size() &&
            std::memcmp(bytes.data, expected.data(), expected.size()) == 0;
 }
-Result<void> describe(HMODULE image, const ModuleManifest& manifest)
+Result<ModuleLoadPolicy> selectPolicy(const ModuleManifest& manifest, const NativeUnloadWhitelist& whitelist)
+{
+    if (manifest.unloadPolicy == ModuleUnloadPolicy::Resident)
+        return Result<ModuleLoadPolicy>::success(ModuleLoadPolicy::Resident);
+    const auto approved = std::any_of(whitelist.begin(), whitelist.end(), [&](const auto& entry) {
+        return entry.moduleId == manifest.moduleId && entry.sha256 == manifest.sha256;
+    });
+    if (manifest.loader != ModuleLoader::CAbi || !approved)
+        return Result<ModuleLoadPolicy>::failure(
+            error(ErrorCode::ModulePinned, "module.policy", "explicit unload contract requires exact host approval"));
+    return Result<ModuleLoadPolicy>::success(ModuleLoadPolicy::ApprovedNative);
+}
+Result<void> describe(HMODULE image, const ModuleManifest& manifest, ModuleLoadPolicy policy)
 {
     const auto address = GetProcAddress(image, "cordis_module_query_v1");
     if (!address)
@@ -37,7 +49,11 @@ Result<void> describe(HMODULE image, const ModuleManifest& manifest)
     CordisModuleQueryFnV1 query = nullptr;
     static_assert(sizeof(query) == sizeof(address), "Windows function pointer layout");
     std::memcpy(&query, &address, sizeof(query));
-    CordisModuleQueryV1 request{{sizeof(request), CORDIS_MODULE_QUERY_MAJOR, CORDIS_MODULE_QUERY_MINOR, 0}, 1, 0, 0};
+    const auto minor = policy == ModuleLoadPolicy::ApprovedNative ? CORDIS_MODULE_QUERY_EXPLICIT_UNLOAD_MINOR
+                                                                  : CORDIS_MODULE_QUERY_MINOR;
+    const auto flags =
+        policy == ModuleLoadPolicy::ApprovedNative ? CORDIS_MODULE_EXPLICIT_UNLOAD : CORDIS_MODULE_RESIDENT;
+    CordisModuleQueryV1 request{{sizeof(request), CORDIS_MODULE_QUERY_MAJOR, minor, 0}, 1, 0, 0};
     CordisModuleDescriptorV1 descriptor{};
     descriptor.header.struct_size = sizeof(descriptor);
     CordisQueryStatus status;
@@ -51,10 +67,9 @@ Result<void> describe(HMODULE image, const ModuleManifest& manifest)
         return Result<void>::failure(error(ErrorCode::AbiMismatch, "module.query",
                                            "module query rejected discovery, status " + std::to_string(status)));
     if (descriptor.header.struct_size < sizeof(descriptor) ||
-        descriptor.header.query_major != CORDIS_MODULE_QUERY_MAJOR ||
-        descriptor.header.query_minor != CORDIS_MODULE_QUERY_MINOR || descriptor.header.reserved != 0 ||
-        descriptor.runtime_abi_major != 1 || descriptor.runtime_abi_minor != 0 || descriptor.reserved != 0 ||
-        descriptor.flags != CORDIS_MODULE_RESIDENT)
+        descriptor.header.query_major != CORDIS_MODULE_QUERY_MAJOR || descriptor.header.query_minor != minor ||
+        descriptor.header.reserved != 0 || descriptor.runtime_abi_major != 1 || descriptor.runtime_abi_minor != 0 ||
+        descriptor.reserved != 0 || descriptor.flags != flags)
         return Result<void>::failure(
             error(ErrorCode::AbiMismatch, "module.descriptor", "incompatible discovery descriptor header or policy"));
     if (!matches(descriptor.module_id, manifest.moduleId, 128) ||
@@ -79,22 +94,24 @@ Result<void> describe(HMODULE image, const ModuleManifest& manifest)
 
 ModuleManager::ModuleManager() : owner_(std::this_thread::get_id()) {}
 Result<ModuleLoadReport> ModuleManager::load(const std::string& pluginRoot, const std::string& manifestPath,
-                                             PreflightLimits limits)
+                                             PreflightLimits limits, const NativeUnloadWhitelist& whitelist)
 {
-    return loadGeneration(pluginRoot, manifestPath, limits, {});
+    return loadGeneration(pluginRoot, manifestPath, limits, {}, whitelist);
 }
 Result<ModuleLoadReport> ModuleManager::stage(const std::string& pluginRoot, const std::string& manifestPath,
-                                              GenerationId predecessor, PreflightLimits limits)
+                                              GenerationId predecessor, PreflightLimits limits,
+                                              const NativeUnloadWhitelist& whitelist)
 {
     if (std::this_thread::get_id() != owner_)
         return Result<ModuleLoadReport>::failure(ownerError());
     if (!predecessor.valid())
         return Result<ModuleLoadReport>::failure(
             error(ErrorCode::InvalidArgument, "module.stage", "candidate requires a current predecessor"));
-    return loadGeneration(pluginRoot, manifestPath, limits, predecessor);
+    return loadGeneration(pluginRoot, manifestPath, limits, predecessor, whitelist);
 }
 Result<ModuleLoadReport> ModuleManager::loadGeneration(const std::string& pluginRoot, const std::string& manifestPath,
-                                                       PreflightLimits limits, GenerationId predecessor)
+                                                       PreflightLimits limits, GenerationId predecessor,
+                                                       const NativeUnloadWhitelist& whitelist)
 {
     if (std::this_thread::get_id() != owner_)
         return Result<ModuleLoadReport>::failure(ownerError());
@@ -105,7 +122,10 @@ Result<ModuleLoadReport> ModuleManager::loadGeneration(const std::string& plugin
     if (verified.manifest().loader != ModuleLoader::CAbi)
         return Result<ModuleLoadReport>::failure(
             error(ErrorCode::AbiMismatch, "module.loader", "C ABI backend requires c-abi loader"));
-    auto reserved = reserveGeneration(*source.value(), predecessor);
+    auto policy = selectPolicy(verified.manifest(), whitelist);
+    if (!policy.hasValue())
+        return Result<ModuleLoadReport>::failure(policy.error());
+    auto reserved = reserveGeneration(*source.value(), predecessor, policy.value());
     if (!reserved.hasValue())
         return Result<ModuleLoadReport>::failure(reserved.error());
     const auto generation = reserved.value().generation;
@@ -117,7 +137,7 @@ Result<ModuleLoadReport> ModuleManager::loadGeneration(const std::string& plugin
     auto lease = generation->ledger.acquire(ResourceKind::Call, "module.discovery");
     if (!lease.hasValue())
         return failGeneration(generation, lease.error());
-    auto described = describe(generation->image, verified.manifest());
+    auto described = describe(generation->image, verified.manifest(), generation->policy);
     lease.value().reset();
     if (!described.hasValue())
         return failGeneration(generation, described.error());

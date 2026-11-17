@@ -57,6 +57,7 @@ void schema()
     CHECK(value.hasValue());
     CHECK(value.value().moduleId == "org.cordis.example" && value.value().plugins.size() == 1);
     CHECK(value.value().loader == ModuleLoader::CAbi);
+    CHECK(value.value().unloadPolicy == ModuleUnloadPolicy::Resident);
     auto qt = manifest();
     qt["loader"] = "qt-ui";
     CHECK(parseManifest(json(qt)).value().loader == ModuleLoader::QtUi);
@@ -113,6 +114,36 @@ void schema()
         plugins.append("plugin" + QString::number(i));
     tooMany["plugins"] = plugins;
     rejected(tooMany);
+}
+void unload_policy()
+{
+    CHECK(ModuleManifest{}.unloadPolicy == ModuleUnloadPolicy::Resident);
+    auto requested = manifest();
+    requested["unloadPolicy"] = "explicit";
+    const auto parsed = parseManifest(json(requested));
+    CHECK(parsed.hasValue() && parsed.value().loader == ModuleLoader::CAbi &&
+          parsed.value().unloadPolicy == ModuleUnloadPolicy::Explicit);
+    auto qt = requested;
+    qt["loader"] = "qt-ui";
+    rejected(qt);
+    qt["unloadPolicy"] = "resident";
+    CHECK(parseManifest(json(qt)).value().unloadPolicy == ModuleUnloadPolicy::Resident);
+    for (const auto& invalid : std::vector<QJsonValue>{"unsupported", "Explicit", "explicit ", "", true, 1}) {
+        auto bad = requested;
+        bad["unloadPolicy"] = invalid;
+        rejected(bad);
+    }
+    const auto source = json(requested);
+    CHECK(!parseManifest("{\"unloadPolicy\":\"resident\"," + source.substr(1)).hasValue());
+    QTemporaryDir root;
+    CHECK(root.isValid());
+    write(root.path() + "/module.json", QByteArray::fromStdString(source));
+    write(root.path() + "/example.dll", "abc");
+    // 此处连 PE 映像都未校验；预检只保存明确请求，不获得加载或卸载权限。
+    auto checked = preflightModule(root.path().toUtf8().toStdString(), "module.json");
+    CHECK(checked.hasValue() && checked.value().manifest().unloadPolicy == ModuleUnloadPolicy::Explicit);
+    const auto copy = checked.value();
+    CHECK(copy.manifest().unloadPolicy == ModuleUnloadPolicy::Explicit && copy.libraryBytes() == 3);
 }
 void duplicates()
 {
@@ -271,6 +302,8 @@ int main(int argc, char** argv)
         const std::string name = argv[1];
         if (name == "schema")
             schema();
+        else if (name == "unload_policy")
+            unload_policy();
         else if (name == "duplicates")
             duplicates();
         else if (name == "library_names")
