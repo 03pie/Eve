@@ -52,6 +52,8 @@ std::unique_ptr<QWidget> moduleDiagnostics(const std::shared_ptr<cordis::module:
                                 : row.state == ModuleState::Failed    ? "失败"
                                 : row.state == ModuleState::Validated ? "已校验"
                                 : row.state == ModuleState::Draining  ? "排空中"
+                                : row.state == ModuleState::Unloading ? "卸载中"
+                                : row.state == ModuleState::Unloaded  ? "已卸载"
                                                                       : "进程驻留";
             text += QString::fromStdString(row.manifest.moduleId) + QString("  #%1  ").arg(row.generation.value()) +
                     QString::fromUtf8(state);
@@ -64,7 +66,7 @@ std::unique_ptr<QWidget> moduleDiagnostics(const std::shared_ptr<cordis::module:
                 text += "  " + QString::fromStdString(record.label) + '\n';
             for (const auto& reason : row.resources.pinReasons)
                 text += QString::fromUtf8("  驻留原因：") + QString::fromStdString(reason) + '\n';
-            for (const auto* failure : {&row.failure, &row.businessFailure})
+            for (const auto* failure : {&row.failure, &row.businessFailure, &row.unloadFailure})
                 if (*failure)
                     text += QString::fromUtf8("  错误：") +
                             QString::fromStdString((*failure)->phase + ": " + (*failure)->message) + '\n';

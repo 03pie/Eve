@@ -2,6 +2,7 @@
  * @brief 稳定基础 HostTable、真实业务生命周期、资源入口与保守失败驻留。
  */
 #include "admission_p.hpp"
+#include "catalog_p.hpp"
 #include "failure_p.hpp"
 #include "host_p.hpp"
 #include "host_resources_p.hpp"
@@ -43,7 +44,7 @@ CordisBytesV1 bytes(const std::string& value)
 namespace {
 struct HostRegistry {
     std::mutex mutex;
-    std::map<GenerationId, std::shared_ptr<BusinessRecord>> modules;
+    std::map<GenerationId, std::weak_ptr<BusinessRecord>> modules;
     std::map<CordisHandle, std::weak_ptr<NativeInstanceControl>> contexts;
 };
 HostRegistry& registry()
@@ -51,6 +52,33 @@ HostRegistry& registry()
     static auto* value = new HostRegistry;
     return *value;
 }
+/** @brief 代次拥有缓存；只有封闭全部实际准入后，才能在锁外销毁缓存的执行入口。 */
+struct NativeBackendResidency final : BackendResidency {
+    NativeBackendResidency(GenerationId id, std::shared_ptr<BusinessRecord> business)
+        : generation(id), record(std::move(business))
+    {
+    }
+    Result<void> retire() override
+    {
+        {
+            auto& directory = registry();
+            std::lock_guard<std::mutex> lock(directory.mutex);
+            if (record->negotiating || record->active)
+                return Result<void>::failure(hostError(ErrorCode::ModulePinned, "native host cache is still active"));
+            const auto found = directory.modules.find(generation);
+            if (found != directory.modules.end()) {
+                if (const auto actual = found->second.lock(); actual && actual != record)
+                    return Result<void>::failure(hostError(ErrorCode::ModulePinned, "native host cache owner changed"));
+                directory.modules.erase(found);
+            }
+        }
+        record->stateApi.reset();
+        record->api.reset();
+        return Result<void>::success();
+    }
+    const GenerationId generation;
+    const std::shared_ptr<BusinessRecord> record;
+};
 } // namespace
 
 namespace {
@@ -518,11 +546,17 @@ void NativeModuleControl::finish()
     }
     if (result.quiescent) {
         recordNativePhase(source.generation, ModuleState::Loaded);
+        std::shared_ptr<NativeModuleControl> active;
+        {
+            auto& directory = registry();
+            std::lock_guard<std::mutex> lock(directory.mutex);
+            if (record->active.get() == this)
+                active = std::move(record->active);
+        }
+        active.reset();
+        source.query = nullptr;
+        source.queryState = nullptr;
         source.session.reset();
-        auto& directory = registry();
-        std::lock_guard<std::mutex> lock(directory.mutex);
-        if (record->active.get() == this)
-            record->active.reset();
     }
     stopped.resolve(std::move(result));
 }
@@ -552,13 +586,17 @@ Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id,
     if (!source.hasValue())
         return Result<NativeModule>::failure(source.error());
     std::shared_ptr<BusinessRecord> record;
+    std::shared_ptr<NativeBackendResidency> backend;
     {
         auto& directory = registry();
         std::lock_guard<std::mutex> lock(directory.mutex);
         auto& slot = directory.modules[id];
-        if (!slot)
-            slot = std::make_shared<BusinessRecord>();
-        record = slot;
+        record = slot.lock();
+        if (!record) {
+            record = std::make_shared<BusinessRecord>();
+            backend = std::make_shared<NativeBackendResidency>(id, record);
+            slot = record;
+        }
         if (record->negotiating)
             return Result<NativeModule>::failure(
                 hostError(ErrorCode::ContextClosing, "business negotiation in progress"));
@@ -582,6 +620,18 @@ Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id,
             return Result<NativeModule>::success(NativeModule(std::move(root)));
         }
         record->negotiating = true;
+    }
+    if (backend) {
+        auto retained = retainNativeBackend(id, backend);
+        if (!retained.hasValue()) {
+            auto& directory = registry();
+            std::lock_guard<std::mutex> lock(directory.mutex);
+            const auto found = directory.modules.find(id);
+            if (found != directory.modules.end() && found->second.lock() == record)
+                directory.modules.erase(found);
+            record->negotiating = false;
+            return Result<NativeModule>::failure(retained.error());
+        }
     }
     if (!record->api) {
         auto call = source.value().ledger.acquire(ResourceKind::Call, "native.business.query");
@@ -634,6 +684,11 @@ Result<NativeInstance> NativeModule::createBound(std::string plugin, std::string
     auto root = control_;
     if (!root->ownerThread())
         return Result<NativeInstance>::failure(hostError(ErrorCode::WrongThread, "native host owner required"));
+    {
+        std::lock_guard<std::mutex> lock(root->mutex);
+        if (root->closing || root->closed || root->faulted)
+            return Result<NativeInstance>::failure(hostError(ErrorCode::ContextClosing, "native host is closing"));
+    }
     auto scheduler = root->scheduler.lock();
     if (!scheduler || !scheduler->isOpen())
         return Result<NativeInstance>::failure(hostError(ErrorCode::SchedulerClosed, "native scheduler is closed"));
@@ -642,15 +697,19 @@ Result<NativeInstance> NativeModule::createBound(std::string plugin, std::string
         if (!guard.hasValue())
             return Result<NativeInstance>::failure(guard.error());
     }
-    if (!id.valid() || epoch == 0 || config.size() > CORDIS_MAX_JSON_BYTES || !validAbiJson(config) ||
-        std::find(root->record->api->plugins.begin(), root->record->api->plugins.end(), plugin) ==
-            root->record->api->plugins.end())
+    if (!id.valid() || epoch == 0 || config.size() > CORDIS_MAX_JSON_BYTES || !validAbiJson(config))
         return Result<NativeInstance>::failure(
             hostError(ErrorCode::InvalidArgument, "invalid native plugin/configuration/identity"));
     {
         std::lock_guard<std::mutex> lock(root->mutex);
-        if (root->closing || root->faulted)
+        if (root->closing || root->closed || root->faulted)
             return Result<NativeInstance>::failure(hostError(ErrorCode::ContextClosing, "native host is closing"));
+        if (!root->record->api)
+            return Result<NativeInstance>::failure(hostError(ErrorCode::ContextClosing, "native host cache retired"));
+        const auto& plugins = root->record->api->plugins;
+        if (std::find(plugins.begin(), plugins.end(), plugin) == plugins.end())
+            return Result<NativeInstance>::failure(
+                hostError(ErrorCode::InvalidArgument, "invalid native plugin/configuration/identity"));
         if (root->instances.size() >= 128)
             return Result<NativeInstance>::failure(
                 hostError(ErrorCode::ModulePinned, "native instance budget exhausted"));
@@ -762,15 +821,22 @@ Task<void> NativeInstance::start() const
     auto self = control_;
     if (!self->ownerThread())
         return failedTask(hostError(ErrorCode::WrongThread, "native instance owner required"));
+    {
+        std::lock_guard<std::mutex> lock(self->root->mutex);
+        if (self->root->closing || self->root->closed || self->root->faulted)
+            return failedTask(hostError(ErrorCode::ContextClosing, "native host is closing"));
+    }
+    {
+        std::lock_guard<std::mutex> lock(self->mutex);
+        if (self->uncertain)
+            return self->started.task();
+        if (self->closing || self->state == NativeInstanceState::Destroyed)
+            return failedTask(hostError(ErrorCode::ContextClosing, "native instance is closing"));
+    }
     auto target = self->root->scheduler.lock();
     if (!target || !target->isOpen()) {
         self->quarantine(hostError(ErrorCode::SchedulerClosed, "native scheduler is closed"));
         return self->started.task();
-    }
-    {
-        std::lock_guard<std::mutex> lock(self->root->mutex);
-        if (self->root->closing || self->root->faulted)
-            return failedTask(hostError(ErrorCode::ContextClosing, "native host is closing"));
     }
     {
         std::lock_guard<std::mutex> lock(self->mutex);
@@ -867,17 +933,17 @@ Task<CleanupReport> NativeInstance::close() const
     auto self = control_;
     if (!self->ownerThread())
         return failedCleanupTask(hostError(ErrorCode::WrongThread, "native instance owner required"));
+    {
+        std::lock_guard<std::mutex> lock(self->mutex);
+        if (self->uncertain || self->closing || self->state == NativeInstanceState::Destroyed)
+            return self->stopped.task();
+    }
     if (self->managed && !self->managedClosing)
         return failedCleanupTask(hostError(ErrorCode::ContextClosing, "close the owning Core instance first"));
     auto scheduler = self->root->scheduler.lock();
     if (!scheduler || !scheduler->isOpen()) {
         self->quarantine(hostError(ErrorCode::SchedulerClosed, "native scheduler is closed"));
         return self->stopped.task();
-    }
-    {
-        std::lock_guard<std::mutex> lock(self->mutex);
-        if (self->uncertain || self->closing || self->state == NativeInstanceState::Destroyed)
-            return self->stopped.task();
     }
     auto servicesAllowed = self->resources->services->retirementAccess();
     if (!servicesAllowed.hasValue())

@@ -11,20 +11,29 @@
 #include <mutex>
 
 namespace cordis::module::detail {
-/** @brief 后端特有的驻留所有者；目录保留至进程退出，不在静态析构中关闭加载器。 */
+/** @brief 后端特有所有者；目录锁外显式退役，析构不代替加载器终结。 */
 struct BackendResidency {
     virtual ~BackendResidency() = default;
+    virtual Result<void> retire()
+    {
+        return Result<void>::failure(
+            makeError(ErrorCode::ModulePinned, "backend does not support explicit retirement"));
+    }
 };
+/** @brief 每线程一个进程唯一值，不随 std::thread::id 复用；耗尽明确失败。 */
+std::uint64_t moduleThreadIdentity();
 struct Generation {
     Generation(const PreflightArtifact& artifact, std::unique_ptr<OpenedPath> file, ModuleLoadPolicy selected);
     const ModuleLoadPolicy policy;
     const std::thread::id ownerThread = std::this_thread::get_id();
+    const std::uint64_t ownerIdentity = moduleThreadIdentity();
     ModuleGenerationSnapshot copy();
+    Result<void> sealEmpty(bool rejectPinned) { return ledger.sealEmpty(rejectPinned); }
     GenerationLedger ledger;
     std::shared_ptr<GenerationFailureSignal> businessSignal = std::make_shared<GenerationFailureSignal>();
     std::mutex mutex;
     ModuleGenerationSnapshot data;
-    const std::unique_ptr<OpenedPath> artifactFile;
+    std::unique_ptr<OpenedPath> artifactFile;
     bool loading = true;
     std::size_t admissions = 0;
     std::weak_ptr<ReplacementReservationControl> replacement;
@@ -32,6 +41,8 @@ struct Generation {
     std::map<RuntimeId, std::string> runtimeOrigins;
     InstanceOrigins instanceOrigins;
     HMODULE image = nullptr;
+    /** @brief 目标已离开、其他映像 probe 释放失败时保留的本方引用；永久不确定 pin。 */
+    HMODULE observationImage = nullptr;
     std::shared_ptr<BackendResidency> backend;
 };
 struct GenerationReservation {

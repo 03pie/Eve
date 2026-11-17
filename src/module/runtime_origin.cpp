@@ -59,7 +59,7 @@ Result<std::shared_ptr<RuntimeOriginControl>> retainRuntimeOrigin(GenerationId i
 Result<std::optional<ModuleRuntimeOrigin>> ModuleManager::runtimeOrigin(RuntimeId runtime) const
 {
     using Output = Result<std::optional<ModuleRuntimeOrigin>>;
-    if (std::this_thread::get_id() != owner_)
+    if (!ownerThread())
         return Output::failure(originError(ErrorCode::WrongThread, "runtime origin requires manager owner"));
     if (!runtime.valid())
         return Output::failure(originError(ErrorCode::InvalidArgument, "invalid runtime identity"));

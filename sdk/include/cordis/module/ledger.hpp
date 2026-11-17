@@ -10,6 +10,7 @@
 namespace cordis::module {
 namespace detail {
 struct LedgerControl;
+struct Generation;
 }
 
 /** @brief 可执行引用分类；不将业务实例的 Active/Disposed 当作 DLL 驻留状态。 */
@@ -89,6 +90,8 @@ public:
     LedgerSnapshot snapshot() const;
 
 private:
+    friend struct detail::Generation;
+    Result<void> sealEmpty(bool rejectPinned) const;
     std::shared_ptr<detail::LedgerControl> control_;
 };
 } // namespace cordis::module

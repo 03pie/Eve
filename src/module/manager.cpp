@@ -3,6 +3,7 @@
  */
 #include "catalog_p.hpp"
 #include "native_source_p.hpp"
+#include "unload_p.hpp"
 #include <algorithm>
 #include <cordis/module/manager.hpp>
 #include <cordis_abi/module_query.h>
@@ -92,7 +93,11 @@ Result<void> describe(HMODULE image, const ModuleManifest& manifest, ModuleLoadP
 }
 } // namespace
 
-ModuleManager::ModuleManager() : owner_(std::this_thread::get_id()) {}
+ModuleManager::ModuleManager() : owner_(std::this_thread::get_id()), ownerIdentity_(detail::moduleThreadIdentity()) {}
+bool ModuleManager::ownerThread() const
+{
+    return std::this_thread::get_id() == owner_ && detail::moduleThreadIdentity() == ownerIdentity_;
+}
 Result<ModuleLoadReport> ModuleManager::load(const std::string& pluginRoot, const std::string& manifestPath,
                                              PreflightLimits limits, const NativeUnloadWhitelist& whitelist)
 {
@@ -102,7 +107,7 @@ Result<ModuleLoadReport> ModuleManager::stage(const std::string& pluginRoot, con
                                               GenerationId predecessor, PreflightLimits limits,
                                               const NativeUnloadWhitelist& whitelist)
 {
-    if (std::this_thread::get_id() != owner_)
+    if (!ownerThread())
         return Result<ModuleLoadReport>::failure(ownerError());
     if (!predecessor.valid())
         return Result<ModuleLoadReport>::failure(
@@ -113,7 +118,7 @@ Result<ModuleLoadReport> ModuleManager::loadGeneration(const std::string& plugin
                                                        PreflightLimits limits, GenerationId predecessor,
                                                        const NativeUnloadWhitelist& whitelist)
 {
-    if (std::this_thread::get_id() != owner_)
+    if (!ownerThread())
         return Result<ModuleLoadReport>::failure(ownerError());
     auto source = detail::verifyModuleSource(pluginRoot, manifestPath, limits);
     if (!source.hasValue())
@@ -151,7 +156,7 @@ Result<ModuleLoadReport> ModuleManager::loadGeneration(const std::string& plugin
 }
 Result<std::vector<ModuleGenerationSnapshot>> ModuleManager::snapshot() const
 {
-    if (std::this_thread::get_id() != owner_)
+    if (!ownerThread())
         return Result<std::vector<ModuleGenerationSnapshot>>::failure(ownerError());
     const auto generations = allGenerations();
     std::vector<ModuleGenerationSnapshot> values;
@@ -162,9 +167,15 @@ Result<std::vector<ModuleGenerationSnapshot>> ModuleManager::snapshot() const
 }
 Result<void> ModuleManager::drain(GenerationId id)
 {
-    if (std::this_thread::get_id() != owner_)
+    if (!ownerThread())
         return Result<void>::failure(ownerError());
     return detail::drainGeneration(id);
+}
+Result<void> ModuleManager::tryUnload(GenerationId id)
+{
+    if (!ownerThread())
+        return Result<void>::failure(ownerError());
+    return detail::unloadGeneration(id);
 }
 } // namespace cordis::module
 
@@ -222,7 +233,8 @@ void recordNativePhase(GenerationId id, ModuleState phase, const std::optional<E
     if (!generation)
         return;
     std::lock_guard<std::mutex> lock(generation->mutex);
-    if (generation->data.state == ModuleState::Resident || generation->data.state == ModuleState::Failed)
+    if (generation->data.state == ModuleState::Resident || generation->data.state == ModuleState::Failed ||
+        generation->data.state == ModuleState::Unloading || generation->data.state == ModuleState::Unloaded)
         return;
     {
         std::lock_guard<std::mutex> signalLock(generation->businessSignal->mutex);
@@ -235,5 +247,22 @@ void recordNativePhase(GenerationId id, ModuleState phase, const std::optional<E
     generation->data.state = phase;
     if (failure)
         generation->data.businessFailure = failure;
+}
+Result<void> retainNativeBackend(GenerationId id, const std::shared_ptr<BackendResidency>& backend)
+{
+    const auto generation = findGeneration(id);
+    if (!generation || !backend)
+        return Result<void>::failure(
+            error(ErrorCode::InvalidArgument, "module.backend", "missing generation or backend"));
+    std::lock_guard<std::mutex> lock(generation->mutex);
+    if (generation->data.manifest.loader != ModuleLoader::CAbi || !generation->admissions ||
+        (generation->data.state != ModuleState::Loaded && generation->data.state != ModuleState::Serving))
+        return Result<void>::failure(
+            error(ErrorCode::ContextClosing, "module.backend", "generation is not admitting a native backend"));
+    if (generation->backend && generation->backend != backend)
+        return Result<void>::failure(
+            error(ErrorCode::ConfigConflict, "module.backend", "generation already owns another backend"));
+    generation->backend = backend;
+    return Result<void>::success();
 }
 } // namespace cordis::module::detail

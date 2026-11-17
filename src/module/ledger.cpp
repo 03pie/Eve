@@ -100,6 +100,17 @@ void GenerationLedger::beginDraining() const
     std::lock_guard<std::mutex> lock(control_->mutex);
     control_->accepting = false;
 }
+Result<void> GenerationLedger::sealEmpty(bool rejectPinned) const
+{
+    std::lock_guard<std::mutex> lock(control_->mutex);
+    if (!control_->records.empty())
+        return Result<void>::failure(
+            ledgerError(ErrorCode::ContextClosing, "close sessions and resources before draining"));
+    if (rejectPinned && !control_->pins.empty())
+        return Result<void>::failure(ledgerError(ErrorCode::ModulePinned, "generation has permanent pin reasons"));
+    control_->accepting = false;
+    return Result<void>::success();
+}
 Result<void> GenerationLedger::pin(std::string reason) const
 {
     if (!validLabel(reason))

@@ -39,6 +39,7 @@ if(WIN32 AND CORDIS_REQUIRE_QT5152)
 
     add_library(cordis_module_native STATIC
         manager.cpp
+        unload.cpp
         catalog.cpp
         catalog_registry.cpp
         reservation.cpp

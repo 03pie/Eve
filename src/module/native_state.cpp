@@ -179,6 +179,12 @@ Result<StateParticipant> NativeStateAccess::participant(const NativeInstance& in
     if (!self || !self->ownerThread())
         return Output::failure(hostError(self ? ErrorCode::WrongThread : ErrorCode::InvalidArgument,
                                          "native state participant requires actual owner"));
+    {
+        std::scoped_lock lock(self->root->mutex, self->mutex);
+        if (self->root->closing || self->root->closed || self->root->faulted || self->closing || self->uncertain ||
+            !self->native || self->state == NativeInstanceState::Destroyed)
+            return Output::failure(hostError(ErrorCode::ContextClosing, "native state instance unavailable"));
+    }
     auto encoded = encodeStateSchema(schema);
     if (!encoded.hasValue())
         return Output::failure(encoded.error());

@@ -1,6 +1,6 @@
 include("${PROJECT_SOURCE_DIR}/cmake/QtPluginContract.cmake")
 # Qt-specific fixtures/entry point are independent of native ABI fixture setup.
-foreach(case IN ITEMS good compiler qt runtime iterator pointer sdk legacy_sdk legacy_state_sdk legacy_migration_sdk legacy_unload_sdk missing catalog root_parent root_throw root_reenter)
+foreach(case IN ITEMS good compiler qt runtime iterator pointer sdk legacy_sdk legacy_state_sdk legacy_migration_sdk legacy_unload_sdk legacy_finalization_sdk missing catalog root_parent root_throw root_reenter)
     cordis_qt_toolchain_json(toolchain)
     if(case STREQUAL "compiler")
         string(REPLACE "\"MSVC\"" "\"Other\"" toolchain "${toolchain}")
@@ -22,6 +22,8 @@ foreach(case IN ITEMS good compiler qt runtime iterator pointer sdk legacy_sdk l
         string(REPLACE "\"sdkVersion\":\"${PROJECT_VERSION}\"" "\"sdkVersion\":\"0.1.2\"" toolchain "${toolchain}")
     elseif(case STREQUAL "legacy_unload_sdk")
         string(REPLACE "\"sdkVersion\":\"${PROJECT_VERSION}\"" "\"sdkVersion\":\"0.1.3\"" toolchain "${toolchain}")
+    elseif(case STREQUAL "legacy_finalization_sdk")
+        string(REPLACE "\"sdkVersion\":\"${PROJECT_VERSION}\"" "\"sdkVersion\":\"0.1.4\"" toolchain "${toolchain}")
     elseif(case STREQUAL "missing")
         set(toolchain "{}")
     endif()

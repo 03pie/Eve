@@ -9,7 +9,7 @@
 namespace cordis::module {
 Result<ReplacementReservation> ModuleManager::reserveReplacement(GenerationId current, GenerationId candidate)
 {
-    if (std::this_thread::get_id() != owner_) {
+    if (!ownerThread()) {
         auto error = makeError(ErrorCode::WrongThread, "module reservation requires manager owner");
         error.phase = "module.replacement";
         return Result<ReplacementReservation>::failure(std::move(error));
@@ -23,7 +23,7 @@ Result<ReplacementReservation> ModuleManager::reserveReplacement(GenerationId cu
                                                                  const ReplacementScope& scope)
 {
     using Output = Result<ReplacementReservation>;
-    if (std::this_thread::get_id() != owner_)
+    if (!ownerThread())
         return Output::failure(makeError(ErrorCode::WrongThread, "module reservation requires manager owner"));
     auto snapshot = scope.snapshot();
     if (!snapshot.hasValue())

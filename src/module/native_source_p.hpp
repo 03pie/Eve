@@ -7,9 +7,11 @@
 #include <cordis/module/manifest.hpp>
 #include <cordis_abi/plugin.h>
 #include <cordis_abi/state.h>
+#include <memory>
 #include <optional>
 
 namespace cordis::module::detail {
+struct BackendResidency;
 struct NativeSource {
     GenerationId generation;
     ModuleManifest manifest;
@@ -19,6 +21,8 @@ struct NativeSource {
     CordisQueryStateFnV1 queryState = nullptr;
 };
 Result<NativeSource> acquireNativeSource(GenerationId generation);
+/** @brief 已持实际 generation admission 时登记后端缓存；只接受首次登记或同一所有者。 */
+Result<void> retainNativeBackend(GenerationId generation, const std::shared_ptr<BackendResidency>& backend);
 void recordNativeBusiness(GenerationId generation, const std::optional<ErrorInfo>& failure);
 void recordNativePhase(GenerationId generation, ModuleState phase, const std::optional<ErrorInfo>& failure = {});
 } // namespace cordis::module::detail

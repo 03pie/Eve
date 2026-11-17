@@ -31,6 +31,15 @@ inline std::wstring nativeModulePath(const QString& path)
     }
     return native.toStdWString();
 }
+/** @brief 查询拥有映像引用的实际路径，供映射及卸载探测共用；不授予文件身份。 */
+inline QString mappedModulePath(HMODULE image)
+{
+    std::wstring buffer(32768, L'\0');
+    const auto length = GetModuleFileNameW(image, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (length == 0 || length >= buffer.size())
+        return {};
+    return QString::fromWCharArray(buffer.data(), static_cast<int>(length));
+}
 /** @brief 一次预检持续持有同一原生句柄；路径、元数据和字节不能在重开文件时脱节。 */
 class OpenedPath {
 public:

@@ -19,6 +19,7 @@ ErrorInfo hostError(ErrorCode code, const char* message);
 bool finalStatus(CordisStatus status);
 CordisBytesV1 bytes(const std::string& value);
 ErrorInfo operationError(CordisStatus status, bool stopping, const std::string& details = {});
+/** @brief 由 Generation 的 Native backend 持有；会话关闭断开 active，物理退役才清函数表。 */
 struct BusinessRecord {
     std::optional<BusinessApi> api;
     std::optional<NativeStateApi> stateApi;

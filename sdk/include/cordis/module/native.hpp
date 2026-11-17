@@ -69,8 +69,8 @@ struct NativeModuleSnapshot {
     bool faulted;
     std::vector<NativeInstanceSnapshot> instances;
 };
-/** @brief 每代模块至多一个活动宿主会话；业务表协商结果进程缓存，HostTable 寿命稳定。
- * 关闭会话前不能 drain 模块；默认驻留，不提供物理卸载。
+/** @brief 每代模块至多一个活动宿主会话；业务表缓存由实际代次持有，HostTable 寿命稳定。
+ * 关闭会话前不能 drain 模块；关闭只终结业务，不释放映像。
  */
 class NativeModule {
 public:

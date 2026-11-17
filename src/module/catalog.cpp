@@ -5,9 +5,12 @@
 #include "catalog_p.hpp"
 #include "catalog_registry_p.hpp"
 #include <algorithm>
+#include <atomic>
 #include <cordis/instance.hpp>
+#include <limits>
 #include <map>
 #include <set>
+#include <stdexcept>
 #include <utility>
 
 namespace cordis::module::detail {
@@ -17,14 +20,6 @@ ErrorInfo error(ErrorCode code, std::string phase, std::string message)
     auto value = makeError(code, std::move(message));
     value.phase = std::move(phase);
     return value;
-}
-QString imagePath(HMODULE image)
-{
-    std::wstring buffer(32768, L'\0');
-    const auto length = GetModuleFileNameW(image, buffer.data(), static_cast<DWORD>(buffer.size()));
-    if (length == 0 || length >= buffer.size())
-        return {};
-    return QString::fromWCharArray(buffer.data(), static_cast<int>(length));
 }
 bool sameCatalog(const ModuleManifest& left, const ModuleManifest& right)
 {
@@ -97,6 +92,20 @@ void retainBorrowed(ModuleCatalog& catalog, const Generation& generation, const 
     catalog.readers.swap(readers);
 }
 } // namespace
+std::uint64_t moduleThreadIdentity()
+{
+    static std::atomic<std::uint64_t> next{1};
+    thread_local const auto identity = [] {
+        auto value = next.load(std::memory_order_relaxed);
+        for (;;) {
+            if (value == std::numeric_limits<std::uint64_t>::max())
+                throw std::overflow_error("module owner thread identifiers exhausted");
+            if (next.compare_exchange_weak(value, value + 1, std::memory_order_relaxed))
+                return value;
+        }
+    }();
+    return identity;
+}
 Generation::Generation(const PreflightArtifact& artifact, std::unique_ptr<OpenedPath> file, ModuleLoadPolicy selected)
     : policy(selected), data{ledger.snapshot().generation,
                              ModuleState::Validated,
@@ -182,7 +191,11 @@ Result<GenerationReservation> reserveGeneration(VerifiedSource& source, Generati
             error(ErrorCode::ConfigConflict, "module.replacement", "module is reserved for replacement"));
     for (const auto& item : catalog.generations) {
         std::lock_guard<std::mutex> itemLock(item->mutex);
-        if (item->artifactFile->sameFile(*artifact)) {
+        if (item->data.state == ModuleState::Unloaded)
+            continue;
+        if (item->data.state == ModuleState::Unloading && item->data.manifest.moduleId == verified.manifest().moduleId)
+            return Output::failure(error(ErrorCode::ContextClosing, "module.load", "module image is unloading"));
+        if (item->artifactFile && item->artifactFile->sameFile(*artifact)) {
             if (item->data.manifest.moduleId != verified.manifest().moduleId)
                 return Output::failure(error(ErrorCode::AbiMismatch, "module.identity",
                                              "artifact already belongs to another module identity"));
@@ -234,7 +247,10 @@ Result<GenerationReservation> reserveGeneration(VerifiedSource& source, Generati
         auto available = generationReusable(*matching, ReusePurpose::Staging);
         return available.hasValue() ? Output::success({matching, false}) : Output::failure(available.error());
     }
-    if (catalog.generations.size() >= 64)
+    if (std::count_if(catalog.generations.begin(), catalog.generations.end(), [](const auto& item) {
+            std::lock_guard<std::mutex> member(item->mutex);
+            return item->data.state != ModuleState::Unloaded;
+        }) >= 64)
         return Output::failure(
             error(ErrorCode::ModulePinned, "module.catalog", "resident module catalog budget exhausted"));
     auto generation = std::make_shared<Generation>(verified, std::move(artifact), policy);
@@ -311,7 +327,9 @@ Result<std::shared_ptr<ReplacementReservationControl>> reserveReplacementPair(Ge
         if (generation != current && generation != candidate &&
             generation->data.manifest.moduleId == current->data.manifest.moduleId) {
             std::lock_guard<std::mutex> member(generation->mutex);
-            if (generation->loading || generation->admissions)
+            if (generation->data.state == ModuleState::Unloaded)
+                continue;
+            if (generation->loading || generation->admissions || generation->data.state == ModuleState::Unloading)
                 return Output::failure(error(ErrorCode::ConfigConflict, "module.replacement",
                                              "another generation of this module is entering"));
             if (operation.valid()) {
@@ -351,7 +369,8 @@ Result<std::shared_ptr<ReplacementReservationControl>> reserveReplacementPair(Ge
                 generation->replacement = control;
             else {
                 std::lock_guard<std::mutex> member(generation->mutex);
-                generation->replacement = control;
+                if (generation->data.state != ModuleState::Unloaded)
+                    generation->replacement = control;
             }
         }
     return Output::success(std::move(control));
@@ -479,7 +498,8 @@ Result<GenerationAdmission> admitGenerationLifecycle(GenerationId id)
     if (borrowed(catalog, generation->data.manifest.moduleId))
         return Output::failure(
             error(ErrorCode::ConfigConflict, "module.replacement", "consumer host is used by replacement"));
-    if (generation->loading || generation->admissions)
+    if (generation->loading || generation->admissions || generation->data.state == ModuleState::Unloading ||
+        generation->data.state == ModuleState::Unloaded)
         return Output::failure(error(ErrorCode::ContextClosing, "module.lifecycle", "module creation is in progress"));
     // 清理不要求健康或 ledger 接受新资源；否则故障代将失去关闭路径。
     ++generation->admissions;
@@ -521,15 +541,15 @@ Result<void> drainGeneration(GenerationId id)
     if (borrowed(catalog, generation->data.manifest.moduleId))
         return Result<void>::failure(
             error(ErrorCode::ConfigConflict, "module.replacement", "consumer generation is used by replacement"));
-    if (generation->loading || generation->admissions)
+    if (generation->loading || generation->admissions || generation->data.state == ModuleState::Unloading ||
+        generation->data.state == ModuleState::Unloaded)
         return Result<void>::failure(
             error(ErrorCode::ContextClosing, "module.drain", "module is negotiating or creating"));
-    if (!generation->ledger.snapshot().records.empty())
-        return Result<void>::failure(
-            error(ErrorCode::ContextClosing, "module.drain", "close sessions and resources before draining"));
+    auto sealed = generation->sealEmpty(false);
+    if (!sealed.hasValue())
+        return sealed;
     if (generation->data.state == ModuleState::Loaded || generation->data.state == ModuleState::Serving)
         generation->data.state = ModuleState::Draining;
-    generation->ledger.beginDraining();
     if (generation->data.state == ModuleState::Draining && generation->ledger.snapshot().drained())
         generation->data.state = ModuleState::Resident;
     return Result<void>::success();
@@ -567,7 +587,7 @@ Result<void> mapGenerationImage(const std::shared_ptr<Generation>& generation)
         }
         (void)generation->ledger.pin("nativeProcessPin");
     }
-    const OpenedPath actual(imagePath(image), false);
+    const OpenedPath actual(mappedModulePath(image), false);
     if (!generation->artifactFile->sameFile(actual) ||
         actual.finalPath().toUtf8().toStdString() != verified.libraryPath)
         return Result<void>::failure(
