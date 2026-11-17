@@ -13,6 +13,7 @@ add_library(cordis_core ${cordis_core_type}
     effect.cpp
     instance.cpp
     state.cpp
+    state_budget.cpp
     kernel.cpp
     service.cpp
     service_contract.cpp
@@ -21,6 +22,7 @@ add_library(cordis_core ${cordis_core_type}
     replacement.cpp
     replacement_scope.cpp
     replacement_stage.cpp
+    replacement_state.cpp
     replacement_commit.cpp
     replacement_inspect.cpp
 )

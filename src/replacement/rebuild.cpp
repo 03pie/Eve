@@ -1,6 +1,7 @@
 /** @file rebuild.cpp
  * @brief 隔离创建拥有单元，等待真实就绪，核对全部旧成员与真实新子树的对应。
  */
+#include "../core/instance_state_p.hpp"
 #include "operation_p.hpp"
 #include <algorithm>
 namespace cordis::detail {
@@ -48,8 +49,9 @@ struct DefaultBuild : std::enable_shared_from_this<DefaultBuild> {
                 }
                 parent = std::move(isolated).value();
             }
-        auto created = parent ? parent->inject(*item->factory, item->config, item->additionalDependencies)
-                              : builder.stage(*item->factory, item->config, item->realms, item->additionalDependencies);
+        auto created =
+            parent ? builder.injectMember(key, *parent, *item->factory, item->config, item->additionalDependencies)
+                   : builder.stageMember(key, *item->factory, item->config, item->realms, item->additionalDependencies);
         if (!created.hasValue()) {
             done.reject(created.error());
             return;
@@ -116,6 +118,11 @@ void ReplacementOperationControl::build(bool restoring)
         return;
     }
     const auto builder = std::move(permission).value();
+    auto state = configureState();
+    if (!state.hasValue()) {
+        fail(state.error());
+        return;
+    }
     const auto expected = sequence;
     for (const auto index : ordered.value()) {
         if (sequence != expected || delivery->terminal.load())
@@ -225,6 +232,15 @@ Result<void> ReplacementOperationControl::validateBuilt()
                 return Result<void>::failure(
                     replacementError(ErrorCode::ConfigConflict, "required candidate mapping is missing"));
             const auto& input = *inputs.at(found->second);
+            if (!execution->state.declared.empty()) {
+                auto imported = InstanceStateAccess::receipt(execution->built.at(item.key));
+                if (!imported.hasValue())
+                    return Result<void>::failure(imported.error());
+                if (imported.value().operation != report.operation || imported.value().key != item.key ||
+                    imported.value().epoch != input.epoch)
+                    return Result<void>::failure(
+                        replacementError(ErrorCode::ConfigConflict, "owner did not import this actual member state"));
+            }
             const auto parent = item.parent ? identities.at(*item.parent) : InstanceId{};
             if (input.parent != parent || (item.factory && input.runtime != item.factory->id()))
                 return Result<void>::failure(

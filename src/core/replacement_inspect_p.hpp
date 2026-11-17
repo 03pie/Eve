@@ -2,6 +2,7 @@
  * @brief 宿主提交准备读取同一 Core 的真实候选；副本不授予独立权限。
  */
 #pragma once
+#include "replacement_state_p.hpp"
 #include <atomic>
 #include <cordis/kernel.hpp>
 #include <cordis/replacement_builder.hpp>
@@ -63,6 +64,8 @@ struct CoreReplacementAccess {
     static Task<CleanupReport> whenKernelClosed(const Kernel&);
     static bool kernelClosing(const Kernel&) noexcept;
     static Result<ReplacementBuilder> builder(const ReplacementScope&, const Kernel&);
+    static Result<void> statePlan(const ReplacementScope&, const Kernel&, std::vector<StateConstruction>,
+                                  std::shared_ptr<StateBudget>, bool required);
     /** @brief 宿主逻辑条目选择实际祖先；Core 从唯一真实图核对并原子占用，不把编号当作来源。 */
     static Result<ReplacementScope> reserve(Kernel&, const std::vector<RuntimeId>&, const std::vector<InstanceId>&);
     static std::shared_ptr<std::atomic_bool> failureSignal(const ReplacementScope&, const Kernel&) noexcept;

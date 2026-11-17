@@ -45,6 +45,7 @@ Result<void> ReplacementScopeControl::beginStage()
                 stageError(ErrorCode::ContextClosing, "stage invalidated while opening group", operation));
         }
         staging.emplace(std::move(group).value());
+        statePlan.reset();
         staging->control_->replacement = shared_from_this();
         discarded = Promise<CleanupReport>();
         stageReport = {true, {}};
@@ -65,7 +66,8 @@ Result<ReplacementBuilder> ReplacementScopeControl::builder()
 Result<Instance> ReplacementScopeControl::stage(const Runtime& runtime, std::string config, RealmMap realms,
                                                 std::vector<ServiceRequirement> additionalDependencies,
                                                 const std::shared_ptr<PublicationControl>& permission,
-                                                std::optional<StateSnapshot> input)
+                                                std::optional<StateSnapshot> input,
+                                                std::shared_ptr<StateAdmission> admission)
 {
     auto allowed = check();
     if (!allowed.hasValue())
@@ -92,7 +94,7 @@ Result<Instance> ReplacementScopeControl::stage(const Runtime& runtime, std::str
     if (!claimed.hasValue())
         return Result<Instance>::failure(claimed.error());
     return kernel->mountHeld(group, runtime, std::move(config), std::move(realms), std::move(additionalDependencies),
-                             std::move(input));
+                             std::move(input), std::move(admission));
 }
 Result<void> ReplacementScopeControl::claimStage(const std::shared_ptr<PublicationControl>& permission,
                                                  const Runtime& runtime, const RealmMap& realms,

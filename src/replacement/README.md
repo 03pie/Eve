@@ -1,12 +1,14 @@
 # Host replacement
 
-源码 SDK 0.1.2 已提供 Core 状态协议；完整宿主状态迁移由 P5-M3-c 接入。此前整体操作在冻结前检查实际旧成员的状态契约，遇到有状态成员明确拒绝，避免沿无输入的旧重建路径丢失状态。低层 Scope/Builder 可由受控调用方显式提供纯值输入；本兼容拒绝将在真实状态事务接入时替换，见 [M3 工作单](../../docs/p5-m3-development.md)。
+源码 SDK 0.1.3 的 P5-M3-c 管线已完成阶段实现与验证：冻结后按实际成员导出并独立保存原值，已知候选/恢复工厂提前校验，停止后通过原 Builder 的成员 key 准入将输入交给真实 epoch，原 discard/recover/共同提交继续负责恢复与发布。原“拒绝全部有状态成员”分支已删除；已知无状态候选不能丢弃旧值，有状态整体操作的每个拥有者均须声明 stateAware 并实际使用 stageMember/injectMember。普通无状态拥有者和低层显式 StateSnapshot 路径保留兼容，状态预算与导入回执只属于本操作，不进入历史报告。完整 M3 要求审计及五配置全量验证通过，实现与阶段审计随收口提交归档，见 [M3-c 收口](../../docs/p5-m3-development.md#m3-c-收口结论)。
+
+原始快照在唯一 Execution 中按真实成员保存，候选转换不覆盖原值，恢复复用同一份不可变原值。原值与尚未导入的转换共同计入 16 MiB，单份不超过 1 MiB；Core 只计费纯值并验证实际 epoch 导入，JSON 格式检查沿用宿主现有实现。拥有者可用 preflight.removed 明确删除候选的原动态子树，不能删除平台根或显式配置成员；恢复仍覆盖全部原成员。声明和实际创建不符时，原提交检查会拒绝，不由拥有者的成功报告决定发布。
 
 外部低层原生服务的来源由宿主从已封存的真实 NativeServiceEndpoint/所有者取得，不能因它不属于 Core 拥有树就跳过。Core 只提供通用绑定视图，宿主同时转换托管来源，ModuleNative 核对自己的原身份账目；未托管来源没有 Runtime。此路径复用原代次读持有和故障中断，不新增全局来源表。
 
 模块业务故障沿原预约的实际候选/恢复用途通知宿主，通知生产者只由操作短期持有，预约保存弱槽；不在驻留代次累积观察链。悬挂拥有者可被所需来源故障中断：候选独有来源失效可恢复不依赖它的旧树，恢复也需要的来源失效报告 RecoveryFailed 并保留实际预约。原代次错误、quarantine 和最终健康检查仍为原账目，不将外部故障资源冒称已清理。
 
-`Cordis::Replacement` 是宿主操作层，依赖 ConfigReplacement/ModuleNative 和原生宿主适配 ModuleHost；目前在支持原生模块的 Windows 构建中启用。公开入口为 [replacement_operation.hpp](../../sdk/include/cordis/replacement_operation.hpp)。M2c5 的完整运行事务已完成实现、阶段审计和支持矩阵验证，见开发记录；M3–M5 仍继续。
+`Cordis::Replacement` 是宿主操作层，依赖 ConfigReplacement/ModuleNative 和原生宿主适配 ModuleHost；目前在支持原生模块的 Windows 构建中启用。公开入口为 [replacement_operation.hpp](../../sdk/include/cordis/replacement_operation.hpp)。M2c5 的完整运行事务已完成实现、阶段审计和支持矩阵验证，见开发记录；M4/M5 仍继续。
 
 宿主先装载并保留两代真实工厂，再以 `ReplacementRequest` 显式提供当前/候选代、Runtime 换代、Kernel/管理器/调度器，以及配置参与者的实际 Session、Driver、新目录、已校验目标和期望修订。`begin` 预检并排队执行，`settled` 返回纯值结果；保存仍由 Session 显式执行，替换不自动写盘。手动装配不需要虚构配置会话。
 

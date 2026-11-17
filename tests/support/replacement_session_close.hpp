@@ -3,8 +3,11 @@
  */
 #pragma once
 #include "replacement_owner.hpp"
+#include <QCoreApplication>
+#include <QEvent>
 #include <algorithm>
 #include <cordis/loader/qt_file.hpp>
+#include <exception>
 #include <functional>
 #include <optional>
 
@@ -19,6 +22,28 @@ bool operationSessionCloseCase(SceneType& scene, const cordis::Runtime& old, con
     const bool prepared = mode.endsWith("_prepared"), stopping = mode.endsWith("_stopping");
     const bool atCommit = mode.endsWith("_commit"), failedRecovery = mode.endsWith("_recovery_failure");
     const bool recoveryCommit = mode.endsWith("_recovery_commit");
+    const bool stateCapture = mode.endsWith("_state_capture"), stateRestore = mode.endsWith("_state_restore");
+    const bool stateCase = stateCapture || stateRestore;
+    struct StateValue {
+        ContextIdentity identity;
+        std::string json, observed;
+        unsigned restored = 0;
+        bool cleaned = false;
+    };
+    // 只观察实际 Context 的值；两 Session 的显式子成员沿默认 Builder 重建，不扩大旧拥有者协议。
+    std::vector<std::shared_ptr<StateValue>> stateValues;
+    std::function<void(const std::shared_ptr<StateValue>&, bool)> stateHook;
+    std::exception_ptr stateFailure;
+    const auto invokeState = [&](const std::shared_ptr<StateValue>& value, bool restoring) {
+        try {
+            const auto hook = stateHook;
+            if (hook)
+                hook(value, restoring);
+        } catch (...) {
+            if (!stateFailure)
+                stateFailure = std::current_exception();
+        }
+    };
     std::function<void()> validationHook, recoveryHook;
     const auto available = [&] {
         if (recoveryHook) {
@@ -37,9 +62,48 @@ bool operationSessionCloseCase(SceneType& scene, const cordis::Runtime& old, con
         return Result<void>::success();
     };
     const auto schema = [](const std::string&) { return Result<void>::success(); };
-    auto before =
-        ConfigurationDefinitions::create({{{id, {}, schema, {"business", "old/module.json"}}, old, {}, available}})
-            .value();
+    const auto instanceReferences = [&](GenerationId generation) {
+        const auto resources = scene.state(generation).resources.records;
+        return std::count_if(resources.begin(), resources.end(),
+                             [](const auto& record) { return record.kind == module::ResourceKind::Instance; });
+    };
+    std::vector<ConfiguredPlugin> definitions{{{id, {}, schema, {"business", "old/module.json"}}, old, {}, available}};
+    if (stateCase) {
+        auto builtin = Runtime::stateful(
+            [&](Context context) {
+                auto value = std::make_shared<StateValue>();
+                value->identity = context.identity().value();
+                value->json = context.config();
+                stateValues.push_back(value);
+                context
+                    .afterCleanup([value] {
+                        value->cleaned = true;
+                        return completedTask();
+                    })
+                    .value();
+                auto imported = context.state({[&, value] {
+                                                   invokeState(value, false);
+                                                   return Result<std::string>::success(value->json);
+                                               },
+                                               [&, value](std::string_view json) {
+                                                   value->json = json;
+                                                   ++value->restored;
+                                                   invokeState(value, true);
+                                                   return Result<void>::success();
+                                               }});
+                if (!imported.hasValue())
+                    return failedTask(imported.error());
+                value->observed = value->json;
+                return completedTask();
+            },
+            {{"session.counter", 1}, [](const StateSnapshot& value) {
+                 CHECK(value.schema.id == "session.counter" && value.schema.version == 1);
+                 return Result<std::string>::success(value.json);
+             }});
+        kernel->registerRuntime("session.state", builtin).value();
+        definitions.push_back({{"session.state", {}, schema}, builtin});
+    }
+    auto before = ConfigurationDefinitions::create(std::move(definitions)).value();
     auto after = before->replacing({{{id, {}, nextSchema, {"business", "next/module.json"}}, next}}).value();
     auto driver = KernelReconcileDriver::configured(scheduler, kernel, before);
     const auto file = scene.root + "/session-close.yaml";
@@ -48,7 +112,8 @@ bool operationSessionCloseCase(SceneType& scene, const cordis::Runtime& old, con
     const auto text = [&](const char* folder) {
         return std::string("formatVersion: 1\nmodules: {business: {manifest: ") + folder +
                "/module.json}}\nplugins: [{id: item, plugin: " + id +
-               ", module: business, config: " + (scene.qt ? "normal" : "sync") + "}]\n";
+               ", module: business, config: " + (scene.qt ? "normal" : "sync") +
+               (stateCase ? ", children: [{id: state, plugin: session.state, config: 42}]" : "") + "}]\n";
     };
     const auto initial = session->apply(session->preview(text("old")).value()).value();
     CHECK(waitFor(initial.settled)->value().outcome == PlanOutcome::Applied);
@@ -64,6 +129,7 @@ bool operationSessionCloseCase(SceneType& scene, const cordis::Runtime& old, con
     CHECK(waitFor(otherInitial.settled)->value().outcome == PlanOutcome::Applied);
     CHECK(waitFor(otherSession->save(1).value())->hasValue());
     const auto otherConfigured = otherDriver->snapshot().value()[0].instance;
+    CHECK(!stateCase || stateValues.size() == 2);
     const auto manual = kernel->mount(old, scene.qt ? "normal" : "\"sync\"").value();
     CHECK(waitFor(manual.ready())->hasValue());
     const auto manualId = manual.snapshot().value().instance;
@@ -84,9 +150,11 @@ bool operationSessionCloseCase(SceneType& scene, const cordis::Runtime& old, con
         std::make_shared<const ValidatedCandidate>(after->validate(parseConfiguration(text("next")).value()).value());
     request.configurations.push_back({session, driver, after, target, 1});
     request.configurations.push_back({otherSession, otherDriver, after, target, 1});
-    request.owners.emplace(configured, owner);
-    request.owners.emplace(otherConfigured, owner);
-    request.owners.emplace(manualId, owner);
+    if (!stateCase) {
+        request.owners.emplace(configured, owner);
+        request.owners.emplace(otherConfigured, owner);
+        request.owners.emplace(manualId, owner);
+    }
     if (mode.endsWith("_preflight_kernel")) {
         std::optional<Task<CleanupReport>> closing;
         owner->preflightHook = [&] {
@@ -149,7 +217,33 @@ bool operationSessionCloseCase(SceneType& scene, const cordis::Runtime& old, con
         CHECK(!closed->isReady());
         CHECK(!session->preview(text("old")).hasValue());
     };
-    if (prepared)
+    bool stateInterrupted = false;
+    if (stateCase) {
+        stateHook = [&](const std::shared_ptr<StateValue>& value, bool restoring) {
+            if (restoring != stateRestore || stateInterrupted)
+                return;
+            stateInterrupted = true;
+            CHECK(operation.snapshot().value().phase ==
+                  (stateRestore ? ReplacementPhase::Building : ReplacementPhase::Capturing));
+            CHECK(!value->cleaned && value->json == "42");
+            const auto oldReferences = instanceReferences(scene.current);
+            const auto nextReferences = instanceReferences(scene.candidate);
+            const auto cleaned =
+                std::count_if(stateValues.begin(), stateValues.end(), [](const auto& item) { return item->cleaned; });
+            CHECK(stateRestore ? oldReferences == 0 && nextReferences > 0 && cleaned == 2
+                               : oldReferences == 3 && nextReferences == 0 && cleaned == 0);
+            CHECK(value->restored == (stateRestore ? 1U : 0U));
+            close();
+            // FakeScheduler 与 QtScheduler 均禁止重入业务推进；Qt 删除事件仍可到达实际资源屏障。
+            QCoreApplication::processEvents();
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            CHECK(!closed->isReady() && !value->cleaned && !operation.settled().isReady());
+            CHECK(instanceReferences(scene.current) == oldReferences &&
+                  instanceReferences(scene.candidate) == nextReferences);
+            CHECK(std::count_if(stateValues.begin(), stateValues.end(),
+                                [](const auto& item) { return item->cleaned; }) == cleaned);
+        };
+    } else if (prepared)
         close();
     else if (stopping)
         CHECK(scheduler->post({[&] {
@@ -167,6 +261,9 @@ bool operationSessionCloseCase(SceneType& scene, const cordis::Runtime& old, con
         close();
     }
     auto result = waitFor(operation.settled());
+    stateHook = {};
+    if (stateFailure)
+        std::rethrow_exception(stateFailure);
     CHECK(result && result->hasValue());
     const auto& report = result->value();
     CHECK(closed && waitFor(*closed)->hasValue());
@@ -181,23 +278,73 @@ bool operationSessionCloseCase(SceneType& scene, const cordis::Runtime& old, con
                           [](const auto& error) { return error.code == ErrorCode::RecoveryFailed; }));
         CHECK(scene.state(scene.current).replacement && scene.state(scene.candidate).replacement);
     } else {
-        CHECK(report.outcome == ReplacementOutcome::Cancelled && report.recovered == !prepared && !report.committed &&
-              !report.resourcesRetained && report.instances.size() == (prepared ? 0 : 3));
+        const bool untouched = prepared || stateCapture;
+        CHECK(report.outcome == ReplacementOutcome::Cancelled && report.recovered == !untouched && !report.committed &&
+              !report.resourcesRetained &&
+              report.instances.size() == (untouched      ? 0U
+                                          : stateRestore ? 5U
+                                                         : 3U));
         CHECK(!scene.state(scene.current).replacement && !scene.state(scene.candidate).replacement);
         const auto restored = std::find_if(report.instances.begin(), report.instances.end(),
                                            [&](const auto& mapping) { return mapping.previous == manualId; });
         const auto manualCurrent =
-            prepared ? manualId : (restored == report.instances.end() ? InstanceId{} : restored->current);
+            untouched ? manualId : (restored == report.instances.end() ? InstanceId{} : restored->current);
         CHECK(kernel->findInstance(manualCurrent).value().snapshot().value().state == InstanceState::Active);
-        CHECK(otherDriver->snapshot().value().size() == 1 &&
-              otherDriver->snapshot().value()[0].state == InstanceState::Active);
+        const auto otherRows = otherDriver->snapshot().value();
+        CHECK(otherRows.size() == (stateCase ? 2U : 1U) &&
+              std::all_of(otherRows.begin(), otherRows.end(),
+                          [](const auto& row) { return row.state == InstanceState::Active; }));
         CHECK(otherSession->save(1).hasValue());
+        if (stateCase) {
+            CHECK(stateInterrupted && driver->configurationDefinitions() == before &&
+                  otherDriver->configurationDefinitions() == before);
+            for (const auto& active : {session, otherSession}) {
+                const auto snapshot = active->snapshot().value();
+                CHECK(snapshot.coordinator.desiredRevision == 1 && snapshot.store.persistedRevision == 1 &&
+                      !snapshot.store.dirty && before->owns(*snapshot.coordinator.desired));
+            }
+            CHECK(scene.state(scene.current).role == module::GenerationRole::Current &&
+                  scene.state(scene.candidate).role == module::GenerationRole::Candidate);
+            CHECK(instanceReferences(scene.current) == 2 && instanceReferences(scene.candidate) == 0);
+            CHECK(stateValues[0]->cleaned && stateValues[0]->json == "42");
+            if (stateCapture) {
+                CHECK(stateValues.size() == 2 && !stateValues[1]->cleaned && otherRows[0].instance == otherConfigured &&
+                      manualCurrent == manualId);
+                CHECK(stateValues[1]->json == "42" && stateValues[1]->observed == "42" &&
+                      stateValues[1]->restored == 0);
+            } else {
+                CHECK(stateValues[1]->cleaned && stateValues.size() > 4);
+                for (unsigned i = 0; i != 2; ++i) {
+                    const auto mapping =
+                        std::find_if(report.instances.begin(), report.instances.end(), [&](const auto& item) {
+                            return item.previous == stateValues[i]->identity.instance;
+                        });
+                    CHECK(mapping != report.instances.end() && mapping->current != mapping->previous);
+                    const auto value = std::find_if(stateValues.begin(), stateValues.end(), [&](const auto& item) {
+                        return item->identity.instance == mapping->current;
+                    });
+                    CHECK(value != stateValues.end() && (*value)->json == "42" && (*value)->observed == "42" &&
+                          (*value)->restored == 1 && (*value)->cleaned == (i == 0));
+                }
+                CHECK(otherRows[0].instance != otherConfigured && manualCurrent != manualId);
+            }
+            const auto otherChild = std::find_if(otherRows.begin(), otherRows.end(),
+                                                 [](const auto& row) { return row.path == "item/state"; });
+            CHECK(otherChild != otherRows.end());
+            for (const auto& value : stateValues)
+                CHECK(value->cleaned || value->identity.instance == otherChild->instance);
+        }
     }
     if (owner->observedBuilder)
         CHECK(!owner->observedBuilder->stage(*owner->lastFactory).hasValue());
-    owner->pending.reject(makeError(ErrorCode::ActivationFailed, "late candidate after session close"));
+    if (!stateCase)
+        owner->pending.reject(makeError(ErrorCode::ActivationFailed, "late candidate after session close"));
     CHECK(waitFor(operation.settled())->value().outcome == report.outcome);
     CHECK(waitFor(kernel->close())->value().quiescent);
+    if (stateCase) {
+        CHECK(std::all_of(stateValues.begin(), stateValues.end(), [](const auto& value) { return value->cleaned; }));
+        CHECK(instanceReferences(scene.current) == 0 && instanceReferences(scene.candidate) == 0);
+    }
     CHECK(waitFor(otherSession->close())->hasValue());
     return failedRecovery;
 }

@@ -99,6 +99,8 @@ void ReplacementOperationControl::cancel()
             return;
         if (self->phase == ReplacementPhase::Prepared)
             self->settle(ReplacementOutcome::Cancelled, false);
+        else if (self->phase == ReplacementPhase::Capturing)
+            self->rejectCapture(makeError(ErrorCode::OperationCancelled, "replacement capture cancelled"));
         else if (self->phase == ReplacementPhase::Building)
             self->fail(makeError(ErrorCode::OperationCancelled, "replacement cancelled"));
     });
@@ -177,6 +179,13 @@ void ReplacementOperationControl::start()
         settle(ReplacementOutcome::Failed, false);
         return;
     }
+    phase = ReplacementPhase::Capturing;
+    ++sequence;
+    auto captured = captureState();
+    if (!captured.hasValue()) {
+        rejectCapture(captured.error());
+        return;
+    }
     phase = ReplacementPhase::Stopping;
     ++sequence;
     auto stopped = execution->scope->stop();
@@ -213,6 +222,10 @@ void ReplacementOperationControl::fail(ErrorInfo error)
         return;
     if (CoreReplacementAccess::kernelClosing(*execution->request.kernel))
         return;
+    if (phase == ReplacementPhase::Capturing) {
+        rejectCapture(std::move(error));
+        return;
+    }
     cancelled = cancelled || sessionClosing();
     error.operation = report.operation;
     report.errors.push_back(std::move(error));

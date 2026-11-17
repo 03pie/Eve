@@ -434,6 +434,7 @@ void ReplacementScopeControl::removeClaims(bool resume)
         staging && staging->control_->state == PublicationState::Published ? staging->control_ : nullptr;
     const auto previous = state;
     state = ReplacementScopeState::Released;
+    statePlan.reset();
     releasing = true;
     struct Finish {
         ReplacementScopeControl& control;

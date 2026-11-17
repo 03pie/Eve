@@ -2,8 +2,10 @@
  * @brief 实际拥有者协议的成功、创建前拒绝及恢复失败检查。
  */
 #pragma once
+#include <atomic>
 #include <cordis/replacement_operation.hpp>
 #include <functional>
+#include <iostream>
 class OperationRejectingScheduler final : public cordis::IScheduler {
 public:
     explicit OperationRejectingScheduler(std::shared_ptr<cordis::IScheduler> delegate) : delegate_(std::move(delegate))

@@ -79,6 +79,9 @@ Result<void> ReplacementScopeControl::prepareCommit(ReplacementCommitMode mode)
     auto inputs = checkInputs(mode == ReplacementCommitMode::Recovery);
     if (!inputs.hasValue())
         return inputs;
+    auto imported = validateStatePlan();
+    if (!imported.hasValue())
+        return imported;
     const auto owner = kernel;
     std::vector<Instance> members;
     std::vector<std::shared_ptr<BindingControl>> bindings;

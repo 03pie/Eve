@@ -15,7 +15,7 @@ foreach(version IN ITEMS old next)
     set_target_properties(cordis_reservation_peer_${version} PROPERTIES PREFIX ""
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/replacement-fixtures")
 endforeach()
-add_executable(cordis_module_reservation_tests qt/module_reservation.cpp)
+add_executable(cordis_module_reservation_tests qt/module_reservation.cpp qt/module_state_tree.cpp)
 target_link_libraries(cordis_module_reservation_tests PRIVATE Cordis::ModuleNative Cordis::ModuleHost Cordis::ConfigKernel Cordis::ConfigSession Cordis::ConfigStoreQt Qt5::Core)
 cordis_target_defaults(cordis_module_reservation_tests)
 add_dependencies(cordis_module_reservation_tests cordis_fixture_business cordis_reservation_native_next
@@ -27,6 +27,21 @@ cordis_target_defaults(cordis_module_origin_tests)
 add_dependencies(cordis_module_origin_tests cordis_fixture_business cordis_reservation_native_next)
 function(cordis_reservation_cases backend old next third)
     foreach(operation IN ITEMS
+        operation_state_tree_roundtrip
+        operation_state_tree_recovery
+        operation_state_tree_recovery_consumer
+        operation_state_tree_delete
+        operation_state_tree_delete_recovery
+        operation_state_tree_legacy
+        operation_state_tree_mixed
+        operation_state_tree_budget_boundary
+        operation_state_tree_budget_full
+        operation_state_tree_budget_over
+        operation_state_tree_source
+        operation_state_tree_source_recovery
+        operation_state_tree_removed_parent
+        operation_state_tree_removed_new_parent
+        operation_state_tree_removed_config
         operation_sources_raw_loss
         operation_sources_loss
         operation_sources_loss_shared
@@ -56,6 +71,8 @@ function(cordis_reservation_cases backend old next third)
         operation_paths_conflict
         operation_paths_parallel
         operation_session_close_preflight
+        operation_session_close_state_capture
+        operation_session_close_state_restore
         operation_session_close_preflight_kernel
         operation_session_close_preflight_available
         operation_session_close_preflight_throw
@@ -76,7 +93,7 @@ function(cordis_reservation_cases backend old next third)
         operation_sessions_prepare_failure
         operation_sessions_prepare_cancel
         operation_guards
-        operation_state_guard
+        operation_state_preserved
         operation_merge
         operation_owner
         operation_owner_before_create

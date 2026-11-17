@@ -3,6 +3,7 @@
  */
 #pragma once
 #include <cordis/instance.hpp>
+#include <cstddef>
 #include <memory>
 #include <utility>
 
@@ -17,6 +18,12 @@ public:
     Result<Instance> stage(const Runtime&, std::string config = {}, RealmMap realms = {},
                            std::vector<ServiceRequirement> additionalDependencies = {},
                            std::optional<StateSnapshot> state = {}) const;
+    /** @brief 使用宿主计划中本阶段的一次性成员准入；自动接收对应原始状态。 */
+    Result<Instance> stageMember(std::size_t key, const Runtime&, std::string config = {}, RealmMap realms = {},
+                                 std::vector<ServiceRequirement> additionalDependencies = {}) const;
+    /** @brief 在真实父 Context 下按计划 key 创建子成员；不能替换为普通 inject 绕过状态。 */
+    Result<Instance> injectMember(std::size_t key, const Context& parent, const Runtime&, std::string config = {},
+                                  std::vector<ServiceRequirement> additionalDependencies = {}) const;
 
 private:
     friend struct detail::ReplacementScopeControl;

@@ -4,6 +4,7 @@
 #pragma once
 #include "module_artifacts.hpp"
 #include <cordis/module/native.hpp>
+#include <cordis/module/runtime.hpp>
 struct ReplacementPeer {
     cordis::GenerationId previous, candidate;
     cordis::module::NativeModule previousModule, candidateModule;

@@ -1,5 +1,5 @@
-add_library(cordis_replacement STATIC operation.cpp preflight.cpp plan.cpp sources.cpp graph.cpp rebuild.cpp commit.cpp)
+add_library(cordis_replacement STATIC operation.cpp preflight.cpp plan.cpp sources.cpp graph.cpp rebuild.cpp commit.cpp state.cpp)
 add_library(Cordis::Replacement ALIAS cordis_replacement)
 target_link_libraries(cordis_replacement PUBLIC Cordis::ConfigReplacement Cordis::ModuleNative)
-target_link_libraries(cordis_replacement PRIVATE Cordis::ModuleHost)
+target_link_libraries(cordis_replacement PRIVATE Cordis::ModuleHost Cordis::ModuleRequests)
 cordis_target_defaults(cordis_replacement)

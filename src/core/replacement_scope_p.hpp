@@ -36,6 +36,7 @@ struct ReplacementScopeControl : std::enable_shared_from_this<ReplacementScopeCo
     Promise<void> released;
     std::optional<PublicationGroup> staging;
     std::map<InstanceId, Instance> staged;
+    std::optional<ReplacementStatePlan> statePlan;
     std::set<RuntimeId> stagedRuntimes;
     std::set<RuntimeId> borrowedRuntimes;
     std::set<ServiceKey> stagedOutputs;
@@ -82,7 +83,11 @@ struct ReplacementScopeControl : std::enable_shared_from_this<ReplacementScopeCo
     Result<Instance> stage(const Runtime& runtime, std::string config, RealmMap realms,
                            std::vector<ServiceRequirement> additionalDependencies,
                            const std::shared_ptr<PublicationControl>& permission = {},
-                           std::optional<StateSnapshot> input = {});
+                           std::optional<StateSnapshot> input = {}, std::shared_ptr<StateAdmission> admission = {});
+    Result<void> configureStatePlan(std::vector<StateConstruction>, std::shared_ptr<StateBudget>, bool required);
+    Result<std::shared_ptr<StateAdmission>>
+    stateAdmission(std::size_t key, const std::shared_ptr<PublicationControl>& permission, bool child);
+    Result<void> validateStatePlan() const;
     Result<void> claimStage(const std::shared_ptr<PublicationControl>& permission, const Runtime& runtime,
                             const RealmMap& realms, const std::vector<ServiceRequirement>& additionalDependencies,
                             bool root = false);

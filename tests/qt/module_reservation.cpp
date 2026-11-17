@@ -3,10 +3,12 @@
  */
 #include "../../src/loader/configuration_commit_p.hpp"
 #include "../../src/module/replacement_commit_p.hpp"
-#include "../support/module_artifacts.hpp"
+#include "../support/module_reservation_scene.hpp"
+#include "../support/module_state_tree.hpp"
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QEvent>
+#include <QEventLoop>
 #include <QThread>
 #include <QTimer>
 #include <QVariant>
@@ -35,73 +37,8 @@
 using namespace cordis;
 using namespace cordis::module;
 namespace files = cordis::testing::modules;
-#define CHECK(x)                                                                                                       \
-    do {                                                                                                               \
-        if (!(x))                                                                                                      \
-            throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__));                             \
-    } while (false)
 static_assert(!std::is_copy_constructible_v<ReplacementReservation> &&
               std::is_nothrow_move_constructible_v<ReplacementReservation>);
-struct Scene {
-    std::shared_ptr<ModuleManager> managerOwner = std::make_shared<ModuleManager>();
-    ModuleManager& manager = *managerOwner;
-    bool qt;
-    QString root;
-    QStringList dlls;
-    std::string oldPath, nextPath;
-    GenerationId current, candidate;
-    Scene(bool backend, QString directory, QStringList paths)
-        : qt(backend), root(std::move(directory)), dlls(std::move(paths))
-    {
-        CHECK(dlls.size() == 5);
-        oldPath = install(dlls[0], "old").toStdString();
-        nextPath = install(dlls[1], "next", "2.0.0").toStdString();
-        current = load(oldPath).value().generation;
-        candidate = stage(nextPath).value().generation;
-    }
-    QString install(const QString& dll, const QString& dir, const QString& version = "1.0.0") const
-    {
-        return files::install(dll, root + '/' + dir, qt ? "org.cordis.qt.example" : "org.cordis.business",
-                              qt ? QJsonArray{"org.cordis.qt.page", "org.cordis.qt.settings"}
-                                 : QJsonArray{"org.cordis.plugin"},
-                              qt ? "qt-ui" : "c-abi", version);
-    }
-    Result<ModuleLoadReport> load(const std::string& path)
-    {
-#ifdef CORDIS_TEST_QT_RESERVATION
-        if (qt)
-            return loadQtModule(root.toStdString(), path);
-#endif
-        return manager.load(root.toStdString(), path);
-    }
-    Result<ModuleLoadReport> stage(const std::string& path)
-    {
-#ifdef CORDIS_TEST_QT_RESERVATION
-        if (qt)
-            return stageQtModule(root.toStdString(), path, current);
-#endif
-        return manager.stage(root.toStdString(), path, current);
-    }
-    ModuleGenerationSnapshot state(GenerationId id) const
-    {
-        const auto values = manager.snapshot().value();
-        auto found =
-            std::find_if(values.begin(), values.end(), [&](const auto& value) { return value.generation == id; });
-        CHECK(found != values.end());
-        return *found;
-    }
-    ReplacementReservation reserve() { return manager.reserveReplacement(current, candidate).value(); }
-    void checkReserved(bool reserved) const
-    {
-        for (auto id : {current, candidate}) {
-            const auto value = state(id);
-            CHECK(value.replacement.has_value() == reserved);
-            if (reserved)
-                CHECK(value.replacement->current == current && value.replacement->candidate == candidate);
-        }
-        CHECK(state(current).role == GenerationRole::Current && state(candidate).role == GenerationRole::Candidate);
-    }
-};
 void generic(Scene& s, const QString& name)
 {
     if (name == "guards") {
@@ -465,7 +402,13 @@ void nativeDefinitions(Scene& s, bool replacing = false, bool recovering = false
         CHECK(task.isReady());
         return task.tryResult();
     };
-    if (operation.startsWith("operation_paths"))
+    if (operation.startsWith("operation_state_tree")) {
+        if (operationStateTreeCase(s, a, b, scheduler, kernel, operation)) {
+            CHECK(!old.close().tryResult()->hasValue());
+            queue->close();
+            return;
+        }
+    } else if (operation.startsWith("operation_paths"))
         operationPathsCase(s, a, b, scheduler, kernel, waitFor, operation.endsWith("_parallel"));
     else if (operation.startsWith("operation_session_close")) {
         if (operationSessionCloseCase(s, a, b, scheduler, kernel, waitFor, operation)) {
@@ -513,7 +456,7 @@ template <class T> auto wait(const Task<T>& task)
     timer.start();
     while (!task.isReady()) {
         CHECK(timer.elapsed() < 5000);
-        QCoreApplication::processEvents();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QThread::msleep(1);
     }
@@ -639,7 +582,9 @@ void qtDefinitions(Scene& s, bool replacing = false, bool recovering = false, co
     kernel->registerRuntime(replacing ? "canonical" : "old", old).value();
     if (!replacing)
         kernel->registerRuntime("next", next).value();
-    if (operation.startsWith("operation_paths"))
+    if (operation.startsWith("operation_state_tree"))
+        operationStateTreeCase(s, old, next, scheduler, kernel, operation);
+    else if (operation.startsWith("operation_paths"))
         operationPathsCase(
             s, old, next, scheduler, kernel, [&](const auto& task) { return wait(task); },
             operation.endsWith("_parallel"));

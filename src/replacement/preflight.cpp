@@ -100,17 +100,12 @@ Result<void> ReplacementOperationControl::prepare(ReplacementRequest request)
     if (!original.hasValue())
         return Result<void>::failure(original.error());
     work.original = std::move(original).value();
-    // M3-c replaces this compatibility gate with the complete state transaction.
     for (const auto& member : work.original.members) {
         auto schema = InstanceStateAccess::schema(member.instance);
         if (!schema.hasValue())
             return Result<void>::failure(schema.error());
-        if (schema.value()) {
-            auto error = replacementError(ErrorCode::ConfigInvalid,
-                                          "stateful replacement requires state migration orchestration");
-            error.instance = member.input.instance;
-            return Result<void>::failure(std::move(error));
-        }
+        if (schema.value())
+            work.state.declared.emplace(member.input.instance, std::move(*schema.value()));
     }
     delivery->scopeFailure = CoreReplacementAccess::failureSignal(*work.scope, *host.kernel);
     if (!delivery->scopeFailure)
@@ -355,13 +350,25 @@ Result<void> ReplacementOperationControl::prepare(ReplacementRequest request)
             if (!accepted.hasValue())
                 return Result<void>::failure(accepted.error());
             future = std::move(accepted).value();
+            if (!future.stateAware && !work.state.declared.empty())
+                return Result<void>::failure(
+                    replacementError(ErrorCode::ConfigInvalid,
+                                     "stateful operation requires all owners to use planned member construction"));
         }
-        auto planned = planConstruction(unit.candidate, future.candidate, nextKey);
+        auto planned = planConstruction(unit.candidate, future.candidate, nextKey, future.removed);
         if (!planned.hasValue())
             return planned;
         auto recoveryPlan = planConstruction(unit.recovery, future.recovery, nextKey);
         if (!recoveryPlan.hasValue())
             return recoveryPlan;
+        for (const auto& item : unit.candidate.members)
+            if (item.previous && item.factory && work.state.declared.count(item.previous->instance) &&
+                !item.factory->stateSchema()) {
+                auto error =
+                    replacementError(ErrorCode::ConfigInvalid, "candidate cannot discard previous member state");
+                error.instance = item.previous->instance;
+                return Result<void>::failure(std::move(error));
+            }
         work.units.push_back(std::move(unit));
     }
     if (usedOwners.size() != host.owners.size())

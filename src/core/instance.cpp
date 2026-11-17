@@ -103,7 +103,9 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
     std::optional<CleanupReport> retirementFailure;
     std::vector<ErrorInfo> childErrors;
     std::shared_ptr<const StateContract> stateContract;
-    std::optional<StateSnapshot> stateInput;
+    std::shared_ptr<const OwnedStateSnapshot> stateInput;
+    std::weak_ptr<const StateAdmission> stateReceipt;
+    Epoch stateReceiptEpoch = 0;
     std::optional<EpochState> epochState;
     bool stateCalling = false, retireDeferred = false;
 
@@ -528,6 +530,8 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
             return;
         }
         ++epoch;
+        if (!stateReceiptEpoch && !stateReceipt.expired())
+            stateReceiptEpoch = epoch;
         targetEpoch = epoch;
         active.emplace(epoch, Promise<ActiveReport>());
         const auto captured = epoch;
@@ -658,6 +662,27 @@ Result<std::optional<StateSnapshot>> detail::InstanceStateAccess::capture(const 
         return Output::failure(makeError(ErrorCode::ContextClosing, "state scope changed during capture"));
     return captured;
 }
+Result<detail::StateImportReceipt> detail::InstanceStateAccess::receipt(const Instance& instance)
+{
+    using Output = Result<StateImportReceipt>;
+    const auto self = instance.control_;
+    if (!self)
+        return Output::failure(makeError(ErrorCode::InvalidArgument, "missing state member"));
+    auto receipt = self->stateReceipt.lock();
+    auto owner = receipt ? receipt->owner.lock() : nullptr;
+    if (owner && std::this_thread::get_id() != owner->ownerThread)
+        return Output::failure(makeError(ErrorCode::WrongThread, "state receipt requires owner"));
+    if (!owner || (owner->state != ReplacementScopeState::Staging && owner->state != ReplacementScopeState::Prepared) ||
+        !owner->statePlan || !owner->ownsStageView(receipt->publication.lock()) ||
+        !owner->statePlan->members.count(receipt->member.key) ||
+        owner->statePlan->members.at(receipt->member.key) != receipt || !receipt->claimed ||
+        self->stateReceiptEpoch != self->epoch || self->state != InstanceState::Active || self->stopping ||
+        self->retiring || self->dirty || self->blocked.load() || !self->epochState ||
+        !self->epochState->ready().hasValue() || (receipt->member.input && !self->epochState->imported()))
+        return Output::failure(
+            makeError(ErrorCode::ConfigConflict, "member did not import this phase state in its actual epoch"));
+    return Output::success({owner->operation, receipt->member.key, self->epoch});
+}
 /** @brief 资源命名先验证 owner/epoch/门禁，避免用旧 Context 创建新贡献。 */
 Result<ContextIdentity> Context::identity() const
 {
@@ -702,6 +727,13 @@ Result<Instance> Context::inject(const Runtime& runtime, std::string config,
                                  std::vector<ServiceRequirement> additionalDependencies,
                                  std::optional<StateSnapshot> state) const
 {
+    return injectWithState(runtime, std::move(config), std::move(additionalDependencies), std::move(state), {});
+}
+Result<Instance> Context::injectWithState(const Runtime& runtime, std::string config,
+                                          std::vector<ServiceRequirement> additionalDependencies,
+                                          std::optional<StateSnapshot> state,
+                                          std::shared_ptr<detail::StateAdmission> admission) const
+{
     auto self = control_.lock();
     if (!self) return Result<Instance>::failure(makeError(ErrorCode::StaleContext, "instance expired"));
     auto allowed = self->business(epoch_);
@@ -718,7 +750,8 @@ Result<Instance> Context::inject(const Runtime& runtime, std::string config,
     }
     try {
         auto child = Instance::prepareMount(runtime, self->scheduler, std::move(config), self->services, realms_,
-                                            std::move(additionalDependencies), self->hostOwner, std::move(state));
+                                            std::move(additionalDependencies), self->hostOwner, std::move(state),
+                                            std::move(admission), self);
         if (self->services) self->services->attachParent(child.control_->id, self->id);
         self->children.push_back(child.control_);
         child.startMount();
@@ -949,15 +982,34 @@ Instance Instance::prepareMount(const Runtime& runtime, std::shared_ptr<ISchedul
                                 std::shared_ptr<ServiceRegistry> services, RealmMap realms,
                                 std::vector<ServiceRequirement> additionalDependencies,
                                 std::shared_ptr<const detail::InstanceOwnerIdentity> owner,
-                                std::optional<StateSnapshot> state)
+                                std::optional<StateSnapshot> state, std::shared_ptr<detail::StateAdmission> admission,
+                                std::shared_ptr<detail::InstanceControl> parent)
 {
     if (!runtime.activate_) throw std::invalid_argument("runtime handle moved from");
     if (state && (!runtime.state_ || !detail::checkStateSnapshot(*state).hasValue()))
         throw std::invalid_argument("state input requires a valid snapshot and stateful runtime");
+    if (admission) {
+        if (state || (admission->member.input &&
+                      (!runtime.state_ || !detail::checkStateSnapshot(admission->member.input->value).hasValue())))
+            throw std::invalid_argument("member state requires its actual stateful factory and immutable input");
+        if (admission->member.parent) {
+            const auto receipt = parent ? parent->stateReceipt.lock() : nullptr;
+            if (!receipt || receipt->member.key != *admission->member.parent ||
+                receipt->owner.lock() != admission->owner.lock() ||
+                receipt->publication.lock() != admission->publication.lock() ||
+                parent->stateReceiptEpoch != parent->epoch ||
+                (receipt->member.input && (!parent->epochState || !parent->epochState->imported())))
+                throw std::invalid_argument("member requires the actual imported parent epoch");
+        } else if (parent)
+            throw std::invalid_argument("root state member cannot be injected as a child");
+    }
     if (services && !services->publicationAccess().hasValue())
         throw std::invalid_argument("publication group aborted");
     if (services && !services->replacementMountAccess(runtime, realms, additionalDependencies).hasValue())
         throw std::invalid_argument("replacement scope reserves runtime or service key");
+    auto stateAllowed = detail::claimReplacementState(services ? services->publication_ : nullptr, admission);
+    if (!stateAllowed.hasValue())
+        throw std::invalid_argument(stateAllowed.error().message);
     auto control = std::make_shared<detail::InstanceControl>(std::move(scheduler), runtime.activate_);
     if (services && !services->usesScheduler(control->scheduler)) throw std::invalid_argument("managed registry requires same scheduler");
     for (const auto& entry : realms.overrides())
@@ -975,7 +1027,11 @@ Instance Instance::prepareMount(const Runtime& runtime, std::shared_ptr<ISchedul
     control->hostOwner = std::move(owner);
     control->runtime = runtime.id();
     control->stateContract = runtime.state_;
-    control->stateInput = std::move(state);
+    control->stateReceipt = admission;
+    if (admission)
+        control->stateInput = admission->member.input;
+    else if (state)
+        control->stateInput = detail::ownStateSnapshot(std::move(*state)).value();
     control->dependencies = std::move(dependencies);
     control->additionalDependencies = std::move(additionalDependencies);
     control->declarations = runtime.outputs_;

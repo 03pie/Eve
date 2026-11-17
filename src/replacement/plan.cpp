@@ -65,11 +65,28 @@ bool sameContract(const ReplacementServiceContract& a, const ReplacementServiceC
     return true;
 }
 Result<void> planConstruction(ReplacementBuildPlan& plan, const std::vector<ReplacementDynamicMember>& dynamic,
-                              std::size_t& nextKey)
+                              std::size_t& nextKey, const std::vector<std::size_t>& removed)
 {
     auto fail = [](const char* message) {
         return Result<void>::failure(replacementError(ErrorCode::ConfigConflict, message));
     };
+    std::set<std::size_t> erased;
+    for (const auto key : removed) {
+        const auto at =
+            std::find_if(plan.members.begin(), plan.members.end(), [key](const auto& item) { return item.key == key; });
+        if (plan.recovery || !erased.insert(key).second || at == plan.members.end() || !at->previous || at->factory ||
+            !at->parent)
+            return fail("removal requires a unique original dynamic candidate child");
+    }
+    for (const auto& item : plan.members)
+        if (!erased.count(item.key) && item.parent && erased.count(*item.parent))
+            return fail("removal must include the whole dynamic subtree");
+    for (const auto& item : dynamic)
+        if (erased.count(item.key))
+            return fail("removed member cannot have a future description");
+    plan.members.erase(std::remove_if(plan.members.begin(), plan.members.end(),
+                                      [&](const auto& item) { return erased.count(item.key) != 0; }),
+                       plan.members.end());
     std::map<std::size_t, std::size_t> keys, positions;
     for (std::size_t i = 0; i != plan.members.size(); ++i) {
         auto& item = plan.members[i];

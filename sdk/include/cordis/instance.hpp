@@ -13,6 +13,7 @@ class NativeModule;
 }
 class Runtime;
 class Instance;
+class ReplacementBuilder;
 struct ReplacementInput;
 struct ServiceRequirement;
 template<class T> class EventBus;
@@ -23,6 +24,8 @@ struct KernelControl;
 struct InstanceOwnerIdentity;
 struct InstanceOwnershipAccess;
 struct InstanceStateAccess;
+struct RuntimeStateAccess;
+struct StateAdmission;
 class PreparedInstanceOwnership;
 }
 namespace detail {
@@ -154,6 +157,9 @@ private:
         const ServiceKey& key, std::type_index type) const;
     friend struct detail::InstanceControl;
     friend class Instance;
+    friend class ReplacementBuilder;
+    Result<Instance> injectWithState(const Runtime&, std::string, std::vector<ServiceRequirement>,
+                                     std::optional<StateSnapshot>, std::shared_ptr<detail::StateAdmission>) const;
     /** @brief 捕获实例的弱引用，不延长实例生命周期。 */
     explicit Context(std::weak_ptr<detail::InstanceControl> control, Epoch epoch, std::string config, RealmMap realms = {})
         : control_(std::move(control)), epoch_(epoch), config_(std::move(config)), realms_(std::move(realms)) {}
@@ -205,6 +211,7 @@ public:
 
 private:
     friend class Instance;
+    friend struct detail::RuntimeStateAccess;
     std::shared_ptr<const Activate> activate_;
     RuntimeId id_;
     std::vector<ServiceRequirement> dependencies_;
@@ -308,7 +315,9 @@ private:
                                  std::shared_ptr<ServiceRegistry> services, RealmMap realms,
                                  std::vector<ServiceRequirement> additionalDependencies,
                                  std::shared_ptr<const detail::InstanceOwnerIdentity> owner = {},
-                                 std::optional<StateSnapshot> state = {});
+                                 std::optional<StateSnapshot> state = {},
+                                 std::shared_ptr<detail::StateAdmission> admission = {},
+                                 std::shared_ptr<detail::InstanceControl> parent = {});
     void startMount() const;
     void setReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const;
     void clearReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const;

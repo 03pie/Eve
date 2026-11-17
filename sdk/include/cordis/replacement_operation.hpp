@@ -10,6 +10,7 @@
 namespace cordis {
 enum class ReplacementPhase {
     Prepared,
+    Capturing,
     Stopping,
     Building,
     Discarding,
@@ -78,6 +79,10 @@ struct ReplacementDynamicMember {
 struct ReplacementOwnerPreflight {
     std::vector<ReplacementDynamicMember> candidate;
     std::vector<ReplacementDynamicMember> recovery;
+    /** @brief 明确支持按成员 key 创建；有状态整体操作的所有拥有者均须声明并实际兑现。 */
+    bool stateAware = false;
+    /** @brief 候选明确删除的旧动态子成员 key；须覆盖整个被删除子树，恢复仍重建全部旧成员。 */
+    std::vector<std::size_t> removed;
 };
 /** @brief 宿主拥有单元的重建协议。preflight 不执行业务，rebuild 只在旧单元静止后调用。 */
 class IReplacementOwner {

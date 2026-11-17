@@ -6,6 +6,7 @@
 #include "../loader/configuration_commit_p.hpp"
 #include "../loader/replacement_target_p.hpp"
 #include "../module/replacement_commit_p.hpp"
+#include "state_p.hpp"
 #include <atomic>
 #include <cordis/replacement_operation.hpp>
 #include <deque>
@@ -36,8 +37,8 @@ struct BuildUnit {
     ReplacementBuildPlan candidate, recovery;
     std::shared_ptr<IReplacementOwner> owner;
 };
-Result<void> planConstruction(ReplacementBuildPlan&, const std::vector<ReplacementDynamicMember>&,
-                              std::size_t& nextKey);
+Result<void> planConstruction(ReplacementBuildPlan&, const std::vector<ReplacementDynamicMember>&, std::size_t& nextKey,
+                              const std::vector<std::size_t>& removed = {});
 Result<ReplacementServiceContract> serviceContract(const Runtime&, const std::vector<ServiceRequirement>&,
                                                    const RealmMap&);
 Result<ReplacementServiceContract> serviceContract(const ReplacementInput&);
@@ -61,6 +62,7 @@ struct Execution {
     std::vector<ReplacementInstanceMapping> preparedMappings;
     std::vector<loader::detail::SessionReplacementHold> sessions;
     std::shared_ptr<module::detail::ReplacementSourceEvents> sourceEvents;
+    MigrationState state;
 };
 struct ReplacementOperationControl : std::enable_shared_from_this<ReplacementOperationControl> {
     std::unique_ptr<Execution> execution;
@@ -87,6 +89,10 @@ struct ReplacementOperationControl : std::enable_shared_from_this<ReplacementOpe
     bool sessionClosing() const;
     void cancel();
     void start();
+    Result<void> captureState();
+    Result<void> captureCheckpoint() const;
+    void rejectCapture(ErrorInfo);
+    Result<void> configureState();
     void recover();
     void dispatch(std::function<void()>);
     void build(bool restoring);

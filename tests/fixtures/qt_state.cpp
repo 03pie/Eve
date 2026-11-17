@@ -11,14 +11,19 @@
 #include <vector>
 using namespace cordis;
 using namespace cordis::module;
+#ifndef FIXTURE_STATE_VERSION
+#define FIXTURE_STATE_VERSION 2
+#endif
 namespace {
 int counts[8]{};
 using Hook = void(CORDIS_CALL*)(int);
 Hook hook = nullptr;
+bool hasMode = false;
+QString imageMode;
 std::vector<QObject*> objects;
 QString mode()
 {
-    return QCoreApplication::instance()->property("cordis.qt.stateMode").toString();
+    return hasMode ? imageMode : QCoreApplication::instance()->property("cordis.qt.stateMode").toString();
 }
 void invoke(int phase)
 {
@@ -63,6 +68,16 @@ public:
     {
         ++counts[4];
         setProperty("activatedState", property("state"));
+        setProperty("activatedRestored", restored);
+        const auto identity = context.identity();
+        if (!identity.hasValue())
+            return failedTask(identity.error());
+        setProperty("coreInstance", QVariant::fromValue<qulonglong>(identity.value().instance.value()));
+#if FIXTURE_STATE_VERSION >= 3
+        invoke(4);
+#endif
+        if (mode() == "activate_fail")
+            return failedTask(makeError(ErrorCode::ActivationFailed, "state fixture activation failed"));
         if (context.config() == "\"need-restore\"" && !restored)
             return failedTask(makeError(ErrorCode::ActivationFailed, "restore was not completed before activate"));
         return completedTask();
@@ -70,7 +85,9 @@ public:
     CordisStatus captureState(CordisStateBufferV1* buffer) override
     {
         ++counts[3];
+        setProperty("stateCall", 3);
         invoke(3);
+        setProperty("stateCall", 0);
         const auto value = mode();
         if (value == "capture_busy")
             return CORDIS_E_BUSY;
@@ -95,7 +112,9 @@ public:
     CordisStatus restoreState(const CordisStateSchemaV1* schema, CordisBytesV1 json) override
     {
         ++counts[2];
+        setProperty("stateCall", 2);
         invoke(2);
+        setProperty("stateCall", 0);
         const auto value = mode();
         if (value == "restore_pending")
             return CORDIS_PENDING;
@@ -103,7 +122,7 @@ public:
             throw std::runtime_error("restore");
         if (value == "restore_reject")
             return CORDIS_E_INVALID_ARGUMENT;
-        if (schema->version != 2 || schema->id_size != 7 || std::memcmp(schema->id, "counter", 7))
+        if (schema->version != FIXTURE_STATE_VERSION || schema->id_size != 7 || std::memcmp(schema->id, "counter", 7))
             return CORDIS_E_INVALID_ARGUMENT;
         setProperty("state", QByteArray(reinterpret_cast<const char*>(json.data), static_cast<int>(json.size)));
         restored = true;
@@ -150,7 +169,7 @@ public:
         }
         if (id(plugin, "org.cordis.qt.settings") || mode() == "stateless")
             return CORDIS_E_UNSUPPORTED;
-        schema->version = 2;
+        schema->version = FIXTURE_STATE_VERSION;
         schema->id_size = 7;
         std::memcpy(schema->id, "counter", 7);
         return CORDIS_OK;
@@ -167,9 +186,23 @@ public:
             throw std::runtime_error("validate");
         if (value == "validate_reject")
             return CORDIS_E_INVALID_ARGUMENT;
-        if (schema->id_size != 7 || std::memcmp(schema->id, "counter", 7) || schema->version < 1 || schema->version > 2)
+        if (schema->id_size != 7 || std::memcmp(schema->id, "counter", 7) || schema->version < 1 ||
+            schema->version > FIXTURE_STATE_VERSION)
             return CORDIS_E_INVALID_ARGUMENT;
-        return output(buffer, QByteArray(reinterpret_cast<const char*>(json.data), static_cast<int>(json.size)));
+        QByteArray converted(reinterpret_cast<const char*>(json.data), static_cast<int>(json.size));
+#if FIXTURE_STATE_VERSION >= 3
+        if (schema->version < FIXTURE_STATE_VERSION) {
+            const auto start = converted.startsWith('-') ? 1 : 0;
+            if (converted.size() == start)
+                return CORDIS_E_INVALID_ARGUMENT;
+            for (int index = start; index != converted.size(); ++index)
+                if (converted[index] < '0' || converted[index] > '9')
+                    return CORDIS_E_INVALID_ARGUMENT;
+            if (converted != "0" && converted != "-0")
+                converted.append('0');
+        }
+#endif
+        return output(buffer, converted);
     }
 };
 extern "C" __declspec(dllexport) int CORDIS_CALL cordis_qt_state_count(int index)
@@ -183,5 +216,12 @@ extern "C" __declspec(dllexport) QObject* CORDIS_CALL cordis_qt_state_object(int
 extern "C" __declspec(dllexport) void CORDIS_CALL cordis_qt_state_hook(Hook value)
 {
     hook = value;
+}
+extern "C" __declspec(dllexport) void CORDIS_CALL cordis_qt_state_mode(CordisBytesV1 value)
+{
+    if (value.size > 128 || (value.size && !value.data))
+        return;
+    imageMode = QString::fromUtf8(reinterpret_cast<const char*>(value.data), static_cast<int>(value.size));
+    hasMode = true;
 }
 #include "qt_state.moc"

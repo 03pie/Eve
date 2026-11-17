@@ -3,6 +3,7 @@ add_custom_command(OUTPUT "${qt_state_directory}/qt_state.moc"
     COMMAND Qt5::moc ${qt_business_moc_includes} "${PROJECT_SOURCE_DIR}/tests/fixtures/qt_state.cpp"
         -o "${qt_state_directory}/qt_state.moc"
     DEPENDS "${PROJECT_SOURCE_DIR}/tests/fixtures/qt_state.cpp" "${qt_business_metadata}/qt_metadata.json"
+        "${PROJECT_SOURCE_DIR}/sdk/include/cordis/module/qt_plugin.hpp"
         "${PROJECT_SOURCE_DIR}/sdk/include/cordis/module/qt_state_plugin.hpp" VERBATIM)
 add_library(cordis_qt_state_fixture MODULE "${PROJECT_SOURCE_DIR}/tests/fixtures/qt_state.cpp"
     "${qt_state_directory}/qt_state.moc")
@@ -27,3 +28,4 @@ foreach(case IN ITEMS metadata roundtrip origin_lifetime legacy stateless descri
         -P "${CMAKE_CURRENT_SOURCE_DIR}/module_native_case.cmake")
     set_tests_properties(p5.qt_state_${case} PROPERTIES LABELS "p5;module;qt;state" TIMEOUT 25)
 endforeach()
+include("${CMAKE_CURRENT_SOURCE_DIR}/qt/qt_state_operation.cmake")

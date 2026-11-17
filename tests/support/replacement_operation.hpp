@@ -18,11 +18,16 @@ bool operationCase(SceneType& scene, const cordis::Runtime& old, const cordis::R
         return std::move(result).value();
     };
     bool failChild = false;
+    int builtinRestored = 0;
     Runtime::Activate activateBuiltin = [&](Context context) {
-        if (mode == "operation_state_guard")
+        if (mode == "operation_state_preserved")
             context
                 .state({[] { return Result<std::string>::success("42"); },
-                        [](std::string_view) { return Result<void>::success(); }})
+                        [&](std::string_view json) {
+                            CHECK(json == "42");
+                            ++builtinRestored;
+                            return Result<void>::success();
+                        }})
                 .value();
         if (failChild) {
             failChild = false;
@@ -31,7 +36,7 @@ bool operationCase(SceneType& scene, const cordis::Runtime& old, const cordis::R
         return completedTask();
     };
     auto builtinDefinition =
-        mode == "operation_state_guard"
+        mode == "operation_state_preserved"
             ? Runtime::stateful(activateBuiltin,
                                 {{"builtin.state", 1},
                                  [](const StateSnapshot& value) { return Result<std::string>::success(value.json); }})
@@ -107,24 +112,7 @@ bool operationCase(SceneType& scene, const cordis::Runtime& old, const cordis::R
             value.configurations.push_back({otherSession, otherDriver, following, target, 1});
         return value;
     };
-    if (mode == "operation_state_guard") {
-        const auto originalRows = driver->snapshot().value();
-        auto rejected = ReplacementOperation::begin(request());
-        CHECK(!rejected.hasValue() && rejected.error().code == ErrorCode::ConfigInvalid && rejected.error().instance);
-        CHECK(kernel->replacements().value().empty());
-        CHECK(!scene.state(scene.current).replacement && !scene.state(scene.candidate).replacement);
-        CHECK(scene.state(scene.current).role == module::GenerationRole::Current &&
-              scene.state(scene.candidate).role == module::GenerationRole::Candidate);
-        const auto after = driver->snapshot().value();
-        CHECK(after.size() == originalRows.size());
-        for (std::size_t index = 0; index < originalRows.size(); ++index) {
-            CHECK(after[index].instance == originalRows[index].instance && after[index].state == InstanceState::Active);
-        }
-        auto originalRoot = kernel->findInstance(oldRoot).value();
-        CHECK(waitFor(originalRoot.whenActiveAfter())->value().identity().hasValue());
-        CHECK(session->snapshot().value().coordinator.desiredRevision == 1 &&
-              readConfigurationFile(file).value().text == originalFile);
-    } else if (mode == "operation_guards") {
+    if (mode == "operation_guards") {
         auto invalid = request();
         invalid.definitions[0].candidate = Runtime([](Context) { return completedTask(); });
         CHECK(!ReplacementOperation::begin(std::move(invalid)).hasValue());
@@ -196,6 +184,8 @@ bool operationCase(SceneType& scene, const cordis::Runtime& old, const cordis::R
                 std::cerr << error.message << " [" << error.phase << "]\n";
         }
         CHECK(report.outcome == expectedOutcome);
+        if (mode == "operation_state_preserved")
+            CHECK(builtinRestored == 1);
         if (prepareFailure || prepareCancel) {
             CHECK(sawPrepared && cancelAccepted == prepareCancel);
             CHECK(std::any_of(report.errors.begin(), report.errors.end(), [prepareFailure](const auto& error) {

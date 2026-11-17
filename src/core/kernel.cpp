@@ -90,19 +90,22 @@ Result<PublicationGroup> detail::KernelControl::holdPublication() const
 Result<Instance> detail::KernelControl::mountHeld(const PublicationGroup& group, const Runtime& runtime,
                                                   std::string config, RealmMap realms,
                                                   std::vector<ServiceRequirement> additionalDependencies,
-                                                  std::optional<StateSnapshot> state)
+                                                  std::optional<StateSnapshot> state,
+                                                  std::shared_ptr<StateAdmission> admission)
 {
     auto view = services_->publicationView(group);
     if (!view.hasValue())
         return Result<Instance>::failure(view.error());
     return mountWithRegistry(runtime, std::move(config), std::move(realms), std::move(additionalDependencies),
-                             std::make_shared<ServiceRegistry>(std::move(view).value()), {}, std::move(state));
+                             std::make_shared<ServiceRegistry>(std::move(view).value()), {}, std::move(state),
+                             std::move(admission));
 }
 Result<Instance> detail::KernelControl::mountWithRegistry(const Runtime& runtime, std::string config, RealmMap realms,
                                                           std::vector<ServiceRequirement> additionalDependencies,
                                                           std::shared_ptr<ServiceRegistry> services,
                                                           std::shared_ptr<const detail::InstanceOwnerIdentity> owner,
-                                                          std::optional<StateSnapshot> state)
+                                                          std::optional<StateSnapshot> state,
+                                                          std::shared_ptr<StateAdmission> admission)
 {
     if (!scheduler_->isCurrentThread()) return Result<Instance>::failure(makeError(ErrorCode::WrongThread, "mount requires owner thread"));
     if (closing_) return Result<Instance>::failure(makeError(ErrorCode::ContextClosing, "kernel closing"));
@@ -114,9 +117,9 @@ Result<Instance> detail::KernelControl::mountWithRegistry(const Runtime& runtime
             auto admitted = services->replacementMountAccess(runtime, realms, additionalDependencies);
             if (!admitted.hasValue())
                 return Result<Instance>::failure(admitted.error());
-            auto instance =
-                Instance::prepareMount(runtime, scheduler_, std::move(config), std::move(services), std::move(realms),
-                                       std::move(additionalDependencies), std::move(owner), std::move(state));
+            auto instance = Instance::prepareMount(runtime, scheduler_, std::move(config), std::move(services),
+                                                   std::move(realms), std::move(additionalDependencies),
+                                                   std::move(owner), std::move(state), std::move(admission));
             instance.setKernelRegistry(services_);
             instances_.emplace(instance.snapshot().value().instance, instance);
             instance.startMount();
