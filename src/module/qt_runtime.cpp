@@ -4,6 +4,7 @@
 #include "admission_p.hpp"
 #include "instance_origin_p.hpp"
 #include "qt_module_p.hpp"
+#include "qt_state_p.hpp"
 #include "runtime_origin_p.hpp"
 #include <QCoreApplication>
 #include <QThread>
@@ -22,7 +23,9 @@ ErrorInfo error(ErrorCode code, std::string message)
     value.phase = "module.qt.runtime";
     return value;
 }
-Result<void> available(const std::shared_ptr<Generation>& generation, const std::shared_ptr<QtResidency>& backend)
+} // namespace
+namespace detail {
+Result<void> qtAvailable(const std::shared_ptr<Generation>& generation, const std::shared_ptr<QtResidency>& backend)
 {
     auto app = QCoreApplication::instance();
     if (!app || QCoreApplication::closingDown() || QThread::currentThread() != app->thread())
@@ -39,11 +42,13 @@ Result<void> available(const std::shared_ptr<Generation>& generation, const std:
         return Result<void>::failure(error(ErrorCode::ModulePinned, "resident Qt root is unavailable"));
     return Result<void>::success();
 }
-void fault(const std::shared_ptr<Generation>& generation, const ErrorInfo& failure)
+void qtBusinessFault(const std::shared_ptr<Generation>& generation, const ErrorInfo& failure)
 {
     (void)generation->ledger.pin("qt.businessUncertain");
     detail::recordBusinessFailure(generation->data.generation, failure);
 }
+} // namespace detail
+namespace {
 Result<void> negotiate(const std::shared_ptr<Generation>& generation, const std::shared_ptr<QtResidency>& backend)
 {
     if (backend->factory)
@@ -84,6 +89,12 @@ Result<void> negotiate(const std::shared_ptr<Generation>& generation, const std:
     if (expected != actual || !backend->root)
         return Result<void>::failure(
             error(ErrorCode::AbiMismatch, "Qt factory identity/catalog differs from manifest"));
+    auto state = detail::negotiateQtState(backend, actual);
+    if (!state.hasValue())
+        return state;
+    auto allowed = detail::qtAvailable(generation, backend);
+    if (!allowed.hasValue())
+        return allowed;
     backend->factory = factory;
     {
         std::lock_guard<std::mutex> lock(generation->mutex);
@@ -118,7 +129,7 @@ struct QtBusiness : std::enable_shared_from_this<QtBusiness> {
             failure.phase = "module.qt.destroy";
         if (!uncertain)
             uncertain = failure;
-        fault(generation, failure);
+        detail::qtBusinessFault(generation, failure);
         closed.reject(std::move(failure));
     }
     /** @brief 只在整个删除调用返回且 DLL Task 状态也释放后，解除本实例登记。 */
@@ -215,16 +226,32 @@ struct QtBusiness : std::enable_shared_from_this<QtBusiness> {
         auto api = qobject_cast<IQtInstanceV1*>(object);
         if (!api) {
             auto failure = error(ErrorCode::AbiMismatch, "Qt business object does not implement IQtInstanceV1");
-            fault(generation, failure);
+            detail::qtBusinessFault(generation, failure);
             return failedTask(std::move(failure));
         }
-        // Constructors and metacast are foreign code: stop/update may have invalidated this epoch.
+        if (backend->stateSchemas.count(plugin)) {
+            auto participant = detail::qtStateParticipant(generation, backend, scheduler, *resource, object, plugin,
+                                                          [weak = weak_from_this()](ErrorInfo failure) {
+                                                              if (auto target = weak.lock())
+                                                                  target->quarantine(std::move(failure));
+                                                          });
+            if (!participant.hasValue())
+                return failedTask(participant.error());
+            auto bound = context.state(std::move(participant.value()));
+            if (!bound.hasValue())
+                return failedTask(bound.error());
+        }
+        // Constructors, metacast and restore are foreign code: the epoch may now be invalid.
         auto current = context.identity();
         if (!current.hasValue())
             return failedTask(current.error());
-        auto allowed = available(generation, backend);
+        auto allowed = detail::qtAvailable(generation, backend);
         if (!allowed.hasValue())
             return failedTask(allowed.error());
+        auto objectState = resource->snapshot();
+        if (!objectState.hasValue() || !objectState.value().alive || objectState.value().closing || closing ||
+            uncertain)
+            return failedTask(error(ErrorCode::ContextClosing, "Qt business object became unavailable"));
         {
             std::lock_guard<std::mutex> lock(generation->mutex);
             generation->data.state = ModuleState::Serving;
@@ -256,10 +283,10 @@ struct QtDefinition {
             return failedTask(identity.error());
         if (!context.usesScheduler(target))
             return failedTask(error(ErrorCode::InvalidArgument, "Qt runtime requires the bound scheduler"));
-        auto allowed = available(generation, backend);
+        auto allowed = detail::qtAvailable(generation, backend);
         if (!allowed.hasValue())
             return failedTask(allowed.error());
-        if (backend->creating)
+        if (backend->creating || backend->stateCalling || backend->negotiating)
             return failedTask(error(ErrorCode::ModuleLoad, "Qt factory creation is already in progress"));
         auto admission = detail::admitGeneration(generation->data.generation, &context);
         if (!admission.hasValue())
@@ -292,7 +319,7 @@ Result<Runtime> qtRuntime(GenerationId id, QtPlugin plugin, std::shared_ptr<qt::
     if (generation->data.manifest.loader != ModuleLoader::QtUi)
         return Output::failure(error(ErrorCode::AbiMismatch, "Qt runtime requires qt-ui loader"));
     auto backend = std::dynamic_pointer_cast<QtResidency>(generation->backend);
-    auto allowed = available(generation, backend);
+    auto allowed = detail::qtAvailable(generation, backend);
     if (!allowed.hasValue())
         return Output::failure(allowed.error());
     if (std::find(generation->data.manifest.plugins.begin(), generation->data.manifest.plugins.end(), plugin.id) ==
@@ -315,8 +342,19 @@ Result<Runtime> qtRuntime(GenerationId id, QtPlugin plugin, std::shared_ptr<qt::
     definition->plugin = std::move(plugin.id);
     definition->origin = origin.value();
     try {
-        auto runtime = Runtime([definition](Context context) { return definition->activate(std::move(context)); },
-                               std::move(plugin.dependencies), std::move(plugin.outputs));
+        Runtime::Activate activate = [definition](Context context) { return definition->activate(std::move(context)); };
+        const auto schema = backend->stateSchemas.find(definition->plugin);
+        auto runtime =
+            schema == backend->stateSchemas.end()
+                ? Runtime(std::move(activate), std::move(plugin.dependencies), std::move(plugin.outputs))
+                : Runtime::stateful(std::move(activate),
+                                    StateContract{schema->second,
+                                                  [definition](const StateSnapshot& input) {
+                                                      return detail::validateQtState(
+                                                          definition->generation, definition->backend,
+                                                          definition->scheduler.lock(), definition->plugin, input);
+                                                  }},
+                                    std::move(plugin.dependencies), std::move(plugin.outputs));
         auto bound = origin.value()->bind(runtime.id());
         return bound.hasValue() ? Output::success(std::move(runtime)) : Output::failure(bound.error());
     } catch (const std::invalid_argument& failure) {

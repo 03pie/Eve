@@ -320,7 +320,8 @@ void NativeInstanceControl::advanceClose()
 {
     {
         std::lock_guard<std::mutex> lock(mutex);
-        if (uncertain || stopIssued || !closing || (startIssued && !startSettled) || resources->businessBusy())
+        if (uncertain || stopIssued || !closing || stateCalling || (startIssued && !startSettled) ||
+            resources->businessBusy())
             return;
         stopIssued = true;
     }
@@ -508,7 +509,7 @@ void NativeModuleControl::finish()
     CleanupReport result;
     {
         std::lock_guard<std::mutex> lock(mutex);
-        if (!closing || waiting)
+        if (!closing || waiting || stateCalls)
             return;
         result = report;
         if (!instances.empty())
@@ -590,7 +591,17 @@ Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id,
             record->negotiating = false;
             return Result<NativeModule>::failure(call.error());
         }
-        auto queried = queryBusiness(source.value().query, hostTable, source.value().manifest);
+        auto queried = [&]() -> Result<void> {
+            auto business = queryBusiness(source.value().query, hostTable, source.value().manifest);
+            if (!business.hasValue())
+                return Result<void>::failure(business.error());
+            auto state = queryNativeState(source.value().queryState, business.value().plugins);
+            if (!state.hasValue())
+                return Result<void>::failure(state.error());
+            record->stateApi = std::move(state).value();
+            record->api = std::move(business).value();
+            return Result<void>::success();
+        }();
         call.value().reset();
         if (!queried.hasValue()) {
             recordNativeBusiness(id, queried.error());
@@ -600,7 +611,6 @@ Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id,
             record->negotiating = false;
             return Result<NativeModule>::failure(queried.error());
         }
-        record->api = std::move(queried.value());
         recordNativeBusiness(id, {});
     }
     auto root =
@@ -768,6 +778,8 @@ Task<void> NativeInstance::start() const
             return self->started.task();
         if (self->closing || self->state == NativeInstanceState::Destroyed)
             return failedTask(hostError(ErrorCode::ContextClosing, "native instance is closing"));
+        if (self->stateCalling)
+            return failedTask(hostError(ErrorCode::ContextClosing, "native state call in progress"));
         if (self->startIssued)
             return self->started.task();
         self->startIssued = true;
@@ -870,17 +882,26 @@ Task<CleanupReport> NativeInstance::close() const
     auto servicesAllowed = self->resources->services->retirementAccess();
     if (!servicesAllowed.hasValue())
         return failedCleanupTask(servicesAllowed.error());
-    bool pending;
     {
         std::lock_guard<std::mutex> lock(self->mutex);
-        if (self->uncertain)
-            return self->stopped.task();
-        if (self->closing || self->state == NativeInstanceState::Destroyed)
+        if (self->uncertain || self->closing || self->state == NativeInstanceState::Destroyed)
             return self->stopped.task();
         self->closing = true;
         self->state = NativeInstanceState::Stopping;
-        pending = self->startIssued && !self->startSettled && self->startReturn == CORDIS_PENDING && self->startWire &&
-                  !self->startWire->isReady();
+    }
+    self->beginClose();
+    return self->stopped.task();
+}
+void detail::NativeInstanceControl::beginClose()
+{
+    auto self = shared_from_this();
+    bool pending;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (uncertain || !closing || stateCalling || closeStarted)
+            return;
+        closeStarted = true;
+        pending = startIssued && !startSettled && startReturn == CORDIS_PENDING && startWire && !startWire->isReady();
     }
     if (self->managed)
         self->started.reject(hostError(ErrorCode::OperationCancelled, "managed native instance closing"));
@@ -888,25 +909,25 @@ Task<CleanupReport> NativeInstance::close() const
     auto closed = self->channel.close();
     if (!closed.hasValue()) {
         self->quarantine(closed.error());
-        return self->stopped.task();
+        return;
     }
     if (pending) {
         auto requested = self->channel.cancel(self->startRequest);
         if (!requested.hasValue()) {
             self->quarantine(requested.error());
-            return self->stopped.task();
+            return;
         }
-        const auto state = self->channel.snapshot();
+        const auto requests = self->channel.snapshot();
         bool inFlight = false;
-        if (state.hasValue())
-            for (const auto& entry : state.value().requests)
+        if (requests.hasValue())
+            for (const auto& entry : requests.value().requests)
                 if (entry.id == self->startRequest)
                     inFlight = !entry.completed && !entry.deliveryBlocked;
         if (requested.value() && inFlight) {
             auto call = self->root->source.ledger.acquire(ResourceKind::Call, "native.cancel");
             if (!call.hasValue()) {
                 self->quarantine(call.error());
-                return self->stopped.task();
+                return;
             }
             CordisStatus status;
             try {
@@ -920,7 +941,6 @@ Task<CleanupReport> NativeInstance::close() const
         }
     }
     self->advanceClose();
-    return self->stopped.task();
 }
 Result<NativeInstanceSnapshot> NativeInstance::snapshot() const
 {

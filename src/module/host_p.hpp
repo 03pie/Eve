@@ -5,6 +5,7 @@
 #include "abi_p.hpp"
 #include "instance_origin_p.hpp"
 #include "native_source_p.hpp"
+#include "native_state_p.hpp"
 #include "request_p.hpp"
 #include <cordis/module/native.hpp>
 #include <cordis/module/runtime.hpp>
@@ -20,6 +21,7 @@ CordisBytesV1 bytes(const std::string& value);
 ErrorInfo operationError(CordisStatus status, bool stopping, const std::string& details = {});
 struct BusinessRecord {
     std::optional<BusinessApi> api;
+    std::optional<NativeStateApi> stateApi;
     std::optional<ErrorInfo> failure;
     bool negotiating = false;
     std::shared_ptr<NativeModuleControl> active;
@@ -40,12 +42,14 @@ struct NativeModuleControl : std::enable_shared_from_this<NativeModuleControl> {
     mutable std::mutex mutex;
     bool closing = false, closed = false, faulted = false;
     std::size_t waiting = 0;
+    std::size_t stateCalls = 0;
     CleanupReport report{true, {}};
     std::map<CordisHandle, std::shared_ptr<NativeInstanceControl>> instances;
     Promise<CleanupReport> stopped;
     bool ownerThread() const { return owner == std::this_thread::get_id(); }
     void finishOne(const Result<CleanupReport>& value);
     void finish();
+    void stateFault(ErrorInfo) noexcept;
 };
 struct NativeInstanceControl : std::enable_shared_from_this<NativeInstanceControl> {
     NativeInstanceControl(std::shared_ptr<NativeModuleControl> module, std::shared_ptr<IScheduler> target,
@@ -71,6 +75,7 @@ struct NativeInstanceControl : std::enable_shared_from_this<NativeInstanceContro
     bool startIssued = false, startSettled = false, stopIssued = false;
     bool closing = false, uncertain = false, blocked = false;
     bool callbacksClosing = false, destroying = false;
+    bool stateCalling = false, closeStarted = false;
     std::size_t hostCalls = 0, logBytes = 0;
     std::vector<NativeLogRecord> logs;
     std::optional<ErrorInfo> failure;
@@ -99,6 +104,7 @@ struct NativeInstanceControl : std::enable_shared_from_this<NativeInstanceContro
         watch(receipt);
     }
     void advanceClose();
+    void beginClose();
     void settleStart(std::optional<ErrorInfo> error);
     void closeResources();
     Task<NativeOutcome> invoke(NativeRequestKind kind, const char* label,

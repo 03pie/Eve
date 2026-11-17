@@ -1,12 +1,13 @@
 /** @file object.cpp
  * @brief 在 Qt 批准的 DeferredDelete 时机完成删除，并在析构返回后发布资源确认。
  */
-#include <cordis/qt/object.hpp>
+#include "object_call_p.hpp"
 #include <QCoreApplication>
 #include <QEvent>
 #include <QObject>
 #include <QPointer>
 #include <QThread>
+#include <cordis/qt/object.hpp>
 #include <memory>
 #include <stdexcept>
 #include <thread>
@@ -22,16 +23,53 @@ struct ObjectControl {
     bool deleting = false;
     bool observed = false;
     bool confirmed = false;
+    std::size_t calls = 0;
     Promise<void> closed;
     /** @brief 不依赖 scheduler 继续接收任务，但需要 Qt 事件循环处理延迟删除。 */
     void requestClose()
     {
         if (closing || closed.task().isReady()) return;
         closing = true;
-        if (object && guard) object->deleteLater();
-        else closed.reject(makeError(ErrorCode::CleanupFailed, "QObject deletion guard unavailable"));
+        if (object && guard) {
+            if (!calls)
+                object->deleteLater();
+        } else
+            closed.reject(makeError(ErrorCode::CleanupFailed, "QObject deletion guard unavailable"));
     }
 };
+Result<ObjectCall> ObjectCall::enter(const QObjectResource& resource)
+{
+    auto control = resource.control_;
+    if (std::this_thread::get_id() != control->owner)
+        return Result<ObjectCall>::failure(makeError(ErrorCode::WrongThread, "QObject call requires owner"));
+    if (control->closing || control->deleting || !control->object || !control->guard ||
+        control->closed.task().isReady())
+        return Result<ObjectCall>::failure(
+            makeError(ErrorCode::ContextClosing, "QObject call requires a live resource"));
+    auto app = QCoreApplication::instance();
+    if (!app || control->object->parent() || control->object->thread() != app->thread())
+        return Result<ObjectCall>::failure(makeError(ErrorCode::AbiProtocol, "QObject ownership changed before call"));
+    ++control->calls;
+    return Result<ObjectCall>::success(ObjectCall(std::move(control)));
+}
+Result<void> ObjectCall::check() const
+{
+    if (std::this_thread::get_id() != control_->owner)
+        return Result<void>::failure(makeError(ErrorCode::WrongThread, "QObject call check requires owner"));
+    auto app = QCoreApplication::instance();
+    if (!app || !control_->object || control_->object->parent() || control_->object->thread() != app->thread())
+        return Result<void>::failure(makeError(ErrorCode::AbiProtocol, "QObject ownership changed during call"));
+    if (control_->closing)
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "QObject closed during call"));
+    return Result<void>::success();
+}
+ObjectCall::~ObjectCall()
+{
+    if (!control_)
+        return;
+    if (--control_->calls == 0 && control_->closing && control_->object && control_->guard)
+        control_->object->deleteLater();
+}
 /** @brief 守卫不以目标为 parent，确保目标的全部子对象析构后仍能报告确认。 */
 class ObjectGuard final : public QObject {
 public:

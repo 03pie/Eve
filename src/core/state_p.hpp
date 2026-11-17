@@ -2,13 +2,11 @@
  * @brief 通用状态协议；只由实际实例持有，不登记第二套实例身份。
  */
 #pragma once
-#include <cordis/migration_state.hpp>
+#include "state_value_p.hpp"
 #include <memory>
 #include <optional>
 
 namespace cordis::detail {
-bool validStateSchema(const StateSchema&) noexcept;
-Result<void> checkStateSnapshot(const StateSnapshot&);
 class EpochState {
 public:
     EpochState(std::shared_ptr<const StateContract>, std::optional<StateSnapshot>);

@@ -3,6 +3,14 @@
  */
 #include <cordis_abi/plugin.h>
 #include <string.h>
+#ifdef FIXTURE_STATE
+#include <cordis_abi/state.h>
+typedef void(CORDIS_CALL* StateFixtureHook)(uint32_t);
+static StateFixtureHook state_hook;
+static uint32_t state_mode;
+static uint32_t state_counts[8]; /* describe, validate, restore, capture, start, stop, destroy, query */
+void __cdecl cordis_business_throw(void);
+#endif
 #ifndef FIXTURE_ID
 #define FIXTURE_ID "org.cordis.business"
 #endif
@@ -21,6 +29,11 @@ typedef struct FixtureInstance {
     int cancelled;
     char data[128];
     uint64_t size;
+#ifdef FIXTURE_STATE
+    char state_json[128];
+    uint64_t state_size;
+    int restored;
+#endif
 } FixtureInstance;
 static const CordisHostV1* active_host;
 static CordisHandle next_id = 1;
@@ -67,6 +80,10 @@ static CordisStatus CORDIS_CALL create_instance(CordisHandle context, CordisByte
             memset(value, 0, sizeof(*value));
             value->id = next_id++;
             value->context = context;
+#ifdef FIXTURE_STATE
+            value->state_json[0] = '7';
+            value->state_size = 1;
+#endif
             memcpy(value->data, config.data, (size_t)config.size);
             value->size = config.size;
             *instance = value->id;
@@ -91,6 +108,17 @@ static CordisStatus CORDIS_CALL start_instance(CordisHandle instance, CordisRequ
     logged = active_host->log(value->context, CORDIS_LOG_INFO, text);
     if (logged != CORDIS_OK)
         return logged;
+#ifdef FIXTURE_STATE
+    ++state_counts[4];
+    if (span_equal(text, "\"need-restore\"") && !value->restored)
+        return CORDIS_E_FAILED;
+    text.data = (const uint8_t*)value->state_json;
+    text.size = value->state_size;
+    if (active_host->log(value->context, CORDIS_LOG_INFO, text) != CORDIS_OK)
+        return CORDIS_E_FAILED;
+    value->started = 1;
+    return CORDIS_OK;
+#else
     value->started = 1;
     if (span_equal(text, "\"start-fail\""))
         return CORDIS_E_FAILED;
@@ -110,9 +138,13 @@ static CordisStatus CORDIS_CALL start_instance(CordisHandle instance, CordisRequ
         return span_equal(text, "\"start-protocol\"") ? CORDIS_OK : CORDIS_PENDING;
     }
     return CORDIS_PENDING;
+#endif
 }
 static CordisStatus CORDIS_CALL stop_instance(CordisHandle instance, CordisRequestId request)
 {
+#ifdef FIXTURE_STATE
+    ++state_counts[5];
+#endif
     FixtureInstance* value = find_instance(instance);
     if (!value || !request)
         return CORDIS_E_INVALID_ARGUMENT;
@@ -128,6 +160,9 @@ static CordisStatus CORDIS_CALL stop_instance(CordisHandle instance, CordisReque
 }
 static CordisStatus CORDIS_CALL destroy_instance(CordisHandle instance)
 {
+#ifdef FIXTURE_STATE
+    ++state_counts[6];
+#endif
     FixtureInstance* value = find_instance(instance);
     if (!value)
         return CORDIS_E_NOT_FOUND;
@@ -296,3 +331,137 @@ CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_query_v1(uint32_t host_abi, const 
     active_host = host;
     return CORDIS_OK;
 }
+
+#ifdef FIXTURE_STATE
+CORDIS_EXPORT void CORDIS_CALL cordis_state_set_mode(uint32_t mode)
+{
+    state_mode = mode;
+}
+CORDIS_EXPORT void CORDIS_CALL cordis_state_set_hook(StateFixtureHook hook)
+{
+    state_hook = hook;
+}
+CORDIS_EXPORT uint32_t CORDIS_CALL cordis_state_count(uint32_t index)
+{
+    return index < 8 ? state_counts[index] : 0;
+}
+static CordisStatus CORDIS_CALL describe_state(CordisBytesV1 plugin, CordisStateSchemaV1* output)
+{
+    static const char schema[] = "counter";
+    ++state_counts[0];
+    if (!span_equal(plugin, FIXTURE_PLUGIN_ID) || !output || output->struct_size != sizeof(*output))
+        return CORDIS_E_INVALID_ARGUMENT;
+    if (state_mode == 14)
+        return CORDIS_E_UNSUPPORTED;
+    if (state_mode == 16)
+        cordis_business_throw();
+    if (state_mode == 3) {
+        output->reserved = 1;
+        return CORDIS_OK;
+    }
+    output->id_size = sizeof(schema) - 1;
+    memcpy(output->id, schema, sizeof(schema) - 1);
+    output->version = 2;
+    return CORDIS_OK;
+}
+static CordisStatus write_state(CordisStateBufferV1* output, CordisBytesV1 input)
+{
+    if (!output || output->struct_size != sizeof(*output) || output->capacity < input.size || !output->data)
+        return CORDIS_E_INVALID_ARGUMENT;
+    memcpy(output->data, input.data, (size_t)input.size);
+    output->size = input.size;
+    return CORDIS_OK;
+}
+static CordisStatus CORDIS_CALL validate_state(CordisBytesV1 plugin, const CordisStateSchemaV1* schema,
+                                               CordisBytesV1 input, CordisStateBufferV1* output)
+{
+    ++state_counts[1];
+    if (state_hook)
+        state_hook(1);
+    if (state_mode == 4)
+        return CORDIS_E_FAILED;
+    if (state_mode == 5)
+        return CORDIS_PENDING;
+    if (state_mode == 6)
+        cordis_business_throw();
+    if (!span_equal(plugin, FIXTURE_PLUGIN_ID) || !schema || schema->id_size != 7 || memcmp(schema->id, "counter", 7) ||
+        (schema->version != 1 && schema->version != 2))
+        return CORDIS_E_FAILED;
+    return write_state(output, input);
+}
+static CordisStatus CORDIS_CALL capture_state(CordisHandle instance, CordisStateBufferV1* output)
+{
+    FixtureInstance* value = find_instance(instance);
+    CordisBytesV1 data;
+    ++state_counts[3];
+    if (state_hook)
+        state_hook(3);
+    if (!value || !value->id || !value->started)
+        return CORDIS_E_CLOSED;
+    if (state_mode == 7)
+        return CORDIS_E_BUSY;
+    if (state_mode == 8) {
+        data.data = (const uint8_t*)"{";
+        data.size = 1;
+        return write_state(output, data);
+    }
+    if (state_mode == 9) {
+        output->data = 0;
+        return CORDIS_OK;
+    }
+    if (state_mode == 10)
+        return CORDIS_PENDING;
+    data.data = (const uint8_t*)value->state_json;
+    data.size = value->state_size;
+    return write_state(output, data);
+}
+static CordisStatus CORDIS_CALL restore_state(CordisHandle instance, const CordisStateSchemaV1* schema,
+                                              CordisBytesV1 input)
+{
+    FixtureInstance* value = find_instance(instance);
+    ++state_counts[2];
+    if (state_hook)
+        state_hook(2);
+    if (state_mode == 11)
+        return CORDIS_E_FAILED;
+    if (state_mode == 12)
+        return CORDIS_PENDING;
+    if (state_mode == 13)
+        cordis_business_throw();
+    if (!value || !value->id || value->started || !schema || schema->version != 2 ||
+        input.size > sizeof(value->state_json))
+        return CORDIS_E_INVALID_ARGUMENT;
+    memcpy(value->state_json, input.data, (size_t)input.size);
+    value->state_size = input.size;
+    value->restored = 1;
+    return CORDIS_OK;
+}
+CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_query_state_v1(uint32_t major, CordisStateApiV1* output)
+{
+    CordisStateApiV1 table;
+    uint32_t capacity;
+    ++state_counts[7];
+    if (state_mode == 1)
+        return CORDIS_PENDING;
+    if (state_mode == 15)
+        cordis_business_throw();
+    if (state_mode == 17)
+        return CORDIS_E_UNSUPPORTED;
+    if (major != CORDIS_STATE_ABI_MAJOR || !output)
+        return CORDIS_E_UNSUPPORTED;
+    capacity = output->header.struct_size;
+    if (capacity < sizeof(table))
+        return CORDIS_E_INVALID_ARGUMENT;
+    memset(&table, 0, sizeof(table));
+    table.header.struct_size = sizeof(table);
+    table.header.abi_major = CORDIS_STATE_ABI_MAJOR;
+    table.describe = describe_state;
+    table.validate = validate_state;
+    table.capture = capture_state;
+    table.restore = restore_state;
+    if (state_mode == 2)
+        table.capture = 0;
+    memcpy(output, &table, sizeof(table));
+    return CORDIS_OK;
+}
+#endif

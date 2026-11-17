@@ -7,7 +7,10 @@
 #include <memory>
 
 namespace cordis::qt {
-namespace detail { struct ObjectControl; }
+namespace detail {
+struct ObjectControl;
+class ObjectCall;
+} // namespace detail
 /** @brief 对象销毁信号与整个删除调用完成分开记账。 */
 struct ObjectSnapshot {
     bool closing;
@@ -28,6 +31,7 @@ public:
     /** @brief owner 查询；意外外部销毁只报告失败，不伪造完整析构确认。 */
     Result<ObjectSnapshot> snapshot() const;
 private:
+    friend class detail::ObjectCall;
     std::shared_ptr<detail::ObjectControl> control_;
 };
 } // namespace cordis::qt

@@ -1,5 +1,7 @@
 # Module host
 
+P5-M3-b 为原生和 Qt 工厂增加可选状态适配：原生独立 C 查询和 Qt 独立状态 IID 共用宿主有界值检查，描述在原代次协商中缓存；原 V1 表/虚表保留。参与者绑定实际业务对象，导入成功后才 start/activate；同步调用同时持原 Call 与真实对象保护，普通拒绝也须重新核对来源健康，协议故障沿原不确定资源路径保留。Qt 对象保护位于原 QObjectResource 内，不增加实例目录或删除路径。接口、实现范围和整阶段验证见 [M3 记录](../../docs/p5-m3-development.md)。完整状态替换与恢复仍待 M3-c，默认驻留不变。下文保留各阶段历史记录。
+
 M2c5 的原生主动服务撤回、effect 关闭及实例/模块关闭共用 Core 绑定读准入。在绑定读门禁处被拒绝时，服务/effect ABI 返回 BUSY 且 request 为零，实例/模块关闭 Task 保留实际读操作编号；不分配请求、不发布关闭状态、不隔离健康实例。完整 effect/实例/模块先检查全部服务，解除权限后仍沿原清理路径完成；真实故障的保留语义不变。见 [审查](../../docs/code-review.md#p5-m2c5-原生主动撤回准入复查)。
 
 P5-M2c3 增加 ModuleManager::reserveReplacement 返回的唯一模块预约：在同一目录核对真实当前/候选及前驱，同模块工厂/定义/新宿主、暂存和 drain 共用准入，包含其他候选的装载/协商窗口；已有业务和清理不借此排空。reset 只解除预约，不执行升级，后续 ReplacementOperation 须持有权限直到运行提交/恢复结束，见 [记录](../../docs/p5-m2c3-development.md)及 [ADR-0046](../../docs/adr/0046-module-replacement-reservation.md)。

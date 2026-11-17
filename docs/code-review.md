@@ -1,5 +1,15 @@
 # 提交前代码审查记录
 
+## P5-M3-b 两后端状态适配收口复查（通过）
+
+2026-11-17。先记录独立扩展、原代次描述缓存、对象调用保护和责任分层，再实现共用值层、Native 与 Qt 接线。复查原生 close 的拆分，原关闭主体收敛到 beginClose，普通关闭和状态调用退出共用；不保留两套取消/stop/destroy。Qt 复用原 ObjectControl 增加私有 ObjectCall，防止 aboutToQuit 绕过 Core 屏障在状态调用中删除业务对象，完整析构确认仍只有原守卫路径。Core 纯值声明从 EpochState 私有头分离，Module 不依赖 Core 实例控制；不新增状态实例目录、解析器或替换协调器。
+
+发现并修复失败结果跳过健康复验的问题：真实 Qt DLL 在 capture 中 delete this 后返回 Busy，修复前 0/1；现在对象失效返回 AbiProtocol 并保留 qt.businessUncertain 和真实来源账目。正常 Busy 不隔离，parent/线程变化同样拒绝。Native 对齐规则，直接关闭且回调返回 Busy 时不能返回可重试结果；关闭完成仍等待实际回调退出。协议故障保留首个原因，不能用默认驻留 pin 代替不确定资源证据。
+
+Release 两后端专项与旧 Qt 工厂回归 94/94 已通过。6 组公开头独立编译通过（MSVC C++：native.hpp/object.hpp/qt_state_plugin.hpp；GCC C++：native.hpp；两编译器 C11：state.h），原 plugin.h、Qt 工厂 V1、Core 状态/实例契约与 M3-a 基线逐字节一致；QObjectResource/NativeInstance 仅新增私有 friend，不改变句柄布局。SDK 仍为 0.1.2；旧无扩展插件继续无状态运行，声明旧 SDK 的 Qt 插件仍在映射前拒绝。
+
+31 项冻结源码/构建输入的整阶段重建后，Release/Debug/ASan 各 1174/1174、静态 Core 关闭示例 837/837、无 Qt GCC 418/418，完整测试名称与实际通过清单逐项一致。三组共享 Core 均含 Native/Qt 状态各 30 项及值层 5 项，五组均保留 21 项 Core 状态回归；7 个实际 ASan 对象、地址检查标志、Module 的 /EHs 异常边界及测试前后哈希核对通过。最终格式、差异与本地文档链接检查通过，未发现阻止本阶段提交的问题；实现及阶段出口见 [M3-b 收口结论](p5-m3-development.md#m3-b-收口结论)。完整状态事务、恢复和事务总预算待 M3-c；默认驻留、有状态整体替换兼容门禁与不确定资源保留均有明确保留理由。提交同步完成后才能进入下一段。
+
 ## P5-M3-a 收口复查（通过）
 
 2026-11-17。复查范围包含 `26230ac` 首版和后续修正，实现与阶段审计通过，五组当前源码验证已完成；收口提交同步后才能开始 M3-b。Core 的纯值协议位于 migration_state.hpp/state.cpp，实际 epoch、回调进入/退出和延迟退役仍由 InstanceControl 持有；宿主只从实际成员读取状态契约，不从工厂快照猜测，不增加实例目录或第二个提交点。Core 不依赖 Module/Loader，原生 C ABI 未改动，源码 SDK 为 0.1.2。

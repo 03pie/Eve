@@ -178,8 +178,12 @@ Result<NativeSource> acquireNativeSource(GenerationId id)
     CordisQueryFnV1 query = nullptr;
     static_assert(sizeof(query) == sizeof(address), "business entry pointer");
     std::memcpy(&query, &address, sizeof(query));
+    const auto stateAddress = GetProcAddress(generation->image, "cordis_query_state_v1");
+    CordisQueryStateFnV1 queryState = nullptr;
+    static_assert(sizeof(queryState) == sizeof(stateAddress), "state entry pointer");
+    std::memcpy(&queryState, &stateAddress, sizeof(queryState));
     return Result<NativeSource>::success(
-        {id, generation->data.manifest, generation->ledger, query, std::move(session.value())});
+        {id, generation->data.manifest, generation->ledger, query, std::move(session.value()), queryState});
 }
 void recordNativeBusiness(GenerationId id, const std::optional<ErrorInfo>& failure)
 {

@@ -6,6 +6,7 @@
 #include <cordis/module/manager.hpp>
 #include <cordis/module/manifest.hpp>
 #include <cordis_abi/plugin.h>
+#include <cordis_abi/state.h>
 #include <optional>
 
 namespace cordis::module::detail {
@@ -15,6 +16,7 @@ struct NativeSource {
     GenerationLedger ledger;
     CordisQueryFnV1 query;
     ModuleLease session;
+    CordisQueryStateFnV1 queryState = nullptr;
 };
 Result<NativeSource> acquireNativeSource(GenerationId generation);
 void recordNativeBusiness(GenerationId generation, const std::optional<ErrorInfo>& failure);

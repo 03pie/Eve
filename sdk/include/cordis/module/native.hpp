@@ -18,6 +18,7 @@ namespace detail {
 struct NativeModuleControl;
 struct NativeInstanceControl;
 struct NativeServices;
+struct NativeStateAccess;
 } // namespace detail
 enum class NativeInstanceState { Created, Starting, Started, Stopping, Destroyed, Failed };
 struct NativeLogRecord {
@@ -57,6 +58,7 @@ public:
 private:
     friend class NativeModule;
     friend struct detail::NativeServices;
+    friend struct detail::NativeStateAccess;
     explicit NativeInstance(std::shared_ptr<detail::NativeInstanceControl> control) : control_(std::move(control)) {}
     std::shared_ptr<detail::NativeInstanceControl> control_;
 };

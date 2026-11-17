@@ -72,6 +72,26 @@ if(TARGET cordis_module_native)
     cordis_query_fixture(business_throw 0)
     target_sources(cordis_fixture_business_throw PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/business_fixture.c" "${PROJECT_SOURCE_DIR}/tests/fixtures/business_throw.cpp")
     target_compile_definitions(cordis_fixture_business_throw PRIVATE CORDIS_ABI_EXPORTS FIXTURE_THROW_START)
+    cordis_query_fixture(state 0)
+    target_sources(cordis_fixture_state PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/business_fixture.c"
+        "${PROJECT_SOURCE_DIR}/tests/fixtures/business_throw.cpp")
+    target_compile_definitions(cordis_fixture_state PRIVATE CORDIS_ABI_EXPORTS FIXTURE_STATE)
+    add_executable(cordis_module_state_native_tests "${PROJECT_SOURCE_DIR}/tests/qt/module_state_native.cpp")
+    target_link_libraries(cordis_module_state_native_tests PRIVATE Cordis::ModuleHost Qt5::Core)
+    cordis_target_defaults(cordis_module_state_native_tests)
+    add_dependencies(cordis_module_state_native_tests cordis_fixture_state cordis_fixture_business)
+    foreach(case IN ITEMS metadata roundtrip legacy stateless origin_lifetime schema_id schema_version query_pending query_table describe_bad
+            query_throw describe_throw query_reject
+            capture_close capture_close_busy restore_close module_close factory_close validate_reject validate_pending validate_throw
+            restore_reject restore_pending restore_throw capture_json capture_pointer capture_pending
+            wrong_thread restore_started reentry)
+        add_test(NAME p5.native_state_${case} COMMAND "${CMAKE_COMMAND}"
+            "-DTEST_EXE=$<TARGET_FILE:cordis_module_state_native_tests>" "-DCASE=${case}"
+            "-DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/state-fixtures"
+            "-DFIXTURES=$<TARGET_FILE:cordis_fixture_state>;$<TARGET_FILE:cordis_fixture_business>"
+            -P "${PROJECT_SOURCE_DIR}/tests/module_native_case.cmake")
+        set_tests_properties(p5.native_state_${case} PROPERTIES LABELS "p5;module;native;state" TIMEOUT 25)
+    endforeach()
     cordis_query_fixture(resources 0)
     target_sources(cordis_fixture_resources PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/resource_fixture.c")
     target_compile_definitions(cordis_fixture_resources PRIVATE CORDIS_ABI_EXPORTS)

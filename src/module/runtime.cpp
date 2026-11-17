@@ -4,6 +4,7 @@
 #include "admission_p.hpp"
 #include "host_services_p.hpp"
 #include "json_p.hpp"
+#include "native_state_p.hpp"
 #include "runtime_origin_p.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -62,17 +63,39 @@ Result<Runtime> NativeModule::runtime(NativePlugin plugin) const
         auto origin = retainRuntimeOrigin(root->source.generation, plugin.id);
         if (!origin.hasValue())
             return Output::failure(origin.error());
+        std::optional<StateSchema> state;
+        if (root->record->stateApi) {
+            const auto found = root->record->stateApi->schemas.find(plugin.id);
+            if (found != root->record->stateApi->schemas.end())
+                state = found->second;
+        }
         auto module = *this;
-        auto runtime = Runtime(
-            [module, origin = origin.value(), id = std::move(plugin.id)](Context context) {
-                auto identity = context.identity();
-                if (!identity.hasValue())
-                    return failedTask(identity.error());
-                auto created = module.createBound(id, context.config().empty() ? "null" : context.config(),
-                                                  identity.value().instance, identity.value().epoch, &context);
-                return created.hasValue() ? created.value().start() : failedTask(created.error());
-            },
-            std::move(requirements), std::move(outputs));
+        Runtime::Activate activate = [module, origin = origin.value(), id = plugin.id, state](Context context) {
+            auto identity = context.identity();
+            if (!identity.hasValue())
+                return failedTask(identity.error());
+            auto created = module.createBound(id, context.config().empty() ? "null" : context.config(),
+                                              identity.value().instance, identity.value().epoch, &context);
+            if (!created.hasValue())
+                return failedTask(created.error());
+            if (state) {
+                auto participant = NativeStateAccess::participant(created.value(), *state);
+                if (!participant.hasValue())
+                    return failedTask(participant.error());
+                auto bound = context.state(std::move(participant).value());
+                if (!bound.hasValue())
+                    return failedTask(bound.error());
+            }
+            return created.value().start();
+        };
+        auto runtime =
+            state ? Runtime::stateful(std::move(activate),
+                                      {*state,
+                                       [root, origin = origin.value(), id = plugin.id](const StateSnapshot& input) {
+                                           return validateNativeState(root, id, input);
+                                       }},
+                                      std::move(requirements), std::move(outputs))
+                  : Runtime(std::move(activate), std::move(requirements), std::move(outputs));
         auto bound = origin.value()->bind(runtime.id());
         return bound.hasValue() ? Output::success(std::move(runtime)) : Output::failure(bound.error());
     } catch (const std::invalid_argument& error) {
