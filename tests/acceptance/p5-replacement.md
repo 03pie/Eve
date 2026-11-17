@@ -191,4 +191,30 @@ M2a 的完整验证记录见 [开发记录](../../docs/p5-m2a-development.md)。
 
 纯目标合并另由 `replacement_target` 标签覆盖，不替代 DLL/运行检查。动态子树检查覆盖链式结构与嵌套业务子实例，不能代替任意拓扑及晚到任务故障；多会话成功/激活失败检查也不代表所有准备失败交错。阶段结果见 [开发记录](../../docs/p5-m2c5-development.md)和 [审查](../../docs/code-review.md#p5-m2c5-动态子树拥有者复查)。
 
-M2c5 的实际模块来源、未托管原生服务、两阶段来源故障、多参与者部分准备失败/取消及最终支持矩阵已补齐；当前阶段审计和范围见 [收口记录](../../docs/p5-m2c5-development.md#阶段收口结论)。M3–M5 的版本化状态迁移、白名单物理卸载、UI 贡献可见性、真实连续 100 次 Windows 替换及随机压力仍待完成，不能据本阶段 Core/Module/配置事务宣称 H01/H02/S09 全范围已通过。
+M2c5 的实际模块来源、未托管原生服务、两阶段来源故障、多参与者部分准备失败/取消及最终支持矩阵已补齐；阶段审计和范围见 [收口记录](../../docs/p5-m2c5-development.md#阶段收口结论)。后续版本化状态迁移已由 M3-c（b454d85）完成，见 [M3 要求映射](../../docs/p5-m3-development.md)；上述 M1/M2 表保留各阶段当时的验收范围，当前卸载状态见下段。
+
+## M4 白名单物理卸载
+
+M4-a 的 [22 项装载策略检查](../qt/module_load_policy.cmake)、M4-b 的 [37 项物理终结检查](../qt/module_unload.cmake)已随各阶段审计归档。M4-c 新增 [11 项替换终结组合](../qt/module_unload_replacement.cmake)，并补强真实 Qt 状态替换的 `p5.state_operation_qt_roundtrip`；受影响的 37+11+1 项通过 49/49 后，当前源码 MSVC Release/Debug/ASan（共享 Core/Ela）全量各 1344/1344、静态 Core（关闭示例/Ela）970/970、无 Qt GCC 440/440 全部通过。整 M4 要求审计和最终证据核对完成，阶段范围见 [M4 收口](../../docs/p5-m4-development.md#m4-c-收口结论)。
+
+下表装载策略名统一加 `p5.load_policy_` 前缀，物理终结及组合名统一加 `p5.unload_` 前缀；单独标出的测试名保持原名。
+
+| 分段 | 验收条件 | 实际检查名称 |
+|---|---|---|
+| M4-a | manifest 请求不授予卸载权限；宿主按重新固定的 moduleId/SHA256 精确批准，未授权或产物改变在映射前拒绝 | `approved`、`resident`、`capable_resident`、`wire`、`unauthorized`、`wrong_id`、`wrong_hash`、`invalid_entry`、`tampered_preview`；另有 `p4.manifest_unload_policy` |
+| M4-a | 原发现 1.0 驻留兼容与显式 1.1 协商独立；错误协商保持真实映像/文件与失败诊断 | `legacy_reject`、`legacy_flags`、`explicit_flags`、`explicit_minor` |
+| M4-a | 首次策略/owner 不变，不能升级已 resident/PIN 代；别名、候选和同 hash 独立副本沿原目录处理 | `reuse`、`immutable_{resident,approved}`、`alias_{resident,approved}`、`candidates`、`same_hash_copy`、`threads`、`reentry` |
+| M4-b | 同进程动态 detach 恰一次、原 allocation 完整离开、文件保护释放与独占写入；文件改名/删除和重新装载新 ID；系统失败及未知外部映射保留准确所有权 | `physical`、`file`、`reload`、`resident`、`rejected`、`release_retry`、`external`、`query_failure`、`probe_other`、`probe_release_failure` |
+| M4-b | 实际会话、实例、异步任务、工厂/状态、调用、显式 worker/QObject、捕获和服务完整退出；清理不确定保留资源 | `session`、`instance`、`setup`、`cleanup`、`runtime`、`state`、`call`、`worker`、`qobject`、`capture`、`stale_capture`、`cleanup_failure`、`service` |
+| M4-b | 同一 ledger 原子封门、首次 owner、最后租约跨线程不卸载；重入和关闭 facade 不读取已退役函数表 | `seal`、`owner`、`owner_gone`、`last_lease`、`reentry`、`closed_facade`、`create_reentry` |
+| M4-b | 真实候选/Current/兄弟代与预约/readers 门禁；64 重代预算、128 条纯历史，终结 ID 不复用 | `lineage_{candidate,current,reservation,sibling}`、`reader`、`heavy`、`history` |
+| M4-c | 真实共同事务提交后旧代成为 Retired，状态值和完整消费者继续工作；旧宿主显式关闭并释放工厂后才物理回收，卸载失败不改写 Applied 报告 | `replacement_applied`、`replacement_release_retry` |
+| M4-c | 候选导入/激活失败或取消时完整恢复原值和消费者，再显式回收废弃候选；恢复期间两代不可回收，普通恢复失败保留 Execution/预约，协议不确定另保留真实对象及 pin | `replacement_restore_reject`、`replacement_start_failure`、`replacement_cancel_restore`、`replacement_recovery_failure`、`replacement_restore_pending` |
+| M4-c | 新 Session/Driver/Kernel、目标修订和磁盘保持；旧 Runtime 已释放后，旧不可变目录单独阻碍卸载；FreeLibrary 失败仅更新独立 unloadFailure，重试可完成 | `configured`、`configured_definitions`、`configured_unload_failure` |
+| M4-c | A 在私有释放边界等待时，另一真实首次 owner 可完整卸载独立模块；真实 Qt 替换产生 Retired 后仍策略拒绝卸载，新对象可继续创建/激活/关闭 | `parallel_owners`；`p5.state_operation_qt_roundtrip` |
+
+回收由原宿主在替换终结后关闭旧 NativeModule、释放旧 Runtime/定义目录/请求及探针 session，再由首次 owner 显式调用 `tryUnload`。该入口只核对真实资格并执行物理终结，不代替业务清理，不自动解除 PIN，也不在最后租约析构时卸载。历史 Operation/任务/报告、ValidatedCandidate 和已 Disposed 的旧 Instance 可保留；新代继续持有自己的执行来源。默认 Native 与 Qt 保持 resident，专用夹具白名单不能升级既有代次。当前 C++ SDK 为 0.1.5，宿主与同工具链插件须一起重建；原业务/状态 C ABI 与 Qt IID 不变。
+
+见证只统计动态 DLL_PROCESS_DETACH，进程退出不计成功。`probe_other` 验证另一真实映像的拥有引用归属，`owner_gone` 验证首次线程退出后的身份拒绝，均不声称实际地址或系统线程 ID 已复用；worker/QObject 检查依赖显式登记和完整 join/析构，不代表自动追踪插件线程。`parallel_owners` 证明平台锁不跨系统释放边界，不声称 Windows loader lock 内系统调用并行；Qt 检查始终验证驻留兼容。
+
+M5 仍须交付真实业务产物白名单、服务与 Qt 页面在线升级、UI 贡献可见性、H01/H02、S09 全范围、Windows 连续 100 次真实 ReplacementOperation 及随机/故障压力。M4 专用夹具、目录循环和局部消费者恢复证据不能替代这些出口，P5 尚未完成。

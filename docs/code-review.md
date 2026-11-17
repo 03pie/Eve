@@ -1,5 +1,15 @@
 # 提交前代码审查记录
 
+## P5-M4-c 终结集成与整 M4 复查（通过）
+
+2026-11-18。M4-b 0a460e5 审计提交同步后，先核对唯一事务提交、settle(false) 释放 Execution 的时点、配置定义交换及宿主 Runtime/目录/会话拥有者，再记录 M4-c 设计。真实组合没有发现生产释放缺口；本段只改测试与构建接线，SDK 仍为 0.1.5。没有自动关闭宿主、自动卸载、第二目录或重复事务入口。Scene 保留非复制语义，改用真实 shared managerOwner；原 7 个夹具身份/版本不变，新 schema3/version2 状态夹具复用业务实现，测试按手动树、配置与 owner 并发拆分 TU。
+
+独立交叉复核确认：纯 operation/settled Task/report、旧 Disposed Instance 不持执行能力；明确关闭旧会话并释放旧 Runtime/定义、跨真实 owner FIFO 屏障后，Retired 代可物理离开且新字段与真实消费者服务继续。普通 RecoveryFailed 由原 Execution/作用域/预约保留，不伪造 ledger pin；真实恢复协议 PENDING 才另证明未确认对象及永久 pin。配置例单独保留一份旧定义即出现唯一工厂租约，物理失败不改写报告、共同提交、Driver/Session/Store 或磁盘。双 owner 场景保证异常路径放行/join，见证池只在主线程构造；Qt Retired 仍按策略拒绝、新业务可用。
+
+首轮支持头 include 顺序编译错误已修正；44/49 中五项来自测试将动态子实例交给仅拥有根的 Kernel.findInstance，以及混用 consumer/default builder 与拥有者的 ready 观察。现分别验证真实图 actualID/parent/发布状态、Owner ready 和根 Active/ready，完整状态/实例映射与 withService 断言保留。未扩大 Kernel 所有权或削弱生产门禁。独立源审此前未发现这些夹具假设，最终以修正后的 49/49 为准；环境缺失与原失败日志保留。
+
+9 项测试/构建输入冻结后，Release/Debug/ASan 各 1344/1344、静态 Core 关闭示例/Ela 970/970、无 Qt GCC 440/440，实际唯一 Passed 名称与完整清单一致，全部为修正后当前源码的全量。10 组公开头、5 份原协议、7 项格式/差异和本地文档路径通过；20 个实际 ASan 对象的插桩、Module 异常模型与运行前后哈希一致。整 M4 权限/资源/线程/失败/历史及替换出口映射、独立实现/结构/兼容和证据审计未发现剩余提交阻断项。原 PIN/Qt 与低层兼容路径保留原因明确，旧强缓存/重复查询等替代实现已在 M4-b 删除，本段未堆叠生产路径。probe/线程复用、显式 worker/QObject 和双 owner 的证据范围仍按工作单限定；M5 业务名单、H01/H02/S09 全范围、100 次真实替换和 UI/压力不计入本段。具体用例见 [M4-c 收口](p5-m4-development.md#m4-c-收口结论)及 [验收表](../tests/acceptance/p5-replacement.md#m4-白名单物理卸载)。随本次提交归档并同步后才进入 M5。
+
 ## P5-M4-b 物理终结收口复查（通过）
 
 2026-11-18。0f4f5f2 提交同步后，先核对账目、首次线程、Native 缓存、映像/文件和目录预算，记录具体方案，再实施唯一显式 tryUnload。复用原 ledger、来源、预约和目录，原强缓存改由 Generation.backend 持有、HostRegistry 仅弱索引；原永久文件持有改为明确终结。系统调用、缓存析构与文件关闭在内部锁外；Core/Loader 不认识物理加载器，ModuleNative 不反向链接 Host。原 PIN/Qt 及失败驻留保留，未提供清 pin、第二目录或最后租约自动卸载。

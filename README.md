@@ -6,7 +6,11 @@
 
 底部工作区支持搜索并执行已注册命令、按平台/插件实例选择真实输出，以及运行问题的筛选、详情和定位。插件通过 `ui.output/v1` 写入隔离通道，见[工作区接入说明](docs/workbench-panel-development.md)。
 
-**P4 已完成（Windows x64 / MSVC / Qt 5.15.2 / 默认驻留）**：原生装载、ABI 请求/资源桥、两个业务服务 DLL、Core/Kernel/Session 与同工具链 UI DLL 已实现；M4c3 的需求映射、用户原生验收和退出回执已归档，见 [最终审计](docs/p4-closeout.md)。[P5 受控替换](docs/p5-development.md)进行中，M1 候选代目录、[M2a hash 安装](docs/p5-m2a-development.md)、[M2b 服务发布组](docs/p5-m2b-development.md)、[M2c1 实际图与只读闭包](docs/p5-m2c1-development.md)、[M2c2 Core 排他作用域](docs/p5-m2c2-development.md)、[M2c3 模块预约与创建准入](docs/p5-m2c3-development.md)及 [M2c4 共同定义来源](docs/p5-m2c4-development.md)已完成复审修复与验证。[M2c5](docs/p5-m2c5-development.md#阶段收口结论) 已完成独立宿主运行事务、逻辑/动态子树重建、隔离发布及共同提交，整阶段审计与支持矩阵通过；M4/M5 继续白名单卸载和 UI/压力验收。[M3-a](docs/p5-m3-development.md#m3-a-收口结论) 已完成 Core 状态契约、显式导入和重入清理屏障；[M3-b](docs/p5-m3-development.md#m3-b-收口结论) 两后端可选状态扩展、导入顺序和对象调用保护已完成阶段审计与五配置验证，[M3-c](docs/p5-m3-development.md#m3-c-收口结论) 已完成真实成员状态迁移、共享预算和完整恢复，整 M3 要求审计及五配置全量验证通过；M3-c 已随 b454d85 提交同步；[M4-0 架构与验收设计](docs/p5-m4-development.md)已随 eaef2dd 审计、提交同步；[M4-a 首次策略和发现协商](docs/p5-m4-development.md#m4-a-收口结论)已随 0f4f5f2 完成审计提交同步；[M4-b 显式物理终结](docs/p5-m4-development.md#m4-b-收口结论)已完成实现、阶段审计与五配置完整验证，随收口提交归档；M4-c 替换终结集成尚未完成。当前 C++ 源码 SDK 不构成稳定二进制 ABI；SDK 0.1.5 的宿主与同工具链插件须一起重建，旧 0.1.0/0.1.1/0.1.2/0.1.3/0.1.4 Qt 声明在映射前拒绝；原业务 C ABI 不变，显式装载使用独立的发现 1.1 协商。
+**P4 已完成（Windows x64 / MSVC / Qt 5.15.2 / 默认驻留）**：原生装载、ABI 请求/资源桥、两个业务服务 DLL、Core/Kernel/Session 与同工具链 UI DLL 已实现；需求映射、用户原生验收和退出回执见 [P4 最终审计](docs/p4-closeout.md)。
+
+[P5 受控替换](docs/p5-development.md)进行中。候选目录、hash 安装与完整运行事务已交付，见 [M2c5 收口](docs/p5-m2c5-development.md#阶段收口结论)；版本化状态迁移与完整恢复见 [M3 收口](docs/p5-m3-development.md#m3-c-收口结论)。[M4 收口](docs/p5-m4-development.md#m4-c-收口结论)已完成首次精确授权、显式物理卸载及真实替换终结集成，整阶段审计与五配置全量通过。业务产物白名单、管理/UI 在线升级、H01/H02/S09 全范围、100 次真实替换及随机压力仍由 M5 完成。
+
+当前 C++ 源码 SDK 不构成稳定二进制 ABI；SDK 0.1.5 的宿主与同工具链插件须一起重建，旧 0.1.0/0.1.1/0.1.2/0.1.3/0.1.4 Qt 声明在映射前拒绝。原业务 C ABI 不变，显式装载使用独立的发现 1.1 协商；默认 Native 和 Qt 仍驻留。
 
 实际 UI DLL 示例入口为 `cordis_qt_workspace_demo`，支持笔记编辑、实例命令/输出、多实例、配置换代/启停和模块诊断；构建与持久化说明见 [独立工作台](examples/qt_workspace/README.md)。
 

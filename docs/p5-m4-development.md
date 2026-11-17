@@ -1,6 +1,6 @@
 # P5-M4 白名单原生模块卸载
 
-日期：2026-11-17。基线 b454d85（M3-c），已审计、提交并同步。M4 进行中；M4-0 和 M4-a 已提交同步，M4-b 物理终结实现、阶段审计与五配置完整验证完成，随收口提交归档；M4-c 集成未开始。
+日期：2026-11-17；收口更新：2026-11-18。基线 b454d85（M3-c），已审计、提交并同步。M4-0 eaef2dd、M4-a 0f4f5f2、M4-b 0a460e5 已分别审计提交同步；M4-c 替换终结集成、整 M4 要求审计及五配置当前源码全量验证完成，随本次提交归档。M5 的业务名单、UI 与压力验收仍待完成。
 
 ## 架构与分段门禁
 
@@ -10,8 +10,8 @@
 |---|---|---|---|
 | M4-0 | 策略/权限、发现兼容、映像/文件所有权、失败、历史/预算及测试设计 | 对照说明书 §11.4/§12、开发指南及真实源码逐项审计，本地引用检查；审计后提交同步 | 已随 eaef2dd 审计、提交同步 |
 | M4-a | manifest 请求、宿主精确白名单、首次策略与 owner；发现 1.1 显式声明及原 1.0 resident 兼容 | 真实新旧 DLL；未授权映射前拒绝、旧代不能升级、跨 facade/别名/候选策略、Qt 拒绝、SDK 与布局、相应支持矩阵 | 已随 0f4f5f2 审计、提交同步 |
-| M4-b | 同目录原子终结资格、缓存与映像/文件退役、Unloading/Unloaded、失败所有权、有界纯历史 | 真实物理卸载组合证据；全部执行引用阻碍、重入/并发/线程、系统失败及外部映射、再次装载、64 重资源和 128 历史边界 | 实现、阶段审计及五配置全量验证完成，随本次提交归档；提交同步后进入 M4-c |
-| M4-c | 原替换终结后的退役代显式回收、完整故障及支持矩阵、整 M4 审计 | 新代继续服务、旧代完整恢复与保留、卸载失败不改写业务提交；全量验证、要求映射、审计提交同步 | 未开始 |
+| M4-b | 同目录原子终结资格、缓存与映像/文件退役、Unloading/Unloaded、失败所有权、有界纯历史 | 真实物理卸载组合证据；全部执行引用阻碍、重入/并发/线程、系统失败及外部映射、再次装载、64 重资源和 128 历史边界 | 已随 0a460e5 完成审计、提交同步 |
+| M4-c | 原替换终结后的退役代显式回收、完整故障及支持矩阵、整 M4 审计 | 新代继续服务、旧代完整恢复与保留、卸载失败不改写业务提交；全量验证、要求映射、审计提交同步 | 组合、五配置完整验证与整 M4 审计通过，随本次提交归档 |
 
 每段先记录具体数据来源、依赖、状态和释放方式，再实现与独立审查；修正实际问题、冻结源码/测试名称并验证，提交同步后才能开始下一段。没有必要的重复实现和未使用抽象不进入代码库。
 
@@ -161,3 +161,55 @@ M4-b 首轮复查：生产库编译通过后，进一步发现 createBound 的 s
 | 兼容及边界改善 | 原 PIN/Qt 路径、五配置旧回归和旧 SDK 实物；原强缓存/永久文件持有已替换，重复路径查询删除并复用，没有第二目录、清 pin、最后租约自动卸载或未实现的预留入口 |
 
 上述探测注入、线程 ID 和显式资源管理的证据边界按前文保留，未扩大为实际地址复用、自动线程追踪或 Qt 物理卸载。独立审查及最终要求映射未发现剩余提交阻断项；实现、验证和审计随本次提交归档，提交同步后才进入 M4-c。实际 ReplacementOperation 终结后的 Retired 回收、恢复期间保留和物理失败不改写业务提交由 M4-c 接续；M5 业务白名单、H01/H02、100 次真实替换及 UI/压力门禁仍未交付。
+
+
+## M4-c 实施设计（已完成）
+
+2026-11-18。M4-b 0a460e5 已审计、提交同步，工作区干净后开始本段。先核对原 operation/commit、Core scope/Disposed、Driver/Session/Coordinator 和 Native session 的真实拥有者。正常 settle(false) 已在 done.resolve 前清 jobs、session holds 并 reset Execution；配置准备窗口先交换 Driver 定义并在 finish 退出旧持有。OriginalReplacementView.owner 为弱引用，ValidatedCandidate 只有定义身份，Disposed Instance 已清 activate/stateContract。未发现应先改动的内部永久工厂泄漏，不为回收新建事务、自动析构入口或反向依赖。
+
+宿主仍保存的旧 Runtime/ConfigurationDefinitions/ConfiguredPlugin、旧请求、owner 保存的计划和长寿命 NativeSource.session 都可能合法持有执行来源。NativeModule 的 active 根不能由事务代关，必须由原宿主在终结后显式 close，完整静止才清 query/session。测试沿已有 Core/Module/Driver 唯一共同提交，保留新 Session/Driver/Kernel 与新业务；成功终结后关闭旧会话、释放明确的旧工厂/目录/探针，再由首次 owner 调 tryUnload(Retired)。保留 operation/settled Task/report、纯候选值和旧 Disposed Instance，验证它们不会变成隐藏执行所有者。若发现剩余记录，追踪实际 label/来源，禁止强清账目。
+
+完成通知可能仍处在当前 watch/默认构建回调栈内，捕获要等真实返回才析构；测试跨实际 owner 队列屏障，再核对真实 ledger/runtimeOrigins/instanceOrigins，不用一次 processEvents 当作全局屏障。普通 RecoveryFailed 的保留由 retained Execution/self-pin、Core scope、模块预约/工厂提供，不要求凭空出现 ledger pin；真实协议/清理不确定另验证原对象与永久 pin。恢复仍进行时两代都不可回收；完整恢复后旧 Current 和原值/消费者继续工作，只有废弃候选在所有权释放后可回收。
+
+复用 M4-b Artifact、短 Call、进程寿命原子见证和 gone 的 detach/完整 allocation/独占同字节写入证明；共享 Scene 改为实际 shared managerOwner 加引用，禁止 no-op deleter 假共享。夹具元数据收敛为已使用的 ID/版本值表，复用原 state schema2 DLL，新增同模块 schema3/version2 的 explicit state_next，仍由原 business_fixture/business_throw/module_query 和 witness 组合，不复制业务框架。新增独立替换集成 TU，避免给原默认驻留 case 分派不断追加物理分支。手动有状态/消费者和完整 ConfigurationSession 场景分别沿实际拥有者接线；配置成功后先保留旧不可变目录证明阻碍，再释放并真正回收旧代，确认新路径、目标、版本和磁盘状态没有被物理结果改写。
+
+原子与兼容再补两项实际组合：A 在私有释放边界等待时，B 在另一真实首次 owner 上完成独立模块的物理卸载，两个 Artifact/witness 先在主线程准备，不对现有见证值池做并发写；不声称 Windows loader lock 内系统调用并行。原 Qt roundtrip 真实提交产生 Retired 后调用 tryUnload，应策略拒绝、PIN 和映像保持、新业务继续，不把它写成 Qt 卸载或页面压力。
+
+预计复用现有 SDK 0.1.5 与 ABI，无新生产 API；先用真实组合发现所有权问题，有证据再做必要且限定的释放重构。已成功的业务 ReplacementReport、模块角色和配置元数据不因后续 FreeLibrary 失败回滚，物理失败仅更新独立 unloadFailure/拥有引用，已知失败可显式重试。M4-c 完成后执行当前源码支持矩阵、整 M4 要求映射及审计提交同步；M5 的生产名单、H01/H02、S09 全范围、100 次真实替换和 UI/随机压力继续保持独立出口。
+
+
+M4-c 首轮过程：生产和 SDK 未改；新增 state_next schema3/version2 夹具及 11 个真实替换/配置/独立 owner 组合，Qt roundtrip 补 Retired 驻留拒绝。首次编译仅因旧状态树支持头依赖调用方 CHECK 的 include 顺序失败，已分开共同头首 include 修正。首轮受影响 49 项（旧卸载 37、新组合 11、Qt roundtrip 1）44/49，通过了三个完整配置组合、独立 owner、Qt 兼容及真实恢复失败/不确定保留；五个手动成功/完整恢复例在 Result 取值处失败，正在定位，原日志保留，不移除真实消费者访问断言。
+
+
+手动场景的精确错误为“mapped builtin member: instance not owned by kernel or already collected”：夹具把 Context.inject 的动态子实例交给 Kernel.findInstance 查询。Kernel 的公开查询只覆盖其拥有的根，子实例由实际父树拥有；按现架构改用真实依赖图 actualID/parent/发布状态及拥有者 ready/状态兑现核对动态成员，根仍查 Kernel Active，并保留真实消费者服务调用。未为测试扩大 Kernel 所有权或增加查询旁路。诊断运行还出现过独立 shell 未初始化 VS/Qt 环境的 include/DLL 缺失，已与真实运行结果分开保存。
+
+
+第二轮受影响 49/49 已通过。手动场景另将默认 builder 的 consumer ready 与拥有者专属动态成员 ready 分开核对：consumer 根查实际 Active/ready，alpha/beta 由原 Owner 观察真实 ready，并核对实际父关系/发布状态和根 children=2；原实例映射、两 Native 字段/日志、状态导入/恢复及消费者 withService 保留。生产代码、公共 SDK、ABI 和原事务入口均未修改，SDK 仍为 0.1.5。下一步冻结实际测试/构建输入，完成 Release/Debug/ASan、静态 Core 关闭示例/Ela、无 Qt GCC 当前配置全量及整 M4 要求映射。
+
+## M4-c 收口结论
+
+真实组合完成后，独立复查 operation/commit 的终结次序、Driver 定义切换及旧 factory/session 的拥有者，未发现需要修改的生产释放缺口。沿现有边界验证，不新建自动回收器、第二目录或事务提交点。Scene 改为真实 shared managerOwner，保持不可复制；原 7 个产物元数据语义不变，仅新增第 8 个 schema3/version2 状态产物。新增手动替换、完整配置和独立 owner 三类测试 TU，共用短 Call、FIFO 屏障与原物理联合证据。
+
+| 当前源码配置 | 全量结果 |
+|---|---|
+| MSVC Release，共享 Core/Ela | 1344/1344 |
+| MSVC Debug，共享 Core/Ela | 1344/1344 |
+| MSVC ASan，共享 Core/Ela | 1344/1344 |
+| MSVC Release，静态 Core、关闭示例/Ela | 970/970 |
+| 无 Qt GCC Debug，静态 Core | 440/440 |
+
+当前 9 项测试/构建输入冻结，五组实际 Passed 唯一名称与各自完整 CTest 清单逐项一致；均在测试前完整构建，本段不改生产源码/SDK。10 组独立公开头、5 份原协议声明、7 项 C/C++ 格式与差异检查通过；20 个实际 ASan 对象的插桩/Module 异常模型及全量前后完整记录和哈希一致。首轮编译失败、环境缺失、44/49、修正后的 49/49 均保留原日志，不将过程结果重复累加为全量。本段五配置均为修正后的实际全量，不复用 M4-a 的 GCC 专项或 M4-b 的受影响复验；输入、选择、日志、对象/头和路径记录保存在 build/p5-m4c-*。
+
+| M4-c 出口 | 实际证据（省略 p5.unload_ 前缀） |
+|---|---|
+| 真正退役后旧映像离开，新代和消费者继续 | replacement_applied：两 Native 状态与动态 alpha/beta/consumer 完整迁移，旧 Disposed Instance、operation/Task/report 保留；明确退出旧宿主拥有者后 detach/完整 allocation/独占同字节写入，真实 withService 及新 DLL 字段继续使用 |
+| 物理失败独立于成功提交 | replacement_release_retry、configured_unload_failure：真实释放边界拒绝，保留本方原引用/文件、独立 unloadFailure，报告、角色、路径、目标/定义、修订与磁盘不变；显式重试成功 |
+| 完整恢复期间不得回收，恢复后原业务可用 | replacement_{restore_reject,start_failure,cancel_restore}：在实际 Recovering 回调检查两代 ConfigConflict/映像保留，原值/树/消费者恢复后才回收废弃候选 |
+| 普通恢复失败和协议不确定准确保留 | replacement_recovery_failure：实例已退出、无凭空 ledger pin，原 Execution/作用域/预约仍阻碍回收；replacement_restore_pending：原恢复协议返回 PENDING，真实 uncertain 对象/Instance 账目/nativeInstanceUncertain pin 保留，关闭不冒称静止 |
+| 完整配置与旧不可变定义的单独持有 | configured、configured_definitions：真实 Kernel/Driver/Session/QtStore 提交保存；旧目录 use_count=1、仅一条 runtime.definition 租约仍阻碍回收，释放后物理离开；新字段、preview/save 与旧纯历史保持有效 |
+| 独立首次 owner 不被平台全局锁串行阻塞 | parallel_owners：A 在系统释放边界前等待，B 在自己的首次 owner 完成真实卸载/独占写入后 A 才继续；所有异常/线程创建失败均放行并 join |
+| Qt 真实 Retired 保持驻留兼容 | 原 state_operation_qt_roundtrip：真实共同提交后策略拒绝卸载，PIN/映像不变、无伪 unloadFailure，新 QObject 业务仍可创建/启停 |
+
+整 M4 要求映射复核已覆盖 M4-a 的 22 个策略用例、M4-b 的 37 个物理用例、M4-c 的 11 个新组合与 Qt roundtrip，独立源码/结构/兼容及最终证据审计未发现剩余提交阻断项。原 resident/Qt、失败驻留和低层兼容路径仍有实际调用者/明确契约；没有待清理而绕行保留的临时生产实现。probe_other 只是另一真实映像拥有引用的分支注入，owner_gone 不强求操作系统复用 ID，worker/QObject 为宿主显式管理，parallel_owners 不证明 Windows loader lock 内并行。配置例的字段探针/preview/save 不冒充业务 ABI 服务调用；实际消费者服务调用由手动树场景覆盖。
+
+M4 实现、整体验证与审计随本次提交归档，提交同步后才能开始 M5。业务白名单及管理/UI 接入、H01/H02、S09 全范围、100 次真实 ReplacementOperation 与 UI/随机故障压力仍为 M5 待办，不能以专用夹具批准、历史预算循环或本段全量回归替代。

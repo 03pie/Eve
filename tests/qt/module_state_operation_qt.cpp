@@ -470,6 +470,24 @@ int main(int argc, char** argv)
             CHECK(report.outcome == ReplacementOutcome::Applied);
             scene.mapped(report, false);
             CHECK(scene.old.count(3) == 2 && scene.next.count(2) == 2);
+            const auto before = scene.state(scene.old.generation);
+            CHECK(before.role == GenerationRole::Retired && before.loadPolicy == ModuleLoadPolicy::Resident &&
+                  before.nativeMapped && before.nativePinned);
+            const auto refused = scene.manager->tryUnload(scene.old.generation);
+            CHECK(!refused.hasValue() && refused.error().code == ErrorCode::ModulePinned);
+            const auto after = scene.state(scene.old.generation);
+            CHECK(after.role == GenerationRole::Retired && after.state == before.state && after.nativeMapped &&
+                  after.nativePinned && after.loadPolicy == before.loadPolicy && !after.unloadFailure);
+            CHECK(scene.old.count(3) == 2 && scene.old.alive() == 0);
+            const auto activations = scene.next.count(4);
+            const auto created = scene.kernel->mount(*scene.replacement).value();
+            CHECK(wait(created.ready())->hasValue());
+            const auto identity = created.snapshot().value().instance;
+            const auto values = scene.next.values();
+            CHECK(scene.next.count(4) == activations + 1 && values.count(identity) &&
+                  values.at(identity).value == "7" && values.at(identity).activated == "7");
+            CHECK(wait(created.stop())->value().quiescent);
+            scene.mapped(report, false);
             scene.close();
         } else if (name == "capture_busy" || name == "validate_reject")
             early(scene, name);

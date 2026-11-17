@@ -1,5 +1,7 @@
 # Module host
 
+P5-M4-c 沿原 ReplacementOperation/Driver/Session 验证终结后的真实 Retired 回收，不增加生产 API、自动 close 或反向依赖；SDK 仍为 0.1.5。宿主须显式关闭旧 Native 会话、释放旧 Runtime/ConfigurationDefinitions 等执行拥有者，并等待 owner 队列返回，再尝试卸载。纯报告、已结算 Task、旧 Disposed Instance 不阻碍回收；恢复期间和 RecoveryFailed 保留原作用域/预约，协议不确定另保留真实对象及 pin。物理失败只写独立 unloadFailure，不回滚已提交业务或已保存配置。组合、五配置全量与整 M4 审计通过；生产业务白名单、UI 在线升级与连续替换压力仍属 M5，见 [M4 收口](../../docs/p5-m4-development.md#m4-c-收口结论)。
+
 P5-M4-b（SDK 0.1.5）提供显式 ModuleManager::tryUnload：首次真实线程身份、来源、预约/读者与原子空账目均通过后，关闭新准入，在内部锁外退役原 Native 缓存并消费本方系统引用。只有真实映像离开且文件保护释放才发布 Unloaded；系统失败保留原引用可显式重试，未知外部映射永久 pin。默认 Native/Qt 仍驻留；析构及 worker 最后租约不执行卸载。同一目录限制 64 重代和 128 纯历史，重装使用新 ID。阶段审计及五配置全量通过，随收口提交归档；具体所有权和证据边界见 [M4-b 收口](../../docs/p5-m4-development.md#m4-b-收口结论)。以下按阶段保留历史记录。
 
 P5-M4-a（SDK 0.1.4）已接入首次装载策略：manifest 的 unloadPolicy:explicit 只表达请求，C ABI 宿主还须按重新固定的真实模块 ID/SHA256 精确批准；Generation 保存实际策略与首次 owner。默认 resident 继续发现 1.0/PIN，已批准显式映像协商发现 1.1，不执行 PIN，但仍保留原映射引用、文件/身份检查及失败 pin。Qt 仍固定 resident，既有代不能通过另一 facade 或改声明升级。load/stage 的白名单默认为空，未新增物理卸载入口；原业务 ABI/状态 IID 不变，宿主与同工具链插件须一起重建，见 [M4-a 证据](../../docs/p5-m4-development.md#m4-a-收口结论)。

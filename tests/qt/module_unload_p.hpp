@@ -77,21 +77,30 @@ struct Artifact {
     std::shared_ptr<Witness> witness = witnessSlot();
 };
 struct Scene {
-    ModuleManager manager;
+    std::shared_ptr<ModuleManager> managerOwner = std::make_shared<ModuleManager>();
+    ModuleManager& manager = *managerOwner;
     QString root;
     QStringList fixtures;
     Scene(QString path, QStringList inputs) : root(std::move(path)), fixtures(std::move(inputs))
     {
-        CHECK(fixtures.size() == 7);
+        CHECK(fixtures.size() >= 7 && fixtures.size() <= 8);
     }
+    Scene(const Scene&) = delete;
+    Scene& operator=(const Scene&) = delete;
     QString prepare(unsigned fixture, const QString& folder = "module", bool resident = false) const
     {
-        static const char* ids[] = {"org.cordis.business", "org.cordis.lifecycle", "org.cordis.services",
-                                    "org.cordis.state",    "org.cordis.policy",    "org.cordis.dependent",
-                                    "org.cordis.business"};
-        const auto manifest =
-            files::install(fixtures[static_cast<int>(fixture)], root + '/' + folder, ids[fixture],
-                           QJsonArray{"org.cordis.plugin"}, "c-abi", fixture == 6 ? "2.0.0" : "1.0.0");
+        struct FixtureMetadata {
+            const char* id;
+            const char* version;
+        };
+        static const FixtureMetadata metadata[] = {{"org.cordis.business", "1.0.0"}, {"org.cordis.lifecycle", "1.0.0"},
+                                                   {"org.cordis.services", "1.0.0"}, {"org.cordis.state", "1.0.0"},
+                                                   {"org.cordis.policy", "1.0.0"},   {"org.cordis.dependent", "1.0.0"},
+                                                   {"org.cordis.business", "2.0.0"}, {"org.cordis.state", "2.0.0"}};
+        CHECK(fixture < static_cast<unsigned>(fixtures.size()));
+        const auto& spec = metadata[fixture];
+        const auto manifest = files::install(fixtures[static_cast<int>(fixture)], root + '/' + folder, spec.id,
+                                             QJsonArray{"org.cordis.plugin"}, "c-abi", spec.version);
         auto json = QJsonDocument::fromJson(files::read(manifest)).object();
         json["unloadPolicy"] = resident ? "resident" : "explicit";
         files::write(manifest, QJsonDocument(json).toJson());
