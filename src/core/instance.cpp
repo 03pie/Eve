@@ -621,6 +621,17 @@ Result<void> Context::state(StateParticipant participant) const
         self->provisionError.emplace(bound.error());
     return bound;
 }
+Result<std::optional<StateSchema>> detail::InstanceStateAccess::schema(const Instance& instance)
+{
+    using Output = Result<std::optional<StateSchema>>;
+    const auto self = instance.control_;
+    if (!self)
+        return Output::failure(makeError(ErrorCode::InvalidArgument, "missing state owner"));
+    if (!self->scheduler->isCurrentThread())
+        return Output::failure(makeError(ErrorCode::WrongThread, "state description requires owner thread"));
+    return Output::success(self->stateContract ? std::optional<StateSchema>(self->stateContract->schema)
+                                               : std::nullopt);
+}
 Result<std::optional<StateSnapshot>> detail::InstanceStateAccess::capture(const ReplacementScope& scope,
                                                                           const Instance& instance)
 {

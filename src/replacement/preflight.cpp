@@ -1,6 +1,7 @@
 /** @file preflight.cpp
  * @brief 在任何停止之前绑定真实来源、会话、完整拥有单元和候选/恢复输入。
  */
+#include "../core/instance_state_p.hpp"
 #include "operation_p.hpp"
 #include <algorithm>
 namespace cordis::detail {
@@ -99,6 +100,18 @@ Result<void> ReplacementOperationControl::prepare(ReplacementRequest request)
     if (!original.hasValue())
         return Result<void>::failure(original.error());
     work.original = std::move(original).value();
+    // M3-c replaces this compatibility gate with the complete state transaction.
+    for (const auto& member : work.original.members) {
+        auto schema = InstanceStateAccess::schema(member.instance);
+        if (!schema.hasValue())
+            return Result<void>::failure(schema.error());
+        if (schema.value()) {
+            auto error = replacementError(ErrorCode::ConfigInvalid,
+                                          "stateful replacement requires state migration orchestration");
+            error.instance = member.input.instance;
+            return Result<void>::failure(std::move(error));
+        }
+    }
     delivery->scopeFailure = CoreReplacementAccess::failureSignal(*work.scope, *host.kernel);
     if (!delivery->scopeFailure)
         return Result<void>::failure(

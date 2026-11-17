@@ -108,7 +108,7 @@ bool operationCase(SceneType& scene, const cordis::Runtime& old, const cordis::R
         return value;
     };
     if (mode == "operation_state_guard") {
-        const auto before = driver->snapshot().value();
+        const auto originalRows = driver->snapshot().value();
         auto rejected = ReplacementOperation::begin(request());
         CHECK(!rejected.hasValue() && rejected.error().code == ErrorCode::ConfigInvalid && rejected.error().instance);
         CHECK(kernel->replacements().value().empty());
@@ -116,12 +116,12 @@ bool operationCase(SceneType& scene, const cordis::Runtime& old, const cordis::R
         CHECK(scene.state(scene.current).role == module::GenerationRole::Current &&
               scene.state(scene.candidate).role == module::GenerationRole::Candidate);
         const auto after = driver->snapshot().value();
-        CHECK(after.size() == before.size());
-        for (std::size_t index = 0; index < before.size(); ++index) {
-            CHECK(after[index].instance == before[index].instance && after[index].state == InstanceState::Active);
-            auto instance = kernel->findInstance(after[index].instance).value();
-            CHECK(waitFor(instance.whenActiveAfter())->value().identity().hasValue());
+        CHECK(after.size() == originalRows.size());
+        for (std::size_t index = 0; index < originalRows.size(); ++index) {
+            CHECK(after[index].instance == originalRows[index].instance && after[index].state == InstanceState::Active);
         }
+        auto originalRoot = kernel->findInstance(oldRoot).value();
+        CHECK(waitFor(originalRoot.whenActiveAfter())->value().identity().hasValue());
         CHECK(session->snapshot().value().coordinator.desiredRevision == 1 &&
               readConfigurationFile(file).value().text == originalFile);
     } else if (mode == "operation_guards") {

@@ -6,6 +6,7 @@
 
 namespace cordis::detail {
 struct InstanceStateAccess {
+    static Result<std::optional<StateSchema>> schema(const Instance&);
     static Result<std::optional<StateSnapshot>> capture(const ReplacementScope&, const Instance&);
 };
 } // namespace cordis::detail
