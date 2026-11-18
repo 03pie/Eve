@@ -6,13 +6,17 @@
 #include <QApplication>
 #include <QGuiApplication>
 #include <QJsonObject>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QThread>
 #include <QWidget>
 #include <QWindow>
+#include <exception>
 #include <map>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -127,6 +131,26 @@ void prepareDesktop(Scene& scene)
 {
     (void)desktopApplication();
     PLATFORM_CHECK(scene.state && scene.scheduler && scene.scheduler->isCurrentThread());
+    // 在初始资源采样前完成真实的 Qt 互斥锁争用；临时资源在窗口准备前全部销毁。
+    bool acquired = false;
+    std::exception_ptr contentionFailure;
+    {
+        QMutex mutex;
+        QMutexLocker held(&mutex);
+        std::thread worker([&]() noexcept {
+            try {
+                acquired = mutex.tryLock(1);
+                if (acquired)
+                    mutex.unlock();
+            } catch (...) {
+                contentionFailure = std::current_exception();
+            }
+        });
+        worker.join();
+    }
+    if (contentionFailure)
+        std::rethrow_exception(contentionFailure);
+    PLATFORM_CHECK(!acquired);
     auto* window = existingShell();
     PLATFORM_CHECK(window && !window->isVisible() && !window->testAttribute(Qt::WA_DontShowOnScreen));
     // 原外壳尚未 show；所有原生创建和 show 副作用只属于本次准备，不进入 collector。

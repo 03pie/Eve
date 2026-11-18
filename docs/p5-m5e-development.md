@@ -1,14 +1,14 @@
 # P5-M5-e 最终资格与交付
 
-日期：2026-11-19。M5-d基线d47210a已审计同步，e0设计5fb3f0b已审计提交同步、8提交blob匹配且clean。e1按[ADR-0056](adr/0056-qualified-native-product-catalog.md)完成产品接线、公开资格、名单审核与相关审查，随本提交归档同步；最终矩阵/人工/整P5尚待完成。
+日期：2026-11-19。M5-d基线d47210a已审计同步，e0设计5fb3f0b已审计提交同步、8提交blob匹配且clean。e1按[ADR-0056](adr/0056-qualified-native-product-catalog.md)完成产品接线、公开资格、名单审核与相关审查，1188b58已审计提交同步；e2最终矩阵/兼容/资格与审查已完成，随本次精确提交同步；人工/整P5尚待e3。
 
 ## 分段与提交屏障
 
 | 段 | 出口 | 状态 |
 |---|---|---|
 | e0 | 核名单来源/产品入口/拥有者、资格更新及最终矩阵/人工出口；审查设计 | 已审计提交同步，5fb3f0b |
-| e1 | 受审精确档案、显式候选导出、私有产品名单与原Workspace接线、正确桌面启动项；相关验证/审计 | 已完成，随本次审计提交同步；结论见下 |
-| e2 | 最终五配置完整构建/全量清单与实际执行、兼容/产物/ASan审计、FR-10/H01/H02/S09等完整映射 | 待e1提交同步且clean |
+| e1 | 受审精确档案、显式候选导出、私有产品名单与原Workspace接线、正确桌面启动项；相关验证/审计 | 已审计提交同步，1188b58；结论见下 |
+| e2 | 最终五配置完整构建/全量清单与实际执行、兼容/产物/ASan审计、FR-10/H01/H02/S09等完整映射 | 已完成验证与审查，随本次精确提交同步；首轮失败保持 |
 | e3 | 新Release产品桌面升级/保存/退出人工回执、整P5代码与架构审计、正式发布档案及状态收口 | 待e2提交同步且clean |
 
 每段先设计再实现，完成审查修正和必要验证后精确提交同步，clean才进下一段。发现实质缺口先修正承担该职责的实现，不堆叠旁路；不以新增代码量或测试数代表完成。
@@ -92,3 +92,83 @@ Ninja -n不能执行VerifyGlobs并取得restat结果，因此不能将其预测�
 采用前195份实物独立归档，采用后/再次check的逐项关系表见build/p5-m5e1-catalog-adoption-after/snapshot.json及before目录：三generatedCPP、六实际catalog对象及六产品/test exe的字节、mtime与Ninja编译/链接输出记录全部不变；原72业务文件、metadata/moc、Core、SDK和旧实物保持。71项与88/223旧源记录仍按其历史scope保留，因实际消费exe未变而沿用，不声称新数据源未变或新跑71；e2最终全量仍须新执行。
 
 e1实现、原错误与失败归档、结构/ABI和实际证据无剩余审计阻断，随本次精确提交同步，clean后才能开始e2。正式最终发布档案另绑定名单及相同产品/插件字节；该资格档案的pendingStages是取证时尚未完成e2/e3的事实，不冒称整P5或新增桌面人工已完成。
+
+## e2 实施前核对与验证方案
+
+e1提交1188b58032c8e774670010c27d59dfd4a8da0f30已同步，22提交blob与审计相同，HEAD/origin差异0/0且clean后开始。现有职责、唯一政策/目录和源码边界合理，本段首先验证完整支持矩阵，不增加生产接口、第二状态或新构建目录。发现真实代码问题时先记录其职责与必要修正，冻结新输入后重建受影响目标，不靠放宽判据收口。
+
+沿原五目录重新配置并默认全目标构建：三共享Qt/Ela Release/Debug/ASan、静态Core关闭Ela/示例、无Qt GCC。记录真实cache/flags/编译器及源码输入，重新取得完整CTest json清单、disabled/命令文件存在性；实际串行执行全部名字，逐项与原退出/Passed核对，不拼专项数。三共享含d1/seed/proof和六产品检查，固定输出先保存，proof只用本次原stdout路径。不同配置runtime也串行，避免原生窗口/句柄基线互相干扰；构建可独立并行。
+
+完整运行之后核最终真实ASan生产/产品对象、原Ninja依赖/命令及输入/产物摘要；范围按真实消费者和生产目标取，不照抄旧88/223。受审十二Native、原72正常文件和当前Core/Qt/Ui/Ela字节必须与名单/资格对应，任何变化先查原因和重新资格，不自动改批准SHA。旧SDK八件/provenance保持，只在全量之后串行运行原Release旧host+旧plugin两个normal探针，保存实际进程和Toolhelp所见当前Core/Ui完整路径/摘要，不能用新重编探针假称旧实物兼容或扩大到其他工具链。
+
+对照原只读说明书/开发指南，把FR-10、H01/H02、S09、状态/恢复/物理失败保留等要求映射到本次真实用例/原报告及支持范围，剩余新增Release桌面人工明确归e3。全量、兼容、源/产物和需求证据审计通过后精确提交同步，clean才开始e3；本段不冒称人工已完成或整P5已发布。
+
+### e2 首轮Release资源门禁与诊断边界
+
+五原目录默认全目标构建均exit0，真实新清单三共享各1481/P5 765、静态1002/P5 491、GCC459/P5 198；独立登记/构建审计通过。939源码冻结，原固定输出/LastTest23件已保存。最终对象初次record为189实际ASan对象/372仓库依赖，含六生产目录92对象及真实产品/宿主消费者，原批准12Native/各7依赖/72正常文件保持；这不是runtime全量完成。
+
+首轮Release完整1481项真实exit8、1480项Passed，唯一workspace_endurance_native失败；原13件记录保存于build/p5-m5e2-release-failure-original/provenance.json，未覆盖为成功。前25轮handles恒279，第26轮Reporter B/phase1/原Op81实际295，GDI20/USER21及QObject形状、catalog/深ledger/队列都等于原基线；该轮原业务Applied/value40，但没有通过完整资源门禁。程序实际字节与此前三次e1成功相同，未改源或预算。其它四配置runtime尚未开始。
+
+历史去重成功证据中三次initial至108轮恒295，更早一次initial/round1为279、warmup round2起295且保持；不能因此将295当新允许值。现有记录只有总数与相对请求窗口，没有内核对象类型/身份、线程库存和采样绝对时点，尚不能判为延迟初始化或泄漏。只读源码核对表明Workspace此处用同步writer，QtScheduler仅postEvent；未启用Ela Dxgi/Mica，不能把未调用路径当原因。
+
+先使用同一未改exe/原argv和新的独立prefix，由外部观察进程取得目标PID的句柄总数、系统句柄类型/值/可用对象地址、线程及模块，并按原JSONL flush的round/phase关联单调观测区间。不得向目标注入代码、attach debugger，或在运行期间duplicate/query-name/read/hash目标动态Native文件/Section，避免观察者妨碍原share0物理检查；模块摘要在启动前或目标退出后取。线程创建时间取真实OS值，普通Event/File只记first-seen区间，未知名称/来源明确未知，不虚构精确内部时间。诊断运行不冒称资格修复，待证实拥有者/生命周期后再记录必要修正；不盲目重跑到通过、不抬阈值、不改名单，也不先堆生产分支。
+
+第一次外部诊断使用原exe/清单三参数，仅改新prefix，实际PID14996；观察器完成且无自身错误，目标原门禁仍失败。该进程预热第7轮已275→291，第9轮phase0用旧275基线拒绝291；相邻完整系统表净增仅Event16，另File增3/减3。Event全部type21/access0x1f0003，object地址被系统置零；句柄0x5b0可见File→Event复用，不把数值当永久对象身份。原JSONL flush偏移逐项匹配；最后线程空/模块299在进程退出竞态内，不能倒推创建者或无短命线程。源/程序/Native字节保持；独立小报告build/p5-m5e2-endurance-observed-1-independent-audit.json。GCC另已完整459/459、exit0，同939输入/53实际主程序及wrapper叶exe保持；它不证明Windows门禁完成。
+
+下一步仍限私有诊断：先在独立临时Python进程自校验Windows进程HandleTracing开关/查询，以已知CreateEvent/CloseHandle见证真实open/close用户栈；再用自行创建的轻量挂起子进程验证parent对该进程的设置/查询与恢复执行，保存实际NTSTATUS/结构长度/权限和原始记录。仅对本次自建诊断进程启用，不改系统/注册表、不安装调试驱动、不注入或改被测源；若不支持/无权限如实记录。不把准备自检当D1运行。验证成功后才另行记录并由root协调对新建D1诊断子进程在初始执行前启用，捕获Event创建栈，目标退出后再符号/模块关联；该模式对运行时有扰动，仍不能算资格或调整原限值。
+
+HandleTracing自检实际能取得OPEN/CLOSE及准确PID/TID，但own/挂起轻量child的16个栈槽均为0，Flags0/1同样；已禁用并正常退出，记录build/p5-m5e2-handletrace-api-3及flags1原件。不将API成功称为栈成功，不为已知空栈再跑D1，不改权限/系统设置来绕过；仍未定位原创建者。
+
+另一具体候选经官方Qt5.15.2源码和当前同SHA Qt5Core.dll反汇编核实：QMutex首次非零timeout争用的慢路径，使用全局QFreeList首块16项；Windows构造每项创建一个Event，归还只回池，进程级池析构才关闭。timeout0在分配前返回。它与Event16相容，但还不是原D1归因。先以独立Core-only小程序三组fresh child对照stdthread-control、held QMutex.tryLock(0)、held QMutex.tryLock(1)；仅public QMutex/atomic握手，不使用GUI/QThreadPool或人为sleep，worker在相同存活阶段采样，后续unlock/析构/第二次争用/join分别核计数及Event类型。不会改正常产物或安装SDK。
+
+如需把候选与真实D1关联，私有外部诊断可在精确固定Qt5Core.dll SHA及PE/结构自校验后，用只读进程访问观察其已核实的Qt私有freelist存储：对比首块未分配→已分配，以及16项内Event HANDLE是否恰为本次系统表新增的16值。只读可读/已提交的Qt模块数据与其池用户态内存，不读写目标代码/Native DLL文件，不改目标状态、不注入；失效/竞态/不可读必须标未知。固定RVA/布局仅存在ignored诊断，不进入SDK/生产代码/长期验收算法。先验证独立对照与布局，再由root一次协调新D1诊断；未证实前仍不改原prepare/阈值或宣布修复。
+
+Core-only三fresh child对照实际完成，control/try0 Event增量0且池未分配，try1增量16恰等双读池16值，unlock/析构/新Mutex第二次争用/join均保持，第二次新增0；独立逐phase/线程创建时间/原记录复核通过。实际D1池观测PID13600完成108轮，但分配发生在startup，邻OS表新增23项Event（池16及另7项），不足以满足原late exact16判据。随后减少startup全局枚举的单次诊断PID15220仍在第22轮失败；最后成功池读取2.062–2.156秒为0，失败/退出表2.187–2.250秒不可读，增长后缺测，既非支持也非反证。两次均只诊断，不算修复/最终通过，原件保持。
+
+为缩小缺测窗，下一诊断先在外部独立低成本采样线程按约1ms读取缓存Qt基址的池字段，不等重型全局表/线程/模块枚举。必要时仅对本次自行启动的D1、在initialized后已见池0→完整发布时，短暂暂停该诊断进程的执行，取得稳定系统表与池值后无条件恢复；先用自行创建的轻量子进程自检实际权限/状态码及恢复。它改变执行时序而非目标代码，因此明确属于有扰动的诊断，不能冒充资格；不得触及用户其他进程、注入、改代码或文件，固定上界和finally恢复/自建child异常回收必须先实现。没有有效冷表/完整发布/稳定快照就标unknown，不为了结果重复或调预算。长期实现和原门禁仍不作任何调整。
+
+快速单次诊断PID7380在初始化前已发布Qt池，没有合格冷表，暂停次数0；原108通过仍仅诊断，不能归因或修复。继续增加采样器不能保证赶在退出前读取，故不再堆观察变体。改用一个明确不同于正常测试的隔离诊断构建：复制原round源码到ignored目录，只在原8轮baseline冻结后增加冷态握手，以及在原资源比较表达式已判失败、原throw/失败日志/Scene析构之前增加握手。原源码、样本、8+100、比较/物理/业务判断全部保持，两个门只通过既有stdin/stdout做Win32字节通信，不创建目标同步对象；在存活的相同Scene/Qt上下文读取池和系统表，然后放行继续原失败。GUI等待会改变时序，记录为诊断而非资格；只将因故障出口太短而丢失的观测保留至parent确认，不改生产接口或为普通运行开放开关。
+
+隔离构建沿原实际compile/link命令只替换复制源、对应单对象和新输出路径，全部.obj/.pdb/.exe/.manifest等写入新的ignored目录，原构建/批准DLL/SDK不重建不覆盖。正常程序在诊断前后按SHA核保持。父进程在冷门/失败门逐次读取原baseline及当时Qt池/系统Event集合，目标EOF/超时按失败清理；控制脚本不等到成功、不把诊断通过作为原测试通过。先静审精确源差异和输出隔离再编译运行，仍没有任何长期门禁修正。
+
+### e2 框架准备契约修正方案（实施前）
+
+限定的两次隔离gated诊断已完成，输出另存endurance-gated-2/3；cold门均已分配Qt池，无资源失败门，归因false。至此停止观察变体与诊断重跑，不把任何diagnostic108成功计作资格。旧首轮及后续失败中具体16个Event的ownership仍未知；已独立证明的是Qt全局QMutex慢路径缓存延迟分配机制和现有D1 prepare未显式准备此框架状态。
+
+修正只属于tests/qt/workspace_endurance_windows.cpp的私有prepare职责：主线程持有一个public QMutex，临时std::thread对同锁执行一次正timeout tryLock并返回false，主线程保持锁直到join完成；释放并析构所有临时锁/线程后，才沿原流程采initial与四phase基线。真实调用完成由join/结果验证，不用sleep、增加预热轮、私有Qt布局或常数16，不向collector/Workspace/SDK引入初始化副作用。不改8+100、任何比较式/容差、物理卸载/业务/保存判断。
+
+这个方案修正独立证实的准备顺序缺口，不宣称旧失败已定位。实际绝对基线将包含合法进程级Qt缓存；相对比较和零增长容差保持。之后额外持久净增长仍被原门禁拒绝；池内槽复用、净增净减相互抵消原本就超出总量采样的覆盖，不将其夸大为全部泄漏证明。Qt池归Qt进程生命周期，不由Native关闭，生产资源所有权保持。
+
+修正后冻结新源码，三共享目录重建并分别完整串行执行1481项；保留首轮失败。静态/GCC既有全量按实际不消费该Windows专用源的边界复核。公开资格工具重新取原27项证据，若批准Native/工具链/依赖字节改变先重新评估，不能自动批准新SHA；最终产物、ASan实际对象/依赖、旧SDK真实探针与需求映射再独立审查。
+
+
+## e2 最终矩阵与资格证据
+
+准备修正后的939项源码冻结只比首轮改变Windows测试CPP和私有头注释两项；原五目录默认全目标配置/构建全部exit0。各配置重新完整执行，名称/原始Passed/LastTest及真实主程序、wrapper叶程序前后SHA逐项对应，不使用历史专项拼数：
+
+| 原目录 | 本轮完整通过 | P5成员 | 主程序及显式wrapper叶exe |
+|---|---:|---:|---:|
+| ela-msvc-release | 1481/1481 | 765 | 111 |
+| ela-msvc-debug | 1481/1481 | 765 | 111 |
+| p3-q3-asan | 1481/1481 | 765 | 111 |
+| qt-msvc-release | 1002/1002 | 491 | 71 |
+| core-gcc-debug | 459/459 | 198 | 53 |
+
+三共享分别实际完成D1一进程8+100原Applied/108唯一Operation/111代次/最终163、隐藏真实HWND与四相位原资源判据；两个seed及三个proof从各自原stdout路径核child/保存文件回放/InvalidTrace/真实故障删除最小。21项FR-10/H01/H02/S09等具体原断言映射覆盖M1–M5，静态/GCC只取其实际存在的成员。源/清单/运行及独立深审见build/p5-m5e2-final/，其中independent-runtime-audit-final.json；18份本轮D1/D2固定原输出在公开重取之前另存fixed-runtime-evidence，proof独立run目录保持。首轮13件失败原件继续保留，旧16对象ownership未知。
+
+全量前record、后check的实际ASan范围为189对象/372仓库依赖/75目标及链接拥有者，六生产目录92对象。Normal36条DLL/manifest配对共72文件、12项Qt metadata/moc、SDK64头、旧SDK八件及provenance均保持；外部预编译Qt不声称插桩。实际另跑保存的SDK0.1.5 current-host+old-plugin、old-host+old-plugin两个normal，PID16820/13352各exit0；同PID Toolhelp同时见证当前Release Core/Ui和原旧Notebook完整路径/SHA。范围仅MSVC19.44.35222.0/x64/MD Release这两件实物场景，不泛化C++ ABI或桌面人工。原证据build/p5-m5e2-sdk015-runtime/verified.json，两独立审查分别为build/p5-m5e2-sdk015-runtime-independent-audit.json与build/p5-m5e2-sdk015-runtime-command-independent-audit.json；同名输出冲突已按原SHA恢复并分开保存，原probe/log不变，另存collision note。
+
+公开工具在新build/p5-m5e2-final-public-capture实际重新资格，三共享各27/27、qualify及export均exit0，当前capture SHA为cf069ad38a71d30308697d13e5caf792ebee2cf0220dc04feac63f4c1b013198。候选build/p5-m5e2-final-business-candidate.json SHA3e4b5af09fd3b8bca1dd75332166196bf65db0b3737e601d60f9eb6361012cbc，三个完整profile与现受审6c源严格相等；仅证据provenance更新。批准源不重复采用，原产品/名单消费者不重建，避免为刷新证据反复改变已测产物。
+
+后置build/p5-m5e2-post-capture-objects.py实际record及saved比较均exit0：189对象/372依赖/75目标的命令、实际编译/链接记录、源/对象/库/程序SHA及mtime全部等，整个artifacts报告相同。只有query_inputs内.ninja_log变化，旧122272字节是新122478字节的精确SHA前缀；206追加字节仅两条cmake.verify_globs，同命令hash。它对应公开工具的真实元图刷新，不称whole Ninja日志未变。其余五项query输入保持，比较见build/p5-m5e2-post-capture-comparison.json。
+
+独立资格审计首轮exit1是旧LF专项记录的历史scope假设：当时四输入中catalog仍为采用前3cf，而现在为已审计采用6c，另tool/tests/CMake三项保持；不是当前资格或产物失败。保留6df原审计器和首轮失败记录，按原历史before==after、日志/归档及e1采用链核历史；当前6c、939源、607归档、完整profile和真实27项判据不放宽。修正后的最终独立审计与收口另在下段记录。
+
+
+### e2 收口结论
+
+独立审计v2实际exit0，原报告build/p5-m5e2-final-public-capture-audit-final-v2.json，执行原日志及返回码另存build/p5-m5e2-final-public-audit-v2.log及build/p5-m5e2-final-public-audit-v2-run.json。逐607归档和939源码、真实27项原stdout、每份D1/seed/proof子进程、LF入口与原Ninja新鲜度链、实际export参数/退出/摘要及完整三个profile相等均核通过。旧6df审计器/失败记录原样保留；新v2仅把历史LF专项的catalog采用前后按原归档核验，当前合同没有放宽。该27项资格是全量之外的独立来源，不累加到1481。
+
+结构/所有权及M1–M5关键链复审未发现本段剩余阻断：新代码仅在原Windows/Qt私有prepare准备真实框架状态，collector不产生副作用，原事务、唯一目录/ledger、发布/恢复、卸载和关闭拥有链不扩张；保留资格入口及resident Pipeline有真实消费者，被替代的产品资格默认路径已删除。公开SDK/C ABI和批准策略不变，不引入第二注册表、旁路事务或新生产抽象。审计范围为实际关键路径及上述完整矩阵，不宣称穷举全仓死代码或检测所有泄漏。
+
+本段只提交最小测试修正与设计/验证/审查文档，资格工具、批准源、产品和业务DLL均保持。e2完成代码/格式/证据审查后精确提交同步；清洁且HEAD与origin一致后才进入e3最终Release产品桌面升级/应用保存/正常退出、正式证据索引及整P5收口。e3人工尚未取得，M5/P5不标完成。

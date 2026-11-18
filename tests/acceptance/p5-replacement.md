@@ -510,3 +510,57 @@ ctest --test-dir build/ela-msvc-release -R '^p5\.platform_product_' --output-on-
 ```
 
 三共享配置本轮所选相关71/71包括上述6项及原故障/视图/d1/d2，原stdout、输入/消费者SHA及独立审计见[M5-e工作单](../../docs/p5-m5e-development.md#e1-产品接线验证初始受审源)。产品roundtrip的原helper会保存，应用与保存顺序以d1原事实及新增桌面人工核，不冒称该case覆盖。最终公开资格在新目录各27/27，实际导出和独立审核通过后采用原字节候选；三个原构建目录配置/消费者构建通过，实际生成源/对象/程序及插件字节保持，见[e1收口](../../docs/p5-m5e-development.md#e1-公开资格名单采用与收口)。本段随审计提交同步；这份专项通过不替代e2五配置全量、e3新Release产品人工验收或整个P5完成。
+
+## M5-e2 最终五配置全量与需求映射
+
+本轮在原五目录重新配置并默认构建全部目标，再逐配置串行执行完整CTest清单；没有选取专项或拼接历史通过数。源快照为939项，相比首轮仅测试私有的 `workspace_endurance_windows.cpp` 和 `workspace_endurance_p.hpp` 两项变化。原始构建/清单/运行/LastTest及111、71、53个真实主程序与显式wrapper叶程序的前后SHA均保存在 `build/p5-m5e2-final/`；独立逐实际名称/原断言/原stdout证据审查见该目录 `independent-runtime-audit-final.json`。后续公开资格另记，不累加到本表。
+
+| 原构建目录 | 本轮完整通过/登记 | 其中P5 | 实际范围 |
+|---|---:|---:|---|
+| build/ela-msvc-release | 1481/1481，exit0 | 765 | Release、MD、共享Core/Qt/Ela |
+| build/ela-msvc-debug | 1481/1481，exit0 | 765 | Debug、MDd、匹配Debug插件、共享Core/Qt/Ela |
+| build/p3-q3-asan | 1481/1481，exit0 | 765 | RelWithDebInfo、MD、实际/O1及/fsanitize=address、共享Core/Qt/Ela |
+| build/qt-msvc-release | 1002/1002，exit0 | 491 | 静态Core、Qt开启、Ela与示例关闭 |
+| build/core-gcc-debug | 459/459，exit0 | 198 | GCC Debug、静态Core、无Qt |
+
+静态及GCC本轮也分别完整新运行，不沿用先前全量。三共享各包含真实windows QPA的D1、两seed、三个proof及六项产品检查；静态/无Qt不声称执行这些工作台入口。依赖评估的三个Core用例仍在静态/GCC各自真实清单中。
+
+首轮Release的1480/1481、exit8及唯一D1句柄失败保留于 `build/p5-m5e2-release-failure-original/`，13件原摘要保持。Qt全局QMutex首次正timeout争用会准备进程级Event缓存的机制已由独立对照证明；旧失败中具体16个Event的ownership仍未知。修正只在D1私有prepare中由主线程持有public QMutex，让临时worker真实tryLock(1)返回false并join，临时锁/线程释放后才沿原流程采initial和四相位基线。8+100、代次预算、collector、比较式、零新增容差、业务/保存及物理判据未改；不将诊断108成功或本轮通过倒推为旧失败对象已归因，不泛化为检测全部净增净减相抵的泄漏。
+
+下表覆盖原说明书§12/18/19、FR-10及指南§10.2/12.2的21项映射。完整名称均是三共享本轮各自原始Passed集合中的实际用例；静态/GCC只适用自身清单实际存在的成员，不能将整行强加到不支持的平台。逐用例配置成员、源码SHA和具体原断言定位保存在上述独立审计的 `concrete_requirements`；这里的重复引用不作为新增测试数。
+
+| 需求/阶段 | 本轮实际用例完整名称 | 核实的原断言与边界 |
+|---|---|---|
+| 说明书§12.1–2：候选并存、身份与前驱（M1） | `p5.native_candidate_coexist`、`p5.qt_candidate_coexist`、`p5.native_candidate_guards`、`p5.qt_candidate_guards`、`p5.native_candidate_identity`、`p5.qt_candidate_identity`、`p5.native_candidate_budget` | 两后端当前/候选共用目录，身份/前驱拒绝不改变Current；候选不是已完成运行替换，64代次预算保留。 |
+| 说明书§12.1：hash目录与来源保护（M2a） | `p5.install_basic`、`p5.install_identity`、`p5.install_tamper`、`p5.install_rollback_replaced`、`p5.install_native_stage`、`p5.install_qt_stage` | 独立复制/安装凭据，真实创建身份与篡改拒绝；替身不覆盖、不删除外来文件；安装后才接原stage。 |
+| 说明书§12首段及步骤3：唯一操作锁、冻结与消费者先停（M2b/M2c1–3） | `p5.closure_chain`、`p5.scope_ordered`、`p5.scope_inflight`、`p5.scope_configuration_cas`、`p5.scope_cleanup_failure`、`p5.native_reservation_admission`、`p5.qt_reservation_admission` | 实际依赖闭包排序；在途调用/cleanup未终结时提供者不越屏障；配置CAS前拒绝冲突，模块同代/候选准入共锁。 |
+| 说明书§12 staging闭包外不可见及旧键清理（M2b） | `p5.publication_closure`、`p5.publication_failure`、`p5.publication_live_key`、`p5.publication_abort_cleanup`、`p5.publication_abort_failure` | 组内准备和组外公开分开；消费者失败不提交、旧键仍存活不接管；abort加入真实清理并保留失败。 |
+| 说明书§12步骤4–6：冻结定义与共同提交/恢复（M2c4–5） | `p5.definition_replacement_immutable`、`p5.native_operation`、`p5.qt_operation`、`p5.native_operation_sessions_prepare_failure`、`p5.qt_operation_sessions_prepare_cancel`、`p5.native_operation_recovery_mapping`、`p5.qt_operation_recovery_mapping` | 真实Operation/两后端/多Session的运行、定义、目标和模块角色共同提交；准备失败/取消恢复旧配置，映射不包含已销毁候选。 |
+| 说明书§12末段：版本化独立拥有纯数据、先校验（M3） | `p5.state_schemas`、`p5.state_inputs`、`p5.state_wire_tables`、`p5.state_wire_payloads`、`p5.state_wire_faults`、`p5.state_admission_format` | schema/协议/JSON/UTF-8与值所有权校验；拒绝非法输入，不传旧Context、QObject或服务能力。 |
+| FR-10：独立实例状态迁移及原值恢复（M3） | `p5.state_operation_native_roundtrip`、`p5.state_operation_qt_roundtrip`、`p5.state_operation_native_restore_reject`、`p5.state_operation_qt_restore_reject`、`p5.state_operation_native_start_failure`、`p5.state_operation_qt_activate_fail` | 两个同PluginId实例分别保存11与大于2^53的整数；schema2→3转换先于start/activate；失败用原schema2/独立原值重建。 |
+| 版本化状态总预算、成员所有权与首次epoch（M3） | `p5.state_budget_shared`、`p5.state_budget_conversion`、`p5.state_admission_omitted`、`p5.state_admission_wrong_parent`、`p5.state_admission_cold_epoch`、`p5.native_operation_state_tree_budget_boundary`、`p5.qt_operation_state_tree_budget_full`、`p5.native_operation_state_tree_budget_over` | 单份/共享预算、15份原值与转换边界、超限停止前拒绝；成员遗漏/错误父与过期首次epoch不能绕过。 |
+| FR-10/S09：真实子树、消费者及恢复失败（M3） | `p5.native_operation_state_tree_roundtrip`、`p5.qt_operation_state_tree_delete_recovery`、`p5.native_operation_state_tree_recovery_consumer`、`p5.qt_operation_state_tree_recovery_consumer`、`p5.state_operation_native_recovery_restore`、`p5.state_operation_qt_recovery_activate` | 配置/动态成员分别迁移，删除/新增和回滚来源可追踪；旧提供者就绪不替消费者恢复成功，RecoveryFailed无成功映射且保留资源/预约。 |
+| 状态回调在途取消/关闭屏障与来源故障（M3） | `p5.state_operation_native_cancel_capture`、`p5.state_operation_qt_close_restore`、`p5.native_operation_session_close_state_capture`、`p5.qt_operation_session_close_state_restore`、`p5.native_operation_state_tree_source_recovery`、`p5.qt_operation_state_tree_source_recovery` | 关闭仍等待原capture/restore拥有链；候选/恢复所借真实来源分别复核；协议故障保留诊断，不清PIN。 |
+| FR-08/指南§10.2：默认驻留、精确批准、首次策略（M4a） | `p5.load_policy_approved`、`p5.load_policy_unauthorized`、`p5.load_policy_wrong_hash`、`p5.load_policy_immutable_resident`、`p5.load_policy_alias_approved`、`p5.load_policy_legacy_reject` | manifest只是请求；重验moduleId/SHA后选择初次ApprovedNative；旧resident/PIN不升级；发现1.0与1.1协商边界独立。 |
+| 指南§10.2六项可执行引用/资源门禁（M4b） | `p5.unload_call`、`p5.unload_worker`、`p5.unload_qobject`、`p5.unload_capture`、`p5.unload_stale_capture`、`p5.unload_cleanup_failure`、`p5.unload_reader`、`p5.unload_lineage_reservation`、`p5.unload_last_lease` | 实际会话/任务/Call/worker/QObject/捕获/reader和预约释放前拒绝；epoch失效不等于捕获析构已结束，跨线程最后租约不自动卸载。 |
+| 物理卸载专项：直接系统证据（M4b） | `p5.unload_physical`、`p5.unload_file`、`p5.unload_reload`、`p5.unload_external`、`p5.unload_release_retry` | 动态detach、完整MEM_IMAGE allocation离开、文件独占写入/改名/删除联合证明；重新装载取得新ID，外部引用/系统释放失败保留准确拥有者。 |
+| FR-10与物理失败分离、恢复期间保留及Qt边界（M4c） | `p5.unload_replacement_applied`、`p5.unload_replacement_recovery_failure`、`p5.unload_replacement_restore_pending`、`p5.unload_configured_definitions`、`p5.unload_configured_unload_failure`、`p5.state_operation_qt_roundtrip` | Applied/Current/配置保存不被后续unloadFailure回滚；旧定义/Runtime仍能阻碍回收，恢复失败保留Execution；Qt Retired仍resident。 |
+| 说明书§12 staging隔离落到真实页面/命令/输出（M5a） | `p5.ui_publication_pages_held`、`p5.ui_publication_pages_scope_recover`、`p5.ui_publication_commands_held`、`p5.ui_publication_ela_compact`、`p5.ui_publication_values_order`、`p5.ui_publication_values_abort_failure`、`p5.ui_publication_values_close` | 完整准备贡献后才呈现；Held入口/缓存建议/命令不能越权；候选值有界，abort不公开，提交/关闭历史与镜像顺序正确。 |
+| H01/FR-10：真实缺符号、激活失败与旧代恢复（M5b/c） | `p5.upgrade_fault_missing_query`、`p5.upgrade_fault_missing_business`、`p5.upgrade_fault_notebook_restore`、`p5.platform_upgrade_notebook_restore` | 实际到module.query/module.abi.query而非未批准提前拒绝；尚无Operation时不伪造恢复报告；Notebook激活失败后新身份恢复旧草稿/贡献。 |
+| S09：提供者Active+Held仍不得单独成功（M5c） | `p5.upgrade_fault_s09_restored`、`p5.upgrade_fault_s09_recovery_failed`、`p5.upgrade_fault_stop_counter`、`p5.upgrade_fault_stop_notebook` | 真实观察Counter候选Active且Held未发布，再令Reporter失败；分别Restored与Failed/RecoveryFailed，停止失败不混同恢复失败。 |
+| H02/说明书§18：同进程100次、分类账/对象/句柄（M5d1） | `p5.workspace_endurance_native`、`p5.dependency_evaluation_accounting`、`p5.dependency_evaluation_unrelated_keys`、`p5.dependency_evaluation_release_cycle` | 仅三共享Qt/Ela配置各在同一真实Windows进程8预热+100正式Applied、108唯一操作/111代次/最终163；初始采样前主线程持有public QMutex，worker正timeout返回false并join，临时锁/线程析构后才采样；四相位冻结资源基线、零新增容差和原物理/保存/Notebook判断保持。修正独立准备缺口，不声称旧失败+16对象归因；静态/无Qt配置不执行此入口。记录真实重算与保守时间边界。 |
+| 指南§12.2/说明书§18：seed组合、保存回放/缩减（M5d2） | `p5.workspace_stress_seed_1`、`p5.workspace_stress_seed_18446744073709551615`、`p5.workspace_stress_replay_proof`、`p5.workspace_stress_invalid_proof`、`p5.workspace_stress_reduce_proof` | 有限真实动作文件执行；6独立child/4次原文件回放、20种InvalidTrace、10候选将真实65537故障7→2并两单删和65536正控通过；仅删除最小。 |
+| 最终精确名单进入产品及保存后新进程重开（M5e1） | `p5.platform_product_catalog`、`p5.platform_product_roundtrip`、`p5.platform_product_empty`、`p5.platform_product_wrong_hash`、`p5.platform_product_changed_candidate`、`p5.platform_product_restart` | 本profile仅4Native；新字节在合法preflight后仍ModulePinned，原目标/运行保持；另一个OS进程按相同locator重开，运行状态不声称跨重启持久化。 |
+| 说明书§18发布门禁：ABI布局及准确兼容范围（M1–M5/发布边界） | `p4.query_layout`、`p4.business_layout`、`p4.qt_preflight_legacy_migration_sdk`、`p4.qt_preflight_legacy_unload_sdk`、`p4.qt_preflight_legacy_finalization_sdk` | C/C++布局共同断言及旧SDK声明映射前拒绝；保存的SDK0.1.5两个normal实物进程另有本轮实际Toolhelp证据，兼容范围限下段，不由这些布局用例代替。 |
+
+三共享D1各自一进程8预热+100正式原Applied、108互异OperationId、111代次、最终Counter163；每份219行事件、隐藏真实HWND、深分类账/来源及四相位资源上界保持。每seed各34动作/70事件；三个proof按本次copied LastTest的原stdout目录核6个独立child/4次保存文件回放、20类exit21拒绝，以及真实65537故障7→2、10候选、两次单删和65536正控。产品restart原父/子PID分别为Release3536→6112、Debug9032→15768、ASan18520→18952；同yaml/store重开不等于运行状态跨进程持久化。三配置D1/D2固定输出共18件在公开重取前保存至 `build/p5-m5e2-final/fixed-runtime-evidence/`，`provenance.json`绑定原路径、存路径及SHA；proof原run目录另保持。新公开capture覆盖固定prefix时，应按此归档读取本轮全量事实。
+
+最终ASan实物记录为189对象、372仓库实际编译依赖、75目标/链接拥有者，其中六生产目录92对象；只重建了D1私有头的四个真实消费者对象。原36条DLL/manifest配对记录共72文件、12条Qt metadata/moc记录、64个SDK头、Core/Qt/Ui/Ela及三profile各四条Native精确批准保持，名单仍为6c0c5324…，未批准Qt或故障产物。完整对象/依赖/实际编译链接记录见 `build/p5-m5e2-final-asan-objects.json` 与 `build/p5-m5e2-final-artifacts.json`；record后的check另核通过，外部预编译Qt不声称ASan插桩。公开capture可真实刷新Ninja元图和日志；其后不得声称whole build.ninja/.ninja_log字节不变，后置对象/依赖/实际编译链接及产物比较由工作单另接证据。
+
+SDK0.1.5八件旧实物及provenance保持；本轮另外真实执行current-host+old-plugin与old-host+old-plugin两个normal，实际PID16820/13352、exit0。原日志及Toolhelp在进程存活期间见证当前Release Core/Ui完整路径及SHA、保存的旧Notebook插件，见 `build/p5-m5e2-sdk015-runtime/verified.json` 和独立审计 `build/p5-m5e2-sdk015-runtime-independent-audit.json`。范围仅这些MSVC19.44.35222.0/x64/MD Release实物；offscreen用于该兼容探针，不冒充D1原生资格、跨工具链ABI或新增桌面人工。
+
+本轮公开资格在独立 `build/p5-m5e2-final-public-capture/` 真实完成三共享配置各27/27、exit0，公开export另真实exit0；607归档、939当前源输入、精确21字节LF入口及原stdout/deep D1/D2链核对通过。导出的新候选仅归档，其三profile完整内容等于现受审6c名单，没有重新批准或采用新字节。初次取证审计错误地将采用前3cf档案的历史四输入冻结要求为当前6c，原exit1保留；v2只补历史冻结/采用归档链，工具/测试/CMake三项当前保持，未重跑资格或放宽本轮607/939/27判据。实际记录见 `build/p5-m5e2-final-current-export.json` 及 `build/p5-m5e2-final-public-capture-audit-final-v2.json`。
+
+后置独立record与保存报告比较均exit0：189对象、372依赖、75目标/链接拥有者的字节、mtime、真实编译链接记录及artifacts整报告保持。ASan对象报告的query_inputs唯一差异为.ninja_log追加206字节、两条cmake.verify_globs记录；原日志SHA恰等于新日志此前缀，不将其称为whole Ninja元数据未变。严格比较及本轮独立复核见 `build/p5-m5e2-post-capture-comparison.json`、`build/p5-closeout-agent-public-postscope-review-1.json`，原五配置全量与18份固定输出归档不改写。
+
+本节e2全矩阵、需求映射、实际兼容、公开重取及后置产物核对已通过，仍须按工作单审计提交同步、clean后才进入e3。e3新增Release产品桌面升级/应用与显式保存区别/退出人工回执、整P5代码与架构审计及最终发布仍pending，既有P3/UI人工不替代它。旧e1的71项和各轮27项各保留原输入与范围，不与本轮全量拼接，旧失败16个Event的ownership仍未知，M5及整个P5尚未完成。

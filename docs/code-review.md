@@ -1,5 +1,17 @@
 # 提交前代码审查记录
 
+## P5-M5-e2 最终矩阵与框架准备契约审查（通过，2026-11-19）
+
+首轮Release完整1480/1481，D1第26轮句柄279→295失败，13件原记录及有限诊断保持。已独立证明Qt进程级QMutex慢路径Event缓存机制；具体旧16对象归属仍未知。按实施前方案只修Windows测试prepare：主线程QMutexLocker持锁，临时worker真实tryLock(1)，join后销毁临时资源再采样。worker异常捕获后由主线程重抛，成功创建至join之间不插入可抛检查，join建立结果同步；无sleep、额外预热轮、私有布局、数字减计或容差变化。原collector及8+100、业务、显式保存、物理卸载判断保持。
+
+939项输入冻结只改变上述CPP/私有头。五原目录重新默认全构建并完整串行运行：Release/Debug/ASan各1481/1481，静态Core1002/1002，无Qt GCC459/459，真实清单/Passed/LastTest与111/71/53主及wrapper叶程序前后SHA逐项核。三共享各D1原108事务/111代次/163、两seed及proof真实child/回放/InvalidTrace/缩减和product restart通过；21项要求映射见[验收](../tests/acceptance/p5-replacement.md#m5-e2-最终五配置全量与需求映射)。固定18原输出在重取前归档，不拼历史专项。
+
+最终189实际ASan对象/372实际仓库依赖/75目标及拥有者，含生产92对象，record/check通过。36配对72文件、Qt metadata、Core/Qt/Ui/Ela、SDK64及旧八件/provenance保持；两项原旧SDK0.1.5实物normal真实exit0，同PID Toolhelp见证当前Core/Ui与旧插件，仅限相同MSVC19.44/x64/MD Release场景，不泛化C++ ABI或预编译Qt插桩。
+
+公开工具新目录三配置各27/27、真实export exit0；607归档/939源/原stdout与深D1/D2、实际新鲜度和完整三个profile等现6c源由独立审计核通过，候选不重新采用。历史LF审计的旧catalog相等假设曾exit1，保留原件并按e1采用前后归档链核历史，当前源/名单判据保持。后置对象/依赖/真实编译链接记录和整个artifacts报告全等；Ninja仅多206字节的两条cmake.verify_globs，旧log是精确SHA前缀，元数据真实刷新不冒称whole Ninja未变。
+
+关键架构复审涵盖M1–M5目录/预约、原ReplacementOperation、版本值与恢复、发布/物理卸载/关闭拥有链。生产无新增分支、第二状态/注册表或反向依赖；旧资格入口和resident Pipeline有真实消费者，已替代的产品资格默认路径无残留。新代码留在测试准备职责，公开SDK/ABI不变。代码格式、差异及证据审查无本次提交阻断；详见[e2收口](p5-m5e-development.md#e2-收口结论)。精确提交同步且clean后才进e3；新增Release桌面人工和整P5收口仍待完成。
+
 ## P5-M5-e1 产品精确名单与公开资格审查（通过，2026-11-19）
 
 按ADR-0056及实施前记录，SourceMode只选择原Workspace装配路径，Platform纯值名单move进唯一approvals_；产品main删除资格默认路径，原openQualification保留真实Scene/故障消费者。旧内部资格专名已替换，无另一政策/目录/ledger或SDK变化。受审数据按本构建仅生成四Native批准，生成CPP只由产品demo与producttest编译，业务DLL无反向依赖；Qt及原resident Pipeline不扩准。

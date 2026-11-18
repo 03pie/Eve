@@ -18,7 +18,7 @@ struct DesktopSample {
     std::uint32_t handles = 0, gdi = 0, user = 0;
 };
 CatalogSample sampleCatalog(const Scene& scene);
-/** @brief 在首次show前一次完成原生窗口准备；不激活或显示桌面窗口。 */
+/** @brief 初始采样前完成 Qt 互斥锁争用和原生窗口准备；不激活或显示桌面窗口。 */
 void prepareDesktop(Scene& scene);
 DesktopSample sampleDesktop();
 } // namespace workspace_endurance_test
