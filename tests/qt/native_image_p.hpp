@@ -1,5 +1,5 @@
 /** @file native_image_p.hpp
- * @brief 两个真实替换入口共用 Windows 映像离开及文件独占判据。
+ * @brief 真实替换入口共用 Windows 映像离开及文件独占判据。
  */
 #pragma once
 #include "platform_workspace_p.hpp"

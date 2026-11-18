@@ -134,6 +134,23 @@ if(BUILD_TESTING)
         set_tests_properties(p5.platform_upgrade_${case} PROPERTIES LABELS "platform_upgrade;p5;module;qt;ui;replacement"
             TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endforeach()
+    if(WIN32)
+        add_executable(cordis_workspace_endurance_tests
+            "${PROJECT_SOURCE_DIR}/tests/qt/workspace_endurance_main.cpp"
+            "${PROJECT_SOURCE_DIR}/tests/qt/workspace_endurance_round.cpp"
+            "${PROJECT_SOURCE_DIR}/tests/qt/workspace_endurance_catalog.cpp"
+            "${PROJECT_SOURCE_DIR}/tests/qt/workspace_endurance_windows.cpp")
+        target_link_libraries(cordis_workspace_endurance_tests PRIVATE cordis_platform_upgrade_support user32)
+        set_target_properties(cordis_workspace_endurance_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+        cordis_target_defaults(cordis_workspace_endurance_tests)
+        add_dependencies(cordis_workspace_endurance_tests cordis_example_counter_a cordis_example_counter_b
+            cordis_example_reporter_a cordis_example_reporter_b cordis_example_notebook_a cordis_example_notebook_b)
+        add_test(NAME p5.workspace_endurance_native COMMAND cordis_workspace_endurance_tests
+            "${CMAKE_BINARY_DIR}/bin" "${CMAKE_BINARY_DIR}/p5-m5d1/endurance")
+        set_tests_properties(p5.workspace_endurance_native PROPERTIES
+            LABELS "p5;module;qt;ui;replacement;endurance;native_windows" TIMEOUT 900
+            ENVIRONMENT "QT_QPA_PLATFORM=windows")
+    endif()
     add_executable(cordis_modules_view_tests
         "${PROJECT_SOURCE_DIR}/tests/qt/modules_view.cpp"
         "${PROJECT_SOURCE_DIR}/tests/qt/modules_view_close.cpp")

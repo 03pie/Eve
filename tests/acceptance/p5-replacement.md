@@ -447,3 +447,27 @@ d0 最终五输入：共享 Release/Debug/ASan 各受影响专项584/584，静�
 对照证据区分预期负例与最终通过：原 a9f4230 Core 的9项对照为8通过、仅无关键预期失败，实际1→2；新12项直接回归分别记录三维无关键1→1且queued0。初次新增环用例的初始计数假设、UI观察阶段选择错误，以及构建封装参数错误均保留原件；不得隐藏或改写为产品已通过。最终矩阵及 Debug 不重叠组合覆盖按 [工作单](../../docs/p5-m5d-development.md)记录，不累加 probe、重跑或不同输入的重复名称。
 
 d0b最终11输入：Release/ASan各591/591为最终输入新专项；Debug旧558未变exe原通过+修正后UI33复验形成不重叠591覆盖，非新591运行；静态455/455、无Qt GCC417/417同为专项。9格式、32真实ASan对象/151依赖、旧公开接口及两个旧SDK实物通过；登记分配失败只静态审查，无setter/假友元。完成本段审查提交同步后进入d1；未以此完成H02同进程100次或d2随机/回放缩减。
+
+## M5-d1 原生同进程100次
+
+设计与拥有者见 [ADR-0054](../../docs/adr/0054-native-workspace-endurance.md)。在原共享Qt/Ela构建目录执行：
+
+```powershell
+ctest --test-dir build/ela-msvc-release -R '^p5\.workspace_endurance_native$' --output-on-failure
+```
+
+| 验收对象 | 必须满足 |
+|---|---|
+| 原生资格 | 真实windows QPA；有效本进程/线程HWND，OS不可见，不抢焦点/剪贴板；offscreen不计本资格 |
+| 连续性 | 唯一应用/Scene/平台/目录，8成功预热后100成功原Applied，固定四相位；原OpID有效且互异，不通过重启或扩大代次预算完成 |
+| 真实业务 | Counter升级净增1、Reporter升级净增2，最终163；原Notebook实例/epoch/runtime/widget/命令保持且逐轮编辑发布 |
+| 来源与提交 | 原Current/Retired、Runtime/Instance/Epoch/Binding、规范名及Module/Core/Driver/Session实际来源一致，claims/readers/临时调用与请求静止 |
+| 配置顺序 | 每轮应用后dirty且磁盘仍旧locator，再原显式save后磁盘新locator；不使用隐式保存helper |
+| 物理退役 | 每轮下一次映射前直接执行GetModuleHandleW离开、旧完整MEM_IMAGE范围离开、文件share0可写DELETE访问并关闭；字段old_image_absent_file_exclusive不表示文件已删除 |
+| 资源基线 | 最终预热按四相位冻结真实类别/标签/origins与可遍历QObject树形状，正式轮不放宽；合法callback、Qt root与纯卸载历史单独解释 |
+| 性能 | 真dependencyEvaluationCount、实测请求/保存/FIFO延迟及阶段样点；旧清理/不可用仅保守0..成功请求窗口，明确非内部精准计时或SLA |
+| 关闭 | 原finish确认静止，Current Native按原close/drain保持Resident，Qt loader root仍驻留；不清PIN、不强制全部卸载 |
+
+每配置报告位于该原构建目录 p5-m5d1/endurance.json/.jsonl，逐轮ID和uint64用字符串无损保存。只有每次最后一份完整8+100通过才算本配置资格；输出字段澄清前已通过的旧报告另存历史，不累计为更多轮次。此单用例资格不等于整配置全量、随机压力/缩减回放或新增桌面人工验收完成；最终矩阵/产物审计见 [d1工作单](../../docs/p5-m5d-development.md)。
+
+d1最终7输入/6格式，Release/Debug/ASan各完成上述完整单用例资格（每配置8+100、108唯一原操作、111代次、163）；每份219行事件及四相位固定资源基线已核。26实际ASan对象/134依赖、36原产物不变、SDK/metadata保持通过。d1代码审查、提交同步后才进入d2，不将旧重复运行、此H02成功资格或隐藏原生窗口当作d2/全量/桌面人工完成。
