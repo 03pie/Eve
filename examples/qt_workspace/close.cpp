@@ -41,7 +41,7 @@ Task<void> Workspace::close()
     closeState_.emplace();
     closeState_->closing = true;
     pin_ = shared_from_this();
-    flushBeforeClose();
+    closeAfterUpgrade();
     return stopped_.task();
 }
 void Workspace::retryableCloseFailure(ErrorInfo failure)

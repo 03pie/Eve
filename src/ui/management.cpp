@@ -4,6 +4,7 @@
 #include "appearance_p.hpp"
 #include "fixed_tabs_p.hpp"
 #include "management_p.hpp"
+#include "management_protection_p.hpp"
 #include "status_p.hpp"
 #include <ElaComboBox.h>
 #include <ElaDialog.h>
@@ -144,6 +145,21 @@ struct ManagementRecord {
     ManagementOperation data;
     std::atomic_bool blocked{false};
 };
+/** @brief 一次同步读取的值权限；不缓存当前代或延长 Kernel、工厂和 provider 寿命。 */
+struct ManagementAuthority {
+    KernelSnapshot core;
+    std::vector<BindingSnapshot> bindings;
+    std::set<RuntimeId> protectedRuntimes;
+    std::set<InstanceId> held;
+    std::optional<ConfigurationManagementSnapshot> configuration;
+    std::optional<ErrorInfo> configurationError;
+    bool manualOpen = false;
+    bool protects(RuntimeId id) const { return protectedRuntimes.count(id) != 0; }
+    bool allows(const InstanceSnapshot& instance) const
+    {
+        return manualOpen && !protects(instance.runtime) && !held.count(instance.instance);
+    }
+};
 /** @brief 后端弱持 Kernel；Qt 控件由外壳拥有，诊断服务和控制器只借用本控制块。 */
 struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
     std::shared_ptr<qt::QtScheduler> scheduler;
@@ -178,7 +194,7 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
     std::map<InstanceId, Instance> stopped;
     std::weak_ptr<IConfigurationManagement> configuration;
     bool configurationAttached = false, readingConfiguration = false;
-    std::set<RuntimeId> protectedRuntimes;
+    ProtectionPolicy protection;
     std::optional<ConfigurationManagementSnapshot> lastConfiguration;
     std::map<std::string, std::uint64_t> configurationBusy;
     QPointer<QWidget> configurationTab;
@@ -502,26 +518,93 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
                                                    : errorText(result.error()));
         });
     }
+    /** @brief 绑定前后都用真实当前身份与原 stopped 值核对在途手动请求。 */
+    Result<void> checkPendingProtection(const KernelSnapshot& core, const std::set<RuntimeId>& ids) const
+    {
+        for (const auto& record : operations) {
+            if (!record->data.pending || !record->data.configurationPath.empty())
+                continue;
+            const auto current = std::find_if(core.instances.begin(), core.instances.end(),
+                                              [&](const auto& row) { return row.instance == record->data.instance; });
+            if (current != core.instances.end() && ids.count(current->runtime))
+                return Result<void>::failure(
+                    makeError(ErrorCode::ConfigConflict, "manual request still pending for protected runtime"));
+            const auto old = stopped.find(record->data.instance);
+            if (old == stopped.end())
+                continue;
+            const auto snapshot = old->second.snapshot();
+            if (!snapshot.hasValue())
+                return Result<void>::failure(snapshot.error());
+            if (ids.count(snapshot.value().runtime))
+                return Result<void>::failure(
+                    makeError(ErrorCode::ConfigConflict, "manual request still pending for protected runtime"));
+        }
+        return Result<void>::success();
+    }
+    /** @brief provider 可重入，先完成外部读取，再固定本次 Core/图与逻辑保护集合。 */
+    Result<ManagementAuthority> readAuthority()
+    {
+        using Output = Result<ManagementAuthority>;
+        const auto checked = thread();
+        if (!checked.hasValue())
+            return Output::failure(checked.error());
+        std::optional<Result<ConfigurationManagementSnapshot>> source;
+        if (configurationAttached)
+            source.emplace(readConfiguration());
+        const auto target = kernel.lock();
+        if (!target)
+            return Output::failure(makeError(ErrorCode::ContextClosing, "management kernel unavailable"));
+        auto core = target->snapshot();
+        if (!core.hasValue())
+            return Output::failure(core.error());
+        const auto graph = target->services().dependencyGraph();
+        if (!graph.hasValue())
+            return Output::failure(graph.error());
+        auto resolved = protection.resolve(core.value());
+        if (!resolved.hasValue())
+            return Output::failure(resolved.error());
+        ManagementAuthority authority{std::move(core).value(), {}, std::move(resolved).value(), {}, {}, {}};
+        for (const auto& row : graph.value().bindings)
+            authority.bindings.push_back(row.binding);
+        for (const auto& row : graph.value().instances)
+            if (row.publicationHeld)
+                authority.held.insert(row.instance);
+        if (source) {
+            if (source->hasValue())
+                authority.configuration.emplace(std::move(*source).value());
+            else
+                authority.configurationError.emplace(source->error());
+        }
+        authority.manualOpen = open && scheduler->isOpen() && !authority.core.closing && !bindingConfiguration &&
+                               !authority.configurationError;
+        return Output::success(std::move(authority));
+    }
     /** @brief 复制 core/UI 值快照，不获取服务对象或运行命令谓词。 */
     Result<DiagnosticsSnapshot> capture()
     {
-        auto checked = thread();
-        if (!checked.hasValue()) return Result<DiagnosticsSnapshot>::failure(checked.error());
-        auto target = kernel.lock();
-        if (!target) return Result<DiagnosticsSnapshot>::failure(makeError(ErrorCode::ContextClosing, "management kernel unavailable"));
-        auto core = target->snapshot();
-        if (!core.hasValue()) return Result<DiagnosticsSnapshot>::failure(core.error());
-        auto bindings = target->services().snapshot();
+        auto authority = readAuthority();
+        if (!authority.hasValue())
+            return Result<DiagnosticsSnapshot>::failure(authority.error());
+        return capture(authority.value());
+    }
+    /** @brief 权限读取结束后只投影宿主值，不再次调用外部配置源。 */
+    Result<DiagnosticsSnapshot> capture(const ManagementAuthority& access)
+    {
+        const auto target = kernel.lock();
+        if (!target)
+            return Result<DiagnosticsSnapshot>::failure(
+                makeError(ErrorCode::ContextClosing, "management kernel unavailable"));
+        const auto& core = access.core;
         auto pageRows = pages->snapshot();
         auto commandRows = commands->snapshot();
         auto history = notifications->snapshot();
-        if (!bindings.hasValue()) return Result<DiagnosticsSnapshot>::failure(bindings.error());
         if (!pageRows.hasValue()) return Result<DiagnosticsSnapshot>::failure(pageRows.error());
         if (!commandRows.hasValue()) return Result<DiagnosticsSnapshot>::failure(commandRows.error());
         if (!history.hasValue()) return Result<DiagnosticsSnapshot>::failure(history.error());
-        DiagnosticsSnapshot output{open, core.value(), {}, bindings.value(), pageRows.value(), commandRows.value(), history.value(), {}};
-        for (const auto& snapshot : core.value().instances) {
-            if (protectedRuntimes.count(snapshot.runtime))
+        DiagnosticsSnapshot output{
+            open, core, {}, access.bindings, pageRows.value(), commandRows.value(), history.value(), {}};
+        for (const auto& snapshot : core.instances) {
+            if (access.protects(snapshot.runtime))
                 continue;
             auto instance = target->findInstance(snapshot.instance);
             if (!instance.hasValue()) return Result<DiagnosticsSnapshot>::failure(instance.error());
@@ -530,9 +613,13 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             if (!dependencies.hasValue()) return Result<DiagnosticsSnapshot>::failure(dependencies.error());
             if (!operation.hasValue()) return Result<DiagnosticsSnapshot>::failure(operation.error());
             std::string name = "未命名插件";
-            for (const auto& runtime : core.value().names) if (runtime.id == snapshot.runtime) { name = runtime.name; break; }
+            for (const auto& runtime : core.names)
+                if (runtime.id == snapshot.runtime) {
+                    name = runtime.name;
+                    break;
+                }
             const bool pending = busy.count(snapshot.instance) != 0;
-            const bool actionable = open && scheduler->isOpen() && !core.value().closing && !pending;
+            const bool actionable = access.allows(snapshot) && !pending;
             ManagedInstanceSnapshot row{
                 snapshot,
                 std::move(name),
@@ -555,10 +642,10 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             auto snapshot = entry.second.snapshot();
             if (!snapshot.hasValue() || snapshot.value().state != InstanceState::Disposed)
                 continue;
-            if (protectedRuntimes.count(snapshot.value().runtime))
+            if (access.protects(snapshot.value().runtime))
                 continue;
             std::string name;
-            for (const auto& runtime : core.value().names)
+            for (const auto& runtime : core.names)
                 if (runtime.id == snapshot.value().runtime)
                     name = runtime.name;
             auto operation = entry.second.operation().value();
@@ -566,20 +653,18 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
                 snapshot.value(), std::move(name), {}, operation.id, {}, busy.count(entry.first) != 0, false, false};
             if (auto result = operation.target.tryResult(); result && result->hasValue())
                 row.stable = result->value();
-            row.canLoad = open && scheduler->isOpen() && !core.value().closing && !row.busy &&
-                          !snapshot.value().deliveryBlocked && !snapshot.value().resources.deliveryBlocked;
+            row.canLoad = access.allows(snapshot.value()) && !row.busy && !snapshot.value().deliveryBlocked &&
+                          !snapshot.value().resources.deliveryBlocked;
             output.instances.push_back(std::move(row));
         }
         if (configurationAttached) {
-            auto source = readConfiguration();
-            if (source.hasValue())
-                lastConfiguration = source.value();
-            else
-                output.configurationError = source.error();
+            if (access.configuration)
+                lastConfiguration = *access.configuration;
+            output.configurationError = access.configurationError;
             output.configuration = lastConfiguration.value_or(ConfigurationManagementSnapshot{});
             auto& configured = *output.configuration;
             configured.open =
-                configured.open && open && scheduler->isOpen() && !core.value().closing && source.hasValue();
+                configured.open && open && scheduler->isOpen() && !core.closing && !access.configurationError;
             for (auto& row : configured.entries) {
                 row.busy = row.busy || configurationBusy.count(row.path);
                 row.canSetEnabled = row.canSetEnabled && configured.open && !row.busy;
@@ -1013,13 +1098,23 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
     /** @brief 真正执行前重新读取内核关闭和实例状态，不依赖界面缓存的按钮状态。 */
     void run(const std::shared_ptr<ManagementRecord>& record)
     {
-        auto target = kernel.lock();
-        if (!open || !target || !scheduler->isOpen()) {
-            record->data.error = makeError(ErrorCode::ContextClosing, "management closed before dispatch"); finish(record); return;
+        if (!open || !scheduler->isOpen() || kernel.expired() || bindingConfiguration) {
+            record->data.error = makeError(ErrorCode::ContextClosing, "management closed before dispatch");
+            finish(record);
+            return;
         }
-        auto snapshot = target->snapshot();
-        if (!snapshot.hasValue() || snapshot.value().closing) {
-            record->data.error = snapshot.hasValue() ? makeError(ErrorCode::ContextClosing, "kernel closing") : snapshot.error(); finish(record); return;
+        const auto authority = readAuthority();
+        if (!authority.hasValue()) {
+            record->data.error = authority.error();
+            finish(record);
+            return;
+        }
+        const auto target = kernel.lock();
+        if (!target || !authority.value().manualOpen) {
+            record->data.error = authority.value().configurationError.value_or(
+                makeError(ErrorCode::ContextClosing, "management closed before dispatch"));
+            finish(record);
+            return;
         }
         auto instance = target->findInstance(record->data.instance);
         if (record->data.action == ManagementAction::Load) {
@@ -1029,9 +1124,11 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
                 finish(record);
                 return;
             }
-            if (protectedRuntimes.count(found->second.snapshot().value().runtime)) {
-                record->data.error =
-                    makeError(ErrorCode::ContextClosing, "configuration runtime cannot be loaded manually");
+            const auto snapshot = found->second.snapshot();
+            if (!snapshot.hasValue() || !authority.value().allows(snapshot.value())) {
+                record->data.error = snapshot.hasValue()
+                                         ? makeError(ErrorCode::ContextClosing, "instance cannot be loaded manually")
+                                         : snapshot.error();
                 finish(record);
                 return;
             }
@@ -1063,9 +1160,11 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             return;
         }
         if (!instance.hasValue()) { record->data.error = instance.error(); finish(record); return; }
-        if (protectedRuntimes.count(instance.value().snapshot().value().runtime)) {
-            record->data.error =
-                makeError(ErrorCode::ContextClosing, "configuration runtime requires desired-state management");
+        const auto snapshot = instance.value().snapshot();
+        if (!snapshot.hasValue() || !authority.value().allows(snapshot.value())) {
+            record->data.error = snapshot.hasValue()
+                                     ? makeError(ErrorCode::ContextClosing, "instance cannot be managed manually")
+                                     : snapshot.error();
             finish(record);
             return;
         }
@@ -1559,6 +1658,11 @@ Result<void> showManagementNotifications(const std::shared_ptr<ManagementControl
 /** @brief 单图标入口仍经过管理请求的线程、排队、实例忙及关闭门禁。 */
 Result<void> setManagementEnabled(const std::shared_ptr<ManagementControl>& control, InstanceId instance, bool enabled)
 {
+    const auto checked = control->thread();
+    if (!checked.hasValue())
+        return checked;
+    if (!control->open || !control->scheduler->isOpen())
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "management closing"));
     auto snapshot = control->capture();
     if (!snapshot.hasValue())
         return Result<void>::failure(snapshot.error());
@@ -1569,7 +1673,8 @@ Result<void> setManagementEnabled(const std::shared_ptr<ManagementControl>& cont
                               [instance](const auto& row) { return row.instance.instance == instance; });
     if (found == rows.end())
         return Result<void>::failure(makeError(ErrorCode::InstanceDisposed, "plugin instance unavailable"));
-    if (!found->busy && snapshot.value().managementOpen && !snapshot.value().kernel.closing &&
+    if (!found->busy && (found->canStop || found->canRetry || found->canLoad) && snapshot.value().managementOpen &&
+        !snapshot.value().kernel.closing &&
         ((enabled &&
           (found->instance.state == InstanceState::Active || found->instance.state == InstanceState::Pending ||
            found->instance.state == InstanceState::Loading)) ||
@@ -1589,40 +1694,40 @@ Result<void> setManagementConfigurationEnabled(const std::shared_ptr<ManagementC
     auto result = control->requestConfiguration(path, enabled, revision);
     return result.hasValue() ? Result<void>::success() : Result<void>::failure(result.error());
 }
-/** @brief 失效配置源不能通过贡献兜底重新获得手动操作。 */
-bool hideManagementContribution(const std::shared_ptr<ManagementControl>& control, InstanceId instance)
+/** @brief 同源值同时决定普通卡片与贡献兜底，遍历 Workbench 记录时无需重入配置源。 */
+HomeSnapshot managementHomeSnapshot(const std::shared_ptr<ManagementControl>& control)
 {
-    if (!control->configurationAttached)
-        return false;
-    if (control->lastConfiguration)
-        for (const auto& row : control->lastConfiguration->entries)
-            if (row.instance == instance)
-                return true;
-    auto kernel = control->kernel.lock();
-    if (!kernel)
-        return true;
-    auto found = kernel->findInstance(instance);
-    if (found.hasValue())
-        return control->protectedRuntimes.count(found.value().snapshot().value().runtime) != 0;
-    return control->configuration.expired();
-}
-Result<std::vector<InstanceId>> unpublishedManagementInstances(const std::shared_ptr<ManagementControl>& control)
-{
-    using Output = Result<std::vector<InstanceId>>;
-    const auto checked = control->thread();
-    if (!checked.hasValue())
-        return Output::failure(checked.error());
-    const auto kernel = control->kernel.lock();
-    if (!kernel)
-        return Output::failure(makeError(ErrorCode::ContextClosing, "management kernel unavailable"));
-    auto graph = kernel->services().dependencyGraph();
-    if (!graph.hasValue())
-        return Output::failure(graph.error());
-    std::vector<InstanceId> instances;
-    for (const auto& row : graph.value().instances)
-        if (row.publicationHeld)
-            instances.push_back(row.instance);
-    return Output::success(std::move(instances));
+    HomeSnapshot output;
+    if (!control->thread().hasValue() || !control->open || !control->scheduler->isOpen())
+        return output;
+    // page-only 外壳仍允许普通贡献，自身的发布门禁负责其可见性。
+    if (!control->configurationAttached && control->kernel.expired()) {
+        output.allowContributions = !control->bindingConfiguration;
+        return output;
+    }
+    const auto authority = control->readAuthority();
+    if (!authority.hasValue())
+        return output;
+    const auto& access = authority.value();
+    auto diagnostics = control->capture(access);
+    if (!diagnostics.hasValue())
+        return output;
+    output.diagnostics.emplace(std::move(diagnostics).value());
+    output.allowContributions = access.manualOpen;
+    output.hidden = access.held;
+    for (const auto& row : access.core.instances)
+        if (access.protects(row.runtime))
+            output.hidden.insert(row.instance);
+    if (access.configuration)
+        for (const auto& row : access.configuration->entries)
+            if (row.instance.valid())
+                output.hidden.insert(row.instance);
+    for (const auto& entry : control->stopped) {
+        const auto snapshot = entry.second.snapshot();
+        if (!snapshot.hasValue() || access.protects(snapshot.value().runtime))
+            output.hidden.insert(entry.first);
+    }
+    return output;
 }
 /** @brief 管理操作结果只持宿主记录；关闭等待当前 UI 写入栈返回，不取消已进入的内核操作。 */
 Task<void> closeManagement(const std::shared_ptr<ManagementControl>& control)
@@ -1681,27 +1786,30 @@ Result<void> ManagementController::attachConfiguration(const std::shared_ptr<ICo
     std::set<RuntimeId> protectedIds(runtimes.begin(), runtimes.end());
     if (protectedIds.size() != runtimes.size())
         return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "duplicate protected runtime"));
-    if (state->configurationAttached)
-        return state->configuration.lock() == provider && state->protectedRuntimes == protectedIds
+    if (state->configurationAttached) {
+        if (state->configuration.lock() != provider || !state->protection.matches(protectedIds))
+            return Result<void>::failure(
+                makeError(ErrorCode::ServiceConflict, "configuration management already attached"));
+        const auto authority = state->readAuthority();
+        if (!authority.hasValue())
+            return Result<void>::failure(authority.error());
+        if (authority.value().configurationError)
+            return Result<void>::failure(*authority.value().configurationError);
+        return state->open && state->scheduler->isOpen() && !authority.value().core.closing
                    ? Result<void>::success()
-                   : Result<void>::failure(
-                         makeError(ErrorCode::ServiceConflict, "configuration management already attached"));
-    auto core = kernel->snapshot().value();
-    if (core.closing)
+                   : Result<void>::failure(makeError(ErrorCode::ContextClosing, "management closed during binding"));
+    }
+    const auto core = kernel->snapshot();
+    if (!core.hasValue())
+        return Result<void>::failure(core.error());
+    if (core.value().closing)
         return Result<void>::failure(makeError(ErrorCode::ContextClosing, "kernel closing"));
-    for (auto id : protectedIds)
-        if (!id.valid() ||
-            std::none_of(core.names.begin(), core.names.end(), [&](const auto& row) { return row.id == id; }))
-            return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "foreign protected runtime"));
-    for (const auto& row : state->operations)
-        if (row->data.pending) {
-            auto found = kernel->findInstance(row->data.instance);
-            auto old = state->stopped.find(row->data.instance);
-            if ((found.hasValue() && protectedIds.count(found.value().snapshot().value().runtime)) ||
-                (old != state->stopped.end() && protectedIds.count(old->second.snapshot().value().runtime)))
-                return Result<void>::failure(
-                    makeError(ErrorCode::ConfigConflict, "manual request still pending for protected runtime"));
-        }
+    auto policy = detail::ProtectionPolicy::bind(core.value(), runtimes);
+    if (!policy.hasValue())
+        return Result<void>::failure(policy.error());
+    const auto pending = state->checkPendingProtection(core.value(), protectedIds);
+    if (!pending.hasValue())
+        return pending;
     state->bindingConfiguration = true;
     struct Reset {
         bool& flag; /** @brief 所有返回路径恢复绑定门禁。 */
@@ -1719,10 +1827,20 @@ Result<void> ManagementController::attachConfiguration(const std::shared_ptr<ICo
     }();
     if (!initial.hasValue())
         return Result<void>::failure(initial.error());
-    if (!state->open || kernel->snapshot().value().closing)
+    // provider 可能完成真实换代、关闭或泵送排队请求，不能再使用回调前的 Core 权限。
+    const auto current = kernel->snapshot();
+    if (!current.hasValue())
+        return Result<void>::failure(current.error());
+    if (!state->open || !state->scheduler->isOpen() || current.value().closing)
         return Result<void>::failure(makeError(ErrorCode::ContextClosing, "management closed during binding"));
+    const auto resolved = policy.value().resolve(current.value());
+    if (!resolved.hasValue())
+        return Result<void>::failure(resolved.error());
+    const auto currentPending = state->checkPendingProtection(current.value(), resolved.value());
+    if (!currentPending.hasValue())
+        return currentPending;
     detail::ManagementControl::ViewAccess access(*state);
-    state->protectedRuntimes = std::move(protectedIds);
+    state->protection = std::move(policy).value();
     state->configuration = provider;
     state->configurationAttached = true;
     state->lastConfiguration = initial.value();

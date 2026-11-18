@@ -779,7 +779,6 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     diagnostics_ = std::shared_ptr<DiagnosticsService>(new DiagnosticsService(control_->management));
     ElaActionCommander::getInstance()->setIsMessageDisplayEnable(false);
     std::weak_ptr<detail::ShellControl> weak = control_;
-    std::weak_ptr<DiagnosticsService> weakDiagnostics = diagnostics_;
     control_->workbench = detail::createWorkbench(
         window.get(), control_->tabs, panel, output, togglePanel, control_->safeKey, control_->managementKey,
         {[weak](const QString& key, bool remember) {
@@ -797,21 +796,26 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
              if (auto state = weak.lock())
                  state->selectEmpty();
          },
-         [weak, weakDiagnostics] {
-             std::vector<detail::HomePlugin> plugins;
+         [weak] {
+             detail::HomeCatalogue catalogue;
              auto state = weak.lock();
-             auto diagnostics = weakDiagnostics.lock();
-             if (!state || !state->open || !diagnostics)
-                 return plugins;
-             auto snapshot = diagnostics->snapshot();
-             if (!snapshot.hasValue())
-                 return plugins;
-             const auto unpublished = detail::unpublishedManagementInstances(state->management);
-             if (!unpublished.hasValue())
-                 return plugins;
-             for (const auto& row : snapshot.value().instances) {
-                 if (std::find(unpublished.value().begin(), unpublished.value().end(), row.instance.instance) !=
-                     unpublished.value().end())
+             if (!state || !state->open)
+                 return catalogue;
+             const auto home = detail::managementHomeSnapshot(state->management);
+             if (!state->open)
+                 return catalogue;
+             catalogue.allowFallback = home.allowContributions;
+             for (const auto id : home.hidden)
+                 catalogue.hidden.insert(QString::number(id.value()));
+             if (!home.diagnostics)
+                 return catalogue;
+             const auto& snapshot = *home.diagnostics;
+             catalogue.canAddPlugin = !snapshot.kernel.closing && snapshot.configuration &&
+                                      snapshot.configuration->open && snapshot.configuration->canEdit &&
+                                      !snapshot.configuration->availablePlugins.empty();
+             auto& plugins = catalogue.plugins;
+             for (const auto& row : snapshot.instances) {
+                 if (home.hidden.count(row.instance.instance))
                      continue;
                  QString status;
                  switch (row.instance.state) {
@@ -855,11 +859,11 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
                  }
                  plugins.push_back(std::move(item));
              }
-             if (snapshot.value().configuration) {
-                 const auto& source = *snapshot.value().configuration;
+             if (snapshot.configuration) {
+                 const auto& source = *snapshot.configuration;
                  for (const auto& row : source.entries) {
                      QString status;
-                     if (snapshot.value().configurationError)
+                     if (snapshot.configurationError)
                          status = QString::fromUtf8("配置状态不可用");
                      else if (!row.hasActual && row.error)
                          status = QString::fromUtf8("状态不可用");
@@ -899,7 +903,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
                      if (!row.hasActual || !row.enabled || !row.effectiveEnabled || row.waitingForParent)
                          item.status.icon =
                              !row.enabled || !row.effectiveEnabled ? ElaIconType::CircleStop : ElaIconType::Hourglass;
-                     if (snapshot.value().configurationError || (!row.hasActual && row.error))
+                     if (snapshot.configurationError || (!row.hasActual && row.error))
                          item.status.icon = ElaIconType::TriangleExclamation;
                      item.configuration = true;
                      item.revision = source.revision;
@@ -915,7 +919,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
                      plugins.push_back(std::move(item));
                  }
              }
-             return plugins;
+             return catalogue;
          },
          [weak](const std::function<void()>& action) {
              if (auto state = weak.lock(); state && state->open) {
@@ -936,12 +940,6 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
              if (!valid || value == 0)
                  return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "invalid plugin instance"));
              return detail::setManagementEnabled(state->management, InstanceId(value), enabled);
-         },
-         [weak](const QString& id) {
-             auto state = weak.lock();
-             bool valid = false;
-             const auto value = id.toULongLong(&valid);
-             return state && valid && detail::hideManagementContribution(state->management, InstanceId(value));
          },
          [weak] {
              auto state = weak.lock();
@@ -972,16 +970,6 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
              detail::ShellControl::NavigationAccess access(*state);
              auto callback = state->configurationHandler;
              return callback();
-         },
-         [weak, weakDiagnostics] {
-             auto state = weak.lock();
-             auto diagnostics = weakDiagnostics.lock();
-             if (!state || !state->open || !diagnostics)
-                 return false;
-             auto data = diagnostics->snapshot();
-             return data.hasValue() && !data.value().kernel.closing && data.value().configuration &&
-                    data.value().configuration->open && data.value().configuration->canEdit &&
-                    !data.value().configuration->availablePlugins.empty();
          },
          [weak] {
              auto state = weak.lock();

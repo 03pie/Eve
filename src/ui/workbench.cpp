@@ -300,24 +300,26 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
         auto page = dynamic_cast<HomePage*>(window->findChild<QWidget*>("CordisWelcomePage"));
         if (!page)
             return;
-        if (addPluginAction)
-            addPluginAction->setEnabled(callbacks.canAddPlugin && callbacks.canAddPlugin());
-        if (!open)
-            return;
         if (configurationFileAction)
             configurationFileAction->setEnabled(callbacks.hasConfigurationFile && callbacks.hasConfigurationFile());
         if (!open)
             return;
-        auto plugins = callbacks.plugins ? callbacks.plugins() : std::vector<HomePlugin>{};
+        // 配置回调可能关闭外壳或撤销页面；仅在它返回后读取当前页面目录。
+        const auto readCatalogue = callbacks.plugins;
+        auto catalogue = readCatalogue ? readCatalogue() : HomeCatalogue{};
         if (!open || !window)
             return;
+        if (addPluginAction)
+            addPluginAction->setEnabled(catalogue.canAddPlugin);
+        if (!open || !window)
+            return;
+        auto& plugins = catalogue.plugins;
         QSet<QString> ids;
         for (const auto& plugin : plugins)
             ids.insert(plugin.id);
         for (const auto& entry : entries) {
-            if (!entry.presentable() || entry.plugin.isEmpty() || ids.contains(entry.plugin))
-                continue;
-            if (callbacks.hideContribution && callbacks.hideContribution(entry.plugin))
+            if (!catalogue.allowFallback || !entry.presentable() || entry.plugin.isEmpty() ||
+                ids.contains(entry.plugin) || catalogue.hidden.contains(entry.plugin))
                 continue;
             ids.insert(entry.plugin);
             HomePlugin value{entry.plugin, entry.title, QString::fromUtf8("界面已就绪")};

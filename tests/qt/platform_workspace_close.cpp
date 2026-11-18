@@ -11,49 +11,6 @@
 #include <thread>
 
 namespace platform_workspace_test {
-void Scene::verifyClosed(bool counterDrained) const
-{
-    const auto closed = take(state->closeSnapshot());
-    PLATFORM_CHECK(closed.closed && !closed.retained && !closed.deliveryBlocked && !state->deliveryBlocked());
-    PLATFORM_CHECK(closed.session && closed.session->hasValue() && closed.kernel && closed.kernel->hasValue() &&
-                   closed.kernel->value().quiescent);
-    PLATFORM_CHECK(closed.counter && closed.counter->hasValue() && closed.counter->value().quiescent &&
-                   closed.reporter && closed.reporter->hasValue() && closed.reporter->value().quiescent);
-    PLATFORM_CHECK(closed.shell && closed.shell->hasValue() && closed.providers && closed.providers->hasValue());
-    PLATFORM_CHECK(closed.counterDrain && closed.counterDrain->hasValue() == counterDrained && closed.reporterDrain &&
-                   closed.reporterDrain->hasValue());
-    PLATFORM_CHECK(!state->kernel && !state->driver && !state->session && !state->configurationManagement);
-    PLATFORM_CHECK(!state->counter()->runtime && !state->reporter()->runtime && !state->notebookRuntime());
-    PLATFORM_CHECK(pages().empty() && take(state->shell.commands()->snapshot()).empty());
-    const auto readiness = state->ready().tryResult();
-    PLATFORM_CHECK(readiness && !readiness->hasValue() && readiness->error().code == ErrorCode::ContextClosing);
-    const auto applied = state->apply(state->initial);
-    PLATFORM_CHECK(!applied.hasValue() && applied.error().code == ErrorCode::ContextClosing);
-    const auto repeated = state->close().tryResult();
-    PLATFORM_CHECK(repeated && repeated->hasValue());
-    for (const auto& row : take(state->manager->snapshot())) {
-        PLATFORM_CHECK(row.nativeMapped && !row.failure && !row.businessFailure);
-        if (row.manifest.loader == ModuleLoader::QtUi) {
-            PLATFORM_CHECK(row.nativePinned && row.resources.records.size() == 1 &&
-                           row.resources.records.front().kind == ResourceKind::QObject &&
-                           row.resources.records.front().label == "qt.loader.root");
-        } else if (counterDrained || row.manifest.moduleId == "org.cordis.example.reporter")
-            PLATFORM_CHECK(row.state == ModuleState::Resident && row.resources.drained());
-        else
-            PLATFORM_CHECK(!row.resources.drained());
-    }
-}
-void Scene::release()
-{
-    std::weak_ptr<notebook::Workspace> weak = state;
-    state.reset();
-    barrier(scheduler);
-    PLATFORM_CHECK(weak.expired());
-    until([&] { return take(scheduler->snapshot()).queued == 0; });
-    const auto queue = take(scheduler->snapshot());
-    PLATFORM_CHECK(queue.open && queue.discarded == 0 && queue.callbackErrors == 0);
-    take(scheduler->close());
-}
 namespace {
 std::vector<QPointer<QWidget>> newShellWindows(const QWidgetList& previous)
 {
@@ -157,9 +114,9 @@ void retainedRuntime(const QString& sourceBin)
     Scene scene;
     scene.open(sourceBin);
     scene.apply(scene.state->initial);
-    const auto id = scene.state->counter()->generation;
+    const auto id = take(scene.state->counter())->generation;
     const auto manager = scene.state->manager;
-    auto retained = scene.state->counter()->runtime;
+    auto retained = take(scene.state->counter())->runtime;
     PLATFORM_CHECK(retained);
     std::weak_ptr<Kernel> kernel = scene.state->kernel;
     std::weak_ptr<KernelReconcileDriver> driver = scene.state->driver;
@@ -263,8 +220,8 @@ void cleanupFailure(const QString& sourceBin)
     PLATFORM_CHECK(report.reporter && report.reporter->hasValue() && report.reporter->value().quiescent);
     PLATFORM_CHECK(!report.shell && !report.providers && !report.counterDrain && !report.reporterDrain);
     PLATFORM_CHECK(scene.state->kernel && scene.state->driver && scene.state->session &&
-                   scene.state->counter()->runtime && scene.state->reporter()->runtime &&
-                   scene.state->notebookRuntime());
+                   take(scene.state->counter())->runtime && take(scene.state->reporter())->runtime &&
+                   scene.state->notebookRuntime().hasValue());
     PLATFORM_CHECK(scene.pages().empty() && take(scene.state->shell.commands()->snapshot()).empty());
     const auto modules = take(scene.state->manager->snapshot());
     for (const auto& row : modules)

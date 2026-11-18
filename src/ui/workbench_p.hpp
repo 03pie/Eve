@@ -2,8 +2,9 @@
  * @brief 宿主工作台复用 Ela Example 的菜单、搜索、设置和窗口内路由，不授予插件窗口能力。
  */
 #pragma once
-#include "status_p.hpp"
 #include "output_p.hpp"
+#include "status_p.hpp"
+#include <QSet>
 #include <QString>
 #include <cordis/result.hpp>
 #include <cstdint>
@@ -28,23 +29,27 @@ struct HomePlugin {
     bool configuration = false;
     StatusPresentation status{};
 };
+/** @brief 一次刷新使用的宿主值目录，遍历页面时不再执行权限回调。 */
+struct HomeCatalogue {
+    std::vector<HomePlugin> plugins;
+    QSet<QString> hidden;
+    bool allowFallback = false;
+    bool canAddPlugin = false;
+};
 /** @brief 所有导航仍由 Shell 校验贡献及 epoch，刷新只调用宿主管理器。 */
 struct WorkbenchActions {
     std::function<Result<void>(const QString&, bool)> navigate;
     std::function<void()> refresh;
     std::function<void()> empty;
-    std::function<std::vector<HomePlugin>()> plugins;
+    std::function<HomeCatalogue()> plugins;
     /** @brief 在控件写入期间保留根窗口，关闭任务等访问栈返回后才允许销毁。 */
     std::function<void(const std::function<void()>&)> withWindowAccess;
     std::function<Result<void>(const QString&, bool, std::uint64_t)> power;
-    /** @brief 已由配置目录或内部宿主覆盖的贡献不重复生成卡片。 */
-    std::function<bool(const QString&)> hideContribution;
     /** @brief 宿主提供通知历史视图入口，只有用户显式操作时打开。 */
     std::function<Result<void>()> showNotifications{};
     std::function<Result<void>(const QString&, bool)> managePlugin{};
     std::function<Result<void>()> addPlugin{};
     std::function<Result<void>()> configurationFile{};
-    std::function<bool()> canAddPlugin{};
     std::function<bool()> hasConfigurationFile{};
 };
 /** @brief 创建 Example 风格滚动首页，入口在工作台构造时连接。 */

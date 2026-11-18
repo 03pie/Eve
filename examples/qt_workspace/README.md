@@ -31,6 +31,14 @@ b4-1 增加明确的固定业务资格入口，和原 demo 共用同一 Workspac
 ./build/ela-msvc-release/bin/cordis_platform_workbench_demo.exe
 ```
 
-它在独立 `CordisBusinessPlatform` 应用数据目录中保存 session 和 hash 安装 store；也可依次传自己的 session 文件与 store 目录。单一 Kernel/manager/Driver/Session 同时装配 counter、reporter 和 Notebook。新 session 选择三个 A，已有文件按保存的合法 A/B 定位加载。仅固定四个 Native 资格产物的实际身份/摘要临时获准，生产名单仍空，Qt 固定驻留。
+它在独立 `CordisBusinessPlatform` 应用数据目录中保存 session 和 hash 安装 store；也可依次传自己的 session 文件与 store 目录。单一 Kernel/manager/Driver/Session 同时装配 counter、reporter 和 Notebook。新 session 选择三个 A，已有文件按保存的定位及原身份/后端/固定 Native 批准策略加载，不强限为 A/B。仅固定四个 Native 资格产物的实际身份/摘要临时获准，生产名单仍空，Qt 固定驻留。
 
-保存冲突保留原窗口/业务以便处理后重试关闭；不静止/未知回执保留原拥有链，正常关闭先释放实际工厂再记录 drain，调用方额外工厂引用的拒绝与物理卸载分开。九项新场景加原回归在三配置各专项 50/50、静态 Native 18/18 通过，见 [b4-1 收口](../../docs/p5-m5b4-development.md#b4-1-收口结论)。该入口当前只交付统一运行/关闭，升级操作与管理按钮继续 b4-2/M5-c，不把当前卡片启停当作代码替换。
+保存冲突保留原窗口/业务以便处理后重试关闭；不静止/未知回执保留原拥有链，正常关闭先释放实际工厂再记录 drain，调用方额外工厂引用的拒绝与物理卸载分开。九项新场景加原回归在三配置各专项 50/50、静态 Native 18/18 通过，见 [b4-1 收口](../../docs/p5-m5b4-development.md#b4-1-收口结论)。b4-1 当时仅交付统一运行/关闭；当前升级接线见下段，卡片启停仍不等同代码替换。
+
+[b4-2](../../docs/p5-m5b42-development.md#收口结论)已增加 Workspace.previewUpgrade / upgrade / upgradeSnapshot 的宿主实际接线；当前能力查询为 owner 的 Result，并按原事务真实共同提交同步 Current。预览不装载/安装，执行重新验证来源、修订与闭包。三类实际 A/B、Notebook 故障恢复、通知/回执故障及 Native 真实回收通过有限集成场景；正常 Qt root 继续驻留。产品窗口的升级选择、进度和报告按钮继续 M5-c，当前 Home 开关仍仅是配置启停。
+
+可在已有 Release 构建后运行受控替换集成检查：
+
+    ctest --test-dir build/ela-msvc-release -R "^p5.platform_upgrade_" --output-on-failure -j 1
+
+需先加载项目 MSVC/Qt 开发环境。十二项是有限同平台事务验证，不代替 100 次压力或原生桌面人工验收。完整本段受影响检查在三配置各 219/219，通过的实际旧 SDK .5 DLL 仍为原始保存实物。

@@ -29,11 +29,13 @@
 #include <cordis/ui/configuration.hpp>
 #include <cordis/ui/ela_shell.hpp>
 #include <cstdlib>
+#include <exception>
 #include <functional>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 using namespace cordis;
 using namespace cordis::loader;
 using namespace cordis::ui;
@@ -70,9 +72,13 @@ template <class T> void wait(const Task<T>& task)
 struct Proxy final : IConfigurationManagement {
     std::shared_ptr<IConfigurationManagement> delegate;
     bool throws = false, malformed = false;
+    mutable std::function<void()> onSnapshot;
     /** @brief 只读来源异常由管理边界转为显式错误。 */
     Result<ConfigurationManagementSnapshot> snapshot() const override
     {
+        auto callback = std::exchange(onSnapshot, {});
+        if (callback)
+            callback();
         if (throws)
             throw std::runtime_error("snapshot fault");
         return delegate->snapshot();
@@ -120,7 +126,12 @@ struct Scene {
                         if (fail)
                             return failedTask(makeError(ErrorCode::ActivationFailed, "test failure"));
                         return shell.pages()
-                            ->add(context, {"page", "Demo page", "Example", [] { return std::make_unique<QWidget>(); }})
+                            ->add(context, {"page", "Demo page", "Example",
+                                            [] {
+                                                auto widget = std::make_unique<QWidget>();
+                                                widget->setObjectName("CordisConfigurationDemoPage");
+                                                return widget;
+                                            }})
                             .value()
                             .ready();
                     })
@@ -199,10 +210,129 @@ struct Scene {
         wait(core);
         CHECK(core.tryResult()->value().quiescent);
         wait(shell.close());
-        CHECK(scheduler->snapshot().value().callbackErrors == 0);
+        Promise<void> reached;
+        CHECK(scheduler->post(
+            {[reached] { reached.resolve(); },
+             [reached] { reached.reject(makeError(ErrorCode::SchedulerClosed, "close barrier discarded")); }}));
+        wait(reached.task());
+        until([&] { return scheduler->snapshot().value().queued == 0; });
+        CHECK(scheduler->snapshot().value().callbackErrors == 0 && scheduler->snapshot().value().discarded == 0);
         scheduler->close().value();
     }
 };
+/** @brief 只暂停竞争的管理刷新；仍由实际 Home timeout 进入原窗口访问屏障。 */
+QTimer* isolatedHomeTimer(const Scene& scene)
+{
+    QTimer* home = nullptr;
+    QTimer* management = nullptr;
+    const auto view = scene.find<QWidget>("CordisManagement");
+    for (auto* timer : scene.window->findChildren<QTimer*>()) {
+        if (timer->parent() == scene.window.data() && timer->interval() == 500) {
+            CHECK(!home);
+            home = timer;
+        }
+        if (timer->parent() == view && timer->interval() == 250) {
+            CHECK(!management);
+            management = timer;
+        }
+    }
+    CHECK(home && management);
+    management->stop();
+    home->stop();
+    return home;
+}
+/** @brief 第一次 Home 来源读取可关闭外壳，完整返回前窗口不能被嵌套删除。 */
+void providerHomeClose()
+{
+    Scene scene(false);
+    const auto proxy = std::make_shared<Proxy>();
+    proxy->delegate = scene.route;
+    scene.shell.management()->attachConfiguration(proxy, {scene.runtime}).value();
+    scene.apply();
+    (void)scene.toggle();
+    const auto timer = isolatedHomeTimer(scene);
+    std::optional<Task<void>> closed;
+    std::exception_ptr callbackFailure;
+    bool returned = false, protectedInside = false;
+    proxy->onSnapshot = [&] {
+        timer->stop();
+        try {
+            closed.emplace(scene.shell.close());
+            until([&] {
+                return scene.shell.pages()->snapshot().value().empty() &&
+                       scene.shell.commands()->snapshot().value().empty();
+            });
+            QCoreApplication::processEvents(QEventLoop::AllEvents);
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            protectedInside = scene.window && !closed->isReady();
+        } catch (...) {
+            callbackFailure = std::current_exception();
+        }
+        returned = true;
+    };
+    timer->start(1);
+    until([&] { return returned; });
+    if (callbackFailure)
+        std::rethrow_exception(callbackFailure);
+    CHECK(closed && protectedInside && !proxy->onSnapshot);
+    wait(*closed);
+    CHECK(!scene.window && scene.shell.pages()->snapshot().value().empty() &&
+          scene.shell.commands()->snapshot().value().empty());
+    scene.close();
+    CHECK(scene.scheduler->snapshot().value().queued == 0 && scene.scheduler->snapshot().value().discarded == 0 &&
+          scene.scheduler->snapshot().value().callbackErrors == 0);
+}
+/** @brief 来源回调真实销毁/重建配置实例，Home 继续按路径去重且不露手动能力。 */
+void providerHomeReplace()
+{
+    Scene scene(false);
+    const auto proxy = std::make_shared<Proxy>();
+    proxy->delegate = scene.route;
+    scene.shell.management()->attachConfiguration(proxy, {scene.runtime}).value();
+    scene.apply();
+    (void)scene.toggle();
+    const auto original = scene.route->snapshot().value().entries.front().instance;
+    const QPointer<QWidget> oldPage = scene.find<QWidget>("CordisConfigurationDemoPage");
+    const QPointer<QWidget> card = scene.card();
+    const auto timer = isolatedHomeTimer(scene);
+    std::exception_ptr callbackFailure;
+    bool returned = false;
+    proxy->onSnapshot = [&] {
+        timer->stop();
+        try {
+            const auto disabled = scene.session->setEnabled("r", false, 1).value();
+            wait(disabled.settled);
+            CHECK(!oldPage && scene.shell.pages()->snapshot().value().empty());
+            const auto enabled = scene.session->setEnabled("r", true, disabled.revision).value();
+            wait(enabled.settled);
+        } catch (...) {
+            callbackFailure = std::current_exception();
+        }
+        returned = true;
+    };
+    timer->start(1);
+    until([&] { return returned; });
+    if (callbackFailure)
+        std::rethrow_exception(callbackFailure);
+    const auto current = scene.route->snapshot().value().entries.front().instance;
+    CHECK(current.valid() && current != original && !oldPage && !proxy->onSnapshot);
+    timer->start(1);
+    until([&] {
+        const auto identity = scene.card()->findChild<QLabel*>("CordisPluginIdentity");
+        return identity && identity->text().contains(QString::number(current.value()));
+    });
+    timer->stop();
+    const auto cards = scene.find<QWidget>("CordisWelcomePage")->findChildren<QWidget*>("CordisPluginCard");
+    CHECK(cards.size() == 1 && scene.card() == card &&
+          cards.front()->property("CordisPluginId").toString() == "configuration:r");
+    const auto pages = scene.shell.pages()->snapshot().value();
+    CHECK(pages.size() == 1 && pages.front().owner.instance == current &&
+          scene.find<QWidget>("CordisConfigurationDemoPage"));
+    CHECK(scene.shell.diagnostics()->snapshot().value().instances.empty());
+    CHECK(!scene.shell.management()->stop(current).hasValue() && !scene.shell.management()->retry(current).hasValue() &&
+          !scene.shell.management()->load(current).hasValue());
+    scene.close();
+}
 /** @brief 停用/启用改变期望并生成新实例，卡片按路径保留且贡献不会重复。 */
 void home()
 {
@@ -701,6 +831,10 @@ int main(int argc, char** argv)
             saveConflict();
         else if (name == "dialog_lifetime")
             dialogLifetime();
+        else if (name == "provider_home_close")
+            providerHomeClose();
+        else if (name == "provider_home_replace")
+            providerHomeReplace();
         else
             return EXIT_FAILURE;
         return EXIT_SUCCESS;

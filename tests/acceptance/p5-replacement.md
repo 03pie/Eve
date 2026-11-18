@@ -332,3 +332,24 @@ Output 的每外壳 pending 预算为 1000 条、1 MiB 字符串和 64 个精确
 | cleanup_failure | counter 与 Notebook 的真实 cleanup 失败，仍尝试 reporter，原阶段结果与拥有者保留 |
 
 最终十七项输入冻结，Release/Debug/ASan 各受影响专项 50/50（新九项+原 Native 十八+Qt 二十三），静态 Native probe 18/18；whole_stage=false，不冒充全平台。十五项格式、十四个实际 ASan 对象前后哈希/插桩和三十三份原产物摘要核对通过。两个真实 exe 的三配置共六次错误文件输入收尾检查独立归档，预期退出 1，不计入五十项或原生桌面验收。legacy Pipeline 的故障报告/控制块保留不等于 facade 保活，Workspace 则完整保留 UI 诊断拥有链；具体保留原因和局限见工作单。整体替换、locator/动态管理保护、物理/压力和新增人工验收继续后续。
+
+## M5-b4-2 实际业务整体接线
+
+[收口及证据范围](../../docs/p5-m5b42-development.md#收口结论)使用同一 Workspace 的三个实际 DLL，没有测试导出。十二项前缀 p5.platform_upgrade_：
+
+| 场景 | 实际检查 |
+|---|---|
+| counter / reporter | 实际 A→B、原消费者重建/提供者借用、计数、规范名称与配置共同提交、保存、旧 Native 映像与独占文件证据 |
+| native_roundtrip | 同平台有限 A→B→A、新 GenerationId 与继续计数；不是 100 次 |
+| retained_factory | 外借原 Runtime 使 drain 拒绝，业务 Applied 且不 pin 整个平台；释放原借用后可真实回收 |
+| notebook | 即时编辑草稿导入、新 widget/命令、旧 key 和控件退出、Native 代次/实例/计数不变 |
+| notebook_restore | 同业务源实际 1.3 故障候选在导入后启动失败，原事务恢复旧代/locator/草稿，新 widget 不复活旧页；Candidate 角色按原契约保留 |
+| held_protection | 真实 source model 同步信号观测 Held，手动 stop/retry/load 均拒绝，提交后 Current 仍受配置保护 |
+| committed_discard | 真实可见命令发布信号后丢弃 Qt 已接受回执，原 committed/Current/locator 不回退，已释放 claims 不补造，保留原执行 |
+| admission | 纯预览不安装/执行、错误身份/同产物、伪造/陈旧纯值、错误线程和双击拒绝 |
+| stale_revision / changed_source | 修订或源改变在安装前拒绝，store 无候选、旧实例与目录不变 |
+| close_inflight | 尚未泵队列的 Prepared 操作真实取消，非 committed/recovered，随后正常关闭；不声称覆盖全部中途关闭点 |
+
+新增 YAML 三项和 provider_home_close/provider_home_replace 两项锁住 locator 保真、Home 回调关闭/销毁重建。最终 Release/Debug/ASan 各 219/219 受影响专项、静态 29/29、GCC YAML 11/11；完整清单与唯一 Passed 名称对应，whole_stage=false。32 输入/30 格式、31 ASan 对象和36实际产物核对通过；原 .5 实物当前 normal 和六次真实入口失败收尾独立归档，不计入 219 或人工桌面验收。
+
+产品升级按钮、完整 H01/S09、同进程 100 次/随机、最终精确批准及新增原生桌面验收继续 M5-c/d/e。Qt 驻留、生产 Native 名单空，不能把本段有限物理证明扩为所有插件可卸载。

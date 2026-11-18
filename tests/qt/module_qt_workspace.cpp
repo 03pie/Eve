@@ -196,7 +196,7 @@ int main(int argc, char** argv)
             pump([&] { return closed.isReady(); });
             CHECK(!closed.tryResult()->hasValue() && records(*state, ResourceKind::Instance) == 1);
             CHECK(pages(*state).empty() && take(state->shell.commands()->snapshot()).empty());
-            CHECK(!state->manager->drain(state->generation()).hasValue());
+            CHECK(!state->manager->drain(take(state->generation())).hasValue());
             auto widget = notebook::moduleDiagnostics(state->manager, state->shell.diagnostics());
             auto text = widget->findChild<QPlainTextEdit*>()->toPlainText();
             CHECK(text.contains("qt.instance.") && text.contains("notebook cleanup failure requested"));
@@ -205,7 +205,7 @@ int main(int argc, char** argv)
             pump([&] { return take(state->scheduler->snapshot()).queued == 0; });
             CHECK(records(*state, ResourceKind::Instance) == 0 && records(*state, ResourceKind::ExternalHandle) == 0);
             CHECK(records(*state, ResourceKind::QObject) == 1 &&
-                  !state->manager->drain(state->generation()).hasValue());
+                  !state->manager->drain(take(state->generation())).hasValue());
             CHECK(take(state->scheduler->snapshot()).callbackErrors == 0);
             take(state->scheduler->close());
         }

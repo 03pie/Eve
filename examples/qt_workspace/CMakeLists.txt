@@ -3,6 +3,10 @@ include("${PROJECT_SOURCE_DIR}/cmake/QtPluginContract.cmake")
 function(cordis_add_notebook_plugin target output_subdir version state)
     set(directory "${CMAKE_CURRENT_BINARY_DIR}/plugin/${target}/$<CONFIG>")
     set(state_definition "CORDIS_NOTEBOOK_STATE=${state}")
+    set(moc_definitions "-D${state_definition}")
+    foreach(definition IN LISTS ARGN)
+        list(APPEND moc_definitions "-D${definition}")
+    endforeach()
     cordis_qt_toolchain_json(toolchain)
     file(GENERATE OUTPUT "${directory}/notebook_metadata.json"
         CONTENT "{\"moduleId\":\"org.cordis.example.notebook\",\"moduleVersion\":\"${version}\",\"plugins\":[\"example.notebook\"],\"toolchain\":${toolchain}}")
@@ -16,7 +20,7 @@ function(cordis_add_notebook_plugin target output_subdir version state)
         list(APPEND moc_dependencies draft_state.hpp "${PROJECT_SOURCE_DIR}/sdk/include/cordis/module/qt_state_plugin.hpp")
     endif()
     add_custom_command(OUTPUT "${directory}/notebook.moc"
-        COMMAND Qt5::moc "-D${state_definition}" ${moc_includes} "${CMAKE_CURRENT_SOURCE_DIR}/notebook.cpp"
+        COMMAND Qt5::moc ${moc_definitions} ${moc_includes} "${CMAKE_CURRENT_SOURCE_DIR}/notebook.cpp"
             -o "${directory}/notebook.moc"
         DEPENDS ${moc_dependencies} VERBATIM)
     add_library(${target} MODULE notebook.cpp contract.hpp "${directory}/notebook.moc")
@@ -24,7 +28,7 @@ function(cordis_add_notebook_plugin target output_subdir version state)
         target_sources(${target} PRIVATE draft_state.hpp)
     endif()
     target_include_directories(${target} PRIVATE "${directory}")
-    target_compile_definitions(${target} PRIVATE "${state_definition}")
+    target_compile_definitions(${target} PRIVATE "${state_definition}" ${ARGN})
     target_link_libraries(${target} PRIVATE Cordis::QtUiPluginSdk)
     cordis_target_defaults(${target})
     set_target_properties(${target} PROPERTIES PREFIX ""
@@ -42,9 +46,10 @@ cordis_add_notebook_plugin(cordis_example_notebook_a qt-upgrade/notebook-a 1.1.0
 cordis_add_notebook_plugin(cordis_example_notebook_b qt-upgrade/notebook-b 1.2.0 1)
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bin/qt-workspace")
 configure_file(workspace.yaml "${CMAKE_BINARY_DIR}/bin/qt-workspace/workspace.yaml" COPYONLY)
-add_library(cordis_notebook_host STATIC workspace.cpp bootstrap.cpp close.cpp diagnostics.cpp workspace_p.hpp)
+add_library(cordis_notebook_host STATIC workspace.cpp bootstrap.cpp close.cpp diagnostics.cpp workspace_p.hpp
+    source.cpp source_p.hpp upgrade.cpp upgrade_execution.cpp upgrade_retirement.cpp upgrade_p.hpp)
 target_link_libraries(cordis_notebook_host PUBLIC Cordis::ModuleQt Cordis::ModuleQtPreflight Cordis::ModuleInstall
-    Cordis::ConfigUi Cordis::ConfigKernel Cordis::ConfigStoreQt cordis_native_service_modules)
+    Cordis::ConfigUi Cordis::ConfigKernel Cordis::ConfigStoreQt Cordis::Replacement cordis_native_service_modules)
 target_link_libraries(cordis_notebook_host PRIVATE Ela::WidgetTools)
 target_include_directories(cordis_notebook_host PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 cordis_target_defaults(cordis_notebook_host)
@@ -63,6 +68,8 @@ if(CORDIS_BUILD_EXAMPLES)
         cordis_example_reporter_a cordis_example_reporter_b cordis_example_notebook_a cordis_example_notebook_b)
 endif()
 if(BUILD_TESTING)
+    cordis_add_notebook_plugin(cordis_example_notebook_fail_start qt-upgrade/notebook-fail-start 1.3.0 1
+        CORDIS_EXAMPLE_NOTEBOOK_FAIL_START=1)
     add_executable(cordis_notebook_state_tests
         "${PROJECT_SOURCE_DIR}/tests/qt/notebook_state_main.cpp"
         "${PROJECT_SOURCE_DIR}/tests/qt/notebook_state_scene.cpp"
@@ -91,7 +98,10 @@ if(BUILD_TESTING)
         "${PROJECT_SOURCE_DIR}/tests/qt/platform_workspace_main.cpp"
         "${PROJECT_SOURCE_DIR}/tests/qt/platform_workspace_runtime.cpp"
         "${PROJECT_SOURCE_DIR}/tests/qt/platform_workspace_close.cpp")
-    target_link_libraries(cordis_platform_workspace_tests PRIVATE cordis_notebook_host Ela::WidgetTools)
+    add_library(cordis_platform_workspace_support STATIC "${PROJECT_SOURCE_DIR}/tests/qt/platform_workspace_scene.cpp")
+    target_link_libraries(cordis_platform_workspace_support PUBLIC cordis_notebook_host Ela::WidgetTools)
+    cordis_target_defaults(cordis_platform_workspace_support)
+    target_link_libraries(cordis_platform_workspace_tests PRIVATE cordis_platform_workspace_support)
     set_target_properties(cordis_platform_workspace_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     cordis_target_defaults(cordis_platform_workspace_tests)
     add_dependencies(cordis_platform_workspace_tests cordis_example_counter_a cordis_example_counter_b
@@ -100,6 +110,24 @@ if(BUILD_TESTING)
         retained_runtime discarded_close cleanup_failure)
         add_test(NAME p5.platform_workspace_${case} COMMAND cordis_platform_workspace_tests "${CMAKE_BINARY_DIR}/bin" "${case}")
         set_tests_properties(p5.platform_workspace_${case} PROPERTIES LABELS "p5;module;qt;ui;integration;platform_workspace"
+            TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endforeach()
+    add_executable(cordis_platform_upgrade_tests
+        "${PROJECT_SOURCE_DIR}/tests/qt/platform_upgrade_main.cpp"
+        "${PROJECT_SOURCE_DIR}/tests/qt/platform_upgrade_support.cpp"
+        "${PROJECT_SOURCE_DIR}/tests/qt/platform_upgrade_native.cpp"
+        "${PROJECT_SOURCE_DIR}/tests/qt/platform_upgrade_qt.cpp"
+        "${PROJECT_SOURCE_DIR}/tests/qt/platform_upgrade_contract.cpp")
+    target_link_libraries(cordis_platform_upgrade_tests PRIVATE cordis_platform_workspace_support)
+    set_target_properties(cordis_platform_upgrade_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    cordis_target_defaults(cordis_platform_upgrade_tests)
+    add_dependencies(cordis_platform_upgrade_tests cordis_example_counter_a cordis_example_counter_b
+        cordis_example_reporter_a cordis_example_reporter_b cordis_example_notebook_a cordis_example_notebook_b
+        cordis_example_notebook_fail_start)
+    foreach(case IN ITEMS counter reporter native_roundtrip retained_factory notebook notebook_restore held_protection
+        committed_discard admission stale_revision changed_source close_inflight)
+        add_test(NAME p5.platform_upgrade_${case} COMMAND cordis_platform_upgrade_tests "${CMAKE_BINARY_DIR}/bin" "${case}")
+        set_tests_properties(p5.platform_upgrade_${case} PROPERTIES LABELS "platform_upgrade;p5;module;qt;ui;replacement"
             TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endforeach()
 endif()

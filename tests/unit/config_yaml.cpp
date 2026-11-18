@@ -191,6 +191,129 @@ void dependencies()
     CHECK(inject[2].minimumMinor == 3 && inject[2].capabilities == std::vector<std::string>({"read", "write"}));
     CHECK(source.structure().entries().at("notes").inject[1].minimumMinor == 0);
 }
+/** @brief 模块编辑与自由配置共享原值树，不能经浮点 DOM 丢失数字或误改同名负载。 */
+ParsedConfiguration moduleSource()
+{
+    return parseConfiguration(
+               "formatVersion: 1\nmodules: {m: {manifest: old/module.json}, other: {manifest: other/module.json}}\n"
+               "plugins:\n  - id: root\n    plugin: org.notes\n    module: m\n    disabled: true\n"
+               "    inject: [store/v1, {name: ui.pages, major: 1, minimumMinor: 2, capabilities: [read, write]}]\n"
+               "    realms: {store: private}\n"
+               "    config: {above: 9007199254740993, maximum: 18446744073709551615, "
+               "decimal: 1.234567890123456789012345678901234567890e+0042, locator: old/module.json}\n"
+               "    children:\n      - {id: child, plugin: org.notes, module: other, "
+               "config: [18446744073709551615, 9007199254740993, 0.000000000000000000001e-0099]}\n")
+        .value();
+}
+void moduleManifest()
+{
+    const auto source = moduleSource();
+    const auto original = source.normalizedYaml();
+    const auto changed = setModuleManifest(source, "m", "hash/module.json").value();
+    CHECK(changed.structure().modules().at("m") == "hash/module.json");
+    CHECK(changed.structure().modules().at("other") == "other/module.json");
+    CHECK(changed.structure().entries().size() == source.structure().entries().size());
+    for (const auto& entry : source.structure().entries()) {
+        const auto& before = entry.second;
+        const auto& after = changed.structure().entries().at(entry.first);
+        CHECK(before.plugin == after.plugin && before.module == after.module && before.config == after.config &&
+              before.disabled == after.disabled && before.effectiveDisabled == after.effectiveDisabled &&
+              before.realms == after.realms && before.inject.size() == after.inject.size());
+        for (std::size_t i = 0; i != before.inject.size(); ++i)
+            CHECK(before.inject[i].name == after.inject[i].name && before.inject[i].major == after.inject[i].major &&
+                  before.inject[i].minimumMinor == after.inject[i].minimumMinor &&
+                  before.inject[i].capabilities == after.inject[i].capabilities);
+    }
+    CHECK(changed.structure().entries().at("root").config ==
+          "{\"above\":9007199254740993,\"decimal\":1.234567890123456789012345678901234567890e+0042,"
+          "\"locator\":\"old/module.json\",\"maximum\":18446744073709551615}");
+    CHECK(changed.structure().entries().at("root/child").config ==
+          "[18446744073709551615,9007199254740993,0.000000000000000000001e-0099]");
+    CHECK(source.normalizedYaml() == original && source.structure().modules().at("m") == "old/module.json");
+    CHECK(setModuleManifest(source, "m", "old/module.json").value().normalizedYaml() == original);
+    for (const std::string manifest : {"true", "null", "9007199254740993", "[a, b]", "插件/\"next\"\\module.json"}) {
+        const auto literal = setModuleManifest(source, "m", manifest).value();
+        CHECK(literal.structure().modules().at("m") == manifest);
+        CHECK(literal.structure().entries().at("root").config == source.structure().entries().at("root").config);
+        CHECK(parseConfiguration(literal.normalizedYaml()).value().normalizedYaml() == literal.normalizedYaml());
+    }
+}
+/** @brief 未知身份或失效来源不新增声明，非法 locator 沿原解析/结构校验拒绝。 */
+void moduleManifestRejected()
+{
+    auto source = moduleSource();
+    for (const auto* alias : {"", "builtin", "missing"}) {
+        const auto result = setModuleManifest(source, alias, "next.json");
+        CHECK(!result.hasValue() && result.error().code == ErrorCode::InvalidArgument);
+    }
+    const auto withoutModules = parseConfiguration("formatVersion: 1\nplugins: []\n").value();
+    CHECK(!setModuleManifest(withoutModules, "m", "next.json").hasValue());
+    const auto moved = std::move(source);
+    CHECK(!source.isValid() && moved.isValid());
+    CHECK(setModuleManifest(source, "m", "next.json").error().code == ErrorCode::InvalidArgument);
+    CHECK(setModuleManifest(moved, "m", "next.json").hasValue());
+    CHECK(setModuleManifest(moved, "m", std::string(4096, 'x')).hasValue());
+    const std::vector<std::string> invalid{"",
+                                           std::string(4097, 'x'),
+                                           std::string("a\0b", 3),
+                                           std::string(1, static_cast<char>(0xff)),
+                                           std::string("\xc0\xaf", 2),
+                                           std::string("\xed\xa0\x80", 3),
+                                           std::string("\xf0\x9f", 2)};
+    for (const auto& manifest : invalid) {
+        const auto result = setModuleManifest(moved, "m", manifest);
+        CHECK(!result.hasValue() && result.error().code == ErrorCode::ConfigInvalid);
+    }
+    CHECK(moved.structure().modules().at("m") == "old/module.json");
+}
+/** @brief 新字符串与原规范树分别受预算约束，输出替换后仍重新验证全部限额。 */
+void moduleManifestLimits()
+{
+    const auto source = parseConfiguration("formatVersion: 1\nmodules: {m: {manifest: a}}\nplugins: []\n").value();
+    const std::string manifest = "abcd";
+    const auto changed = setModuleManifest(source, "m", manifest).value();
+    auto policy = YamlLimits{};
+    policy.maximumInputBytes = manifest.size();
+    CHECK(setModuleManifest(source, "m", manifest, policy).hasValue());
+    --policy.maximumInputBytes;
+    CHECK(!setModuleManifest(source, "m", manifest, policy).hasValue());
+    policy = {};
+    policy.maximumNormalizedBytes = changed.normalizedYaml().size();
+    CHECK(setModuleManifest(source, "m", manifest, policy).hasValue());
+    --policy.maximumNormalizedBytes;
+    CHECK(!setModuleManifest(source, "m", manifest, policy).hasValue());
+    policy.maximumNormalizedBytes = source.normalizedYaml().size() - 1;
+    CHECK(!setModuleManifest(source, "m", manifest, policy).hasValue());
+    policy = {};
+    policy.maximumScalarBytes = 38;
+    CHECK(parseConfiguration(source.normalizedYaml(), policy).hasValue());
+    CHECK(!setModuleManifest(source, "m", manifest, policy).hasValue());
+    policy.maximumScalarBytes = 41;
+    CHECK(setModuleManifest(source, "m", manifest, policy).hasValue());
+    policy = {};
+    policy.maximumNodes = 11;
+    CHECK(setModuleManifest(source, "m", manifest, policy).hasValue());
+    --policy.maximumNodes;
+    CHECK(!setModuleManifest(source, "m", manifest, policy).hasValue());
+    policy = {};
+    policy.maximumDepth = 4;
+    CHECK(setModuleManifest(source, "m", manifest, policy).hasValue());
+    policy.maximumDepth = 3;
+    CHECK(!setModuleManifest(source, "m", manifest, policy).hasValue());
+    policy.maximumDepth = 129;
+    CHECK(!setModuleManifest(source, "m", manifest, policy).hasValue());
+    policy = {};
+    policy.structure.maximumBytes = 1 + manifest.size();
+    CHECK(setModuleManifest(source, "m", manifest, policy).hasValue());
+    --policy.structure.maximumBytes;
+    CHECK(!setModuleManifest(source, "m", manifest, policy).hasValue());
+    policy = {};
+    policy.structure.maximumModules = 0;
+    CHECK(!setModuleManifest(source, "m", manifest, policy).hasValue());
+    policy = {};
+    policy.maximumInputBytes = 0;
+    CHECK(!setModuleManifest(source, "m", manifest, policy).hasValue());
+}
 /** @brief 每个行为独立登记，测试实际链接的 LibYAML C 库。 */
 int main(int argc, char** argv)
 {
@@ -205,6 +328,12 @@ int main(int argc, char** argv)
         else if (name == "roundtrip") roundtrip();
         else if (name == "schemas") schemas();
         else if (name == "dependencies") dependencies();
+        else if (name == "module_manifest")
+            moduleManifest();
+        else if (name == "module_manifest_rejected")
+            moduleManifestRejected();
+        else if (name == "module_manifest_limits")
+            moduleManifestLimits();
         else return EXIT_FAILURE;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return EXIT_FAILURE; }
     return EXIT_SUCCESS;

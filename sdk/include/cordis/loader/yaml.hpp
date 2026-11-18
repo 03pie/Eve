@@ -69,6 +69,9 @@ Result<ParsedConfiguration> setEntryConfiguration(const ParsedConfiguration& sou
 Result<ParsedConfiguration> addConfigurationEntry(const ParsedConfiguration& source, const std::string& id,
                                                   const std::string& plugin, const std::string& configuration,
                                                   YamlLimits limits = {}, PluginModule module = {});
+/** @brief 只替换已声明非 builtin 模块的 manifest 字符串，保留其他负载和数字原文；不读文件或运行插件。 */
+Result<ParsedConfiguration> setModuleManifest(const ParsedConfiguration& source, const std::string& alias,
+                                              const std::string& manifest, YamlLimits limits = {});
 /** @brief 宿主提供的内置插件定义；schema 必须无业务副作用，只检查规范 JSON config。 */
 struct PluginDefinition {
     std::string id;

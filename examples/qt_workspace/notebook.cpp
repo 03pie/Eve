@@ -18,6 +18,9 @@
 #ifndef CORDIS_NOTEBOOK_STATE
 #define CORDIS_NOTEBOOK_STATE 0
 #endif
+#ifndef CORDIS_EXAMPLE_NOTEBOOK_FAIL_START
+#define CORDIS_EXAMPLE_NOTEBOOK_FAIL_START 0
+#endif
 #if CORDIS_NOTEBOOK_STATE
 #include "draft_state.hpp"
 #include <cordis/module/qt_state_plugin.hpp>
@@ -122,7 +125,7 @@ public:
         auto written = writeText(context, output.value(), "笔记插件已启动：" + value.title.toStdString());
         if (!written.hasValue())
             return failedTask(written.error());
-        if (value.failStart)
+        if (value.failStart || CORDIS_EXAMPLE_NOTEBOOK_FAIL_START)
             return failedTask(makeError(ErrorCode::ActivationFailed, "notebook start failure requested"));
         return page_->ready();
     }

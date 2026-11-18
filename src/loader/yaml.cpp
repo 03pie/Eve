@@ -542,6 +542,34 @@ Result<ParsedConfiguration> addConfigurationEntry(const ParsedConfiguration& sou
 {
     return changeEntryConfiguration(source, {}, id, plugin, configuration, limits, module);
 }
+/** @brief 定位模块声明而非替换文本，其他配置值继续沿原树保留。 */
+Result<ParsedConfiguration> setModuleManifest(const ParsedConfiguration& source, const std::string& alias,
+                                              const std::string& manifest, YamlLimits limits)
+{
+    if (!source.isValid() || alias == "builtin" || !source.structure().modules().count(alias))
+        return Result<ParsedConfiguration>::failure(makeError(ErrorCode::InvalidArgument, "unknown external module"));
+    try {
+        if (!limits.maximumInputBytes || manifest.size() > limits.maximumInputBytes || !limits.maximumNodes ||
+            !limits.maximumDepth || limits.maximumDepth > 128 || !limits.maximumScalarBytes ||
+            !limits.maximumNormalizedBytes)
+            fail("module manifest exceeds input budget", {});
+        limits.maximumInputBytes = limits.maximumNormalizedBytes;
+        if (source.normalizedYaml().size() > limits.maximumInputBytes)
+            fail("normalized text byte limit exceeded", {});
+        auto root = readTree(source.normalizedYaml(), limits);
+        auto& selected = root->mapping.at("modules")->mapping.at(alias)->mapping.at("manifest");
+        auto value = std::make_unique<Node>();
+        value->plain = false;
+        value->scalar = manifest;
+        value->source = selected->source;
+        selected = std::move(value);
+        std::string normalized;
+        encode(*root, normalized, limits.maximumNormalizedBytes);
+        return parseConfiguration(normalized, limits);
+    } catch (const ParseFailure& failure) {
+        return Result<ParsedConfiguration>::failure(failure.error);
+    }
+}
 namespace detail {
 Result<ParsedConfiguration> mergeReplacementTarget(const ParsedConfiguration& original,
                                                    const ParsedConfiguration& proposed,
