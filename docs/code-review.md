@@ -1,5 +1,15 @@
 # 提交前代码审查记录
 
+## P5-M5-e1 产品精确名单与公开资格审查（通过，2026-11-19）
+
+按ADR-0056及实施前记录，SourceMode只选择原Workspace装配路径，Platform纯值名单move进唯一approvals_；产品main删除资格默认路径，原openQualification保留真实Scene/故障消费者。旧内部资格专名已替换，无另一政策/目录/ledger或SDK变化。受审数据按本构建仅生成四Native批准，生成CPP只由产品demo与producttest编译，业务DLL无反向依赖；Qt及原resident Pipeline不扩准。
+
+三配置各71/71相关专项、28冻结输入/8项改变C++格式通过；新增真实产品准入/往返/跨进程重开与原故障/d1/d2一起核，probe不累加。首编测试helper歧义原35件失败归档保留，仅限定原名称。88实际ASan对象/223仓库依赖及原72业务文件/metadata/Core/SDK/旧SDK实物保持；旧SDK本段未新运行。
+
+公开工具删除对本机多历史schema的长期适配，只保留当前显式capture→candidate。实测修复Ninja目录glob误报，元图刷新后重取profile/实际27清单，单行subninja引用原图/log/deps检查所有真实消费者/四producer，拒绝待编译/链接；CTest显式-j1。独立审计再检出Windows隐式CRLF与导出LF矛盾，旧完整capture和实际exit1保留；仅两行固定LF字节写入/断言，未改旧证据或放宽source检查。最终工具针对性5/5、新目录公开三配置各27/27及实际export exit0通过；旧8项及中间5项保持各自输入，不合并为更多覆盖。
+
+独立核607归档/939源码输入、真实原stdout/child/108次事实及删除链后采用候选原字节，受审源SHA6c0c5324…；三profile产品/工具链/producer保持，原4依赖SHA保持并补3实际环境库。只有编译输入中数据源改变；三原目录真实配置/十消费者构建exit0/no-work，采用关系表核三生成CPP、六对象/六exe字节/mtime/Ninja输出记录及原实物不变。结构/ABI/原始错误/数据与源码跨审无剩余阻断，随本次精确提交同步后才进e2；[e1结论](p5-m5e-development.md#e1-公开资格名单采用与收口)明确全量/兼容新运行、需求映射和新增Release桌面人工仍待e2/e3，M5/P5未完成。
+
 ## P5-M5-e0 产品精确名单与最终出口设计审查（通过，2026-11-19）
 
 在d47210a审计提交同步、clean后先核原产品资格入口、ModuleManager唯一政策及五配置注册边界，再记录[ADR-0056](adr/0056-qualified-native-product-catalog.md)和[M5-e工作单](p5-m5e-development.md)。名单按已资格profile每项四份Native，受审档案只生成产品内部纯值，不自动批准当前manifest/任意运行时文件，不并三profile，不扩Qt或原resident Pipeline。产品/资格共享已有approvals_与装配/替换/关闭，资格入口有实际测试消费者而明确保留，产品默认资格路径须删除。

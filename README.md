@@ -8,7 +8,7 @@
 
 **P4 已完成（Windows x64 / MSVC / Qt 5.15.2 / 默认驻留）**：原生装载、ABI 请求/资源桥、两个业务服务 DLL、Core/Kernel/Session 与同工具链 UI DLL 已实现；需求映射、用户原生验收和退出回执见 [P4 最终审计](docs/p4-closeout.md)。
 
-[P5 受控替换](docs/p5-development.md)进行中。候选目录、hash 安装与完整运行事务已交付，见 [M2c5 收口](docs/p5-m2c5-development.md#阶段收口结论)；版本化状态迁移与完整恢复见 [M3 收口](docs/p5-m3-development.md#m3-c-收口结论)。[M4 收口](docs/p5-m4-development.md#m4-c-收口结论)已完成首次精确授权、显式物理卸载及真实替换终结集成，整阶段审计与五配置全量通过。[M5-b2/b3](docs/p5-m5b-development.md#b3-收口结论)已完成实际 Native 与 Notebook A/B 产物及计数/草稿状态契约；[b4-2](docs/p5-m5b42-development.md#收口结论)已完成同平台实际业务替换/恢复、配置共同提交与旧 Native 回收；M5-c1/c2 已接通实际模块窗口、候选/影响预览、执行/取消、原阶段报告及独立保存，见 [交互收口](docs/p5-m5c-development.md#c2-收口结论)；[c3](docs/p5-m5c-development.md#c3-收口结论)已补齐高级回收和实际 H01/S09/捕获/停止故障报告。业务产物最终名单、同进程100次与随机压力、完整支持矩阵及新增桌面验收继续 M5-d/e。
+[P5 受控替换](docs/p5-development.md)进行中。候选目录、hash安装、完整运行事务、版本化状态迁移/恢复和白名单物理卸载已交付；实际Native/Notebook A/B、模块升级/取消/报告、H01/S09及高级回收见[M5工作单](docs/p5-m5-development.md)。[M5-d](docs/p5-m5d-development.md)已完成三配置同进程8+100、资源基线、seed动作及独立回放/真实删除缩减。[M5-e1](docs/p5-m5e-development.md#e1-公开资格名单采用与收口)已完成公开资格、产品精确名单及相关审计，随本提交归档；e2最终全支持矩阵/需求映射、e3新增桌面验收和整P5审查尚待完成。业务工作台启动与新构建重新资格见[Native资格流程](docs/native-qualification.md)。
 
 当前 C++ 源码 SDK 不构成稳定二进制 ABI；SDK 0.1.5 的宿主与同工具链插件须一起重建，旧 0.1.0/0.1.1/0.1.2/0.1.3/0.1.4 Qt 声明在映射前拒绝。原业务 C ABI 不变，显式装载使用独立的发现 1.1 协商；默认 Native 和 Qt 仍驻留。
 

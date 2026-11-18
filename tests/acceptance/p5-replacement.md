@@ -492,3 +492,21 @@ ctest --test-dir build/ela-msvc-release -R '^p5\.workspace_stress_' --output-on-
 实际字节、Runtime/Instance/Epoch/Binding、desired/Driver/Coordinator、完整realm、Native请求/调用、来源/完整资源kind-label及UI owner按原事实交叉核，未知Failed或无缺依赖Pending不得通过。历史Plan与当前状态分开核。父proof不建第二Scene；子进程无法启动、超时、crash或回执不一致归HarnessError，正常退出20的产品Failed按原报告判据判断复现。三个proof每次保留独立run目录，不覆盖既存证据，CTest原stdout记录真实路径；固定prefix的seed输出仍须按工作单在后续资格前归档。
 
 d2b三共享配置当前各所选5/5，不含未改变的d1新运行；18有效输入/8改变C++格式、51实际ASan对象/174依赖及原产物/SDK保持已核。Release另重复invalid1/1证实新目录且83旧文件SHA保持，不累加原5项。两seed原d2a动作字节当前保持可读，手工资格明确authored/1，不冒称seed随机生成。该专项和M5-d完成不替代M5-e最终名单/全支持矩阵/需求映射及新增原生桌面验收。
+
+## M5-e1 产品精确准入
+
+名单来源与重新资格流程见[ADR-0056](../../docs/adr/0056-qualified-native-product-catalog.md)及[运行与资格指南](../../docs/native-qualification.md)。产品使用本构建嵌入的四条Native身份/SHA；选择候选文件、更新manifest或普通构建都不能批准新字节。原固定资格API仍供真实鉴定场景使用，产品入口不再调用它。
+
+| p5.platform_product_ 场景 | 必须成立的事实 |
+|---|---|
+| catalog | 实际本配置Counter/Reporter A/B四份身份及SHA恰等于生成名单，不混其他profile、Qt、故障或resident产物 |
+| roundtrip | 原产品装配经原Operation完成Counter/Reporter B/A四次Applied，业务1→2→4→5→7，Notebook实例/epoch/runtime/widget/草稿保持；每轮旧Native实际映像离开且文件独占 |
+| empty / wrong_hash | 已存在独立session/store时原ModulePinned拒绝，磁盘/存储不改、没有已装载模块；失败初始化的窗口/队列正常收尾 |
+| changed_candidate | 真实PE副本追加不同字节并更新manifest，必须先通过原preflight再被名单拒绝；现有业务/来源/目标/历史/磁盘保持，没有stage或新事务 |
+| restart | 原保存后的Counter B/Reporter B定位由另一个真实进程同文件/同store重开，仍取受审名单；核实际PID/来源及新进程业务，不声称保存跨进程运行状态 |
+
+```powershell
+ctest --test-dir build/ela-msvc-release -R '^p5\.platform_product_' --output-on-failure --no-tests=error -j 1
+```
+
+三共享配置本轮所选相关71/71包括上述6项及原故障/视图/d1/d2，原stdout、输入/消费者SHA及独立审计见[M5-e工作单](../../docs/p5-m5e-development.md#e1-产品接线验证初始受审源)。产品roundtrip的原helper会保存，应用与保存顺序以d1原事实及新增桌面人工核，不冒称该case覆盖。最终公开资格在新目录各27/27，实际导出和独立审核通过后采用原字节候选；三个原构建目录配置/消费者构建通过，实际生成源/对象/程序及插件字节保持，见[e1收口](../../docs/p5-m5e-development.md#e1-公开资格名单采用与收口)。本段随审计提交同步；这份专项通过不替代e2五配置全量、e3新Release产品人工验收或整个P5完成。

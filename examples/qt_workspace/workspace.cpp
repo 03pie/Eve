@@ -18,16 +18,24 @@ Workspace::Workspace(std::shared_ptr<qt::QtScheduler> target)
 Result<std::shared_ptr<Workspace>> Workspace::open(const QString& root, const QString& file,
                                                    std::shared_ptr<qt::QtScheduler> scheduler)
 {
-    return create(root, {}, file, std::move(scheduler), false);
+    return create(root, {}, file, std::move(scheduler), SourceMode::Notebook, {});
 }
 Result<std::shared_ptr<Workspace>> Workspace::openQualification(const QString& sourceBin, const QString& storeRoot,
                                                                 const QString& file,
                                                                 std::shared_ptr<qt::QtScheduler> scheduler)
 {
-    return create(sourceBin, storeRoot, file, std::move(scheduler), true);
+    return create(sourceBin, storeRoot, file, std::move(scheduler), SourceMode::Qualification, {});
+}
+Result<std::shared_ptr<Workspace>> Workspace::openPlatform(const QString& sourceBin, const QString& storeRoot,
+                                                           const QString& file,
+                                                           std::shared_ptr<qt::QtScheduler> scheduler,
+                                                           module::NativeUnloadWhitelist approvals)
+{
+    return create(sourceBin, storeRoot, file, std::move(scheduler), SourceMode::Platform, std::move(approvals));
 }
 Result<std::shared_ptr<Workspace>> Workspace::create(const QString& root, const QString& store, const QString& file,
-                                                     std::shared_ptr<qt::QtScheduler> scheduler, bool qualification)
+                                                     std::shared_ptr<qt::QtScheduler> scheduler, SourceMode mode,
+                                                     module::NativeUnloadWhitelist approvals)
 {
     using Output = Result<std::shared_ptr<Workspace>>;
     auto* app = qobject_cast<QApplication*>(QCoreApplication::instance());
@@ -41,7 +49,8 @@ Result<std::shared_ptr<Workspace>> Workspace::create(const QString& root, const 
     try {
         // UI 对象只在全部 caller/应用准入通过后构造。
         self = std::shared_ptr<Workspace>(new Workspace(std::move(scheduler)));
-        self->initialize(root, store, file, qualification);
+        self->approvals_ = std::move(approvals);
+        self->initialize(root, store, file, mode);
         return Output::success(self);
     } catch (const detail::InitializationFailure& failure) {
         if (self)
@@ -70,14 +79,14 @@ void Workspace::publishUi()
     publish(shell.output(), "ui.output");
 }
 void Workspace::initializeHost(const QString& file, ConfigurationFileSnapshot baseline,
-                               std::vector<ConfiguredPlugin> plugins, bool qualification)
+                               std::vector<ConfiguredPlugin> plugins, SourceMode mode)
 {
     definitions_ = detail::require(ConfigurationDefinitions::create(std::move(plugins)));
-    // 资格装配先核完整目标；原单 Notebook 仍允许打开坏配置后在 UI 中修正。
-    if (qualification)
+    // 业务装配先核完整目标；原单 Notebook 仍允许打开坏配置后在 UI 中修正。
+    if (mode != SourceMode::Notebook)
         (void)detail::require(definitions_->validate(detail::require(parseConfiguration(initial))));
     std::map<std::string, RealmId> realms;
-    if (qualification)
+    if (mode != SourceMode::Notebook)
         realms.emplace("second", detail::require(kernel->services().createRealm()));
     driver = KernelReconcileDriver::configured(scheduler, kernel, definitions_, std::move(realms));
     session = std::make_shared<ConfigurationSession>(scheduler, driver, std::make_shared<QtConfigurationWriter>(file),

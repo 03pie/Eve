@@ -5,14 +5,14 @@
 #include "workspace_p.hpp"
 
 namespace notebook::detail {
-struct QualificationArtifact {
+struct BusinessArtifact {
     std::string alias, manifest;
     cordis::module::ModuleManifest identity;
 };
 std::string businessPlugin(const std::string& alias);
 cordis::module::PreflightArtifact reviewBusinessArtifact(const std::string& alias, const std::string& root,
                                                          const std::string& manifest);
-std::vector<QualificationArtifact> qualificationArtifacts(const std::string& root);
+std::vector<BusinessArtifact> businessArtifacts(const std::string& root);
 void requireApproved(const cordis::module::PreflightArtifact& artifact,
                      const cordis::module::NativeUnloadWhitelist& approvals);
 cordis::loader::ConfiguredPlugin prepareNotebook(const std::shared_ptr<NotebookModule>& record,

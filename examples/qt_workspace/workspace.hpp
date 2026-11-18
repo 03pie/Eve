@@ -109,10 +109,15 @@ class Workspace : public std::enable_shared_from_this<Workspace> {
 public:
     static cordis::Result<std::shared_ptr<Workspace>> open(const QString& root, const QString& file,
                                                            std::shared_ptr<cordis::qt::QtScheduler> scheduler);
-    /** @brief 默认固定六种业务资格来源；已保存定位按原策略复核，生产卸载名单仍为空。 */
+    /** @brief 固定六种实际业务来源的资格入口；仅临时批准该次固定 Native A/B 字节。 */
     static cordis::Result<std::shared_ptr<Workspace>>
     openQualification(const QString& sourceBin, const QString& storeRoot, const QString& file,
                       std::shared_ptr<cordis::qt::QtScheduler> scheduler);
+    /** @brief 产品宿主传入嵌入的精确批准纯值；装配后不从候选或配置扩充名单。 */
+    static cordis::Result<std::shared_ptr<Workspace>> openPlatform(const QString& sourceBin, const QString& storeRoot,
+                                                                   const QString& file,
+                                                                   std::shared_ptr<cordis::qt::QtScheduler> scheduler,
+                                                                   cordis::module::NativeUnloadWhitelist approvals);
     Workspace(const Workspace&) = delete;
     Workspace& operator=(const Workspace&) = delete;
     cordis::Result<cordis::GenerationId> generation();
@@ -153,16 +158,18 @@ public:
 
 private:
     friend struct detail::WorkspaceUpgradeExecution;
+    enum class SourceMode { Notebook, Qualification, Platform };
     explicit Workspace(std::shared_ptr<cordis::qt::QtScheduler> target);
     static cordis::Result<std::shared_ptr<Workspace>> create(const QString& root, const QString& store,
                                                              const QString& file,
                                                              std::shared_ptr<cordis::qt::QtScheduler> scheduler,
-                                                             bool qualification);
-    void initialize(const QString& root, const QString& store, const QString& file, bool qualification);
+                                                             SourceMode mode,
+                                                             cordis::module::NativeUnloadWhitelist approvals);
+    void initialize(const QString& root, const QString& store, const QString& file, SourceMode mode);
     void publishUi();
     cordis::loader::ConfiguredPlugin openNotebook(const cordis::loader::PluginModule& source, bool stateful);
     void initializeHost(const QString& file, cordis::loader::ConfigurationFileSnapshot baseline,
-                        std::vector<cordis::loader::ConfiguredPlugin> plugins, bool qualification);
+                        std::vector<cordis::loader::ConfiguredPlugin> plugins, SourceMode mode);
     void flushBeforeClose();
     void closeAfterUpgrade();
     void closeModuleViews();

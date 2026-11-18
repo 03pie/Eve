@@ -1,6 +1,7 @@
 /** @file main.cpp
- * @brief 两个实际入口共用应用与退出接线；资格模式使用独立数据目录。
+ * @brief Notebook 与产品业务入口共用应用/退出接线；产品只消费本构建嵌入名单。
  */
+#include "native_catalog_p.hpp"
 #include "workspace.hpp"
 #include <QApplication>
 #include <QDir>
@@ -13,8 +14,8 @@
 #include <algorithm>
 #include <iostream>
 #include <set>
-#ifndef CORDIS_PLATFORM_QUALIFICATION
-#define CORDIS_PLATFORM_QUALIFICATION 0
+#ifndef CORDIS_PLATFORM_WORKBENCH
+#define CORDIS_PLATFORM_WORKBENCH 0
 #endif
 
 namespace {
@@ -124,17 +125,17 @@ int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
-    constexpr bool qualification = CORDIS_PLATFORM_QUALIFICATION != 0;
-    app.setApplicationName(qualification ? "CordisBusinessPlatform" : "CordisDllNotebook");
+    constexpr bool platform = CORDIS_PLATFORM_WORKBENCH != 0;
+    app.setApplicationName(platform ? "CordisBusinessPlatform" : "CordisDllNotebook");
     try {
         const auto args = app.arguments();
-        if (args.size() > (qualification ? 3 : 2))
-            throw std::runtime_error(qualification ? "usage: cordis_platform_workbench_demo [session.yaml] [store]"
-                                                   : "usage: cordis_qt_workspace_demo [session.yaml]");
+        if (args.size() > (platform ? 3 : 2))
+            throw std::runtime_error(platform ? "usage: cordis_platform_workbench_demo [session.yaml] [store]"
+                                              : "usage: cordis_qt_workspace_demo [session.yaml]");
         const auto data = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
         const auto file = args.size() > 1 ? args[1] : data + "/session.yaml";
         const auto store = args.size() > 2 ? args[2] : data + "/plugins";
-        if (!QDir().mkpath(QFileInfo(file).absolutePath()) || (qualification && !QDir().mkpath(store)))
+        if (!QDir().mkpath(QFileInfo(file).absolutePath()) || (platform && !QDir().mkpath(store)))
             throw std::runtime_error("cannot create workspace configuration/store directory");
         const auto scheduler = std::make_shared<qt::QtScheduler>();
         module::ModuleManager manager;
@@ -143,8 +144,12 @@ int main(int argc, char** argv)
             previous.insert(row.generation);
         const auto before = shellWindows();
         const auto root = QCoreApplication::applicationDirPath();
-        auto opened = qualification ? Workspace::openQualification(root, QDir(store).absolutePath(), file, scheduler)
-                                    : Workspace::open(root + "/qt-workspace", file, scheduler);
+#if CORDIS_PLATFORM_WORKBENCH
+        auto opened = Workspace::openPlatform(root, QDir(store).absolutePath(), file, scheduler,
+                                              notebook::detail::productNativeApprovals());
+#else
+        auto opened = Workspace::open(root + "/qt-workspace", file, scheduler);
+#endif
         if (!opened.hasValue()) {
             std::cerr << opened.error().message << '\n';
             finishFailedOpen(scheduler, manager, previous, before);

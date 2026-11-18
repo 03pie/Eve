@@ -12,6 +12,10 @@ Qt/Ela 的 MSVC Debug 或 Release 预设。
 Qt kit 路径，优先采用显式参数及 CORDIS_QT5152_ROOT。
 .PARAMETER ConfigurationFile
 run 时传给工作台的可选配置文件，适合使用独立验收文件。
+.PARAMETER Workbench
+run 的固定入口：configuration 为原配置工作台，business 为三模块业务工作台。
+.PARAMETER StoreRoot
+business run 的可选插件存储目录；指定时同时提供 ConfigurationFile。
 .PARAMETER DeveloperChild
 内部执行标记；公开入口始终在独立 PowerShell 进程中加载开发环境。
 #>
@@ -23,16 +27,24 @@ param(
     [string]$Preset = 'ela-msvc-debug',
     [string]$QtRoot = $env:CORDIS_QT5152_ROOT,
     [string]$ConfigurationFile,
+    [ValidateSet('configuration', 'business')]
+    [string]$Workbench = 'configuration',
+    [string]$StoreRoot,
     [switch]$DeveloperChild
 )
 
 $ErrorActionPreference = 'Stop'
+if ($StoreRoot -and ($Action -ne 'run' -or $Workbench -ne 'business' -or -not $ConfigurationFile)) {
+    throw 'StoreRoot requires business run and an explicit ConfigurationFile.'
+}
 if (-not $DeveloperChild) {
     # VS 开发环境加载器也会重写空环境变量；用子进程隔离其全部环境及模块副作用。
     $taskShellName = if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh.exe' } else { 'powershell.exe' }
     $taskChildArguments = @('-NoProfile', '-File', $PSCommandPath, '-DeveloperChild', '-Action', $Action, '-Preset', $Preset)
+    $taskChildArguments += @('-Workbench', $Workbench)
     if ($QtRoot) { $taskChildArguments += @('-QtRoot', $QtRoot) }
     if ($ConfigurationFile) { $taskChildArguments += @('-ConfigurationFile', $ConfigurationFile) }
+    if ($StoreRoot) { $taskChildArguments += @('-StoreRoot', $StoreRoot) }
     $ErrorActionPreference = 'Continue'
     & (Join-Path $PSHOME $taskShellName) @taskChildArguments
     $taskChildExitCode = $LASTEXITCODE
@@ -76,12 +88,16 @@ try {
     if (-not $env:CMAKE_BUILD_PARALLEL_LEVEL) { $env:CMAKE_BUILD_PARALLEL_LEVEL = '4' }
 
     if ($Action -eq 'run') {
-        if (-not $Preset.StartsWith('ela-')) { throw 'The configuration workbench requires an Ela preset.' }
-        $taskExecutable = Join-Path $taskRoot "build/$Preset/bin/cordis_config_workbench.exe"
+        if (-not $Preset.StartsWith('ela-')) { throw 'The workbench requires an Ela preset.' }
+        $taskName = if ($Workbench -eq 'business') { 'cordis_platform_workbench_demo.exe' } else { 'cordis_config_workbench.exe' }
+        $taskExecutable = Join-Path $taskRoot "build/$Preset/bin/$taskName"
         if (-not (Test-Path -LiteralPath $taskExecutable)) { throw 'Build the selected Ela preset before running it.' }
         $env:QT_QPA_PLATFORM = 'windows'
         $taskArguments = @()
-        if ($ConfigurationFile) { $taskArguments = @('--file', $ConfigurationFile) }
+        if ($ConfigurationFile) {
+            $taskArguments = if ($Workbench -eq 'business') { @($ConfigurationFile) } else { @('--file', $ConfigurationFile) }
+        }
+        if ($StoreRoot) { $taskArguments += $StoreRoot }
         $ErrorActionPreference = 'Continue'
         & $taskExecutable @taskArguments
         $taskRunExitCode = $LASTEXITCODE

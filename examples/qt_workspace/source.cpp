@@ -1,5 +1,5 @@
 /** @file source.cpp
- * @brief 只冻结固定资格名单；普通预览/候选不从所选文件自动授予显式卸载。
+ * @brief 复核固定业务来源和宿主冻结名单；所选候选不能授予显式卸载。
  */
 #include "contract.hpp"
 #include "source_p.hpp"
@@ -27,9 +27,9 @@ PreflightArtifact reviewBusinessArtifact(const std::string& alias, const std::st
         throw InitializationFailure{makeError(ErrorCode::AbiMismatch, "business artifact identity differs")};
     return artifact;
 }
-std::vector<QualificationArtifact> qualificationArtifacts(const std::string& root)
+std::vector<BusinessArtifact> businessArtifacts(const std::string& root)
 {
-    std::vector<QualificationArtifact> result;
+    std::vector<BusinessArtifact> result;
     for (const auto* alias : {"counter", "reporter", "notebook"})
         for (const auto* variant : {"a", "b"}) {
             const bool qt = std::string(alias) == "notebook";
@@ -39,7 +39,7 @@ std::vector<QualificationArtifact> qualificationArtifacts(const std::string& roo
             if (artifact.manifest().moduleVersion != (std::string(variant) == "a" ? "1.1.0" : "1.2.0") ||
                 artifact.manifest().unloadPolicy != (qt ? ModuleUnloadPolicy::Resident : ModuleUnloadPolicy::Explicit))
                 throw InitializationFailure{
-                    makeError(ErrorCode::AbiMismatch, "qualification artifact identity differs")};
+                    makeError(ErrorCode::AbiMismatch, "fixed business artifact identity differs")};
             result.push_back({alias, path, artifact.manifest()});
         }
     return result;
@@ -53,7 +53,7 @@ void requireApproved(const PreflightArtifact& artifact, const NativeUnloadWhitel
             return approved.moduleId == value.moduleId && approved.sha256 == value.sha256;
         }))
         throw InitializationFailure{
-            makeError(ErrorCode::ModulePinned, "explicit candidate is not a frozen qualification artifact")};
+            makeError(ErrorCode::ModulePinned, "explicit artifact requires exact frozen host approval")};
 }
 loader::ConfiguredPlugin prepareNotebook(const std::shared_ptr<NotebookModule>& record,
                                          const std::shared_ptr<ModuleManager>& manager,
@@ -69,7 +69,7 @@ loader::ConfiguredPlugin prepareNotebook(const std::shared_ptr<NotebookModule>& 
                                         scheduler));
     const auto& schema = record->runtime->stateSchema();
     if (stateful && (!schema || schema->id != "org.cordis.example.notebook.draft" || schema->version != 1))
-        throw InitializationFailure{makeError(ErrorCode::AbiMismatch, "qualification notebook state schema differs")};
+        throw InitializationFailure{makeError(ErrorCode::AbiMismatch, "stateful notebook state schema differs")};
     const std::weak_ptr<ModuleManager> weak = manager;
     return {{"example.notebook",
              {{"ui.pages"}, {"ui.commands"}, {"ui.output"}},

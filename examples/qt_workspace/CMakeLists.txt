@@ -1,4 +1,6 @@
 include("${PROJECT_SOURCE_DIR}/cmake/QtPluginContract.cmake")
+include("${PROJECT_SOURCE_DIR}/cmake/NativeProductCatalog.cmake")
+cordis_native_product_catalog(cordis_native_catalog_source)
 # Each actual plugin owns its metadata/moc; C++ and moc use the same state interface selection.
 function(cordis_add_notebook_plugin target output_subdir version state)
     set(directory "${CMAKE_CURRENT_BINARY_DIR}/plugin/${target}/$<CONFIG>")
@@ -61,8 +63,8 @@ if(CORDIS_BUILD_EXAMPLES)
     target_link_libraries(cordis_qt_workspace_demo PRIVATE cordis_notebook_host)
     cordis_target_defaults(cordis_qt_workspace_demo)
     cordis_attach_eve_icon(cordis_qt_workspace_demo)
-    add_executable(cordis_platform_workbench_demo main.cpp)
-    target_compile_definitions(cordis_platform_workbench_demo PRIVATE CORDIS_PLATFORM_QUALIFICATION=1)
+    add_executable(cordis_platform_workbench_demo main.cpp "${cordis_native_catalog_source}")
+    target_compile_definitions(cordis_platform_workbench_demo PRIVATE CORDIS_PLATFORM_WORKBENCH=1)
     target_link_libraries(cordis_platform_workbench_demo PRIVATE cordis_notebook_host)
     cordis_target_defaults(cordis_platform_workbench_demo)
     cordis_attach_eve_icon(cordis_platform_workbench_demo)
@@ -117,6 +119,19 @@ if(BUILD_TESTING)
     add_library(cordis_platform_upgrade_support STATIC "${PROJECT_SOURCE_DIR}/tests/qt/platform_upgrade_support.cpp")
     target_link_libraries(cordis_platform_upgrade_support PUBLIC cordis_platform_workspace_support)
     cordis_target_defaults(cordis_platform_upgrade_support)
+    add_executable(cordis_platform_product_tests
+        "${PROJECT_SOURCE_DIR}/tests/qt/platform_product.cpp" "${cordis_native_catalog_source}")
+    target_link_libraries(cordis_platform_product_tests PRIVATE cordis_platform_upgrade_support)
+    set_target_properties(cordis_platform_product_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    cordis_target_defaults(cordis_platform_product_tests)
+    add_dependencies(cordis_platform_product_tests cordis_example_counter_a cordis_example_counter_b
+        cordis_example_reporter_a cordis_example_reporter_b cordis_example_notebook_a cordis_example_notebook_b)
+    foreach(case IN ITEMS catalog roundtrip empty wrong_hash changed_candidate restart)
+        add_test(NAME p5.platform_product_${case} COMMAND cordis_platform_product_tests "${CMAKE_BINARY_DIR}/bin" "${case}")
+        set_tests_properties(p5.platform_product_${case} PROPERTIES
+            LABELS "p5;module;qt;ui;replacement;platform_product" TIMEOUT 120
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endforeach()
     add_executable(cordis_platform_upgrade_tests
         "${PROJECT_SOURCE_DIR}/tests/qt/platform_upgrade_main.cpp"
         "${PROJECT_SOURCE_DIR}/tests/qt/platform_upgrade_native.cpp"
