@@ -1,6 +1,7 @@
 /** @file upgrade_view_main.cpp
  * @brief 实际模块升级窗口入口与共用查询；不另建宿主或推进器。
  */
+#include "upgrade_fault_p.hpp"
 #include "upgrade_view_p.hpp"
 #include <QAction>
 #include <QApplication>
@@ -201,7 +202,9 @@ int main(int argc, char** argv)
         const auto name = application.arguments()[2];
         PLATFORM_CHECK(upgrade_view_test::controlsCase(name, source) ||
                        upgrade_view_test::operationsCase(name, source) ||
-                       upgrade_view_test::failuresCase(name, source));
+                       upgrade_view_test::failuresCase(name, source) || upgrade_fault_test::stateCase(name, source) ||
+                       upgrade_fault_test::stopCase(name, source) || upgrade_fault_test::nativeCase(name, source) ||
+                       upgrade_fault_test::s09Case(name, source) || upgrade_fault_test::retirementCase(name, source));
         std::cout << "Upgrade view case passed: " << name.toStdString() << '\n';
         return 0;
     } catch (const std::exception& failure) {

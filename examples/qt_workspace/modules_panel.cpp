@@ -1,9 +1,8 @@
 /** @file modules_panel.cpp
  * @brief 同一托管模块窗口；所有更新沿 Workspace 具体视图屏障，不拥有业务能力。
  */
-#include "modules_panel_p.hpp"
+#include "retirement_panel.hpp"
 #include "upgrade_panel.hpp"
-#include <ElaPlainTextEdit.h>
 #include <ElaPushButton.h>
 #include <ElaTabWidget.h>
 #include <ElaTableView.h>
@@ -92,10 +91,8 @@ public:
         auto tabs = new ModuleTabs(this);
         upgrade_ = new UpgradePanel(workspace_, tabs, [this] { refreshView(); });
         tabs->addTab(upgrade_, QString::fromUtf8("升级"));
-        details_ = new ElaPlainTextEdit(tabs);
-        details_->setObjectName("CordisModuleDiagnosticsText");
-        details_->setReadOnly(true);
-        tabs->addTab(details_, QString::fromUtf8("资源与诊断"));
+        retirement_ = new RetirementPanel(workspace_, tabs, [this] { refreshView(); });
+        tabs->addTab(retirement_, QString::fromUtf8("资源与诊断"));
         layout->addWidget(tabs, 1);
         auto refresh = new ElaPushButton(QString::fromUtf8("刷新"), this);
         refresh->setObjectName("CordisModuleDiagnosticsRefresh");
@@ -126,9 +123,9 @@ private:
     ElaTableView* table_ = nullptr;
     QStandardItemModel* model_ = nullptr;
     ElaText* status_ = nullptr;
-    ElaPlainTextEdit* details_ = nullptr;
     QTimer* timer_ = nullptr;
     UpgradePanel* upgrade_ = nullptr;
+    RetirementPanel* retirement_ = nullptr;
     bool rendering_ = false;
 
     void render(const WorkspaceModulesSnapshot& snapshot, const WorkspaceUpgradeSnapshot& upgrades)
@@ -172,14 +169,12 @@ private:
         }
         table_->setCurrentIndex(model_->index(selectedRow, 0));
         table_->setEnabled(snapshot.open && !upgrades.active);
-        const auto text = detail::moduleDiagnosticsText(snapshot);
-        if (details_->toPlainText() != text)
-            details_->setPlainText(text);
         status_->setText(snapshot.open ? QString::fromUtf8("%1 个模块").arg(snapshot.current.size())
                                        : QString::fromUtf8("工作台正在关闭或停止接纳操作；这里保留已知状态。"));
         const auto alias =
             selectedRow < 0 ? std::string{} : snapshot.current[static_cast<std::size_t>(selectedRow)].alias;
         upgrade_->refresh(snapshot, upgrades, alias);
+        retirement_->refresh(snapshot, upgrades);
     }
     void refreshView()
     {

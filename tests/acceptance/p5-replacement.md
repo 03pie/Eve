@@ -388,3 +388,19 @@ Output 的每外壳 pending 预算为 1000 条、1 MiB 字符串和 64 个精确
 | committed_discard | UI 发起原升级，实际发布/共同提交后丢 Qt 回执，真实 committed/current/locator 与原拥有链保留；关队列后不声称最终 UI 已刷新 |
 
 原 `p5.modules_view_legacy` 同时检查代码升级只读与实际配置保存互不误伤。最终十九输入三配置各受影响专项 236/236，不将首轮十一项重复累加；37 实际 ASan 对象/144 依赖、36 产物及六次指定错误入口收尾另核。只做有限真实交互验证，完整 H01/S09/高级重试、100 次/随机、精确名单及新增原生桌面验收继续 c3/d/e。
+
+## M5-c3 真实故障与高级物理重试
+
+九项前缀 `p5.upgrade_fault_` 使用原控件/Workspace/事务，故障来自同业务 DLL，不扩正常四份 explicit 批准，见 [c3 结论](../../docs/p5-m5c-development.md#c3-收口结论)。
+
+| 场景 | 必须成立的事实 |
+|---|---|
+| notebook_restore | 实际1.3候选命令/页/启动输出不提前公开；失败后旧代/定位恢复，新页/命令及最后草稿，Native实例不换 |
+| draft_limit | 超65536 UTF-8字节在停止前拒绝，原实例/epoch/全文保持；缩短后同一B代次通过原stage复用，未撤pin或改角色 |
+| stop_counter / stop_notebook | 原failCleanup产生Failed/resourcesRetained，非RecoveryFailed；独立Notebook按实际范围保留，已撤销页不称正常旧业务 |
+| missing_query / missing_business | 预览通过，分别真正到module.query/module.abi.query；唯一原目录候选正确，尚无ReplacementOperation，旧链/配置不换，Resident/PIN准确保留 |
+| s09_restored | 原FIFO等待实际Loading并登记原ready，必须见证Counter候选Active+Held且无Published，再真实消费者失败；完整Restored/新服务实例/值2、Notebook原页/草稿不变 |
+| s09_recovery_failed | 同样实际经过提供者准备；消费者恢复再次失败为Failed+RecoveryFailed/resourcesRetained，原claims/执行/Workspace链保留，无成功finish或清PIN |
+| retirement | 实际Runtime外借使排空拒绝；释放/FIFO后同一高级按钮卸载，HMODULE/旧MEM_IMAGE/独占文件三重证据；原Applied与第一次失败drain历史不改 |
+
+最终23输入三配置各受影响专项245/245；首7/9负例及修正后9/9分别归档，不重复累加。21格式、52ASan对象/162实际依赖、正常36+四配置故障16产物、24正常Native命令及六次入口收尾另核。SDK/平台层未变，无Ela仅故障产物构建/导出证明。M5-c 分段出口完成；M5-d 同进程100次/随机回放、M5-e 最终精确资格/支持矩阵/需求映射和新增原生桌面验收仍待完成。

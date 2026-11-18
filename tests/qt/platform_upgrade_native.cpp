@@ -1,52 +1,13 @@
 /** @file platform_upgrade_native.cpp
  * @brief 真实 Native A/B 替换、状态继续及独立 Windows 映像/文件证据。
  */
+#include "native_image_p.hpp"
 #include "platform_upgrade_p.hpp"
-#include <QDir>
 #include <QPointer>
 #include <QWidget>
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
 
 namespace platform_upgrade_test {
 namespace {
-struct Image {
-    QString file;
-    std::uintptr_t begin;
-    std::size_t bytes;
-    explicit Image(const ModuleGenerationSnapshot& row)
-        : file(QDir::toNativeSeparators(QString::fromUtf8(row.libraryPath.c_str())))
-    {
-        const auto handle = GetModuleHandleW(reinterpret_cast<LPCWSTR>(file.utf16()));
-        PLATFORM_CHECK(handle);
-        begin = reinterpret_cast<std::uintptr_t>(handle);
-        const auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(handle);
-        PLATFORM_CHECK(dos->e_magic == IMAGE_DOS_SIGNATURE);
-        const auto nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(begin + static_cast<std::uintptr_t>(dos->e_lfanew));
-        PLATFORM_CHECK(nt->Signature == IMAGE_NT_SIGNATURE);
-        bytes = nt->OptionalHeader.SizeOfImage;
-        PLATFORM_CHECK(bytes > 0);
-    }
-    void absent() const
-    {
-        PLATFORM_CHECK(!GetModuleHandleW(reinterpret_cast<LPCWSTR>(file.utf16())));
-        for (auto address = begin; address < begin + bytes;) {
-            MEMORY_BASIC_INFORMATION info{};
-            PLATFORM_CHECK(VirtualQuery(reinterpret_cast<LPCVOID>(address), &info, sizeof(info)) == sizeof(info));
-            PLATFORM_CHECK(info.Type != MEM_IMAGE || reinterpret_cast<std::uintptr_t>(info.AllocationBase) != begin);
-            const auto end = reinterpret_cast<std::uintptr_t>(info.BaseAddress) + info.RegionSize;
-            PLATFORM_CHECK(end > address);
-            address = end;
-        }
-        const auto fileHandle =
-            CreateFileW(reinterpret_cast<LPCWSTR>(file.utf16()), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr,
-                        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-        PLATFORM_CHECK(fileHandle != INVALID_HANDLE_VALUE);
-        PLATFORM_CHECK(CloseHandle(fileHandle));
-    }
-};
 void reclaimed(Scene& scene, const UpgradePreview& value, const WorkspaceUpgradeReport& report, const Image& old)
 {
     PLATFORM_CHECK(report.nativeClose && report.nativeClose->hasValue() && report.nativeClose->value().quiescent &&

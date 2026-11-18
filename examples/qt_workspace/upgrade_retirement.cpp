@@ -1,6 +1,7 @@
 /** @file upgrade_retirement.cpp
  * @brief 事务终结后的目标代次回收；物理拒绝不改原业务提交结果。
  */
+#include "retirement_p.hpp"
 #include "upgrade_p.hpp"
 #include <algorithm>
 
@@ -77,9 +78,11 @@ void WorkspaceUpgradeExecution::reclaim()
             return;
         }
         // 原目录同时核对真实 source、ledger、模块预约与读者，不代替其他拥有者释放。
-        report.drain.emplace(owner->manager->drain(report.retired));
-        if (report.drain->hasValue() && actual->manifest.loader == module::ModuleLoader::CAbi)
-            report.unload.emplace(owner->manager->tryUnload(report.retired));
+        const auto attempted = attemptRetirement(*owner->manager, *actual);
+        if (attempted.drain)
+            report.drain.emplace(*attempted.drain);
+        if (attempted.unload)
+            report.unload.emplace(*attempted.unload);
     }
     finish();
 }

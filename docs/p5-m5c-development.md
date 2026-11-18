@@ -5,8 +5,8 @@
 | 阶段 | 具体出口 | 状态 |
 |---|---|---|
 | c1 | 顶部实际模块入口、同一托管模块窗口、纯值模块目录和视图退出屏障；替换旧无用户入口的诊断路径 | 已完成，e8d4769 已审计提交同步 |
-| c2 | 候选文件选择、身份/影响路径预览、显式升级、原阶段/报告、取消与陈旧/双击门禁 | 已完成审计与验证，随本次提交同步 |
-| c3 | 高级物理重试及真实 H01/S09、捕获/停止/通知/回执故障产品报告；完整 M5-c 审计 | 待 c2 提交同步 |
+| c2 | 候选文件选择、身份/影响路径预览、显式升级、原阶段/报告、取消与陈旧/双击门禁 | 已完成，19956d4 已审计提交同步 |
+| c3 | 高级物理重试及真实 H01/S09、捕获/停止/通知/回执故障产品报告；完整 M5-c 审计 | 已完成审计与验证，随本次提交同步 |
 
 ## c1 问题与职责
 
@@ -90,6 +90,28 @@ Workspace.cancelUpgrade(expectedOperationId) 检查 owner、工作台开放状�
 独立源码、生命周期、SDK 和证据审查无剩余提交阻断，随本次提交同步。c1 交付实际模块入口和视图基础；候选选择、影响/执行、进度/取消属于 c2，高级回收及完整 H01/S09 属于 c3，生产名单仍空，Qt 驻留。没有预留不可用升级按钮或宣称整个 M5/P5 完成。
 
 
+## c3 实施前设计
+
+c2 已随 19956d4 审计提交并同步，HEAD 与 origin/master 一致、工作区干净后开始。本段复核原目录、ledger、原事务/状态捕获、具体升级子页与退出屏障：完整故障已有原机制，新增能力应限于具体回收重试和实际业务故障的产品见证。保持 SDK/Core/Module/Loader/Replacement/Qt/Ui/Ela 与正常 A/B 不变，不增加测试导出、RPC、第二实例表或第二事务。
+
+示例宿主增加同步 retryRetirement(expectedGeneration) 和纯 WorkspaceRetirementReport（generation、实际 drain/unload 可选 Result）。先核 owner、工作台开放、无原升级执行（包括 retained/deliveryBlocked），再从原目录核目标非 Current、Native 且属于实际当前业务模块的 ModuleId 范围。Candidate 也可能是未提交操作的清理目标，不把 report.retired 当作真实 role；128 条历史不作为回收授权，也不新建清理 registry，历史淘汰不剥夺旧重代次的合法重试。原 API 继续最终判首次拥有线程、策略、真实 sources/ledger、预约/readers、健康与永久 pin。
+
+普通外借 Runtime 未释放时原 drain 应拒绝，释放并经过真实 FIFO 后可重试；包装不关闭 NativeSession、不替他人释放 Runtime、不清 PIN、不扩大名单、不 pin 整个 Workspace。原执行正常清理与显式重试共用一个实际 drain→tryUnload 值实现，保留原 Qt 只 drain 的行为；已 Unloaded 只取原 tryUnload 的幂等结果。原升级报告/Task/历史不改写，界面仅保存最后一次纯尝试，和当前真实目录并列。FreeLibrary 失败保留原引用且无永久 pin 时允许原机制再试；外部映像/探测不确定留下永久 pin 的情况不能因外部引用消失就重新装载或撤 pin。nativeMapped=false 仍只说明目录引用。
+
+“资源与诊断”改为独立 RetirementPanel，持原诊断文本、Ela 代次选择器、显式高级尝试和结果；不把物理回收塞进 Load/Stop。代次来源只取同次原 generations，保留 GenerationId 选择，旧行消失不静默换成另一代。父组件仍唯一刷新入口/timer，两个子页都弱持 Workspace、经同一 withModuleView，同步动作后刷新；无异步 widget 捕获。范围验证供宿主与界面实际共用，点击仍按明确 GenerationId 重验，不能用逐行 provider 回调或历史缓存授权。
+
+发现 stage 缺 discovery 导出时的实际报告缺口：ModuleManager 已在唯一目录保留 Failed Candidate，失败 Result 只有 ErrorInfo，宿主尚未赋 candidate。改为取得 stage Result 后，失败时按已固定安装 artifact 的完整 manifest、准确 manifest/library 路径、Candidate role 与 predecessor，从原 snapshot 唯一关联实际代次；无匹配保留无代次，多匹配/查询失败保留原错误及原因并保守保留拥有者，不能猜最新 ID。准备失败不伪造 ReplacementOperation/OperationId；文字显示本次事务尚未开始，无有效候选时明确“未返回代次”，不把 #0 当身份。已映射拒绝代按原驻留/PIN 留在目录，不假装清理成功，也不因普通发现拒绝把整个平台永久锁住。
+
+四份 tests-only resident Native 故障产物复用现 counter.cpp/reporter.cpp 的实际逻辑，不修改正常业务源或原四份 explicit 批准：Counter 只缺发现导出、只缺业务导出，分别真实到达 module.query 与 module.abi.query；Reporter 薄 TU 复用原 reporter.cpp/支持表，原业务 query 私有改名但不导出，只由标准业务 query 委派后替换 start。读取原单调 Instance.id，第二次失败/第二次及以后失败分别产生完整恢复与 RecoveryFailed；没有新计数器、setter、另表或测试函数导出。CMake helper 只添加四实际调用需要的源/导出选项，正常调用编译参数不变；故障目标显式关闭自动导出，独立清单/版本/摘要。
+
+S09 在同一真实 Workspace 预装 resident Reporter 故障源为 Current，首次实例正常，再由原 UI 升级 Counter A→B。ServiceRegistry.watch 是私有，不能为测试公开；在原 scheduler 的 FIFO 观察实际候选 Loading，然后登记原 Instance.ready 回执，必须见证 candidate Counter 已 Active、实际 graph binding 为 Held 且未公开，随后真实 Reporter 启动失败。==2 失败要求 Restored/recovered=true、Current/locator 仍 A、两服务以新实例恢复，独立 Notebook 的原实例/页/草稿保持；>=2 失败要求 Failed+RecoveryFailed/resourcesRetained、原执行/预约/拥有链保留，禁止成功 finish 或清 pin。
+
+实际控件新增九类故障/重试检查：Notebook 启动失败后的完整旧代/草稿恢复与候选页/命令/启动输出未提前公开；超 65536 UTF-8 字节的捕获失败发生于旧实例/epoch/全文不变，缩短后同一 B 再试；Counter、Notebook 原 failCleanup 的停止失败，不误称恢复失败或旧页仍健康；两类缺符号；S09 两类消费者失败；外借工厂使排空拒绝、释放/FIFO 后实际高级按钮成功并验证 Windows 映像/独占文件，而原 Applied 不变。Qt loader root 使失败候选 drain 拒绝且 ledger 仍开放，同代次复用沿原 stage，不为缩短重试改角色、撤 pin 或新建加载算法。
+
+H01 尚无原 OperationId，不能套 View.begin 的在途要求；驻留拒绝源仍保留，正常工作台业务关闭检查只允许这份预期目录失败，不冒称整个进程无失败/PIN。停止失败和恢复失败分独立进程保留原链。c2 的真实回执丢弃继续作为回归，不重复充当新增故障实测；本段仍不是 M5-d 的 100 次/随机或 M5-e 的最终资格、完整支持矩阵及新增桌面人工验收。
+
+高级按钮的物理检查与既有 Native 升级检查成为同一判据的两个实际调用者，因此提取原测试 Image 检查为唯一私有头、删除旧局部副本。仍使用真实 HMODULE、全映像 VirtualQuery 与独占文件打开，不加 DLL 探针导出或复制验证实现。
+
 ## c2 收口结论
 
 同一个实际模块窗口现提供绝对路径输入/非模态文件选择、旧新身份/摘要/策略及真实影响路径预览、显式升级、原 OperationId/阶段/结果、取消和单独保存。预览不安装、不装载；执行重新核旧完整 manifest、实际闭包/路径、修订和源文件。disabled 目标及真实消费者路径均入预览，动态成员仍显示原身份。legacy Notebook 1.0 的代码升级只读，但原配置保存仍可用。
@@ -105,3 +127,20 @@ Workspace.cancelUpgrade(expectedOperationId) 检查 owner、工作台开放状�
 三十六业务产物/metadata/moc/宏一致，Native 二十四原摘要保持，旧 SDK .5 八项实物归档未变。SDK、Core/Module/Loader/Replacement/Qt/Ui/Ela 与只读参考未改；三配置九份当前平台库及一个既有 Debug 旧文件与构建前 SHA256 一致，不把旧文件算成运行支持。六次真实入口坏文件检查均匹配指定错误、退出 1 且无未确认收尾。未重复未变平台全量、无 UI/无 Qt 全量或 SDK 兼容运行；c1 的旧实物实测仍为其原范围。
 
 独立源码/输入重入、生命周期、取消身份、格式和证据审查无剩余提交阻断，随本次提交同步。c2 是有限实际交互交付，不替代 c3 完整 H01/S09/高级物理重试、M5-d 同进程 100 次与随机、M5-e 最终名单/支持矩阵及新增原生桌面人工验收；P5 未完成，生产名单仍空，Qt 驻留。
+
+
+## c3 收口结论
+
+同一模块窗口的“资源与诊断”现有独立高级回收子页：真实代次选择、原策略/PIN/账目、最后一次明确 GenerationId 的排空与物理尝试。输入重入和目录淘汰不静默换目标，选择及动作沿原视图屏障；父组件仍唯一刷新/timer，子页无异步任务/工厂拥有。retryRetirement 与正常收尾共用原 drain→Native tryUnload 实现，已 Unloaded 用原幂等结果，Qt 不卸载。按实际 Current 对应 ModuleId 限定非 Current Native 范围，Candidate 也可为清理目标；不用纯历史作授权、不新建生命周期目录、不关闭别人的会话/Runtime、不清 PIN。普通外借释放后可重试，永久不确定映像仍按原 API 拒绝，Applied/原 Task/历史不改写。
+
+stage 缺发现导出失败后，从原目录按固定安装路径、完整 manifest、predecessor 和 Candidate role 唯一关联实际代次，故障报告不再漏掉已存在的 Failed Candidate。无匹配不猜 ID，目录查询失败/多匹配保守保留；这两个保守分支只有静态审查，没有增加注入接口假称实测。准备失败无原操作回执时明确说明，未返回有效候选不显示 #0。发现/业务拒绝与其后恢复、停止不静止、恢复失败分开，原映像/PIN 继续按真实目录显示。
+
+四份 tests-only resident Native 故障产物复用原 Counter/Reporter 和原实例表，只精确缺发现/业务导出，或按原 Reporter 实例 id 第二次启动失败/第二次及以后失败。正常六个目标所用业务源/编译参数不改，原四份 explicit 批准与生产空名单不扩大；薄桥只导出两个标准入口，没有测试导出、setter、另一实例表或 RPC。原 Image 物理检查提取为两实际调用者共用的私有头，旧副本删除。
+
+九项真实控件场景见证：Notebook 1.3 激活失败后旧代/定位/草稿以新页恢复，候选命令/页/启动输出未提前公开；超限草稿捕获失败保留旧实例/epoch/全文，缩短后同一 B 代次重试成功；Counter/Notebook 停止清理失败为 Failed/resourcesRetained 而非 RecoveryFailed；两类缺符号实际分别到 module.query/module.abi.query，旧链不变且未产生 ReplacementOperation；S09 真实 Counter 候选 Active+Held 后消费者失败，分别 Restored 和 Failed/RecoveryFailed，独立 Notebook 不变；外借实际 Runtime 使排空拒绝，释放/FIFO 后同一高级按钮真实卸载旧代，Windows HMODULE、原 AllocationBase 的 MEM_IMAGE 消失及独占可写文件共同证明，原 Applied 和第一次失败回收记录保持。
+
+首构建发现 QWidget.data 遮蔽警告，维持 /WX 并改局部名；原回执测试参数名一并明确。只读审查又发现 S09 FIFO 首次见到的是合法 Pending，首轮实际新场景 7/9、两项在该断言失败；保留原日志/输入/源。仅修测试继续原 FIFO 等 Loading 后登记原 ready，保留 Active/Held/未公开的强见证。三配置重新构建，最终二十三输入/二十一项格式，Release 新九项 9/9；Release/Debug/ASan 各受影响专项 245/245，完整选择集与唯一 Passed 逐项对应，whole_stage=false，不重复累加新九项或负例。
+
+五十二实际 ASan 对象与一百六十二源/头编译依赖核 flags、真实 Ninja deps、时间戳及前后摘要，包括原调用者、四种 Notebook、五份同源 Counter 和两份 Reporter 故障桥对象。正常三十六业务 DLL 摘要与 c2 相同，Native 二十四原 b2 摘要保持；新增四配置共十六故障 DLL 的真实导出、清单/版本/摘要、源码/宏与 ASan flags 一致，原二十四 Native 编译命令逐字不变。无 Ela 配置仅作四故障产物构建/导出证明，不冒称新的 UI 运行支持。SDK/平台层/只读参考未改，九份当前平台库及一个既有 Debug 旧文件摘要保持；六次真实入口指定坏文件错误、退出 1、无未确认收尾独立核对。未重跑未变平台全量或 SDK 兼容运行。
+
+本段独立架构/所有权、原状态/故障、源码/格式及最终证据审计无剩余提交阻断，随本次提交同步，M5-c 分段交付完成。M5-a1/a2 的实际发布/通知机制及 c2 已提交回执丢弃继续回归，不重复当作本轮新增；本段正常/故障是有限场景，不替代 M5-d 同一进程 100 次成功 Applied 与有 seed 的随机/缩减回放，也不替代 M5-e 最终精确业务资格/支持矩阵/需求映射和新增原生桌面人工验收。M5/P5 仍未完成。

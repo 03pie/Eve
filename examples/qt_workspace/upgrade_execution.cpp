@@ -33,11 +33,38 @@ void WorkspaceUpgradeExecution::start(const UpgradePreview& preview)
         throw InitializationFailure{
             makeError(ErrorCode::ConfigConflict, "candidate source changed during installation")};
     candidateLocator = copied.sha256 + "/module.json";
-    const auto loaded = report.alias == "notebook"
-                            ? require(stageQtModule(owner->pluginRoot_, candidateLocator, report.previous))
-                            : require(owner->manager->stage(owner->pluginRoot_, candidateLocator, report.previous, {},
-                                                            owner->approvals_));
-    report.candidate = loaded.generation;
+    const auto staged =
+        report.alias == "notebook"
+            ? stageQtModule(owner->pluginRoot_, candidateLocator, report.previous)
+            : owner->manager->stage(owner->pluginRoot_, candidateLocator, report.previous, {}, owner->approvals_);
+    if (!staged.hasValue()) {
+        auto failure = staged.error();
+        const auto rows = owner->manager->snapshot();
+        if (!rows.hasValue()) {
+            failure.causes.push_back(rows.error());
+            report.retained = true;
+            throw InitializationFailure{std::move(failure)};
+        }
+        const auto& expected = installed->artifact();
+        const ModuleGenerationSnapshot* matched = nullptr;
+        for (const auto& row : rows.value()) {
+            if (row.role != GenerationRole::Candidate || row.predecessor != report.previous ||
+                !sameManifest(row.manifest, expected.manifest()) || row.manifestPath != expected.manifestPath() ||
+                row.libraryPath != expected.libraryPath())
+                continue;
+            if (matched) {
+                failure.causes.push_back(
+                    makeError(ErrorCode::ConfigConflict, "failed stage has multiple matching candidate generations"));
+                report.retained = true;
+                throw InitializationFailure{std::move(failure)};
+            }
+            matched = &row;
+        }
+        if (matched)
+            report.candidate = matched->generation;
+        throw InitializationFailure{std::move(failure)};
+    }
+    report.candidate = staged.value().generation;
     std::optional<loader::ConfiguredPlugin> plugin;
     if (report.alias == "notebook") {
         candidateNotebook = std::make_shared<NotebookModule>(report.candidate);
@@ -160,6 +187,10 @@ void WorkspaceUpgradeExecution::retain(ErrorInfo failure)
 }
 void WorkspaceUpgradeExecution::preparationFailed(ErrorInfo failure)
 {
+    if (report.retained) {
+        retain(std::move(failure));
+        return;
+    }
     report.failure.emplace(failure);
     const auto claims = owner->kernel->replacements();
     const auto modules = owner->manager->snapshot();

@@ -33,10 +33,11 @@ QString resultText(const std::optional<Result<void>>& result)
 QString reportText(const WorkspaceUpgradeReport& report, const WorkspaceModulesSnapshot& modules, bool terminal,
                    bool hostActive)
 {
-    QString text = QString::fromUtf8("模块 %1 · previous #%2 · candidate #%3\n")
+    QString text = QString::fromUtf8("模块 %1 · previous #%2 · candidate %3\n")
                        .arg(QString::fromStdString(report.alias))
                        .arg(report.previous.value())
-                       .arg(report.candidate.value());
+                       .arg(report.candidate.valid() ? "#" + QString::number(report.candidate.value())
+                                                     : QString::fromUtf8("未返回代次"));
     if (report.replacement) {
         const auto& actual = *report.replacement;
         text += QString("OperationId #%1\ncommitted=%2 · recovered=%3 · resourcesRetained=%4\n")
@@ -70,7 +71,9 @@ QString reportText(const WorkspaceUpgradeReport& report, const WorkspaceModulesS
                 text += QString::fromUtf8("RecoveryFailed：旧业务恢复失败。\n");
             text += moduleErrorText(error) + '\n';
         }
-    } else
+    } else if (report.failure)
+        text += QString::fromUtf8("本次整体替换尚未开始；未取得原事务 OperationId。\n");
+    else
         text += QString::fromUtf8("尚无原事务 OperationId。\n");
     text += QString("retained=%1 · deliveryBlocked=%2\n").arg(report.retained).arg(report.deliveryBlocked);
     if (hostActive)

@@ -8,6 +8,9 @@
 namespace notebook::detail {
 QString moduleErrorText(const cordis::ErrorInfo& error, unsigned depth = 0);
 QString moduleDiagnosticsText(const WorkspaceModulesSnapshot& snapshot);
+QString retirementStatusText(const WorkspaceModulesSnapshot& modules, cordis::GenerationId selected,
+                             const cordis::Result<cordis::module::ModuleGenerationSnapshot>& target,
+                             cordis::GenerationId attempted, const cordis::Result<WorkspaceRetirementReport>* result);
 QString upgradePreviewText(const UpgradePreview& preview);
 QString upgradeReportText(const WorkspaceUpgradeSnapshot& upgrade, const WorkspaceModulesSnapshot& modules,
                           const std::string& alias);

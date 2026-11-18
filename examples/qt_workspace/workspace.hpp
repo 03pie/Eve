@@ -48,6 +48,11 @@ struct WorkspaceUpgradeReport {
     std::optional<cordis::Result<void>> drain, unload;
     bool retained = false, deliveryBlocked = false;
 };
+/** @brief 同步回收尝试的原结果，不改写业务替换报告或保留执行能力。 */
+struct WorkspaceRetirementReport {
+    cordis::GenerationId generation;
+    std::optional<cordis::Result<void>> drain, unload;
+};
 struct WorkspaceUpgradeSnapshot {
     bool accepting = false, deliveryBlocked = false;
     std::optional<WorkspaceUpgradeReport> active;
@@ -123,6 +128,8 @@ public:
     cordis::Result<void> cancelUpgrade(cordis::OperationId expectedOperationId);
     cordis::Result<WorkspaceUpgradeSnapshot> upgradeSnapshot();
     cordis::Result<WorkspaceModulesSnapshot> modulesSnapshot();
+    /** @brief 仅尝试本工作台业务范围内的非 Current Native；真实授权和账目仍由原目录核对。 */
+    cordis::Result<WorkspaceRetirementReport> retryRetirement(cordis::GenerationId expectedGeneration);
     /** @brief 显式保存当前已接受修订并返回原 Session/Store 回执，不应用编辑草稿。 */
     cordis::Result<cordis::Task<cordis::loader::SaveReport>> saveConfiguration(std::uint64_t expectedRevision);
     /** @brief 同步写栈保活并阻止破坏性关闭；不接管事务或异步回调。 */

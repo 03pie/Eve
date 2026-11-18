@@ -1,7 +1,19 @@
 function(cordis_add_native_service_example target name directory version unload_policy)
-    add_library(${target} MODULE ${name}.cpp support.hpp)
+    cmake_parse_arguments(SERVICE "NO_DISCOVERY;NO_BUSINESS" "SOURCE" "" ${ARGN})
+    set(service_source "${name}.cpp")
+    if(SERVICE_SOURCE)
+        set(service_source "${SERVICE_SOURCE}")
+    endif()
+    set(service_exports)
+    if(NOT SERVICE_NO_DISCOVERY)
+        list(APPEND service_exports CORDIS_MODULE_EXPORTS)
+    endif()
+    if(NOT SERVICE_NO_BUSINESS)
+        list(APPEND service_exports CORDIS_ABI_EXPORTS)
+    endif()
+    add_library(${target} MODULE "${service_source}" support.hpp)
     target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}/sdk/include")
-    target_compile_definitions(${target} PRIVATE CORDIS_MODULE_EXPORTS CORDIS_ABI_EXPORTS
+    target_compile_definitions(${target} PRIVATE ${service_exports}
         CORDIS_EXAMPLE_MODULE_VERSION="${version}")
     if(unload_policy STREQUAL "explicit")
         target_compile_definitions(${target} PRIVATE CORDIS_EXAMPLE_EXPLICIT_UNLOAD=1)
@@ -50,6 +62,29 @@ target_link_libraries(${demo} PRIVATE cordis_native_pipeline)
 set_target_properties(${demo} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 cordis_target_defaults(${demo})
 if(BUILD_TESTING)
+    # Reuse the actual business code, with only the intended public entry absent.
+    cordis_add_native_service_example(cordis_example_counter_missing_query counter
+        "native-faults/counter-missing-query" "1.3.0" resident NO_DISCOVERY)
+    cordis_add_native_service_example(cordis_example_counter_missing_business counter
+        "native-faults/counter-missing-business" "1.4.0" resident NO_BUSINESS)
+    foreach(variant IN ITEMS once recovery)
+        if(variant STREQUAL "once")
+            set(fault_version "1.3.0")
+            set(fault_recovery 0)
+        else()
+            set(fault_version "1.4.0")
+            set(fault_recovery 1)
+        endif()
+        cordis_add_native_service_example(cordis_example_reporter_fail_${variant} reporter
+            "native-faults/reporter-fail-${variant}" "${fault_version}" resident NO_BUSINESS
+            SOURCE "${PROJECT_SOURCE_DIR}/tests/fixtures/business_reporter_failure.cpp")
+        target_compile_definitions(cordis_example_reporter_fail_${variant} PRIVATE
+            CORDIS_EXAMPLE_REPORTER_FAIL_RECOVERY=${fault_recovery})
+    endforeach()
+    foreach(target IN ITEMS cordis_example_counter_missing_query cordis_example_counter_missing_business
+        cordis_example_reporter_fail_once cordis_example_reporter_fail_recovery)
+        set_target_properties(${target} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF)
+    endforeach()
     add_executable(cordis_native_service_state_tests
         "${PROJECT_SOURCE_DIR}/tests/qt/native_service_state.cpp"
         "${PROJECT_SOURCE_DIR}/tests/qt/native_service_state_abi.cpp")
