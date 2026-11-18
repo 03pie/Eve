@@ -392,8 +392,12 @@ ServiceRegistry::commitErased(const ServiceKey& key, std::type_index type, const
 /** @brief 保存弱通知记录，实例释放注册令牌后不会再接收通知。 */
 std::shared_ptr<ScheduledJob> ServiceRegistry::watch(ScheduledJob job) const
 {
+    // 拒绝或短期观察也会释放令牌；不依赖下一次业务通知回收过期弱槽。
+    auto& watchers = control_->watchers;
+    watchers.erase(std::remove_if(watchers.begin(), watchers.end(), [](const auto& item) { return item.expired(); }),
+                   watchers.end());
     auto slot = std::make_shared<ScheduledJob>(std::move(job));
-    control_->watchers.push_back(slot);
+    watchers.push_back(slot);
     return slot;
 }
 /** @brief 校验 scheduler，不创建默认服务或执行插件回调。 */

@@ -23,10 +23,13 @@ struct OutputEntry {
 class OutputService {
 public:
     static constexpr std::size_t historyLimit = 1000, channelLimit = 64, textLimit = 4096;
-    /** @brief 校验同调度器及当前 epoch 后复制；通道名最多 64 字节，旧记录按有界历史淘汰。 */
+    static constexpr std::size_t pendingCountLimit = 1000, pendingByteLimit = 1024 * 1024, pendingTargetLimit = 64;
+    /** @brief 同调度器/epoch 校验后复制；未发布值有界等待原组终态，不改变可见通道或历史。
+     * 成功即保留本服务序号，放弃可留下空洞；发布后按保留序号接纳，拒绝不占号。
+     */
     Result<std::uint64_t> write(const Context& owner, std::string channel, std::string text,
                                 OutputLevel level = OutputLevel::Info) const;
-    /** @brief owner 复制保留的历史；不会执行插件代码。 */
+    /** @brief owner 先纯值结算已有终态再复制历史；开放期间发布故障返回错误，关闭后历史仍可读。 */
     Result<std::vector<OutputEntry>> snapshot() const;
 private:
     friend class ElaShell;

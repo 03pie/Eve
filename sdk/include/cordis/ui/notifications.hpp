@@ -32,7 +32,11 @@ class NotificationService {
 public:
     static constexpr std::size_t historyLimit = 100;
     static constexpr std::size_t textLimit = 4096;
-    /** @brief 验证 Context/epoch/同 scheduler 后复制文本，返回宿主单调序号。 */
+    static constexpr std::size_t pendingCountLimit = 100, pendingByteLimit = 256 * 1024, pendingTargetLimit = 100;
+    /** @brief 验证 Context/epoch/同 scheduler 后接受 UTF-8 文本并返回单调序号；接受不代表已呈现。
+     * Held 值独立有界保存，完整发布后进入历史及输出镜像，Abort 可留序号空洞；拒绝不占号。
+     * 镜像在通知公开时才获独立输出序号，之前的输出清空不影响未来镜像；投递错误由后续操作报告。
+     */
     Result<std::uint64_t> post(const Context& owner, Notification notification) const;
     /** @brief owner 读取由旧到新排列的值快照；关闭后仍可读取已保留历史。 */
     Result<std::vector<NotificationSnapshot>> snapshot() const;

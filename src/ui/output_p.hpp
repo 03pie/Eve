@@ -15,8 +15,13 @@ using WindowAccess = std::function<void(const std::function<void()>&)>;
 std::shared_ptr<OutputControl> createOutput(std::shared_ptr<qt::QtScheduler> scheduler,
                                            QPlainTextEdit* editor, WindowAccess access);
 /** @brief 平台/适配器写入已复制的记录，不允许插件伪造平台身份。 */
-Result<std::uint64_t> appendOutput(const std::shared_ptr<OutputControl>& control,
-    std::optional<ContextIdentity> owner, std::string channel, std::string text, OutputLevel level = OutputLevel::Info);
+Result<std::uint64_t> appendOutput(const std::shared_ptr<OutputControl>& control, std::optional<ContextIdentity> owner,
+                                   std::string channel, std::string text, OutputLevel level = OutputLevel::Info,
+                                   bool render = true);
+/** @brief 结算原组已决定的值；false 不操作控件或调用窗口访问回调。 */
+void settleOutput(const std::shared_ptr<OutputControl>& control, bool render = true);
+/** @brief 仅刷新已接纳纯值的 dirty 投影，允许排队观察在来源释放后继续刷新。 */
+void refreshOutput(const std::shared_ptr<OutputControl>& control);
 void installOutputTools(const std::shared_ptr<OutputControl>& control, QTabWidget* panel);
 /** @brief 复制当前目标的全部保留内容，不受显示窗口的行数限制。 */
 QString currentOutputText(const std::shared_ptr<OutputControl>& control);

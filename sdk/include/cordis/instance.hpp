@@ -152,6 +152,8 @@ private:
     struct Presentation {
         std::function<bool()> visible;
         std::shared_ptr<ScheduledJob> observation;
+        /** @brief 原组的历史终态不依赖 owner 存活；未决定为空，已发布/放弃为 true/false。 */
+        std::function<Result<std::optional<bool>>()> publication;
     };
     /** @brief 登记验证业务能力，查询不调用业务或调度器；普通上下文不登记观察。 */
     Result<Presentation> presentation(const std::shared_ptr<IScheduler>& scheduler, ScheduledJob changed) const;

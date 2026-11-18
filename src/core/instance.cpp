@@ -756,6 +756,21 @@ Result<Context::Presentation> Context::presentation(const std::shared_ptr<ISched
         const auto group = publication.lock();
         return group && group->state == PublicationState::Published && !group->notifying && !group->deliveryBlocked;
     };
+    result.publication = [publication = std::shared_ptr<const detail::PublicationControl>(publication),
+                          thread = std::this_thread::get_id()]() -> Result<std::optional<bool>> {
+        using Outcome = Result<std::optional<bool>>;
+        if (std::this_thread::get_id() != thread)
+            return Outcome::failure(makeError(ErrorCode::WrongThread, "publication history requires owner thread"));
+        if (!publication)
+            return Outcome::success(true);
+        if (publication->state == PublicationState::Aborted)
+            return Outcome::success(false);
+        if (publication->state == PublicationState::Open || publication->notifying)
+            return Outcome::success(std::nullopt);
+        if (publication->deliveryBlocked)
+            return Outcome::failure(makeError(ErrorCode::SchedulerClosed, "publication notification delivery failed"));
+        return Outcome::success(true);
+    };
     if (observePublication)
         result.observation = self->services->watch(std::move(changed));
     // 接管通知闭包期间也可能重入；失效时释放刚登记的令牌，不交付过期适配能力。

@@ -238,3 +238,29 @@ M5 仍须交付真实业务产物白名单、服务与 Qt 页面在线升级、U
 静态 Core（关闭 Ela/示例）全量 974/974、无 Qt GCC 全量 444/444 已通过；Debug/ASan 均在完整构建并更新增强后的 TU 后，顺序完成全量各 1368/1368。39 项源码/构建输入冻结，38 项格式、20 组独立公开头与 5 份原协议检查通过；29 个实际 ASan 对象的全量前后记录及哈希一致。真实旧 SDK 0.1.5 notebook DLL 已在当前宿主执行 normal 通过；该实物兼容证据不扩大为任意旧 C++ 二进制 ABI 承诺。
 
 本段不交付输出/通知缓冲、真实双版本 counter/reporter/notebook 升级、业务名单、H01/H02/S09 全范围或压力/新版桌面验收，亦未宣称整 P5 完成。后续按 [M5 工作单](../../docs/p5-m5-development.md)逐段审计、提交同步后推进。
+
+## M5-a2 输出与通知发布边界
+
+本段将通知存储从命令后端拆出，输出与通知复用有界 pending 值机制，只读原发布组终态；完整发布后锁存为纯历史，不保存 Context、插件对象或 DLL 捕获。Held 值不创建通道、不改变选择或状态栏，也不淘汰已发布历史。实现、阶段审查与五配置验证见 [M5-a2 收口记录](../../docs/p5-m5-development.md#m5-a2-收口结论)，随本次收口归档；提交同步后才进入 M5-b。
+
+下表简名统一加 `p5.ui_publication_`，对应 [正常用例](../qt/value_publication.cpp)九项及 [故障/Scope 组合](../qt/value_publication_faults.cpp)四项，共 13 项真实 Qt、Kernel 和发布组检查。
+
+| 验收条件 | 实际检查 |
+|---|---|
+| Held 直接输出与通知零可见副作用；纯快照可先结算，已排队观察仍刷新原通道/状态栏，通知镜像恰一次 | `values_held` |
+| 两组逆序提交仍保留原服务序号，旧通知不覆盖新状态；严格校验拒绝不占号，Abort 留空洞且不留下历史/镜像 | `values_order` |
+| commit 后立即 stop 并释放调用方 Instance/原组句柄，刷新前可结算成功值；停止完成后旧 Context 拒绝而纯历史保留 | `values_stopped`；不据此宣称 observer 前 OS 对象或 Core owner 已析构 |
+| 不推进 observer 即关闭外壳，已发布值及通知镜像保留、Open 值丢弃；禁用 QAction 的同步回调中通知/命令立即拒绝 | `values_close`；关闭回归修复前 0/1，前移服务关门后通过 |
+| commit→新写→清空→迟到 watch 不复活旧值，序号不重用；清空后才公开的通知仍产生未来镜像 | `values_clear` |
+| 输出淘汰当前平台记录触发同步关闭时，已发布批次的直接输出和两条通知镜像完整接纳，窗口最终销毁 | `values_reentry` |
+| 两个候选 owner 合计达到条数预算、输出/通知字节预算及输出精确目标预算，拒绝不损当前业务；提交后沿原可见容量淘汰 | `values_count`、`values_bytes`、`values_targets`；通知目标上限由条数同时约束，不另称独立击中该边界 |
+| 无 Binding 输出且清理失败时真实 Abort 仍丢弃候选值，保留非静止资源报告；真实 Qt 队列丢弃原观察后开放服务报 SchedulerClosed，关闭后旧纯历史可读 | `values_abort_failure`、`values_discarded` |
+| 同一真实 Scope 的页面/命令/直接输出/通知共同隐藏，候选提交与失败后的旧代恢复均在 prepareCommit→commitPrepared→release 屏障后公开，旧资源完整退出 | `values_scope_commit`、`values_scope_recover` |
+
+Output 的每外壳 pending 预算为 1000 条、1 MiB 字符串和 64 个精确目标，Notification 为 100 条、256 KiB 文本和 100 个归属目标，均独立于可见历史。镜像在通知公开接纳时才取得独立输出序号；清空不取消尚 Open 的组或尚未创建的镜像。普通平台日志、已公开命令结果及关闭后纯历史保留，接受序号不等于已经呈现。
+
+当前包含上述 13 项的受影响联合检查为 55/55，不能与全量重复累加。18 项源码/构建输入冻结后，当前源码 MSVC Release/Debug/ASan 全目标构建及全量各 1381/1381、静态 Core（关闭 Ela/示例）974/974、无 Qt GCC 444/444 均通过；本段三项 MSVC 结果都是最终输入的实际全量，不采用 M5-a1 的组合覆盖或历史矩阵。16 项 C/C++ 格式、24 组独立公开头和 5 份原协议检查通过；20 个实际 ASan 对象的插桩/Module 异常模型预检及全量后的哈希一致核对通过，证据归档于 build/p5-m5a2-*。
+
+首次本段重建前保存的实际旧 SDK 0.1.5 notebook DLL（SHA256 `45267e3e698a259daf8e5bdb6187abcdb0f291a91f530cf7f6349d28d902eaf0`）已在当前 Release 宿主执行 normal 通过，嵌入元数据与摘要保持。首次脚本传相对路径被入口拒绝，改绝对路径后成功，两份日志分别保存；兼容结论仅限该实物与场景，不扩大为任意旧 C++ 二进制承诺。Scope 用例证明新贡献完整恢复并可重新进入，不代表自动恢复活动页签、焦点或 Notebook 草稿。
+
+本段不交付真实双版本 counter/reporter/notebook 业务升级、产品升级入口、业务白名单、完整 H01/H02/S09、同一 Windows 进程 100 次真实替换、随机压力或新增原生桌面升级验收。SDK 0.1.5、原业务/状态 C ABI、Qt resident 和默认空名单保持；M5/P5 尚未完成，后续仍须逐段审查、提交同步。

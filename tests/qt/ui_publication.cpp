@@ -9,6 +9,8 @@
 bool pagePresentationCase(const QString&);
 bool commandPresentationCase(const QString&);
 bool elaPresentationCase(const QString&);
+bool valuePublicationCase(const QString&);
+bool valuePublicationFaultCase(const QString&);
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
@@ -19,7 +21,8 @@ int main(int argc, char** argv)
         const auto name = QString::fromUtf8(argv[1]);
         if (name.startsWith("ela_"))
             eApp->init();
-        if (!pagePresentationCase(name) && !commandPresentationCase(name) && !elaPresentationCase(name))
+        if (!pagePresentationCase(name) && !commandPresentationCase(name) && !elaPresentationCase(name) &&
+            !valuePublicationCase(name) && !valuePublicationFaultCase(name))
             throw std::runtime_error("unknown UI publication case");
         return 0;
     } catch (const std::exception& error) {

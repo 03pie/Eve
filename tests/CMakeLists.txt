@@ -346,14 +346,16 @@ if(CORDIS_BUILD_ELA_UI)
         set_tests_properties(p3.ui_pages_${case} PROPERTIES LABELS "p3;ui;ela" TIMEOUT 20 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endforeach()
     add_executable(cordis_ui_publication_tests qt/ui_publication.cpp qt/page_presentation.cpp
-        qt/command_presentation.cpp qt/ela_presentation.cpp)
+        qt/command_presentation.cpp qt/ela_presentation.cpp qt/value_publication.cpp qt/value_publication_faults.cpp)
     target_link_libraries(cordis_ui_publication_tests PRIVATE Cordis::Ui Qt5::Test Ela::WidgetTools)
     set_target_properties(cordis_ui_publication_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     cordis_target_defaults(cordis_ui_publication_tests)
     foreach(case IN ITEMS pages_held pages_aborted pages_factory_failure pages_input pages_stopped
         pages_registration_close pages_scope_commit pages_scope_recover pages_home pages_dialog observer_discarded
         commands_held commands_aborted suggestion_gate ela_held ela_indices ela_stack ela_compact ela_animation
-        ela_animation_cancel)
+        ela_animation_cancel values_held values_order values_stopped values_close values_clear values_reentry
+        values_count values_bytes values_targets values_abort_failure values_discarded
+        values_scope_commit values_scope_recover)
         add_test(NAME p5.ui_publication_${case} COMMAND cordis_ui_publication_tests ${case})
         set_tests_properties(p5.ui_publication_${case} PROPERTIES LABELS "p5;ui;ela;publication;ui_publication"
             TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

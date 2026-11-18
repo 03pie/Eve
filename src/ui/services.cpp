@@ -1,24 +1,22 @@
 /** @file services.cpp
  * @brief 管理命令调用保留及 effect 屏障；通知展示只持宿主值数据。
  */
+#include "notifications_p.hpp"
 #include "services_p.hpp"
+#include <QAction>
+#include <QLabel>
+#include <QLineEdit>
+#include <QListView>
+#include <QPointer>
+#include <QPushButton>
+#include <QShortcut>
+#include <QSortFilterProxyModel>
+#include <QStandardItemModel>
+#include <atomic>
 #include <cordis/ui/commands.hpp>
 #include <cordis/ui/notifications.hpp>
-#include <QLabel>
-#include <QPlainTextEdit>
-#include <QListView>
-#include <QStandardItemModel>
-#include <QSortFilterProxyModel>
-#include <QLineEdit>
-#include <QPushButton>
-#include <QAction>
-#include <QShortcut>
-#include <QPointer>
-#include <atomic>
-#include <deque>
 #include <exception>
 #include <functional>
-#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -89,13 +87,12 @@ struct CommandControl : std::enable_shared_from_this<CommandControl> {
     /** @brief 统一由 owner 排队启动，即使回调返回已完成任务也不内联完成。 */
     Task<void> execute();
 };
-/** @brief 宿主 UI 后端仅由应用线程写入，通知序号和历史都是宿主值。 */
+/** @brief 命令记录归本后端，通知控制块独立拥有候选值及历史。 */
 struct ServicesControl : std::enable_shared_from_this<ServicesControl> {
     std::shared_ptr<qt::QtScheduler> scheduler;
     QPointer<QListView> commands;
     QStandardItemModel* model = nullptr;
-    QPointer<QLabel> notification;
-    QPointer<QPlainTextEdit> output;
+    std::shared_ptr<NotificationControl> notifications;
     std::shared_ptr<OutputControl> logs;
     WindowAccess windowAccess;
     QPointer<QLabel> commandResult;
@@ -128,8 +125,6 @@ struct ServicesControl : std::enable_shared_from_this<ServicesControl> {
     }
     std::map<CommandKey, std::shared_ptr<CommandControl>> records;
     std::map<QStandardItem*, std::weak_ptr<CommandControl>> rows;
-    std::deque<NotificationSnapshot> history;
-    std::uint64_t sequence = 0;
     bool open = true;
     bool starting = false;
     bool closing = false;
@@ -142,42 +137,15 @@ struct ServicesControl : std::enable_shared_from_this<ServicesControl> {
         if (!scheduler->isCurrentThread()) return Result<void>::failure(makeError(ErrorCode::WrongThread, "UI services require owner thread"));
         return Result<void>::success();
     }
-    /** @brief 外壳关门或展示控件消失后禁止新贡献、通知和调用。 */
+    /** @brief 外壳关门或命令控件消失后禁止新贡献和调用。 */
     Result<void> business() const
     {
         auto checked = thread();
         if (!checked.hasValue()) return checked;
         if (!scheduler->isOpen()) return Result<void>::failure(makeError(ErrorCode::SchedulerClosed, "UI scheduler closed"));
-        if (!open || !commands || !notification) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "UI services closing"));
+        if (!open || !commands)
+            return Result<void>::failure(makeError(ErrorCode::ContextClosing, "UI services closing"));
         return Result<void>::success();
-    }
-    /** @brief 校验后保存纯值，并以纯文本更新宿主状态区；不保留 Context 或回调。 */
-    Result<std::uint64_t> append(ContextIdentity owner, Notification value)
-    {
-        auto checked = business();
-        if (!checked.hasValue()) return Result<std::uint64_t>::failure(checked.error());
-        if (value.text.empty() || value.text.size() > NotificationService::textLimit ||
-            (value.level != NotificationLevel::Info && value.level != NotificationLevel::Warning && value.level != NotificationLevel::Error) ||
-            sequence == std::numeric_limits<std::uint64_t>::max())
-            return Result<std::uint64_t>::failure(makeError(ErrorCode::InvalidArgument, "invalid notification or exhausted sequence"));
-        history.push_back({sequence + 1, owner, std::move(value)});
-        ++sequence;
-        // 输出控件会同步发出 textChanged；重入提交不能改变本次提交的返回序号。
-        const auto submittedSequence = sequence;
-        if (history.size() > NotificationService::historyLimit) history.pop_front();
-        const auto& latest = history.back().notification;
-        const QString prefix = latest.level == NotificationLevel::Error ? QString::fromUtf8("错误：") :
-            latest.level == NotificationLevel::Warning ? QString::fromUtf8("提示：") : QString::fromUtf8("消息：");
-        const auto text = prefix + QString::fromStdString(latest.text);
-        const auto logText = latest.text;
-        const auto logLevel = latest.level;
-        notification->setText(text);
-        if (notification)
-            notification->setToolTip(text);
-        if (logs) (void)appendOutput(logs, owner, "通知", logText,
-            logLevel == NotificationLevel::Error ? OutputLevel::Error : logLevel == NotificationLevel::Warning ? OutputLevel::Warning : OutputLevel::Info);
-        else if (output) output->appendPlainText(text);
-        return Result<std::uint64_t>::success(submittedSequence);
     }
     /** @brief 贡献记录保留到 effect 完整报告，不能只凭内部 drained 完成关闭。 */
     void checkClosed()
@@ -355,15 +323,22 @@ void ServicesControl::activate(const QModelIndex& index)
         if (host->commandSequence == execution) host->commandStatus(QString::fromStdString(text));
         if (host->logs) (void)appendOutput(host->logs, identity, "命令", text, result.hasValue() ? OutputLevel::Info : OutputLevel::Error);
         if (!result.hasValue()) {
-            auto message = result.error().message.substr(0, NotificationService::textLimit);
+            auto message = result.error().message;
+            if (message.size() > NotificationService::textLimit) {
+                auto end = NotificationService::textLimit;
+                while (end && (static_cast<unsigned char>(message[end]) & 0xc0) == 0x80)
+                    --end;
+                message.resize(end);
+            }
             if (message.empty()) message = "命令执行失败";
-            host->append(identity, {NotificationLevel::Error, std::move(message), result.error().operation});
+            (void)appendNotification(host->notifications, identity,
+                                     {NotificationLevel::Error, std::move(message), result.error().operation});
         }
     });
 }
 /** @brief 只有宿主列表的激活信号可以查找内部命令；连接不持任何插件回调。 */
-std::shared_ptr<ServicesControl> createUiServices(std::shared_ptr<qt::QtScheduler> scheduler,
-                                               QListView* commands, QLabel* notification, QPlainTextEdit* output)
+std::shared_ptr<ServicesControl> createUiServices(std::shared_ptr<qt::QtScheduler> scheduler, QListView* commands,
+                                                  QLabel* notification)
 {
     auto state = std::make_shared<ServicesControl>();
     state->scheduler = std::move(scheduler);
@@ -375,9 +350,7 @@ std::shared_ptr<ServicesControl> createUiServices(std::shared_ptr<qt::QtSchedule
     filter->setFilterCaseSensitivity(Qt::CaseInsensitive);
     filter->setFilterRole(Qt::UserRole + 1);
     commands->setModel(filter);
-    state->notification = notification;
-    state->output = output;
-    notification->setTextFormat(Qt::PlainText);
+    state->notifications = createNotifications(state->scheduler, notification);
     std::weak_ptr<ServicesControl> weak = state;
     filter->presentation = [weak](const QModelIndex& source) {
         auto host = weak.lock();
@@ -399,6 +372,7 @@ void configureCommandPanel(const std::shared_ptr<ServicesControl>& state, QWidge
     const std::vector<QAction*>& actions, std::shared_ptr<OutputControl> output, WindowAccess access)
 {
     state->logs = std::move(output); state->windowAccess = std::move(access);
+    configureNotifications(state->notifications, state->logs, state->windowAccess);
     state->commandResult = page->findChild<QLabel*>("CordisCommandResult");
     std::weak_ptr<ServicesControl> weak = state;
     for (auto action : actions) {
@@ -444,6 +418,12 @@ void configureCommandPanel(const std::shared_ptr<ServicesControl>& state, QWidge
     if (auto button = page->findChild<QPushButton*>("CordisRunCommand")) QObject::connect(button, &QPushButton::clicked, page, run);
     select();
 }
+/** @brief 先结算原输出，再结算通知镜像；外壳已关呈现门时不触发控件。 */
+void settleUiValues(const std::shared_ptr<ServicesControl>& control)
+{
+    settleOutput(control->logs, false);
+    settleNotifications(control->notifications, false);
+}
 /** @brief 外壳关闭先统一关门，使用副本请求所有 effect，容忍同步完成和重入。 */
 Task<void> closeUiServices(const std::shared_ptr<ServicesControl>& control)
 {
@@ -451,6 +431,7 @@ Task<void> closeUiServices(const std::shared_ptr<ServicesControl>& control)
     control->open = false;
     control->closing = true;
     control->starting = true;
+    closeNotifications(control->notifications);
     std::vector<std::shared_ptr<CommandControl>> records;
     for (const auto& item : control->records) records.push_back(item.second);
     for (const auto& record : records) control->closeRecord(record);
@@ -560,21 +541,37 @@ Result<std::uint64_t> NotificationService::post(const Context& owner, Notificati
 {
     auto host = control_.lock();
     if (!host) return Result<std::uint64_t>::failure(makeError(ErrorCode::ContextClosing, "notification host expired"));
-    auto checked = host->business();
+    auto checked = host->thread();
     if (!checked.hasValue()) return Result<std::uint64_t>::failure(checked.error());
+    if (!host->open)
+        return Result<std::uint64_t>::failure(makeError(ErrorCode::ContextClosing, "UI services closing"));
     auto identity = owner.identity();
     if (!identity.hasValue()) return Result<std::uint64_t>::failure(identity.error());
     auto guard = owner.eventGuard(host->scheduler);
     if (!guard.hasValue()) return Result<std::uint64_t>::failure(guard.error());
-    return host->append(identity.value(), std::move(notification));
+    const auto status = detail::prepareNotification(host->notifications, notification);
+    if (!status.hasValue())
+        return Result<std::uint64_t>::failure(status.error());
+    auto source = detail::notificationSource(host->notifications, identity.value());
+    if (!source->publication) {
+        std::weak_ptr<detail::NotificationControl> weak = host->notifications;
+        auto presentation = owner.presentation(host->scheduler, source->observe([weak] {
+            if (auto state = weak.lock())
+                detail::settleNotifications(state);
+        }));
+        if (!presentation.hasValue())
+            return Result<std::uint64_t>::failure(presentation.error());
+        source->publication = std::move(presentation.value().publication);
+        source->observation = std::move(presentation.value().observation);
+    }
+    return detail::submitNotification(host->notifications, identity.value(), std::move(notification),
+                                      std::move(source));
 }
 /** @brief 返回值复制历史，不附带任何插件对象或观察者回调。 */
 Result<std::vector<NotificationSnapshot>> NotificationService::snapshot() const
 {
     auto host = control_.lock();
     if (!host) return Result<std::vector<NotificationSnapshot>>::success({});
-    auto checked = host->thread();
-    if (!checked.hasValue()) return Result<std::vector<NotificationSnapshot>>::failure(checked.error());
-    return Result<std::vector<NotificationSnapshot>>::success({host->history.begin(), host->history.end()});
+    return detail::notificationSnapshot(host->notifications);
 }
 } // namespace cordis::ui

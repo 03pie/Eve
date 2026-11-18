@@ -1,6 +1,8 @@
 # UI 贡献与管理
 
-P5-M5-a1 将页面/命令接到原 Context 发布组：候选在 ready 前准备完整控件/节点/命令，但导航、搜索、菜单、页签、Home 与执行须等共同提交完成。纯呈现查询和原业务 guard 分开，原 effect/完整析构仍负责退出；本段五配置验证与审计通过，输出/通知的候选缓冲由 M5-a2 接续。设计及精确验证范围见 [M5-a1 收口](../../docs/p5-m5-development.md#m5-a1-收口结论)与 [ADR-0051](../../docs/adr/0051-ui-contribution-publication.md)。
+P5-M5-a1 d936580 已将页面/命令接到原 Context 发布组：候选在 ready 前准备完整控件/节点/命令，但导航、搜索、菜单、页签、Home 与执行须等共同提交完成。纯呈现查询和原业务 guard 分开，原 effect/完整析构仍负责退出。M5-a2 已接候选输出/通知并拆开通知后端，阶段审计及五配置全量验证通过；精确范围见 [M5-a2 收口](../../docs/p5-m5-development.md#m5-a2-收口结论)与 [ADR-0051](../../docs/adr/0051-ui-contribution-publication.md)。
+
+Output/Notification 在接受时保留序号，候选值独立有界保存，提交后按原序号入历史，Abort 可留空号。Held 不建可见通道、不淘汰当前历史，也不改状态栏或产生通知镜像。原终态查询不依赖实例存活；只读结算不触 Qt，队列观察刷新已准备的 dirty 投影，入历史后释放来源/watch。关闭在关输出前结算已提交通知镜像并先关命令/通知入口，防控件信号重入；关闭后仅留纯历史。公开期间投递故障用原 Result 报告，不增快照字段。
 
 启用 CORDIS_BUILD_ELA_UI 后构建 Cordis::Ui，公开 pages.hpp 不依赖 Ela 类型。UiPagesService 登记 Context.effect，工厂返回 QWidget；PageHandle 支持 ready、navigate、close 与诊断。页面和分类按实例/epoch 隔离，关闭等待 Q2 完整删除和工厂载荷释放。
 

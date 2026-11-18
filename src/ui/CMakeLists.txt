@@ -4,7 +4,7 @@ set(cordis_ui_type STATIC)
 if(CORDIS_SHARED_CORE)
     set(cordis_ui_type SHARED)
 endif()
-add_library(cordis_ui ${cordis_ui_type} pages.cpp services.cpp management.cpp workbench.cpp home.cpp preferences.cpp brand.cpp output.cpp panel.cpp
+add_library(cordis_ui ${cordis_ui_type} pages.cpp services.cpp notifications.cpp management.cpp workbench.cpp home.cpp preferences.cpp brand.cpp output.cpp panel.cpp
     "${PROJECT_SOURCE_DIR}/app/shell/resources/eve_brand.qrc")
 set_target_properties(cordis_ui PROPERTIES AUTORCC ON)
 add_library(Cordis::Ui ALIAS cordis_ui)

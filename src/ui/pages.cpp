@@ -329,17 +329,28 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
         open = false;
         closing = true;
         starting = true;
-        closeOutput(output);
-        closeWorkbench(workbench);
+        // 呈现已关门；先结算原发布事实及通知镜像，再关闭输出，过程不触控件。
+        settleUiValues(services);
         auto self = shared_from_this();
-        cordis::detail::TaskAccess::observe(closeManagement(management), [self](Task<void>::Snapshot result) {
-            if (result->hasValue()) self->managementClosed = true;
-            else { self->failed = true; self->closed.reject(result->error()); }
+        // 工作台关闭会同步发出 QAction/模型信号，须在此前关服务入口。
+        cordis::detail::TaskAccess::observe(closeUiServices(services), [self](Task<void>::Snapshot result) {
+            if (result->hasValue())
+                self->servicesClosed = true;
+            else {
+                self->failed = true;
+                self->closed.reject(result->error());
+            }
             self->checkClosed();
         });
-        cordis::detail::TaskAccess::observe(closeUiServices(services), [self](Task<void>::Snapshot result) {
-            if (result->hasValue()) self->servicesClosed = true;
-            else { self->failed = true; self->closed.reject(result->error()); }
+        closeOutput(output);
+        closeWorkbench(workbench);
+        cordis::detail::TaskAccess::observe(closeManagement(management), [self](Task<void>::Snapshot result) {
+            if (result->hasValue())
+                self->managementClosed = true;
+            else {
+                self->failed = true;
+                self->closed.reject(result->error());
+            }
             self->checkClosed();
         });
         std::vector<std::shared_ptr<PageControl>> pending;
@@ -746,7 +757,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     notification->setMaximumHeight(24);
     statusBar->addWidget(notification, 1);
     window->setStatusBar(statusBar);
-    control_->services = detail::createUiServices(control_->scheduler, commandList, notification, output);
+    control_->services = detail::createUiServices(control_->scheduler, commandList, notification);
     std::weak_ptr<detail::ShellControl> outputWeak = control_;
     detail::WindowAccess outputAccess = [outputWeak](const std::function<void()>& action) {
         if (auto state = outputWeak.lock(); state && state->open) {
