@@ -4,6 +4,7 @@
 #include "ElaPropertyMacro.h"
 #include <QModelIndex>
 #include <QObject>
+#include <functional>
 
 #include "ElaWidgetToolsDef.h"
 
@@ -28,6 +29,11 @@ public:
     ~ElaNavigationNode() override;
 
     QString getNodeKey() const;
+    /** @brief 独立于展开状态的纯呈现门禁；空谓词保持原行为。 */
+    void setPresentation(std::function<bool()> presentation);
+    bool isPresentable() const;
+    bool usesPresentation() const;
+    const QList<ElaNavigationNode*>& getPresentedChildren() const;
 
     void setIsExpanded(bool isExpanded);
     bool getIsExpanded() const;
@@ -45,11 +51,10 @@ public:
     bool getIsChildNode(ElaNavigationNode* node);
 
     int getRow() const;
-    int getRowExceptCategoryNodes() const;
-
-    QList<ElaNavigationNode*> getExceptCategoryNodes();
-
 private:
+    friend class ElaNavigationModel;
+    std::function<bool()> _presentation;
+    QList<ElaNavigationNode*> _presentedChildren;
     QString _nodeKey = "";
     bool _isExpanded{false};
 };

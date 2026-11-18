@@ -137,6 +137,8 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
     /** @brief 建议键属于 ElaSuggestBox，导航键属于 ElaWindow，撤销时分别删除。 */
     struct Entry {
         QString key, title, suggestion, plugin;
+        std::function<bool()> presentation;
+        bool presentable() const { return !presentation || presentation(); }
     };
     /** @brief 单次重放标记只消费对应目标，嵌套的其他导航仍可形成新分支。 */
     struct Replay {
@@ -196,7 +198,8 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
     /** @brief 已关闭或已撤销的键都不能再通过搜索/历史进入。 */
     bool contains(const QString& key) const
     {
-        return std::any_of(entries.begin(), entries.end(), [&](const Entry& item) { return item.key == key; });
+        return std::any_of(entries.begin(), entries.end(),
+                           [&](const Entry& item) { return item.key == key && item.presentable(); });
     }
     /** @brief 不在回调返回后借用其闭包，允许 Shell 关闭时清空动作。 */
     void navigate(const QString& key, bool rememberPlugin = true)
@@ -215,11 +218,26 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
         auto callback = callbacks.navigate;
         callback(key, rememberPlugin);
     }
-    /** @brief UI 状态由真实历史游标决定，未激活按钮不会接受快捷键。 */
+    /** @brief 历史保留稳定 key，跳过已经不允许呈现的记录。 */
+    std::optional<std::size_t> historyTarget(int direction) const
+    {
+        if (history.empty() || (direction > 0 && current.isEmpty()))
+            return {};
+        auto at = static_cast<std::ptrdiff_t>(cursor);
+        if (direction > 0 || !current.isEmpty())
+            at += direction;
+        while (at >= 0 && static_cast<std::size_t>(at) < history.size()) {
+            if (contains(history[static_cast<std::size_t>(at)]))
+                return static_cast<std::size_t>(at);
+            at += direction;
+        }
+        return {};
+    }
+    /** @brief UI 状态由同一个可进入历史目标决定，未激活按钮不会接受快捷键。 */
     void updateHistory()
     {
-        const bool canBack = open && !history.empty() && (current.isEmpty() || cursor > 0);
-        const bool canForward = open && !current.isEmpty() && !history.empty() && cursor + 1 < history.size();
+        const bool canBack = open && historyTarget(-1).has_value();
+        const bool canForward = open && historyTarget(1).has_value();
         if (back)
             back->setEnabled(canBack);
         if (forward)
@@ -232,10 +250,12 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
     /** @brief 稳定键重放不经过全局 Ela 撤销域，因此不同窗口的历史互不影响。 */
     void traverse(int direction)
     {
-        if (!open || history.empty() ||
-            (direction < 0 ? (!current.isEmpty() && cursor == 0) : (current.isEmpty() || cursor + 1 >= history.size())))
+        if (!open)
             return;
-        const auto index = direction < 0 ? (current.isEmpty() ? cursor : cursor - 1) : cursor + 1;
+        const auto target = historyTarget(direction);
+        if (!target)
+            return;
+        const auto index = *target;
         const auto key = history[index];
         replay = Replay{key, index};
         navigate(key);
@@ -295,7 +315,7 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
         for (const auto& plugin : plugins)
             ids.insert(plugin.id);
         for (const auto& entry : entries) {
-            if (entry.plugin.isEmpty() || ids.contains(entry.plugin))
+            if (!entry.presentable() || entry.plugin.isEmpty() || ids.contains(entry.plugin))
                 continue;
             if (callbacks.hideContribution && callbacks.hideContribution(entry.plugin))
                 continue;
@@ -731,6 +751,10 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     forward->setShortcut(QKeySequence("Alt+Right"));
     auto search = new ElaSuggestBox(center);
     self->search = search;
+    search->setSuggestionFilter([weak](const ElaSuggestBox::SuggestData& data) {
+        auto self = weak.lock();
+        return self && self->open && self->contains(data.getSuggestData().value("CordisPageKey").toString());
+    });
     search->setObjectName("CordisPageSearch");
     search->setFixedHeight(30);
     center->setSearch(search);
@@ -973,16 +997,42 @@ QWidget* workbenchAbout(const std::shared_ptr<WorkbenchControl>& control)
 }
 
 void registerWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const QString& key, const QString& title,
-                           const QString& category, const QString& plugin)
+                           const QString& category, const QString& plugin, std::function<bool()> presentation)
 {
-    if (!control || !control->open || key.isEmpty() || control->contains(key) || !control->search)
+    if (!control || !control->open || key.isEmpty() || !control->search)
+        return;
+    if (std::any_of(control->entries.begin(), control->entries.end(),
+                    [&](const WorkbenchControl::Entry& item) { return item.key == key; }))
         return;
     const auto label = category.isEmpty() ? title : title + QString::fromUtf8(" · ") + category;
+    // Entry 在建议登记前已带初始门禁；模型通知重入也不能看到 Held 贡献。
+    control->entries.push_back({key, title, {}, plugin, std::move(presentation)});
     const auto suggestion = control->search->addSuggestion(label, {{"CordisPageKey", key}});
-    control->entries.push_back({key, title, suggestion, plugin});
+    auto entry = std::find_if(control->entries.begin(), control->entries.end(),
+                              [&](const WorkbenchControl::Entry& item) { return item.key == key; });
+    if (entry == control->entries.end())
+        return;
+    entry->suggestion = suggestion;
     control->refreshHome();
     if (control->open && control->search)
         control->search->setSearchText(control->search->getSearchText());
+}
+
+void refreshWorkbenchPresentation(const std::shared_ptr<WorkbenchControl>& control)
+{
+    if (!control || !control->open)
+        return;
+    control->withWindowAccess([control] {
+        if (!control->open)
+            return;
+        if (control->search)
+            control->search->setSearchText(control->search->getSearchText());
+        if (!control->open)
+            return;
+        control->refreshHomeWithinAccess();
+        if (control->open)
+            control->updateHistory();
+    });
 }
 
 void selectWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const QString& key)

@@ -23,7 +23,7 @@ struct CommandSpec {
     std::function<bool()> enabled;
 };
 /** @brief 快照不调用插件谓词；activeCalls 包含排队、执行、等待源结果和谓词求值。
- * deliveryBlocked 表示已接受调用的推进被调度器阻断，资源会保守保留。
+ * deliveryBlocked 表示呈现观察或已接受调用的推进被调度器阻断，资源会保守保留。
  */
 struct CommandSnapshot {
     ContextIdentity owner;

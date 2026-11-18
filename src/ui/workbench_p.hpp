@@ -61,7 +61,10 @@ QWidget* workbenchSettings(const std::shared_ptr<WorkbenchControl>& control);
 QWidget* workbenchAbout(const std::shared_ptr<WorkbenchControl>& control);
 /** @brief 先登记完整键/标题，再刷新搜索结果；同名标题仍以不同 key 区分。 */
 void registerWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const QString& key, const QString& title,
-                           const QString& category = {}, const QString& plugin = {});
+                           const QString& category = {}, const QString& plugin = {},
+                           std::function<bool()> presentation = {});
+/** @brief 发布通知只刷新既有建议、卡片和历史投影，不执行工厂或重新登记页面。 */
+void refreshWorkbenchPresentation(const std::shared_ptr<WorkbenchControl>& control);
 /** @brief 页面撤销同步裁剪历史、建议和页签，旧搜索结果不能恢复旧贡献。 */
 void removeWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const QString& key);
 /** @brief 所有鼠标/键盘/程序入口统一记录选择，历史重放不产生新分支。 */

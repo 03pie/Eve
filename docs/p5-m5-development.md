@@ -1,6 +1,6 @@
 # P5-M5 业务升级、工作台接入与最终验收
 
-日期：2026-11-18。代码基线 cff1bac（M4-c 已审计、提交同步，工作区干净）。M5-0 架构与分段设计已通过审查，随本次提交归档；代码尚未实施。原说明书与开发指南仅作只读依据。
+日期：2026-11-18。M4-c cff1bac、M5-0 4ca3b48 已审计提交同步；M5-a1 页面/命令发布实现、阶段审计和五配置验证完成，随本次收口提交归档。输出/通知从 M5-a2 接续，M5 尚未完成。原说明书与开发指南仅作只读依据。
 
 ## 完成条件与分段
 
@@ -8,8 +8,8 @@
 
 | 小阶段 | 职责与必须兑现的出口 | 状态 |
 |---|---|---|
-| M5-0 | 核对实际贡献、宿主与业务产物；记录依赖、拥有者、提交/恢复、名单和压力门禁；审查并提交同步 | 设计与独立审查通过，随本次提交归档 |
-| M5-a1 | 私有 Context 发布桥与完整终态通知、页面/命令完整准备与隐藏呈现；原 Ela/工作台所有入口受同一发布状态控制；回归真实销毁与投递失败 | 待实施 |
+| M5-0 | 核对实际贡献、宿主与业务产物；记录依赖、拥有者、提交/恢复、名单和压力门禁；审查并提交同步 | 已完成，4ca3b48 已提交同步 |
+| M5-a1 | 私有 Context 发布桥与完整终态通知、页面/命令完整准备与隐藏呈现；原 Ela/工作台所有入口受同一发布状态控制；回归真实销毁与投递失败 | 实现、独立审计及五配置验证通过，随本次收口提交归档 |
 | M5-a2 | 输出/通知 pending 值的有界保存、提交接纳、失败丢弃及纯历史锁存；整 UI 贡献发布/恢复组合审计 | 待实施 |
 | M5-b | 实际 counter/reporter 与 notebook 旧/新产物；明确运行状态契约；复用现有具体宿主装配、安装/stage/ReplacementOperation 与配置共同提交 | 待实施；实施前补具体拥有者/故障和接口设计 |
 | M5-c | 管理/配置升级入口、预检/影响路径、双击/冲突门禁、完整进度/报告、高级回收诊断；实际 H01/S09 业务与页面故障 | 待实施 |
@@ -79,3 +79,41 @@ M5-0 仅文档，不修改生产代码、公开 SDK 0.1.5、原 C ABI、Ela、�
 三路只读审查覆盖原要求、实际 UI/发布通知及业务宿主所有权。修正设计中的 Aborted 无 Binding 通知缺口，以及提交后 owner 提前退出时 pending 历史的终态判断；补齐可见模型索引、最小可重放失败序列和性能基线，明确 A/B 包含回切、故障授权不能冒充缺符号验收。计数/草稿保留为本示例明确契约，不强制所有插件迁移状态，不新增跨 ABI RPC 要求。
 
 独立复查未发现剩余文档提交阻断项。5 份本段文档、414 个本地引用路径、当前仅文档差异及空白检查通过；来源/输入记录保存在 build/p5-m50-docs-verified.json。M5-0 随本次提交归档并同步后，才进入 M5-a1 具体设计和实现；UI 发布、真实业务版本和最终压力/名单/桌面验收仍未交付。
+
+## M5-a1 实施设计
+
+M5-0 4ca3b48 已审计提交同步且工作区干净后开始。再次核对实际 Context、原模型索引、命令过滤及 Home 来源，按以下边界替换原直接呈现路径，不增加另一发布状态表。
+
+Core 在 Context 私有区新增 nested Presentation（纯 visible 查询和 shared ScheduledJob observation），由私有 presentation(scheduler, changed) 登记。登记检查真实业务/epoch/同 scheduler，普通上下文无需观察。查询只读登记线程、弱实例/epoch/退役值与原发布组状态/标志，不调用 business、isOpen、scope.snapshot、插件或 Qt；原 eventGuard 仍负责实际业务入口。UI 原记录强持观察令牌，job 只弱持记录，退出时释放。暂不为 M5-a2 增加无调用者的终态字段。
+
+PublicationGroup::abort 固定 Aborted 后完整请求各成员停止，再通过原 notifyRegistry 发终态通知；失败使用原 deliveryBlocked 和 SchedulerClosed，幂等调用不清故障，不为通知失败提前跳过停止。原 dependencyGraph 的 publicationHeld 扩义为组尚非 Published、仍 notifying 或 deliveryBlocked，阻止 Aborted 残留/发布未完成时再次开闭包；同步注释和错误文案。Core-only 回归仅用真实公开 Kernel/PublicationGroup/graph，不定义假 UI friend 或测试访问 API，私有桥由真实 UI 验证。
+
+Ela 的 addExpanderNode/addPageNode 新增携带纯 presentation predicate 的重载（空表示原行为），沿 Window→Bar→Model 在节点插入前固定；原 node/children/nodesMap/stack 仍唯一拥有资源。可见行缓存只保存原节点指针，在合法模型通知窗口重算；getRow/index/parent 同步使用该投影。提供 refreshNavigationPresentation、稳定 key 的 getNavigationNodeIndex 和 live isNodePresentable 转发。主树、紧凑菜单、原生建议、首选、route、直接切页与新窗口都重查同源 gate。Held 首项/移除当前页先切安全空白，不能让 QStackedWidget 自动选 Held。工作台原本使用同步 None；涉及受控源/目标的 Ela 切页保持同步，普通无 predicate 动画保留，但旧延迟动画不得晚到覆盖受控目标或已删除页，不扩大为无关动画重写。
+
+编码前接口复查补充兼容取舍：公共 Window/NavigationBar 保留原六个方法签名及默认参数，作为转发到空 predicate 的薄入口；新重载的最后 predicate 必填，避免默认参数造成歧义。不能直接用新增默认参数替换旧签名，否则会移除共享 Ela 的原导出。兼容入口仍有现有普通调用者且只转发一次，节点登记/投影算法保持唯一；不为此改变 SDK 或复制旧算法。
+
+原 CentralStackedWidget 的取消修订/稳定目标状态放在私有 QObject 子对象，不改变公开类字段布局。首次重建前另保存实际旧 SDK 0.1.5 notebook DLL（SHA256 254f71b5ec8fdfd278a997ef65e48b3ee8a360e736a31628f6bd746c01a9305f）及原声明/嵌入元数据到 build/p5-m5a1-sdk015-artifact，后续用当前宿主验证真实旧产物运行；不以新版改字符串代替，也不覆盖该实物。
+
+PageControl 在真实 effect setup 前取得发布桥；工厂、Dialog/节点/堆栈、原工作台 Entry 和清理完整准备后 ready 兑现。新增纯 gate 同时叠加 shell/open、贡献撤销和投递诊断；navigate、输入、原生导航及选择再次检查。删除 PageControl/Group 的最后一行/长期持久索引假设，按稳定 key 重取所需索引。原 PageSnapshot 保留真实 widget 与资源诊断，navigationPresent/current 只反映对外投影，不改变公开布局。
+
+CommandControl 在原 rows/records 内保存 gate/观察令牌；行在 append 前准备，现有 QSortFilterProxyModel 扩为纯 gate 过滤，不把 std::function 放进 QVariant 或注册元类型。enabled/execute 与宿主 activate 在谓词、日志或标题呈现前拒绝 Held；原在途调用/捕获/清理屏障不变。Workbench 原 Entry 接默认空 predicate，register 完整登记一次，refresh 只更新搜索/Home/历史/页签投影。ElaSuggestBox 补通用 suggestion filter，查询及 click/Enter 都复查稳定 key，避免缓存建议越权。
+
+Home 的管理快照来源也包含 mountHeld 根，不能仅过滤贡献 Entry；宿主私有 helper 每次刷新从原 dependencyGraph 取得未发布实例值，正常卡片筛除，诊断仍保留真实候选记录。不新增公开 snapshot 字段或并行实例表；已发布/无组普通条目不变。页面/命令的普通注册和关闭路径保留，替换原直接公开与旧索引假设；输出/通知仍按 M5-a2 后续处理，不宣称 a1 已完整隔离所有 UI 副作用。
+
+先验证真实 Qt/Ela 上 holdPublication/mountHeld 的 ready/隐藏、同组多页/命令、搜索/紧凑菜单/路由/首选/页签/Home、缓存建议、commit/abort/取消及关闭重入；Core 验证无输出终态与 graph/拒投。补原 ReplacementScope 的准备/提交/恢复组合，检查真实工厂、QObject 和命令捕获完整退出；真实双版本业务 DLL 的最终组合仍由 M5-b/c 交付。现计划保持 SDK 0.1.5、原公开布局/ABI 和 Qt resident；若实现发现需改公开契约，先记录取舍再调整版本。Core/准入与 Ela/Ui 变化需当前 Release/Debug/ASan、静态 Core 关闭 Ela/示例、无 Qt GCC 全量，以及冻结输入、实际插桩对象、公开头/协议和格式检查后审计提交同步。
+
+首轮交叉审阅已纠正测试装配把裸 Runtime 交给 Kernel.mount 的前置错误，普通测试现先真实登记，Scope 候选仍由 prepareDefinitions 拥有。首轮 GCC 编译发现误向不可赋值 Result<void> 重新赋值，已改为独立末次检查；MSVC 实际构建发现兼容薄转发的空花括号可匹配另一 int/enum 重载，已明确 std::function<bool()>{}。此前独立命令环境缺失未启动 MSVC 编译，与生产构建失败分开记录。修正后 GCC、MSVC 发布组专项各 17/17（含新增四项）通过；完整 UI 构建及矩阵仍未完成。原日志保存在 build/p5-m5a1-*，不把专项当全量，也不提前提交。
+
+后续实际旧 UI 联合 167/168，原 search_normalization 暴露新版本检查过早退出：模型 reset 内重入的 Beta 查询被模型拒绝，外层不能留下 Beta 文本/Alpha 结果。已保留原断言、恢复 reset 后真实文本收敛，并保留选择内部 setText 重入时拒绝旧 Alpha 的新检查。独立审阅另发现取消普通 Scale/Flip/Popup 后删除无关页会让合法当前页持续隐藏，现只在窗口层复查合法目标后恢复显示；被删除/不可呈现目标仍转安全页，新增三模式实际状态回归，不放开 Held。
+
+最终补齐 Held Dialog 的独立完整删除、真实 Qt 已接受观察作业被丢弃，以及 PageControl→实际 CordisPageSearch/Home/页签的门禁接线。最后一项只增强现 pages_held 的断言：候选搜索结果为零且无兜底卡片/页签，发布后原两条建议出现、Return 打开现有页且工厂仍只调用两次。当前 20 个 UI 用例加原查询规范化共 21/21，完整 Core 专项 17/17；两组不重复累加为完整矩阵。
+
+39 项源码/构建输入已冻结。Release 1368/1368 完整基线后，最终审计只增强 tests/qt/page_presentation.cpp，重新构建并复验 UI/查询 21/21；其余 182 个实际运行产物 SHA256 和全部生产输入不变。最终 Release 覆盖由该全量和更强受影响复验共同归档，并非最后断言后又跑了所有未受影响测试，重叠名称不累加。静态 Core 关闭 Ela/示例全量 974/974、无 Qt GCC 全量 444/444 已通过，两者不编译该 UI 用例；Debug/ASan 已完整构建后更新最后测试 TU，随后各全量 1368/1368 通过。输入、原失败、基线/补强日志与产物比对保存在 build/p5-m5a1-*；38 项格式、20 组独立公开头、5 份原协议不变、实际旧 SDK 0.1.5 notebook normal 运行通过，29 个实际 ASan 对象的插桩、Module 异常模型及运行前后哈希一致。
+
+## M5-a1 收口结论
+
+本段将完整准备与对外呈现分开，复用原 PublicationControl、服务观察、贡献记录及资源屏障；Core 保持无 Qt/UI/Module 反向依赖，没有第二发布状态表或事务。移除了页面最后一行/持久索引假设，合并 Ela 重复节点登记算法；现有 Ela 导出薄转发因普通调用者和二进制兼容保留，公开 CentralStack 布局与 SDK 0.1.5 不变。旧 SDK 实物兼容结论仅限已保存的 notebook DLL 在当前宿主 normal 场景，不扩为任意 C++ 二进制兼容保证。
+
+独立结构、拥有者、重入/失败、兼容和最终证据复查未发现剩余提交阻断项。实际 Qt 用例覆盖共同提交前后门禁、完整 ready、搜索/卡片/页签、原生路由/紧凑导航、同组多页、Dialog 完整销毁、关闭重入、缓存建议、真实观察作业丢弃和 ReplacementScope 提交/恢复；Core 覆盖无输出终态、拒投与发布期间闭包门禁。五配置清单与唯一 Passed 名称、冻结输入及实际产物逐项匹配，Release 的组合验证范围按上段准确保留。
+
+验收映射见 [M5-a1 清单](../tests/acceptance/p5-replacement.md#m5-a1-页面与命令发布边界)。本段审计提交并同步远端、工作区干净后才进入 M5-a2。输出/通知 pending 历史、真实双版本业务 DLL、完整 H01/S09、同进程 100 次与随机压力、业务白名单资格和新增原生桌面升级验收仍未交付，不用本段测试替代。

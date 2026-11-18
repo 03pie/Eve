@@ -6,12 +6,31 @@
 #include <QGraphicsBlurEffect>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPointer>
 #include <QPropertyAnimation>
 #include <QTimer>
 #include <cmath>
+#include <cstdint>
+namespace {
+/** @brief 保持已导出控件的布局；切换状态沿 QObject 父子所有权释放。 */
+struct StackSwitchState : QObject {
+    explicit StackSwitchState(QObject* parent) : QObject(parent) {}
+    std::uint64_t revision = 0;
+    QPointer<QWidget> target;
+};
+StackSwitchState* switchState(ElaCentralStackedWidget* owner)
+{
+    for (auto child : owner->children())
+        if (auto state = dynamic_cast<StackSwitchState*>(child))
+            return state;
+    return new StackSwitchState(owner);
+}
+} // namespace
+
 ElaCentralStackedWidget::ElaCentralStackedWidget(QWidget* parent)
     : QWidget(parent)
 {
+    new StackSwitchState(this);
     _pPopupAnimationYOffset = 0;
     _pScaleAnimationRatio = 1;
     _pScaleAnimationPixOpacity = 1;
@@ -91,35 +110,94 @@ void ElaCentralStackedWidget::setIsHasRadius(bool isHasRadius)
     update();
 }
 
-void ElaCentralStackedWidget::doWindowStackSwitch(ElaWindowType::StackSwitchMode stackSwitchMode, int nodeIndex, bool isRouteBack)
+void ElaCentralStackedWidget::cancelWindowStackSwitch()
 {
-    if (_pLastTargetIndex == nodeIndex)
-    {
-        return;
+    const QPointer<ElaCentralStackedWidget> alive(this);
+    const QPointer<StackSwitchState> state(switchState(this));
+    ++state->revision;
+    state->target.clear();
+    QList<QPointer<QPropertyAnimation>> animations;
+    for (auto animation : findChildren<QPropertyAnimation*>(QString(), Qt::FindDirectChildrenOnly))
+        animations.append(animation);
+    for (auto animation : animations) {
+        if (!alive)
+            return;
+        if (animation) {
+            animation->stop();
+            if (animation)
+                animation->deleteLater();
+        }
     }
+    if (!alive)
+        return;
+    _targetStackPix = {};
+    _currentStackPix = {};
+    _blurEffect->setEnabled(false);
+    if (!alive)
+        return;
+    _isDrawNewPix = false;
+    update();
+}
+
+void ElaCentralStackedWidget::doWindowStackSwitch(ElaWindowType::StackSwitchMode stackSwitchMode, int nodeIndex,
+                                                  bool isRouteBack)
+{
+    const QPointer<ElaCentralStackedWidget> alive(this);
+    const QPointer<StackSwitchState> state(switchState(this));
+    const QPointer<QWidget> stableTarget(_containerStackedWidget->widget(nodeIndex));
+    if (!stableTarget)
+        return;
+    if (_pLastTargetIndex == nodeIndex &&
+        (state->target == stableTarget || _containerStackedWidget->currentWidget() == stableTarget))
+        return;
+    cancelWindowStackSwitch();
+    if (!alive || !state || !stableTarget)
+        return;
+    state->target = stableTarget;
+    const auto revision = state->revision;
+    const auto valid = [alive, state, stableTarget, revision] {
+        return alive && state && stableTarget && state->revision == revision &&
+               alive->_containerStackedWidget->indexOf(stableTarget) >= 0;
+    };
     _pLastTargetIndex = nodeIndex;
     _stackSwitchMode = stackSwitchMode;
     switch (stackSwitchMode)
     {
     case ElaWindowType::None:
     {
-        _containerStackedWidget->setCurrentIndex(nodeIndex);
+        _containerStackedWidget->setCurrentWidget(stableTarget);
+        if (!valid())
+            return;
         break;
     }
     case ElaWindowType::Popup:
     {
         QTimer::singleShot(180, this, [=]() {
-            QWidget* targetWidget = _containerStackedWidget->widget(nodeIndex);
-            _containerStackedWidget->setCurrentIndex(nodeIndex);
+            if (!valid())
+                return;
+            const QPointer<QWidget> targetWidget(stableTarget);
+            _containerStackedWidget->setCurrentWidget(stableTarget);
+            if (!valid())
+                return;
             _getTargetStackPix();
+            if (!valid())
+                return;
             targetWidget->setVisible(false);
-            QPropertyAnimation* popupAnimation = new QPropertyAnimation(this, "pPopupAnimationYOffset");
+            if (!valid())
+                return;
+            QPropertyAnimation* popupAnimation = new QPropertyAnimation(this, "pPopupAnimationYOffset", this);
             connect(popupAnimation, &QPropertyAnimation::valueChanged, this, [=]() {
+                if (!valid())
+                    return;
                 update();
             });
             connect(popupAnimation, &QPropertyAnimation::finished, this, [=]() {
+                if (!valid())
+                    return;
                 _targetStackPix = QPixmap();
                 targetWidget->setVisible(true);
+                if (!valid())
+                    return;
             });
             popupAnimation->setEasingCurve(QEasingCurve::OutCubic);
             popupAnimation->setDuration(300);
@@ -133,27 +211,47 @@ void ElaCentralStackedWidget::doWindowStackSwitch(ElaWindowType::StackSwitchMode
     }
     case ElaWindowType::Scale:
     {
-        QWidget* targetWidget = _containerStackedWidget->widget(nodeIndex);
+        const QPointer<QWidget> targetWidget(stableTarget);
         _getCurrentStackPix();
-        _containerStackedWidget->setCurrentIndex(nodeIndex);
+        if (!valid())
+            return;
+        _containerStackedWidget->setCurrentWidget(stableTarget);
+        if (!valid())
+            return;
         targetWidget->setVisible(true);
+        if (!valid())
+            return;
         _getTargetStackPix();
+        if (!valid())
+            return;
         targetWidget->setVisible(false);
+        if (!valid())
+            return;
         _isDrawNewPix = false;
-        QPropertyAnimation* currentPixZoomAnimation = new QPropertyAnimation(this, "pScaleAnimationRatio");
+        QPropertyAnimation* currentPixZoomAnimation = new QPropertyAnimation(this, "pScaleAnimationRatio", this);
         connect(currentPixZoomAnimation, &QPropertyAnimation::valueChanged, this, [=]() {
+            if (!valid())
+                return;
             update();
         });
         connect(currentPixZoomAnimation, &QPropertyAnimation::finished, this, [=]() {
+            if (!valid())
+                return;
             _isDrawNewPix = true;
-            QPropertyAnimation* targetPixZoomAnimation = new QPropertyAnimation(this, "pScaleAnimationRatio");
+            QPropertyAnimation* targetPixZoomAnimation = new QPropertyAnimation(this, "pScaleAnimationRatio", this);
             connect(targetPixZoomAnimation, &QPropertyAnimation::valueChanged, this, [=]() {
+                if (!valid())
+                    return;
                 update();
             });
             connect(targetPixZoomAnimation, &QPropertyAnimation::finished, this, [=]() {
+                if (!valid())
+                    return;
                 _targetStackPix = QPixmap();
                 _currentStackPix = QPixmap();
                 targetWidget->setVisible(true);
+                if (!valid())
+                    return;
             });
             if (isRouteBack)
             {
@@ -185,9 +283,13 @@ void ElaCentralStackedWidget::doWindowStackSwitch(ElaWindowType::StackSwitchMode
         currentPixZoomAnimation->setDuration(150);
         currentPixZoomAnimation->start(QAbstractAnimation::DeleteWhenStopped);
 
-        QPropertyAnimation* currentPixOpacityAnimation = new QPropertyAnimation(this, "pScaleAnimationPixOpacity");
+        QPropertyAnimation* currentPixOpacityAnimation =
+            new QPropertyAnimation(this, "pScaleAnimationPixOpacity", this);
         connect(currentPixZoomAnimation, &QPropertyAnimation::finished, this, [=]() {
-            QPropertyAnimation* targetPixOpacityAnimation = new QPropertyAnimation(this, "pScaleAnimationPixOpacity");
+            if (!valid())
+                return;
+            QPropertyAnimation* targetPixOpacityAnimation =
+                new QPropertyAnimation(this, "pScaleAnimationPixOpacity", this);
             targetPixOpacityAnimation->setStartValue(0);
             targetPixOpacityAnimation->setEndValue(1);
             targetPixOpacityAnimation->setDuration(300);
@@ -201,19 +303,33 @@ void ElaCentralStackedWidget::doWindowStackSwitch(ElaWindowType::StackSwitchMode
     }
     case ElaWindowType::Flip:
     {
-        QWidget* targetWidget = _containerStackedWidget->widget(nodeIndex);
+        const QPointer<QWidget> targetWidget(stableTarget);
         _getCurrentStackPix();
-        _containerStackedWidget->setCurrentIndex(nodeIndex);
+        if (!valid())
+            return;
+        _containerStackedWidget->setCurrentWidget(stableTarget);
+        if (!valid())
+            return;
         _getTargetStackPix();
+        if (!valid())
+            return;
         targetWidget->setVisible(false);
-        QPropertyAnimation* flipAnimation = new QPropertyAnimation(this, "pFlipAnimationRatio");
+        if (!valid())
+            return;
+        QPropertyAnimation* flipAnimation = new QPropertyAnimation(this, "pFlipAnimationRatio", this);
         connect(flipAnimation, &QPropertyAnimation::valueChanged, this, [=]() {
+            if (!valid())
+                return;
             update();
         });
         connect(flipAnimation, &QPropertyAnimation::finished, this, [=]() {
+            if (!valid())
+                return;
             _targetStackPix = QPixmap();
             _currentStackPix = QPixmap();
             targetWidget->setVisible(true);
+            if (!valid())
+                return;
         });
         flipAnimation->setEasingCurve(QEasingCurve::InOutSine);
         flipAnimation->setDuration(650);
@@ -226,11 +342,15 @@ void ElaCentralStackedWidget::doWindowStackSwitch(ElaWindowType::StackSwitchMode
     {
         _targetStackPix = QPixmap();
         _blurEffect->setEnabled(true);
-        QPropertyAnimation* blurAnimation = new QPropertyAnimation(this, "pBlurAnimationRadius");
+        QPropertyAnimation* blurAnimation = new QPropertyAnimation(this, "pBlurAnimationRadius", this);
         connect(blurAnimation, &QPropertyAnimation::valueChanged, this, [=]() {
+            if (!valid())
+                return;
             _blurEffect->setBlurRadius(_pBlurAnimationRadius);
         });
         connect(blurAnimation, &QPropertyAnimation::finished, this, [=]() {
+            if (!valid())
+                return;
             _blurEffect->setEnabled(false);
         });
         blurAnimation->setEasingCurve(QEasingCurve::InOutSine);
@@ -239,7 +359,11 @@ void ElaCentralStackedWidget::doWindowStackSwitch(ElaWindowType::StackSwitchMode
         blurAnimation->setEndValue(2);
         blurAnimation->start(QAbstractAnimation::DeleteWhenStopped);
         QApplication::processEvents();
-        _containerStackedWidget->setCurrentIndex(nodeIndex);
+        if (!valid())
+            return;
+        _containerStackedWidget->setCurrentWidget(stableTarget);
+        if (!valid())
+            return;
         break;
     }
     }
@@ -328,20 +452,51 @@ void ElaCentralStackedWidget::paintEvent(QPaintEvent* event)
 
 void ElaCentralStackedWidget::_getCurrentStackPix()
 {
+    const QPointer<ElaCentralStackedWidget> alive(this);
+    const QPointer<StackSwitchState> state(switchState(this));
+    const QPointer<QWidget> current(_containerStackedWidget->currentWidget());
+    if (!current)
+        return;
+    const auto revision = state->revision;
     _targetStackPix = QPixmap();
     bool isTransparent = _isTransparent;
     _isTransparent = true;
-    _containerStackedWidget->currentWidget()->setVisible(true);
-    _currentStackPix = _containerStackedWidget->grab();
-    _containerStackedWidget->currentWidget()->setVisible(false);
+    current->setVisible(true);
+    if (!alive)
+        return;
+    if (!state || !current || state->revision != revision) {
+        _isTransparent = isTransparent;
+        return;
+    }
+    const auto pix = _containerStackedWidget->grab();
+    if (!alive)
+        return;
+    if (!state || !current || state->revision != revision) {
+        _isTransparent = isTransparent;
+        return;
+    }
+    _currentStackPix = pix;
+    current->setVisible(false);
+    if (!alive)
+        return;
     _isTransparent = isTransparent;
 }
 
 void ElaCentralStackedWidget::_getTargetStackPix()
 {
+    const QPointer<ElaCentralStackedWidget> alive(this);
+    const QPointer<StackSwitchState> state(switchState(this));
+    const auto revision = state->revision;
     _targetStackPix = QPixmap();
     bool isTransparent = _isTransparent;
     _isTransparent = true;
-    _targetStackPix = _containerStackedWidget->grab();
+    const auto pix = _containerStackedWidget->grab();
+    if (!alive)
+        return;
+    if (!state || state->revision != revision) {
+        _isTransparent = isTransparent;
+        return;
+    }
+    _targetStackPix = pix;
     _isTransparent = isTransparent;
 }

@@ -29,6 +29,20 @@
 
 namespace cordis::ui::detail {
 using CommandKey = std::tuple<InstanceId, Epoch, std::string>;
+/** @brief 原命令模型同时按搜索和宿主纯呈现门禁过滤，不求值插件谓词。 */
+class CommandFilter final : public QSortFilterProxyModel {
+public:
+    explicit CommandFilter(QObject* parent) : QSortFilterProxyModel(parent) {}
+    std::function<bool(const QModelIndex&)> presentation;
+    void refresh() { invalidateFilter(); }
+
+protected:
+    bool filterAcceptsRow(int row, const QModelIndex& parent) const override
+    {
+        return QSortFilterProxyModel::filterAcceptsRow(row, parent) &&
+               (!presentation || presentation(sourceModel()->index(row, 0, parent)));
+    }
+};
 /** @brief 控制块保留回调直到已接受调用及谓词全部返回，不把列表行当作插件资源。 */
 struct CommandControl : std::enable_shared_from_this<CommandControl> {
     std::weak_ptr<ServicesControl> host;
@@ -36,6 +50,8 @@ struct CommandControl : std::enable_shared_from_this<CommandControl> {
     ContextIdentity owner;
     CommandSpec spec;
     std::function<Result<void>()> guard;
+    std::function<bool()> presentation;
+    std::shared_ptr<ScheduledJob> observation;
     std::optional<EffectToken> effect;
     QStandardItem* row = nullptr;
     bool revoked = false;
@@ -50,6 +66,8 @@ struct CommandControl : std::enable_shared_from_this<CommandControl> {
     CommandKey key() const { return {owner.instance, owner.epoch, spec.id}; }
     /** @brief 查询不执行谓词，不复制插件闭包。 */
     CommandSnapshot snapshot() const { return {owner, spec.id, spec.title, revoked, calls, blocked.load()}; }
+    /** @brief 模型仅查询原发布事实与宿主值，不进入插件 enabled 或业务 guard。 */
+    bool presentable() const { return !revoked && !retiring && !blocked.load() && presentation && presentation(); }
     /** @brief 业务入口先检查线程、宿主及本代门禁。 */
     Result<void> allowed() const;
     /** @brief 谓词执行期间占用调用保留，重入退役不能提前销毁自身闭包。 */
@@ -62,6 +80,8 @@ struct CommandControl : std::enable_shared_from_this<CommandControl> {
         spec.execute = {};
         spec.enabled = {};
         guard = {};
+        presentation = {};
+        observation.reset();
         drained.resolve();
     }
     /** @brief 同步禁止新执行，清理时移除宿主行并等待调用。 */
@@ -79,7 +99,7 @@ struct ServicesControl : std::enable_shared_from_this<ServicesControl> {
     std::shared_ptr<OutputControl> logs;
     WindowAccess windowAccess;
     QPointer<QLabel> commandResult;
-    QPointer<QSortFilterProxyModel> filter;
+    QPointer<CommandFilter> filter;
     std::map<QStandardItem*, QPointer<QAction>> platformCommands;
     std::uint64_t commandSequence = 0;
     /** @brief 运行结果由命令面板承接，输出通道另保留完整执行记录。 */
@@ -91,6 +111,21 @@ struct ServicesControl : std::enable_shared_from_this<ServicesControl> {
         }
     }
     void activate(const QModelIndex& index);
+    /** @brief 刷新原模型的投影；重入关闭时窗口访问栈仍保护控件。 */
+    void refreshPresentation()
+    {
+        if (!open || !windowAccess)
+            return;
+        auto self = shared_from_this();
+        auto access = windowAccess;
+        access([self] {
+            if (!self->open || !self->filter)
+                return;
+            self->filter->refresh();
+            if (self->open && self->commands && self->filter && !self->commands->currentIndex().isValid())
+                self->commands->setCurrentIndex(self->filter->index(0, 0));
+        });
+    }
     std::map<CommandKey, std::shared_ptr<CommandControl>> records;
     std::map<QStandardItem*, std::weak_ptr<CommandControl>> rows;
     std::deque<NotificationSnapshot> history;
@@ -219,6 +254,8 @@ Result<void> CommandControl::allowed() const
     auto checked = state->business();
     if (!checked.hasValue()) return checked;
     if (revoked || !guard) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "command revoked"));
+    if (!presentable())
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "command is not externally published"));
     return guard();
 }
 /** @brief 谓词重入关闭后即使返回 true，也不得进入 execute 回调。 */
@@ -246,6 +283,7 @@ Task<void> CommandControl::retire()
     if (retiring) return drained.task();
     revoked = true;
     retiring = true;
+    observation.reset();
     std::weak_ptr<CommandControl> weak = shared_from_this();
     cordis::detail::TaskAccess::observe(effect->close(), [weak](Task<CleanupReport>::Snapshot report) {
         if (!report->hasValue() || !report->value().quiescent) return;
@@ -302,6 +340,9 @@ void ServicesControl::activate(const QModelIndex& index)
     auto found = rows.find(item);
     auto record = found == rows.end() ? nullptr : found->second.lock();
     if (!record) return;
+    // 缓存的 QModelIndex 也不能在未发布时泄露标题、运行状态或输出记录。
+    if (!record->allowed().hasValue())
+        return;
     const auto identity = record->owner;
     const auto title = record->spec.title;
     const auto execution = ++commandSequence;
@@ -328,11 +369,27 @@ std::shared_ptr<ServicesControl> createUiServices(std::shared_ptr<qt::QtSchedule
     state->scheduler = std::move(scheduler);
     state->commands = commands;
     state->model = new QStandardItemModel(commands);
-    commands->setModel(state->model);
+    auto filter = new CommandFilter(commands);
+    state->filter = filter;
+    filter->setSourceModel(state->model);
+    filter->setFilterCaseSensitivity(Qt::CaseInsensitive);
+    filter->setFilterRole(Qt::UserRole + 1);
+    commands->setModel(filter);
     state->notification = notification;
     state->output = output;
     notification->setTextFormat(Qt::PlainText);
     std::weak_ptr<ServicesControl> weak = state;
+    filter->presentation = [weak](const QModelIndex& source) {
+        auto host = weak.lock();
+        if (!host || !host->open)
+            return false;
+        auto item = host->model->itemFromIndex(source);
+        if (host->platformCommands.count(item))
+            return true;
+        const auto found = host->rows.find(item);
+        auto record = found == host->rows.end() ? nullptr : found->second.lock();
+        return record && record->presentable();
+    };
     QObject::connect(commands, &QListView::activated, commands, [weak](const QModelIndex& index) {
         if (auto owner = weak.lock()) owner->activate(index);
     });
@@ -343,9 +400,6 @@ void configureCommandPanel(const std::shared_ptr<ServicesControl>& state, QWidge
 {
     state->logs = std::move(output); state->windowAccess = std::move(access);
     state->commandResult = page->findChild<QLabel*>("CordisCommandResult");
-    auto filter = new QSortFilterProxyModel(state->commands); state->filter = filter;
-    filter->setSourceModel(state->model); filter->setFilterCaseSensitivity(Qt::CaseInsensitive);
-    filter->setFilterRole(Qt::UserRole + 1); state->commands->setModel(filter);
     std::weak_ptr<ServicesControl> weak = state;
     for (auto action : actions) {
         if (!action || action->isSeparator() || !action->isVisible()) continue;
@@ -427,6 +481,25 @@ Result<CommandHandle> CommandService::add(const Context& owner, CommandSpec spec
     record->owner = identity.value();
     record->spec = std::move(spec);
     record->guard = std::move(guard.value());
+    std::weak_ptr<detail::CommandControl> weak = record;
+    ScheduledJob changed{[weak] {
+                             auto record = weak.lock();
+                             if (!record || record->retiring || record->revoked)
+                                 return;
+                             if (record->presentation && record->presentation())
+                                 record->observation.reset();
+                             if (auto host = record->host.lock())
+                                 host->refreshPresentation();
+                         },
+                         [weak] {
+                             if (auto record = weak.lock())
+                                 record->blocked.store(true);
+                         }};
+    auto presentation = context.presentation(host->scheduler, std::move(changed));
+    if (!presentation.hasValue())
+        return Result<CommandHandle>::failure(presentation.error());
+    record->presentation = std::move(presentation.value().visible);
+    record->observation = std::move(presentation.value().observation);
     // std::function 的移动可执行用户代码；预留索引及创建 effect 前重查全部门禁。
     auto stillOpen = host->business();
     if (!stillOpen.hasValue()) return Result<CommandHandle>::failure(stillOpen.error());

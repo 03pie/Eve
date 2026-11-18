@@ -2,6 +2,7 @@
 #define ELAWORKSPACE_ELAWIDGETTOOLS_PRIVATE_ELASUGGESTBOXPRIVATE_H_
 
 #include "ElaPropertyMacro.h"
+#include "ElaSuggestBox.h"
 #include <QAction>
 #include <QObject>
 #include <QPointer>
@@ -44,6 +45,7 @@ public:
     Q_SLOT void onSearchViewClicked(const QModelIndex& index);
     /** @brief 先停止动画和清空展示模型，再撤销建议对象。 */
     void resetSearch();
+    bool accepts(const ElaSuggestBox::SuggestData& data) const;
 
 private:
     ElaThemeType::ThemeMode _themeMode;
@@ -61,6 +63,8 @@ private:
     bool _isCloseAnimationFinished{true};
     bool _resetting{false};
     quint64 _suggestionVersion{0};
+    quint64 _queryVersion{0};
+    std::function<bool(const ElaSuggestBox::SuggestData&)> _presentation;
     void _startSizeAnimation(QSize oldSize, QSize newSize);
     void _startExpandAnimation();
     void _startCloseAnimation();

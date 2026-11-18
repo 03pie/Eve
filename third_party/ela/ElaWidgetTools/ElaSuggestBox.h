@@ -3,6 +3,7 @@
 
 #include <QVariantMap>
 #include <QWidget>
+#include <functional>
 
 #include "ElaWidgetToolsDef.h"
 #include "ElaWidgetToolsExport.h"
@@ -37,6 +38,8 @@ public:
         explicit SuggestData(ElaIconType::IconName icon, const QString& suggestText, const QVariantMap& suggestData = {});
         ~SuggestData();
     };
+    /** @brief 纯呈现过滤在查询及选择时复查；空过滤保持原行为，不删除建议元数据。 */
+    void setSuggestionFilter(std::function<bool(const SuggestData&)> filter);
     QString addSuggestion(const QString& suggestText, const QVariantMap& suggestData = {});
     QString addSuggestion(ElaIconType::IconName icon, const QString& suggestText, const QVariantMap& suggestData = {});
     QString addSuggestion(const ElaSuggestBox::SuggestData& suggestData);

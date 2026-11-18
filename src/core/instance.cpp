@@ -5,6 +5,7 @@
 #include "instance_state_p.hpp"
 #include "replacement_scope_p.hpp"
 #include "service_contract_p.hpp"
+#include "service_p.hpp"
 #include "state_p.hpp"
 #include <cordis/instance.hpp>
 
@@ -18,6 +19,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <typeindex>
 #include <utility>
 #include <vector>
@@ -721,6 +723,44 @@ Result<std::function<Result<void>()>> Context::eventGuard(const std::shared_ptr<
         auto owner = weak.lock();
         return owner ? owner->business(captured) : Result<void>::failure(makeError(ErrorCode::StaleContext, "event owner expired"));
     });
+}
+/** @brief 呈现只读原发布状态；业务门禁仍由 eventGuard 在实际入口重新验证。 */
+Result<Context::Presentation> Context::presentation(const std::shared_ptr<IScheduler>& scheduler,
+                                                    ScheduledJob changed) const
+{
+    using Output = Result<Presentation>;
+    const auto self = control_.lock();
+    if (!self)
+        return Output::failure(makeError(ErrorCode::StaleContext, "instance expired"));
+    auto allowed = self->business(epoch_);
+    if (!allowed.hasValue())
+        return Output::failure(allowed.error());
+    if (self->scheduler != scheduler)
+        return Output::failure(makeError(ErrorCode::InvalidArgument, "resource adapter requires same scheduler"));
+    const auto publication = self->services ? self->services->publication_ : nullptr;
+    const bool observePublication = publication && (publication->state != PublicationState::Published ||
+                                                    publication->notifying || publication->deliveryBlocked);
+    if (observePublication && !changed.run)
+        return Output::failure(makeError(ErrorCode::InvalidArgument, "publication observation requires a callback"));
+    Presentation result;
+    result.visible = [weak = control_, captured = epoch_, thread = std::this_thread::get_id(),
+                      publication = std::weak_ptr<detail::PublicationControl>(publication),
+                      grouped = static_cast<bool>(publication)]() noexcept {
+        if (std::this_thread::get_id() != thread)
+            return false;
+        const auto owner = weak.lock();
+        if (!owner || owner->epoch != captured || owner->stopping || owner->retiring || owner->dirty)
+            return false;
+        if (!grouped)
+            return true;
+        const auto group = publication.lock();
+        return group && group->state == PublicationState::Published && !group->notifying && !group->deliveryBlocked;
+    };
+    if (observePublication)
+        result.observation = self->services->watch(std::move(changed));
+    // 接管通知闭包期间也可能重入；失效时释放刚登记的令牌，不交付过期适配能力。
+    const auto current = self->business(epoch_);
+    return current.hasValue() ? Output::success(std::move(result)) : Output::failure(current.error());
 }
 /** @brief 子实例沿用父视图与索引，排队激活前即纳入父代所有权。 */
 Result<Instance> Context::inject(const Runtime& runtime, std::string config,

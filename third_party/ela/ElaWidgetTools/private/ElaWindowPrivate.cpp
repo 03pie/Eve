@@ -8,6 +8,7 @@
 #include "ElaThemeAnimationWidget.h"
 #include "ElaWindow.h"
 #include <QApplication>
+#include <QPointer>
 #include <QPropertyAnimation>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -189,6 +190,8 @@ void ElaWindowPrivate::onWindowDisplayModeChanged()
 
 void ElaWindowPrivate::onNavigationNodeClicked(ElaNavigationType::NavigationNodeType nodeType, QString nodeKey, bool isRouteBack)
 {
+    if (!_navigationBar->isNodePresentable(nodeKey))
+        return;
     QWidget* page = _routeMap.value(nodeKey);
     if (!page)
     {
@@ -200,8 +203,13 @@ void ElaWindowPrivate::onNavigationNodeClicked(ElaNavigationType::NavigationNode
     {
         return;
     }
+    const auto current = _navigationCenterStackedWidget->getContainerStackedWidget()->currentWidget();
+    const auto currentKey = current ? current->property("ElaPageKey").toString() : QString{};
+    const bool controlled =
+        _navigationBar->nodeUsesPresentation(nodeKey) || _navigationBar->nodeUsesPresentation(currentKey);
     _navigationTargetIndex = nodeIndex;
-    _navigationCenterStackedWidget->doWindowStackSwitch(_pStackSwitchMode, nodeIndex, isRouteBack);
+    _navigationCenterStackedWidget->doWindowStackSwitch(controlled ? ElaWindowType::None : _pStackSwitchMode, nodeIndex,
+                                                        isRouteBack);
 }
 
 void ElaWindowPrivate::onNavigationNodeAdded(ElaNavigationType::NavigationNodeType nodeType, QString nodeKey, QWidget* page)
@@ -213,21 +221,50 @@ void ElaWindowPrivate::onNavigationNodeAdded(ElaNavigationType::NavigationNodeTy
     _routeMap.insert(nodeKey, page);
     if (page)
     {
+        const auto previous = _navigationCenterStackedWidget->getContainerStackedWidget()->currentWidget();
+        const bool emptyCurrent = previous && previous->objectName() == "ElaEmptyWorkbench";
+        bool firstPresented = _navigationBar->isNodePresentable(nodeKey);
+        for (auto it = _routeMap.cbegin(); firstPresented && it != _routeMap.cend(); ++it)
+            if (it.key() != nodeKey && it.value() && _navigationBar->isNodePresentable(it.key()))
+                firstPresented = false;
+        if (!_navigationBar->isNodePresentable(nodeKey) &&
+            !_navigationCenterStackedWidget->getContainerStackedWidget()->currentWidget())
+            q_ptr->showEmptyWorkbench();
         _navigationCenterStackedWidget->getContainerStackedWidget()->addWidget(page);
+        if (firstPresented && emptyCurrent) {
+            _navigationBar->clearNavigationSelection();
+            _navigationBar->navigation(nodeKey, false);
+        }
     }
 }
 
 void ElaWindowPrivate::onNavigationNodeRemoved(ElaNavigationType::NavigationNodeType nodeType, QString nodeKey)
 {
     Q_Q(ElaWindow);
+    const QPointer<ElaWindowPrivate> alive(this);
     if (!_routeMap.contains(nodeKey))
     {
         return;
     }
-    QWidget* page = _routeMap.value(nodeKey);
+    const QPointer<QWidget> page(_routeMap.value(nodeKey));
+    _navigationCenterStackedWidget->cancelWindowStackSwitch();
+    if (!alive)
+        return;
+    const QPointer<QWidget> current(_navigationCenterStackedWidget->getContainerStackedWidget()->currentWidget());
+    if (current == page || (current && !_navigationBar->isNodePresentable(current->property("ElaPageKey").toString())))
+        q->showEmptyWorkbench();
+    else if (current && _navigationCenterStackedWidget->getContainerStackedWidget()->indexOf(current) >= 0 &&
+             _navigationBar->isNodePresentable(current->property("ElaPageKey").toString()))
+        // 取消动画已移除 finished 的恢复回调；只恢复仍合法的当前页，不能展示 Held。
+        current->show();
+    if (!alive)
+        return;
     _routeMap.remove(nodeKey);
     _pageMetaMap.remove(nodeKey);
-    _navigationCenterStackedWidget->getContainerStackedWidget()->removeWidget(page);
+    if (page)
+        _navigationCenterStackedWidget->getContainerStackedWidget()->removeWidget(page);
+    if (!alive)
+        return;
     QWidget* currentWidget = _navigationCenterStackedWidget->getContainerStackedWidget()->currentWidget();
     if (currentWidget)
     {

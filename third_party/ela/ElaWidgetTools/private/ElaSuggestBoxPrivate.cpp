@@ -45,6 +45,7 @@ void ElaSuggestBoxPrivate::onSearchEditTextEdit(const QString& searchText)
     Q_Q(ElaSuggestBox);
     if (_resetting || !_searchViewBaseWidget || !_searchView) return;
     const auto version = _suggestionVersion;
+    const auto query = ++_queryVersion;
     QPointer<ElaSuggestBoxPrivate> alive(this);
     if (searchText.isEmpty())
     {
@@ -59,8 +60,18 @@ void ElaSuggestBoxPrivate::onSearchEditTextEdit(const QString& searchText)
     QVector<ElaSuggestion*> suggestionVector;
     for (const auto& suggest: _suggestionVector)
     {
-        if (suggest->getSuggestText().contains(searchText, _pCaseSensitivity))
-        {
+        ElaSuggestBox::SuggestData data(suggest->getElaIcon(), suggest->getSuggestText(), suggest->getSuggestData());
+        data.setSuggestKey(suggest->getSuggestKey());
+        const bool accepted = accepts(data);
+        if (!alive)
+            return;
+        if (query != _queryVersion)
+            return;
+        if (version != _suggestionVersion) {
+            resetSearch();
+            return;
+        }
+        if (accepted && suggest->getSuggestText().contains(searchText, _pCaseSensitivity)) {
             suggestionVector.append(suggest);
         }
     }
@@ -69,7 +80,7 @@ void ElaSuggestBoxPrivate::onSearchEditTextEdit(const QString& searchText)
         _searchModel->setSearchSuggestion(suggestionVector);
         if (!alive) return;
         if (version != _suggestionVersion) { resetSearch(); return; }
-        // 复位信号可规范化输入；外层查询结束后以真实文本重新收敛结果。
+        // reset 信号中的新查询可能被模型拒绝；窗口退出后必须按真实文本再次收敛，不能仅凭版本早退。
         if (_searchEdit->text() != searchText) { onSearchEditTextEdit(_searchEdit->text()); return; }
         int rowCount = suggestionVector.count();
         if (rowCount > 4)
@@ -112,12 +123,45 @@ void ElaSuggestBoxPrivate::onSearchViewClicked(const QModelIndex& index)
     ElaSuggestBox::SuggestData data(suggest->getElaIcon(), suggest->getSuggestText(), suggest->getSuggestData());
     data.setSuggestKey(suggest->getSuggestKey());
     QPointer<ElaSuggestBoxPrivate> alive(this);
+    const auto query = _queryVersion;
+    const auto text = _searchEdit->text();
+    // Qt 模型/文本信号可同步替换查询；后续只按稳定键核对，不借用旧行号或节点指针。
+    const auto current = [&](const QString& expectedText) {
+        if (!alive || query != _queryVersion || _searchEdit->text() != expectedText)
+            return false;
+        for (const auto* item : _suggestionVector)
+            if (item->getSuggestKey() == data.getSuggestKey() && item->getSuggestText() == data.getSuggestText())
+                return true;
+        return false;
+    };
+    const bool accepted = accepts(data);
+    if (!current(text))
+        return;
+    if (!accepted) {
+        resetSearch();
+        return;
+    }
     _searchView->clearSelection();
-    if (!alive) return;
+    if (!current(text))
+        return;
     _searchEdit->setText(data.getSuggestText());
-    if (!alive) return;
+    if (!current(data.getSuggestText()))
+        return;
     _startCloseAnimation();
-    if (alive) Q_EMIT q->suggestionClicked(data);
+    if (!current(data.getSuggestText()))
+        return;
+    const bool stillAccepted = accepts(data);
+    if (stillAccepted && current(data.getSuggestText()))
+        Q_EMIT q->suggestionClicked(data);
+}
+
+bool ElaSuggestBoxPrivate::accepts(const ElaSuggestBox::SuggestData& data) const
+{
+    try {
+        return !_presentation || _presentation(data);
+    } catch (...) {
+        return false;
+    }
 }
 
 void ElaSuggestBoxPrivate::resetSearch()

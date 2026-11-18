@@ -13,7 +13,7 @@ class QWidget;
 namespace cordis::ui {
 namespace detail { struct PageControl; struct ShellControl; }
 class ElaShell;
-/** @brief 工厂须在应用线程返回无 parent、未启用自动删除的 QWidget；只调用一次。 */
+/** @brief 工厂须在应用线程返回无 parent、未启用自动删除的 QWidget；只调用一次，呈现由宿主负责。 */
 using PageFactory = std::function<std::unique_ptr<QWidget>()>;
 /** @brief 窗口贡献仍由外壳和本代 effect 托管，不加入活动栏或中央页签。 */
 enum class PagePresentation { Tab, Dialog };
@@ -37,7 +37,7 @@ struct PageSnapshot {
 /** @brief 共享页面的 effect 生命周期；句柄析构不伪造异步撤销完成。 */
 class PageHandle {
 public:
-    /** @brief 观察页面工厂及导航登记是否成功，始终通过 Task 排队观察。 */
+    /** @brief 观察工厂及登记准备是否成功；候选仍等整体发布才呈现，始终通过 Task 排队观察。 */
     Task<void> ready() const;
     /** @brief owner 打开/恢复页签前重查实例/epoch 和贡献门禁；旧代及退役页不可重新进入。 */
     Result<void> navigate() const;

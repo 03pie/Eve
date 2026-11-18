@@ -26,7 +26,9 @@ class PublicationGroup {
 public:
     /** @brief 全部成员就绪后一次公开输出；通知投递失败保留 Published 和错误，不能冒记成功或再次提交掩盖。 */
     Result<void> commit() const;
-    /** @brief 立即冻结组内业务并请求成员停止；返回成功不代表清理完成。已放弃时幂等。 */
+    /** @brief 立即冻结组内业务并请求成员停止；返回成功不代表清理完成。
+     * 终态通知失败保留诊断，不撤销停止请求，重复调用不能清除该故障。
+     */
     Result<void> abort() const;
     /** @brief 移动后的句柄无效；诊断不隐式提交或清理。 */
     Result<PublicationSnapshot> snapshot() const;

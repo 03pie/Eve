@@ -36,6 +36,9 @@ ElaNavigationBarPrivate::~ElaNavigationBarPrivate()
 void ElaNavigationBarPrivate::onNavigationOpenNewWindow(const QString& nodeKey)
 {
     Q_Q(ElaNavigationBar);
+    if (!_pIsAllowPageOpenInNewWindow || !q->isNodePresentable(nodeKey) ||
+        (navigationGuard && !navigationGuard(nodeKey)))
+        return;
     const QMetaObject* meta = _pageMetaMap.value(nodeKey);
     if (!meta)
     {
@@ -62,8 +65,7 @@ void ElaNavigationBarPrivate::onTreeViewClicked(const QModelIndex& index, bool i
     if (index.isValid())
     {
         ElaNavigationNode* node = static_cast<ElaNavigationNode*>(index.internalPointer());
-        if (!node)
-        {
+        if (!node || !node->isPresentable()) {
             return;
         }
         const QPointer<ElaNavigationNode> liveNode(node);
@@ -179,7 +181,8 @@ void ElaNavigationBarPrivate::onFooterViewClicked(const QModelIndex& index, bool
     Q_Q(ElaNavigationBar);
     const QPointer<ElaNavigationBarPrivate> alive(this);
     ElaNavigationNode* node = index.data(Qt::UserRole).value<ElaNavigationNode*>();
-    if (!node || (navigationGuard && !navigationGuard(node->getNodeKey()))) return;
+    if (!node || !node->isPresentable() || (navigationGuard && !navigationGuard(node->getNodeKey())))
+        return;
     const QPointer<ElaNavigationNode> liveNode(node);
     const QString nodeKey = node->getNodeKey();
     if (node->getKeyPoints())
@@ -279,6 +282,8 @@ void ElaNavigationBarPrivate::_initNodeModelIndex(const QModelIndex& parentIndex
         QModelIndex index = _navigationModel->index(row, 0, parentIndex);
         ElaNavigationNode* childNode = static_cast<ElaNavigationNode*>(index.internalPointer());
         childNode->setModelIndex(index);
+        if (childNode->getIsExpanderNode() && childNode->getIsExpanded())
+            _navigationView->expand(index);
         if (_navigationModel->hasChildren(index))
         {
             _initNodeModelIndex(index);
@@ -364,6 +369,8 @@ void ElaNavigationBarPrivate::_expandSelectedNodeParent()
 
 void ElaNavigationBarPrivate::_expandOrCollapseExpanderNode(ElaNavigationNode* node, bool isExpand)
 {
+    if (!node || !node->isPresentable() || !node->getModelIndex().isValid())
+        return;
     if (_currentDisplayMode == ElaNavigationType::Compact)
     {
         if (node->getIsHasPageChild())
@@ -407,9 +414,14 @@ void ElaNavigationBarPrivate::_expandOrCollapseExpanderNode(ElaNavigationNode* n
 void ElaNavigationBarPrivate::_addStackedPage(QWidget* page, QString pageKey)
 {
     Q_Q(ElaNavigationBar);
+    const QPointer<ElaNavigationBarPrivate> alive(this);
     page->setProperty("ElaPageKey", pageKey);
     Q_EMIT q->navigationNodeAdded(ElaNavigationType::PageNode, pageKey, page);
+    if (!alive)
+        return;
     ElaNavigationNode* node = _navigationModel->getNavigationNode(pageKey);
+    if (!node)
+        return;
     QVariantMap suggestData;
     suggestData.insert("ElaPageKey", pageKey);
     _suggestDataList.append(ElaSuggestBox::SuggestData(node->getAwesome(), node->getNodeTitle(), suggestData));
@@ -441,9 +453,14 @@ void ElaNavigationBarPrivate::_addCompactPageAction(ElaNavigationNode* node)
     {
         menu = new ElaMenu(q);
         _compactMenuMap.insert(groupKey, menu);
+        connect(menu, &QMenu::aboutToShow, q, [q, menu] {
+            for (auto item : menu->actions())
+                item->setVisible(q->isNodePresentable(item->data().toString()));
+        });
     }
     auto action = menu->addElaIconAction(node->getAwesome(), node->getNodeTitle());
     action->setData(pageKey);
+    action->setVisible(node->isPresentable());
     connect(action, &QAction::triggered, q, [q, pageKey]() { q->navigation(pageKey); });
 }
 
@@ -549,25 +566,21 @@ void ElaNavigationBarPrivate::_handleNavigationExpandState(bool isSave)
 {
     if (isSave)
     {
-        // 保存展开状态 收起根节点所有子树
         _lastExpandedNodeKeys.clear();
         for (auto node : _navigationModel->getRootExpandedNodes())
-            _lastExpandedNodeKeys.append(node->getNodeKey());
-        for (const auto& key : _lastExpandedNodeKeys)
         {
-            if (auto node = _navigationModel->getNavigationNode(key))
-                onTreeViewClicked(node->getModelIndex(), false);
+            _lastExpandedNodeKeys.append(node->getNodeKey());
+            node->setIsExpanded(false);
+            _navigationView->collapse(node->getModelIndex());
         }
     }
     else
     {
-        // 修正动画覆盖
         _navigationView->resize(_pNavigationBarWidth - 5, _navigationView->height());
         for (const auto& key : _lastExpandedNodeKeys)
-        {
             if (auto node = _navigationModel->getNavigationNode(key))
-                onTreeViewClicked(node->getModelIndex(), false);
-        }
+                node->setIsExpanded(true);
+        _initNodeModelIndex({});
     }
 }
 

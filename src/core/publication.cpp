@@ -145,22 +145,38 @@ Result<void> PublicationGroup::abort() const
         return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "publication handle moved from"));
     if (!control->scheduler->isCurrentThread())
         return Result<void>::failure(makeError(ErrorCode::WrongThread, "publication abort requires owner thread"));
-    if (control->state == PublicationState::Aborted)
+    if (control->state == PublicationState::Aborted) {
+        if (control->notifying || control->deliveryBlocked)
+            return Result<void>::failure(
+                makeError(ErrorCode::SchedulerClosed, "aborted group notification delivery is pending or blocked"));
         return Result<void>::success();
+    }
     if (control->state != PublicationState::Open)
         return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "published group cannot be aborted"));
     std::vector<ProviderHandle> outputs;
-    if (auto registry = control->registry.lock())
+    const auto registry = control->registry.lock();
+    if (registry)
         for (const auto& entry : registry->bindings)
             if (entry.second->publication == control)
                 outputs.push_back(ProviderHandle(entry.second));
     const auto members = control->members;
     control->state = PublicationState::Aborted;
+    control->notifying = true;
+    control->deliveryBlocked = true;
+    struct Delivery {
+        detail::PublicationControl& state;
+        ~Delivery() { state.notifying = false; }
+    } delivery{*control};
     // 状态先冻结，索引回调或取消引起的重入不能再调用任何组内业务。
     for (const auto& output : outputs)
         output.retire().value();
     for (const auto& member : members)
         member.second.abort();
+    // 无服务输出也必须通知终态；通知失败不能提前跳过任何成员的停止请求。
+    control->deliveryBlocked = registry && !detail::notifyRegistry(registry);
+    if (control->deliveryBlocked)
+        return Result<void>::failure(
+            makeError(ErrorCode::SchedulerClosed, "aborted group but notification delivery failed"));
     return Result<void>::success();
 }
 } // namespace cordis

@@ -1,17 +1,18 @@
 #include "ElaSuggestBox.h"
 
+#include <QAbstractAnimation>
 #include <QAction>
 #include <QDebug>
 #include <QHBoxLayout>
-#include <QLineEdit>
 #include <QKeyEvent>
-#include <QAbstractAnimation>
-#include <QPointer>
+#include <QLineEdit>
 #include <QListView>
 #include <QMap>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPointer>
 #include <QVBoxLayout>
+#include <utility>
 
 #include "ElaBaseListView.h"
 #include "ElaIcon.h"
@@ -124,6 +125,13 @@ void ElaSuggestBox::setSearchText(const QString& text)
 }
 
 QString ElaSuggestBox::getSearchText() const { Q_D(const ElaSuggestBox); return d->_searchEdit->text(); }
+void ElaSuggestBox::setSuggestionFilter(std::function<bool(const SuggestData&)> filter)
+{
+    Q_D(ElaSuggestBox);
+    d->_presentation = std::move(filter);
+    ++d->_suggestionVersion;
+    d->onSearchEditTextEdit(d->_searchEdit->text());
+}
 void ElaSuggestBox::focusSearch()
 {
     Q_D(ElaSuggestBox);

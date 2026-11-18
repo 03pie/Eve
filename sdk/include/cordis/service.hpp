@@ -128,6 +128,7 @@ struct ServiceInstanceSnapshot {
     InstanceId parent;
     std::vector<ServiceKey> dependencies;
     std::vector<ServiceKey> outputs;
+    /** @brief 组尚未完成对外发布：Open/Aborted，或仍在通知/通知投递失败；无组为 false。 */
     bool publicationHeld = false;
 };
 struct ServiceGraphSnapshot {

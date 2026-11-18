@@ -152,8 +152,8 @@ detail::KernelControl::selectReplacement(const std::vector<RuntimeId>& requested
         if (node.state == InstanceState::Loading || node.state == InstanceState::Unloading)
             return Output::failure(failure(ErrorCode::ContextClosing, "affected instance is transitioning", id));
         if (declarations.at(id)->publicationHeld)
-            return Output::failure(
-                failure(ErrorCode::ConfigConflict, "affected instance belongs to an open publication group", id));
+            return Output::failure(failure(ErrorCode::ConfigConflict,
+                                           "affected instance publication has not completed external delivery", id));
         for (const auto& consumer : committed[id]) {
             auto found = owned.find(consumer.instance);
             if (!consumer.managed || found == owned.end())

@@ -218,3 +218,23 @@ M4-a 的 [22 项装载策略检查](../qt/module_load_policy.cmake)、M4-b 的 [
 见证只统计动态 DLL_PROCESS_DETACH，进程退出不计成功。`probe_other` 验证另一真实映像的拥有引用归属，`owner_gone` 验证首次线程退出后的身份拒绝，均不声称实际地址或系统线程 ID 已复用；worker/QObject 检查依赖显式登记和完整 join/析构，不代表自动追踪插件线程。`parallel_owners` 证明平台锁不跨系统释放边界，不声称 Windows loader lock 内系统调用并行；Qt 检查始终验证驻留兼容。
 
 M5 仍须交付真实业务产物白名单、服务与 Qt 页面在线升级、UI 贡献可见性、H01/H02、S09 全范围、Windows 连续 100 次真实 ReplacementOperation 及随机/故障压力。M4 专用夹具、目录循环和局部消费者恢复证据不能替代这些出口，P5 尚未完成。
+
+## M5-a1 页面与命令发布边界
+
+本段沿原 Context/PublicationControl 完整准备页面、命令及清理，再由原共同发布状态控制外部呈现；普通导航、搜索、Home、页签、紧凑菜单和执行入口不能提前开放候选。诊断仍保留实际准备资源，不另建 UI 事务或伪造 Context。[实现、阶段审查与验证](../../docs/p5-m5-development.md#m5-a1-收口结论)已完成，随本次收口提交归档；提交同步后才进入 M5-a2 的输出/通知 pending 值隔离。
+
+| 验收条件 | 实际检查 |
+|---|---|
+| 原发布组提交/放弃、组内外隔离、完整清理及通知故障回归 | 原 13 项 `p5.publication_*`，见 [Core 选择](../CMakeLists.txt)与 [真实公开 API 用例](../unit/publication.cpp) |
+| 无 Binding 变化的 Aborted 也通知；拒投可见且幂等不抹掉故障，通知/放弃重入及无输出清理失败保留真实资源 | 新增 `p5.publication_abort_notification`、`abort_notification_failure`、`abort_notification_reassign`、`abort_no_output_failure`；与原项联合为 Core 17 项 |
+| ready 前完整建页，Held 不可导航/输入；真实 `CordisPageSearch`、Home、中央页签在提交前无候选，提交后原控件可进入，同分类首个页面关闭不影响其他页面 | `p5.ui_publication_pages_held`、`pages_input`、`pages_home`；使用真实 Qt/Ela、Kernel 与 `holdPublication/mountHeld` |
+| 放弃、工厂失败、提交后立即停止、登记中重入关闭、Dialog、观察通知丢弃；原 Scope 的候选提交与旧代恢复沿实际准备/发布/释放顺序兑现 | `pages_aborted`、`pages_factory_failure`、`pages_stopped`、`pages_registration_close`、`pages_dialog`、`observer_discarded`、`pages_scope_commit`、`pages_scope_recover`；与上行共 11 项页面/观察组合 |
+| 命令行完整准备但候选不可见，enabled/execute 不进入插件谓词；提交复用原行，放弃释放捕获，缓存索引/建议不可绕过门禁 | `commands_held`、`commands_aborted`、`suggestion_gate`；后者保留 click/Return 内部 setText 改查另一页时不发旧选择的回归，共 3 项 |
+| 原节点/堆栈的可见索引、父子与稳定 key、紧凑菜单及动画退出均与呈现门禁一致；删除无关页面后合法动画目标仍可见 | `ela_held`、`ela_indices`、`ela_stack`、`ela_compact`、`ela_animation`、`ela_animation_cancel`，共 6 项 |
+| 模型 reset 回调同步规范化查询后，Return 使用当前 Beta 结果，不出现 Beta 文本配 Alpha 模型 | 原 `p3.workbench_search_normalization`，保留旧断言；与新增 20 项 UI 组合联合复验 21/21 |
+
+表内页面/命令/Ela 简名统一加 `p5.ui_publication_`；Core 简名加 `p5.publication_`。Core 联合专项在 MSVC/GCC 各 17/17。当前 Release 全目标构建后的完整基线为 1368/1368；随后仅增强 `tests/qt/page_presentation.cpp` 的真实搜索/Home/页签断言，重建对应可执行文件并复验上述 21/21，其他 182 个运行产物 SHA256 未变。Release 由完整基线与受影响重验共同覆盖 1368 个唯一用例，不重复累加，也不宣称最后断言增强后又跑过全量；见 build/p5-m5a1-release-verified.json。
+
+静态 Core（关闭 Ela/示例）全量 974/974、无 Qt GCC 全量 444/444 已通过；Debug/ASan 均在完整构建并更新增强后的 TU 后，顺序完成全量各 1368/1368。39 项源码/构建输入冻结，38 项格式、20 组独立公开头与 5 份原协议检查通过；29 个实际 ASan 对象的全量前后记录及哈希一致。真实旧 SDK 0.1.5 notebook DLL 已在当前宿主执行 normal 通过；该实物兼容证据不扩大为任意旧 C++ 二进制 ABI 承诺。
+
+本段不交付输出/通知缓冲、真实双版本 counter/reporter/notebook 升级、业务名单、H01/H02/S09 全范围或压力/新版桌面验收，亦未宣称整 P5 完成。后续按 [M5 工作单](../../docs/p5-m5-development.md)逐段审计、提交同步后推进。

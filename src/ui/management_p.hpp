@@ -30,6 +30,8 @@ Result<void> setManagementConfigurationEnabled(const std::shared_ptr<ManagementC
                                                const std::string& path, bool enabled, std::uint64_t revision);
 /** @brief 配置实例/内部宿主已有专属目录，不再由页面贡献重复生成首页卡片。 */
 bool hideManagementContribution(const std::shared_ptr<ManagementControl>& control, InstanceId instance);
+/** @brief 首页筛选使用原依赖图的未发布值，不改变完整诊断或建立实例状态表。 */
+Result<std::vector<InstanceId>> unpublishedManagementInstances(const std::shared_ptr<ManagementControl>& control);
 /** @brief 同步关门、停止刷新，晚到结果只更新值账目，不再操作窗口。 */
 Task<void> closeManagement(const std::shared_ptr<ManagementControl>& control);
 } // namespace cordis::ui::detail

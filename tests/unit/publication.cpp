@@ -1,8 +1,11 @@
 /** @file publication.cpp
  * @brief 托管发布组的真实激活、可见性、租约、失败与清理边界。
  */
+#include <algorithm>
 #include <cordis/kernel.hpp>
 #include <cordis/testing/fake_scheduler.hpp>
+#include <exception>
+#include <functional>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
@@ -14,6 +17,41 @@ using cordis::testing::FakeScheduler;
         if (!(x))                                                                                                      \
             throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__));                             \
     } while (false)
+
+struct PublicationScheduler final : IScheduler {
+    FakeScheduler queue;
+    bool reject = false;
+    std::function<void()> onPost;
+    std::exception_ptr hookFailure;
+    bool post(ScheduledJob job) override
+    {
+        if (onPost) {
+            try {
+                const auto callback = onPost;
+                callback();
+            } catch (...) {
+                if (!hookFailure)
+                    hookFailure = std::current_exception();
+            }
+        }
+        return !reject && queue.post(std::move(job));
+    }
+    bool isCurrentThread() const noexcept override { return queue.isCurrentThread(); }
+    bool isOpen() const override { return queue.isOpen(); }
+    void checkHook() const
+    {
+        if (hookFailure)
+            std::rethrow_exception(hookFailure);
+    }
+};
+bool publicationHeld(Kernel& kernel, InstanceId instance)
+{
+    const auto graph = kernel.services().dependencyGraph().value();
+    const auto found = std::find_if(graph.instances.begin(), graph.instances.end(),
+                                    [instance](const auto& row) { return row.instance == instance; });
+    CHECK(found != graph.instances.end());
+    return found->publicationHeld;
+}
 
 struct Scene {
     std::shared_ptr<FakeScheduler> scheduler = std::make_shared<FakeScheduler>();
@@ -335,20 +373,7 @@ void cycle()
 }
 void notification(bool reject, bool reassign = false)
 {
-    struct Scheduler final : IScheduler {
-        FakeScheduler queue;
-        bool reject = false;
-        std::function<void()> onPost;
-        bool post(ScheduledJob job) override
-        {
-            if (onPost)
-                onPost();
-            return !reject && queue.post(std::move(job));
-        }
-        bool isCurrentThread() const noexcept override { return queue.isCurrentThread(); }
-        bool isOpen() const override { return queue.isOpen(); }
-    };
-    auto scheduler = std::make_shared<Scheduler>();
+    auto scheduler = std::make_shared<PublicationScheduler>();
     Kernel kernel(scheduler);
     auto group = kernel.holdPublication().value();
     auto handle = std::make_unique<PublicationGroup>(group);
@@ -362,20 +387,27 @@ void notification(bool reject, bool reassign = false)
                                        },
                                        {}, {ServiceOutput::of<int>({"a"}), ServiceOutput::of<int>({"b"})})
                        .value();
-    kernel.mountHeld(group, runtime).value();
+    const auto member = kernel.mountHeld(group, runtime).value();
     scheduler->queue.runUntilIdle().value();
+    const auto identity = member.snapshot().value().instance;
+    CHECK(publicationHeld(kernel, identity));
     scheduler->reject = reject;
     bool reentered = false;
     scheduler->onPost = [&] {
         reentered = true;
         CHECK(kernel.services().find<int>({"a"}).hasValue() && kernel.services().find<int>({"b"}).hasValue());
         CHECK(!group.commit().hasValue());
+        CHECK(publicationHeld(kernel, identity));
+        const auto closure = kernel.replacementClosure({runtime.id()});
+        CHECK(!closure.hasValue() && closure.error().code == ErrorCode::ConfigConflict);
         if (reassign)
             *handle = other;
     };
     CHECK(handle->commit().hasValue() == !reject);
+    scheduler->checkHook();
     CHECK(group.snapshot().value().state == PublicationState::Published);
     CHECK(reentered && group.snapshot().value().deliveryBlocked == reject);
+    CHECK(publicationHeld(kernel, identity) == reject);
     CHECK(other.snapshot().value().state == PublicationState::Open && !other.snapshot().value().deliveryBlocked);
     scheduler->onPost = {};
     CHECK(group.commit().hasValue() == !reject);
@@ -383,6 +415,91 @@ void notification(bool reject, bool reassign = false)
     auto stopped = kernel.close();
     scheduler->queue.runUntilIdle().value();
     CHECK(stopped.tryResult()->value().quiescent && kernel.services().snapshot().value().empty());
+}
+/** @brief 没有成员或 Binding 的组也通知原索引；失败不撤销其他真实实例的清理能力。 */
+void abortNotification(bool reject, bool reassign = false)
+{
+    auto scheduler = std::make_shared<PublicationScheduler>();
+    Kernel kernel(scheduler);
+    auto group = kernel.holdPublication().value();
+    auto other = kernel.holdPublication().value();
+    auto handle = std::make_unique<PublicationGroup>(group);
+    const auto runtime = kernel.registerPlugin("observer", [](Context) { return completedTask(); }).value();
+    const auto observer = kernel.mount(runtime).value();
+    scheduler->queue.runUntilIdle().value();
+    CHECK(observer.ready().tryResult()->hasValue() && kernel.services().snapshot().value().empty());
+    const auto identity = observer.snapshot().value().instance;
+    CHECK(!publicationHeld(kernel, identity));
+    CHECK(group.snapshot().value().members == 0);
+    bool notified = false;
+    scheduler->reject = reject;
+    scheduler->onPost = [&] {
+        notified = true;
+        const auto state = group.snapshot().value();
+        CHECK(state.state == PublicationState::Aborted && state.deliveryBlocked);
+        const auto nested = group.abort();
+        CHECK(!nested.hasValue() && nested.error().code == ErrorCode::SchedulerClosed);
+        CHECK(!publicationHeld(kernel, identity));
+        if (reassign)
+            *handle = other;
+    };
+    const auto aborted = handle->abort();
+    scheduler->checkHook();
+    CHECK(aborted.hasValue() == !reject && notified);
+    CHECK(!reject || aborted.error().code == ErrorCode::SchedulerClosed);
+    CHECK(group.snapshot().value().state == PublicationState::Aborted &&
+          group.snapshot().value().deliveryBlocked == reject);
+    CHECK(other.snapshot().value().state == PublicationState::Open && !other.snapshot().value().deliveryBlocked);
+    scheduler->onPost = {};
+    scheduler->reject = false;
+    // 恢复接收任务也不能清掉原终态的投递故障或以幂等成功掩盖它。
+    const auto repeated = group.abort();
+    CHECK(repeated.hasValue() == !reject);
+    CHECK(!reject || repeated.error().code == ErrorCode::SchedulerClosed);
+    CHECK(group.snapshot().value().deliveryBlocked == reject);
+    const auto closed = kernel.close();
+    scheduler->queue.runUntilIdle().value();
+    CHECK(closed.tryResult()->value().quiescent);
+}
+/** @brief 无服务输出的两个真实成员均收到停止；清理失败后原声明仍保持不可呈现。 */
+void abortNoOutputFailure()
+{
+    Scene scene;
+    auto group = scene.kernel.holdPublication().value();
+    auto cleaned = std::make_shared<unsigned>(0);
+    const auto runtime = scene.kernel
+                             .registerPlugin("no-output",
+                                             [cleaned](Context context) {
+                                                 context
+                                                     .onCleanup([cleaned](CleanupContext) {
+                                                         ++*cleaned;
+                                                         return failedTask(makeError(ErrorCode::CleanupFailed,
+                                                                                     "no-output cleanup failure"));
+                                                     })
+                                                     .value();
+                                                 return completedTask();
+                                             })
+                             .value();
+    const auto first = scene.kernel.mountHeld(group, runtime).value();
+    const auto second = scene.kernel.mountHeld(group, runtime).value();
+    scene.run();
+    CHECK(first.ready().tryResult()->hasValue() && second.ready().tryResult()->hasValue());
+    CHECK(scene.kernel.services().snapshot().value().empty());
+    group.abort().value();
+    CHECK(group.snapshot().value().state == PublicationState::Aborted && !group.snapshot().value().deliveryBlocked);
+    CHECK(publicationHeld(scene.kernel, first.snapshot().value().instance) &&
+          publicationHeld(scene.kernel, second.snapshot().value().instance));
+    const auto firstClosed = first.stop(), secondClosed = second.stop();
+    scene.run();
+    CHECK(*cleaned == 2 && firstClosed.tryResult() && secondClosed.tryResult());
+    CHECK(!firstClosed.tryResult()->value().quiescent && !secondClosed.tryResult()->value().quiescent);
+    const auto graph = scene.kernel.services().dependencyGraph().value();
+    CHECK(graph.bindings.empty() && graph.instances.size() == 2 &&
+          std::all_of(graph.instances.begin(), graph.instances.end(),
+                      [](const auto& row) { return row.publicationHeld; }));
+    const auto closed = scene.kernel.close();
+    scene.run();
+    CHECK(closed.tryResult() && !closed.tryResult()->value().quiescent);
 }
 int main(int argc, char** argv)
 {
@@ -415,6 +532,14 @@ int main(int argc, char** argv)
             notification(false);
         else if (name == "notification_reassign")
             notification(false, true);
+        else if (name == "abort_notification")
+            abortNotification(false);
+        else if (name == "abort_notification_failure")
+            abortNotification(true);
+        else if (name == "abort_notification_reassign")
+            abortNotification(false, true);
+        else if (name == "abort_no_output_failure")
+            abortNoOutputFailure();
         else
             throw std::runtime_error("unknown publication case");
         return 0;

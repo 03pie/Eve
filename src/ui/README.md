@@ -1,5 +1,7 @@
 # UI 贡献与管理
 
+P5-M5-a1 将页面/命令接到原 Context 发布组：候选在 ready 前准备完整控件/节点/命令，但导航、搜索、菜单、页签、Home 与执行须等共同提交完成。纯呈现查询和原业务 guard 分开，原 effect/完整析构仍负责退出；本段五配置验证与审计通过，输出/通知的候选缓冲由 M5-a2 接续。设计及精确验证范围见 [M5-a1 收口](../../docs/p5-m5-development.md#m5-a1-收口结论)与 [ADR-0051](../../docs/adr/0051-ui-contribution-publication.md)。
+
 启用 CORDIS_BUILD_ELA_UI 后构建 Cordis::Ui，公开 pages.hpp 不依赖 Ela 类型。UiPagesService 登记 Context.effect，工厂返回 QWidget；PageHandle 支持 ready、navigate、close 与诊断。页面和分类按实例/epoch 隔离，关闭等待 Q2 完整删除和工厂载荷释放。
 
 CORDIS_SHARED_CORE=ON 时 Ui 与 Qt 一同共享，Debug 使用 cordis_uid.dll。Cordis::QtUiPluginSdk 聚合共享 Ui/Qt/Core 和 Ela；平台目录、配置驱动及 ConfigUi 仍留在宿主，普通插件只消费已有贡献服务。跨 DLL 页面与完整析构的验证见 [M4c 记录](../../docs/p4-m4c-development.md)。

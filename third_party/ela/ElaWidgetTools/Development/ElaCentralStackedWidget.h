@@ -33,6 +33,8 @@ public:
     void setIsHasRadius(bool isHasRadius);
 
     void doWindowStackSwitch(ElaWindowType::StackSwitchMode stackSwitchMode, int nodeIndex, bool isRouteBack);
+    /** @brief 作废旧目标/延迟动画，防止撤页或同步切页后恢复过时目标。 */
+    void cancelWindowStackSwitch();
 
 protected:
     void paintEvent(QPaintEvent* event) override;

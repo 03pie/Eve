@@ -516,7 +516,9 @@ Result<ServiceGraphSnapshot> ServiceRegistry::dependencyGraph() const
         graph.instances.push_back(
             {entry.first, parent == control_->parents.end() ? InstanceId{} : parent->second, entry.second.dependencies,
              entry.second.outputs,
-             entry.second.publication && entry.second.publication->state == PublicationState::Open});
+             entry.second.publication &&
+                 (entry.second.publication->state != PublicationState::Published ||
+                  entry.second.publication->notifying || entry.second.publication->deliveryBlocked)});
         auto& outputs = graph.instances.back().outputs;
         outputs.insert(outputs.end(), entry.second.optionalOutputs.begin(), entry.second.optionalOutputs.end());
     }

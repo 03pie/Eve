@@ -2,10 +2,10 @@
  * @brief 在 Ela 原生导航外壳中托管动态页面，按撤销贡献、完整删除和闭包释放的顺序清理。
  */
 #include "brand_p.hpp"
-#include "output_p.hpp"
-#include "panel_p.hpp"
 #include "fixed_tabs_p.hpp"
 #include "management_p.hpp"
+#include "output_p.hpp"
+#include "panel_p.hpp"
 #include "services_p.hpp"
 #include "workbench_p.hpp"
 #include <ElaActionCommander.h>
@@ -21,8 +21,8 @@
 #include <ElaTheme.h>
 #include <ElaToolButton.h>
 #include <ElaWindow.h>
-#include <QApplication>
 #include <QAction>
+#include <QApplication>
 #include <QCloseEvent>
 #include <QEvent>
 #include <QHBoxLayout>
@@ -30,7 +30,6 @@
 #include <QKeySequence>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPersistentModelIndex>
 #include <QPointer>
 #include <QScopedValueRollback>
 #include <QSignalBlocker>
@@ -38,6 +37,8 @@
 #include <QTreeView>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <algorithm>
+#include <atomic>
 #include <cordis/qt/object.hpp>
 #include <cordis/ui/ela_shell.hpp>
 #include <map>
@@ -106,13 +107,15 @@ struct PageControl : std::enable_shared_from_this<PageControl> {
     ContextIdentity owner;
     PageSpec spec;
     std::function<Result<void>()> guard;
+    std::function<bool()> visible;
+    std::shared_ptr<ScheduledJob> observation;
+    std::atomic<bool> deliveryBlocked{false};
     QPointer<QWidget> widget;
     QPointer<ElaDialog> dialog;
     std::unique_ptr<QObject> detached;
     std::optional<qt::QObjectResource> resource;
     std::optional<EffectToken> effect;
     QString navigationKey;
-    QPersistentModelIndex navigationIndex;
     bool navigation = false;
     bool revoked = false;
     bool retiring = false;
@@ -128,11 +131,14 @@ struct PageControl : std::enable_shared_from_this<PageControl> {
     Task<void> retire();
     /** @brief 返回不暴露 Ela key、QObject 或闭包的诊断。 */
     PageSnapshot snapshot() const;
+    /** @brief 只读宿主和原发布来源，不执行插件谓词或业务准入。 */
+    bool presentable() const;
+    /** @brief 原发布通知只刷新已准备节点和工作台投影，不重新登记。 */
+    void refreshPresentation();
 };
 /** @brief 一个实例代次的分类仅包含它自己的页面。 */
 struct Group {
     QString nodeKey;
-    QPersistentModelIndex index;
     std::size_t pages = 0;
     QString target;
 };
@@ -199,6 +205,9 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
     {
         if (!open || !stack || !stack->currentWidget() || stack->currentWidget()->property("ElaPageKey").toString() != key) return;
         auto found = rows.find(key);
+        if (found != rows.end())
+            if (auto page = found->second.lock(); !page || !page->presentable())
+                return;
         if (rememberPluginSelection && found != rows.end()) {
             if (auto page = found->second.lock(); page && !page->spec.category.empty()) {
                 auto group = groups.find(page->group());
@@ -248,8 +257,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
     /** @brief 鼠标导航与 PageHandle 使用同一业务门禁，禁止旧代通过界面重新进入。 */
     Result<void> navigate(std::shared_ptr<PageControl> page)
     {
-        if (!open || !window || page->revoked || page->retiring || (!page->navigation && !page->dialog) ||
-            !page->widget)
+        if (!page->presentable() || (!page->navigation && !page->dialog) || !page->widget)
             return Result<void>::failure(makeError(ErrorCode::ContextClosing, "page retiring"));
         auto allowed = page->guard();
         if (!allowed.hasValue()) return allowed;
@@ -267,7 +275,11 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
         navigation->navigation(page->navigationKey, false);
         syncSelection(page->navigationKey);
         if (!open) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closed during navigation"));
-        if (stack->currentWidget() == page->widget && page->navigationIndex.isValid()) navigationView->setCurrentIndex(page->navigationIndex);
+        if (stack->currentWidget() == page->widget) {
+            const auto index = navigation->getNavigationNodeIndex(page->navigationKey);
+            if (index.isValid())
+                navigationView->setCurrentIndex(index);
+        }
         return Result<void>::success();
     }
     /** @brief 将窗口关闭请求隔离在 Qt 边界；宿主可通过 close() 重试/读取结果。 */
@@ -376,7 +388,7 @@ protected:
         for (const auto& item : state->pages) {
             const auto& page = item.second;
             if (page->widget && (page->widget == widget || page->widget->isAncestorOf(widget)))
-                return !state->open || page->revoked || page->retiring || !page->guard || !page->guard().hasValue();
+                return !page->presentable() || !page->guard || !page->guard().hasValue();
         }
         return false;
     }
@@ -391,14 +403,36 @@ void HostWindow::closeEvent(QCloseEvent* event) { event->ignore(); state_->reque
 PageSnapshot PageControl::snapshot() const
 {
     auto state = shell.lock();
+    const bool presented = presentable();
     const bool current =
-        dialog ? dialog->isVisible()
-               : state && state->window && state->stack && navigation && state->stack->currentWidget() == widget;
-    return {owner, spec.id, navigation, !widget.isNull(), current, revoked || retiring};
+        !presented ? false
+        : dialog   ? dialog->isVisible()
+                   : state && state->window && state->stack && navigation && state->stack->currentWidget() == widget;
+    return {owner, spec.id, navigation && presented, !widget.isNull(), current, revoked || retiring};
+}
+bool PageControl::presentable() const
+{
+    const auto state = shell.lock();
+    return state && state->open && state->window && !revoked && !retiring && !deliveryBlocked.load() && visible &&
+           visible();
+}
+void PageControl::refreshPresentation()
+{
+    const auto state = shell.lock();
+    if (!state || !state->open || !state->window || !widget || retiring)
+        return;
+    ShellControl::NavigationAccess access(*state);
+    state->window->refreshNavigationPresentation();
+    if (state->open && state->window)
+        refreshWorkbenchPresentation(state->workbench);
+    if (presentable())
+        observation.reset();
 }
 /** @brief 插件工厂析构可能重入；先维持 retiring 和保留 id，再释放捕获。 */
 void PageControl::finish()
 {
+    observation.reset();
+    visible = {};
     spec.factory = {};
     guard = {};
     closed.resolve();
@@ -409,6 +443,7 @@ Task<void> PageControl::retire()
     if (retiring) return closed.task();
     revoked = true;
     retiring = true;
+    observation.reset();
     auto state = shell.lock();
     std::weak_ptr<PageControl> weak = shared_from_this();
     // 保留贡献记录直到 effect 的完整关闭报告到达，避免外壳提前结束等待。
@@ -447,7 +482,6 @@ Task<void> PageControl::retire()
             state->navigation->setExpanderNavigationTarget(category->second.nodeKey, category->second.target);
         }
         navigationKey.clear();
-        navigationIndex = {};
         navigation = false;
         if (!spec.category.empty()) --state->groups.at(group()).pages;
     }
@@ -496,6 +530,25 @@ Result<PageHandle> UiPagesService::add(const Context& owner, PageSpec spec) cons
     page->spec = std::move(spec);
     page->guard = std::move(guard.value());
     if (state->pages.count(page->key())) return Result<PageHandle>::failure(makeError(ErrorCode::ServiceConflict, "duplicate page contribution"));
+    const std::weak_ptr<detail::PageControl> weak = page;
+    auto presentation = owner.presentation(state->scheduler, {[weak] {
+                                                                  if (auto page = weak.lock())
+                                                                      page->refreshPresentation();
+                                                              },
+                                                              [weak] {
+                                                                  if (auto page = weak.lock())
+                                                                      page->deliveryBlocked.store(true);
+                                                              }});
+    if (!presentation.hasValue())
+        return Result<PageHandle>::failure(presentation.error());
+    page->visible = std::move(presentation.value().visible);
+    page->observation = std::move(presentation.value().observation);
+    if (!state->open || !state->window)
+        return Result<PageHandle>::failure(
+            makeError(ErrorCode::ContextClosing, "shell closed during page registration"));
+    auto current = page->guard();
+    if (!current.hasValue())
+        return Result<PageHandle>::failure(current.error());
     state->pages.emplace(page->key(), page);
     auto effect = owner.effect([page, state](EffectSetupContext setup) {
         auto cleanup = setup.addCleanup([page] { return page->retire(); });
@@ -520,31 +573,40 @@ Result<PageHandle> UiPagesService::add(const Context& owner, PageSpec spec) cons
             layout->setContentsMargins(0, 36, 0, 0);
             layout->addWidget(page->widget);
             page->detached.release();
-            return completedTask();
+            if (!state->open)
+                return failedTask(makeError(ErrorCode::ContextClosing, "shell closed during dialog preparation"));
+            const auto current = page->guard();
+            return current.hasValue() ? completedTask() : failedTask(current.error());
         }
         QString categoryKey;
-        QModelIndex parentIndex;
         if (!page->spec.category.empty()) {
             auto group = state->groups.find(page->group());
             if (group == state->groups.end()) {
-                auto added = state->window->addExpanderNode(QString::fromStdString(page->spec.title), categoryKey, ElaIconType::PuzzlePiece);
+                const std::weak_ptr<detail::ShellControl> shell = state;
+                auto added = state->window->addExpanderNode(QString::fromStdString(page->spec.title), categoryKey,
+                                                            ElaIconType::PuzzlePiece, [shell, visible = page->visible] {
+                                                                const auto host = shell.lock();
+                                                                return host && host->open && visible();
+                                                            });
                 if (added != ElaNavigationType::Success) return failedTask(makeError(ErrorCode::InvalidArgument, "Ela category registration failed"));
-                auto model = state->navigationView->model();
-                parentIndex = model->index(model->rowCount() - 1, 0);
-                state->groups.emplace(page->group(), detail::Group{categoryKey, parentIndex, 0, {}});
+                state->groups.emplace(page->group(), detail::Group{categoryKey, 0, {}});
                 state->window->expandNavigationNode(categoryKey);
             } else {
                 categoryKey = group->second.nodeKey;
-                parentIndex = group->second.index;
             }
         }
         const auto title = QString::fromStdString(page->spec.title);
-        auto added = categoryKey.isEmpty() ? state->window->addPageNode(title, page->widget, ElaIconType::PuzzlePiece)
-            : state->window->addPageNode(title, page->widget, categoryKey, ElaIconType::PuzzlePiece);
+        const std::weak_ptr<detail::PageControl> weakPage = page;
+        const auto presented = [weakPage] {
+            const auto held = weakPage.lock();
+            return held && held->presentable();
+        };
+        auto added =
+            categoryKey.isEmpty()
+                ? state->window->addPageNode(title, page->widget, ElaIconType::PuzzlePiece, presented)
+                : state->window->addPageNode(title, page->widget, categoryKey, ElaIconType::PuzzlePiece, presented);
         if (added != ElaNavigationType::Success) return failedTask(makeError(ErrorCode::InvalidArgument, "Ela page registration failed"));
         page->navigationKey = page->widget->property("ElaPageKey").toString();
-        auto model = state->navigationView->model();
-        page->navigationIndex = model->index(model->rowCount(parentIndex) - 1, 0, parentIndex);
         state->rows.emplace(page->navigationKey, page);
         page->navigation = true;
         page->detached.release();
@@ -555,8 +617,13 @@ Result<PageHandle> UiPagesService::add(const Context& owner, PageSpec spec) cons
                 state->navigation->setExpanderNavigationTarget(categoryKey, page->navigationKey);
             }
         }
-        detail::registerWorkbenchPage(state->workbench, page->navigationKey, title, QString::fromStdString(page->spec.category), QString::number(page->owner.instance.value()));
-        return completedTask();
+        detail::registerWorkbenchPage(state->workbench, page->navigationKey, title,
+                                      QString::fromStdString(page->spec.category),
+                                      QString::number(page->owner.instance.value()), presented);
+        if (!state->open)
+            return failedTask(makeError(ErrorCode::ContextClosing, "shell closed during navigation preparation"));
+        const auto current = page->guard();
+        return current.hasValue() ? completedTask() : failedTask(current.error());
     }, "ui.page:" + page->spec.id);
     if (!effect.hasValue()) { page->finish(); state->pages.erase(page->key()); return Result<PageHandle>::failure(effect.error()); }
     page->effect.emplace(effect.value());
@@ -728,7 +795,13 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
              auto snapshot = diagnostics->snapshot();
              if (!snapshot.hasValue())
                  return plugins;
+             const auto unpublished = detail::unpublishedManagementInstances(state->management);
+             if (!unpublished.hasValue())
+                 return plugins;
              for (const auto& row : snapshot.value().instances) {
+                 if (std::find(unpublished.value().begin(), unpublished.value().end(), row.instance.instance) !=
+                     unpublished.value().end())
+                     continue;
                  QString status;
                  switch (row.instance.state) {
                  case InstanceState::Active:
@@ -764,8 +837,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
                                 row.instance.state == InstanceState::Loading;
                  for (const auto& entry : state->pages) {
                      const auto& page = entry.second;
-                     if (page->owner.instance != row.instance.instance || !page->navigation || page->revoked ||
-                         page->retiring)
+                     if (page->owner.instance != row.instance.instance || !page->navigation || !page->presentable())
                          continue;
                      item.title = QString::fromStdString(page->spec.title);
                      break;
@@ -950,7 +1022,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
         auto found = state->rows.find(key);
         if (found == state->rows.end()) return true;
         auto page = found->second.lock();
-        return page && !page->revoked && !page->retiring && page->guard && page->guard().hasValue();
+        return page && page->presentable() && page->guard && page->guard().hasValue();
     });
     // 固定版本只对鼠标发出导航信号；键盘 currentIndex 变化经同一原生入口派发。
     QObject::connect(control_->navigationView->selectionModel(), &QItemSelectionModel::currentChanged, window.get(), [weak](const QModelIndex& index, const QModelIndex&) {

@@ -1,9 +1,10 @@
 #include "ElaNavigationModel.h"
-
-#include <QIcon>
-#include <QJsonObject>
+#include <utility>
 
 #include "ElaNavigationNode.h"
+#include <QPointer>
+#include <memory>
+
 ElaNavigationModel::ElaNavigationModel(QObject* parent)
     : QAbstractItemModel{parent}
 {
@@ -19,28 +20,56 @@ ElaNavigationModel::~ElaNavigationModel()
     _rootNode->deleteLater();
 }
 
+void ElaNavigationModel::_rebuildPresentation(ElaNavigationNode* parentNode, bool presented)
+{
+    parentNode->_presentedChildren.clear();
+    for (auto child : parentNode->getChildrenNodes()) {
+        const bool visible = presented && child->isPresentable() &&
+                             !(parentNode == _rootNode && !_isMaximalMode && child->getIsCategoryNode());
+        QModelIndex childIndex;
+        if (visible) {
+            const auto row = parentNode->_presentedChildren.size();
+            parentNode->_presentedChildren.append(child);
+            childIndex = createIndex(row, 0, child);
+        }
+        child->setModelIndex(childIndex);
+        _rebuildPresentation(child, visible);
+    }
+}
+
+void ElaNavigationModel::refreshPresentation()
+{
+    if (_changing)
+        return;
+    const QPointer<ElaNavigationModel> alive(this);
+    _changing = true;
+    beginResetModel();
+    if (!alive)
+        return;
+    _rebuildPresentation(_rootNode, true);
+    if (_pSelectedNode && !_pSelectedNode->getModelIndex().isValid())
+        _pSelectedNode = nullptr;
+    if (_pSelectedExpandedNode && !_pSelectedExpandedNode->getModelIndex().isValid())
+        _pSelectedExpandedNode = nullptr;
+    endResetModel();
+    if (alive)
+        _changing = false;
+}
+
 void ElaNavigationModel::setIsMaximalMode(bool isMaximal)
 {
-    auto rootNodes = _rootNode->getChildrenNodes();
-    for (int i = 0; i < rootNodes.count(); i++)
-    {
-        auto childNode = rootNodes[i];
-        if (childNode->getIsCategoryNode())
-        {
-            if (!isMaximal)
-            {
-                beginRemoveRows({}, i, i);
-                _isMaximalMode = isMaximal;
-                endRemoveRows();
-            }
-            else
-            {
-                beginInsertRows({}, i, i);
-                _isMaximalMode = isMaximal;
-                endInsertRows();
-            }
-        }
-    }
+    if (_changing || _isMaximalMode == isMaximal)
+        return;
+    const QPointer<ElaNavigationModel> alive(this);
+    _changing = true;
+    beginResetModel();
+    if (!alive)
+        return;
+    _isMaximalMode = isMaximal;
+    _rebuildPresentation(_rootNode, true);
+    endResetModel();
+    if (alive)
+        _changing = false;
 }
 
 bool ElaNavigationModel::getIsMaximalMode()
@@ -50,79 +79,34 @@ bool ElaNavigationModel::getIsMaximalMode()
 
 QModelIndex ElaNavigationModel::parent(const QModelIndex& child) const
 {
-    if (!child.isValid())
-    {
+    if (!child.isValid() || child.model() != this)
         return {};
-    }
-    ElaNavigationNode* childNode = static_cast<ElaNavigationNode*>(child.internalPointer());
-    ElaNavigationNode* parentNode = childNode->getParentNode();
-    if (parentNode == _rootNode)
-    {
+    const auto childNode = static_cast<ElaNavigationNode*>(child.internalPointer());
+    const auto parentNode = childNode ? childNode->getParentNode() : nullptr;
+    if (!parentNode || parentNode == _rootNode || parentNode->getRow() < 0)
         return {};
-    }
-    if (parentNode == nullptr)
-    {
-        return {};
-    }
     return createIndex(parentNode->getRow(), 0, parentNode);
 }
 
-QModelIndex ElaNavigationModel::index(int row, int column, const QModelIndex& parent) const
+QModelIndex ElaNavigationModel::index(int row, int column, const QModelIndex& parentIndex) const
 {
-    if (!hasIndex(row, column, parent))
-    {
+    if (row < 0 || column != 0 || (parentIndex.isValid() && (parentIndex.model() != this || parentIndex.column() != 0)))
         return {};
-    }
-    ElaNavigationNode* parentNode;
-    if (!parent.isValid())
-    {
-        parentNode = _rootNode;
-    }
-    else
-    {
-        parentNode = static_cast<ElaNavigationNode*>(parent.internalPointer());
-    }
-    ElaNavigationNode* childNode = nullptr;
-    if (parentNode->getChildrenNodes().count() > row)
-    {
-        if (parentNode == _rootNode && !_isMaximalMode)
-        {
-            childNode = parentNode->getExceptCategoryNodes().at(row);
-        }
-        else
-        {
-            childNode = parentNode->getChildrenNodes().at(row);
-        }
-    }
-    if (childNode)
-    {
-        childNode->setModelIndex(createIndex(row, column, childNode));
-        return childNode->getModelIndex();
-    }
-    return {};
+    const auto parentNode =
+        parentIndex.isValid() ? static_cast<ElaNavigationNode*>(parentIndex.internalPointer()) : _rootNode;
+    if (!parentNode || row >= parentNode->getPresentedChildren().size())
+        return {};
+    return createIndex(row, column, parentNode->getPresentedChildren().at(row));
 }
 
-int ElaNavigationModel::rowCount(const QModelIndex& parent) const
+int ElaNavigationModel::rowCount(const QModelIndex& parentIndex) const
 {
-    ElaNavigationNode* parentNode;
-    if (parent.column() > 0)
-    {
+    if (parentIndex.isValid() && (parentIndex.model() != this || parentIndex.column() != 0))
         return 0;
-    }
-    if (!parent.isValid())
-    {
-        parentNode = _rootNode;
-    }
-    else
-    {
-        parentNode = static_cast<ElaNavigationNode*>(parent.internalPointer());
-    }
-    if (parentNode == _rootNode && !_isMaximalMode)
-    {
-        return _rootNode->getExceptCategoryNodes().count();
-    }
-    return parentNode->getChildrenNodes().count();
-};
+    const auto parentNode =
+        parentIndex.isValid() ? static_cast<ElaNavigationNode*>(parentIndex.internalPointer()) : _rootNode;
+    return parentNode ? parentNode->getPresentedChildren().size() : 0;
+}
 
 int ElaNavigationModel::columnCount(const QModelIndex& parent) const
 {
@@ -134,284 +118,181 @@ QVariant ElaNavigationModel::data(const QModelIndex& index, int role) const
 {
     Q_UNUSED(index)
     Q_UNUSED(role)
-    return QVariant();
+    return {};
 }
 
-ElaNavigationType::NodeResult ElaNavigationModel::addExpanderNode(const QString& expanderTitle, QString& expanderKey, ElaIconType::IconName awesome)
+ElaNavigationType::NodeResult ElaNavigationModel::_addNode(const QString& title, QString& key, const QString& parentKey,
+                                                           ElaIconType::IconName awesome, int keyPoints, bool expander,
+                                                           bool category, std::function<bool()> presentation)
 {
-    ElaNavigationNode* node = new ElaNavigationNode(expanderTitle, _rootNode);
-    node->setDepth(1);
-    node->setIsVisible(true);
-    node->setIsExpanderNode(true);
-    node->setAwesome(awesome);
-    beginInsertRows(QModelIndex(), _rootNode->getChildrenNodes().count(), _rootNode->getChildrenNodes().count());
-    _rootNode->appendChildNode(node);
-    _nodesMap.insert(node->getNodeKey(), node);
-    endInsertRows();
-    expanderKey = node->getNodeKey();
-    return ElaNavigationType::NodeResult::Success;
-}
-
-ElaNavigationType::NodeResult ElaNavigationModel::addExpanderNode(const QString& expanderTitle, QString& expanderKey, const QString& targetExpanderKey, ElaIconType::IconName awesome)
-{
-    if (!_nodesMap.contains(targetExpanderKey))
-    {
-        return ElaNavigationType::NodeResult::TargetNodeInvalid;
-    }
-    ElaNavigationNode* parentNode = _nodesMap.value(targetExpanderKey);
+    if (_changing)
+        return ElaNavigationType::TargetNodeInvalid;
+    auto parentNode = parentKey.isEmpty() ? _rootNode : getNavigationNode(parentKey);
+    if (!parentNode)
+        return ElaNavigationType::TargetNodeInvalid;
     if (!parentNode->getIsExpanderNode())
-    {
-        return ElaNavigationType::NodeResult::TargetNodeTypeError;
-    }
+        return ElaNavigationType::TargetNodeTypeError;
     if (parentNode->getDepth() > 10)
-    {
-        return ElaNavigationType::NodeResult::TargetNodeDepthLimit;
-    }
-    ElaNavigationNode* node = new ElaNavigationNode(expanderTitle, parentNode);
-    node->setDepth(parentNode->getDepth() + 1);
-    node->setIsExpanderNode(true);
-    node->setAwesome(awesome);
-    if (parentNode->getIsVisible() && parentNode->getIsExpanded())
-    {
-        node->setIsVisible(true);
-    }
-    beginInsertRows(parentNode->getModelIndex(), parentNode->getChildrenNodes().count(), parentNode->getChildrenNodes().count());
-    parentNode->appendChildNode(node);
-    _nodesMap.insert(node->getNodeKey(), node);
-    endInsertRows();
-    expanderKey = node->getNodeKey();
-    return ElaNavigationType::NodeResult::Success;
-}
-
-ElaNavigationType::NodeResult ElaNavigationModel::addPageNode(const QString& pageTitle, QString& pageKey, ElaIconType::IconName awesome)
-{
-    ElaNavigationNode* node = new ElaNavigationNode(pageTitle, _rootNode);
-    node->setAwesome(awesome);
-    node->setDepth(1);
-    node->setIsVisible(true);
-    beginInsertRows(QModelIndex(), _rootNode->getChildrenNodes().count(), _rootNode->getChildrenNodes().count());
-    _rootNode->appendChildNode(node);
-    _nodesMap.insert(node->getNodeKey(), node);
-    endInsertRows();
-    pageKey = node->getNodeKey();
-    if (!_pSelectedNode)
-    {
-        _pSelectedNode = node;
-    }
-    return ElaNavigationType::NodeResult::Success;
-}
-
-ElaNavigationType::NodeResult ElaNavigationModel::addPageNode(const QString& pageTitle, QString& pageKey, const QString& targetExpanderKey, ElaIconType::IconName awesome)
-{
-    if (!_nodesMap.contains(targetExpanderKey))
-    {
-        return ElaNavigationType::NodeResult::TargetNodeInvalid;
-    }
-    ElaNavigationNode* parentNode = _nodesMap.value(targetExpanderKey);
-    if (!parentNode->getIsExpanderNode())
-    {
-        return ElaNavigationType::NodeResult::TargetNodeTypeError;
-    }
-    if (parentNode->getDepth() > 10)
-    {
-        return ElaNavigationType::NodeResult::TargetNodeDepthLimit;
-    }
-    ElaNavigationNode* node = new ElaNavigationNode(pageTitle, parentNode);
-    node->setDepth(parentNode->getDepth() + 1);
-    node->setAwesome(awesome);
-    if (parentNode->getIsVisible() && parentNode->getIsExpanded())
-    {
-        node->setIsVisible(true);
-    }
-    beginInsertRows(parentNode->getModelIndex(), parentNode->getChildrenNodes().count(), parentNode->getChildrenNodes().count());
-    parentNode->appendChildNode(node);
-    _nodesMap.insert(node->getNodeKey(), node);
-    endInsertRows();
-    pageKey = node->getNodeKey();
-    if (!_pSelectedNode)
-    {
-        _pSelectedNode = node;
-    }
-    return ElaNavigationType::NodeResult::Success;
-}
-
-ElaNavigationType::NodeResult ElaNavigationModel::addPageNode(const QString& pageTitle, QString& pageKey, int keyPoints, ElaIconType::IconName awesome)
-{
-    ElaNavigationNode* node = new ElaNavigationNode(pageTitle, _rootNode);
-    node->setAwesome(awesome);
-    node->setDepth(1);
-    node->setIsVisible(true);
-    node->setKeyPoints(keyPoints);
-    beginInsertRows(QModelIndex(), _rootNode->getChildrenNodes().count(), _rootNode->getChildrenNodes().count());
-    _rootNode->appendChildNode(node);
-    _nodesMap.insert(node->getNodeKey(), node);
-    endInsertRows();
-    pageKey = node->getNodeKey();
-    if (!_pSelectedNode)
-    {
-        _pSelectedNode = node;
-    }
-    return ElaNavigationType::NodeResult::Success;
-}
-
-ElaNavigationType::NodeResult ElaNavigationModel::addPageNode(const QString& pageTitle, QString& pageKey, const QString& targetExpanderKey, int keyPoints, ElaIconType::IconName awesome)
-{
-    if (!_nodesMap.contains(targetExpanderKey))
-    {
-        return ElaNavigationType::NodeResult::TargetNodeInvalid;
-    }
-    ElaNavigationNode* parentNode = _nodesMap.value(targetExpanderKey);
-    if (!parentNode->getIsExpanderNode())
-    {
-        return ElaNavigationType::NodeResult::TargetNodeTypeError;
-    }
-    if (parentNode->getDepth() > 10)
-    {
-        return ElaNavigationType::NodeResult::TargetNodeDepthLimit;
-    }
-    ElaNavigationNode* node = new ElaNavigationNode(pageTitle, parentNode);
+        return ElaNavigationType::TargetNodeDepthLimit;
+    auto node = std::make_unique<ElaNavigationNode>(title, parentNode);
     node->setDepth(parentNode->getDepth() + 1);
     node->setAwesome(awesome);
     node->setKeyPoints(keyPoints);
-    if (parentNode->getIsVisible() && parentNode->getIsExpanded())
-    {
-        node->setIsVisible(true);
+    node->setIsExpanderNode(expander);
+    node->setIsCategoryNode(category);
+    node->setPresentation(std::move(presentation));
+    node->setIsVisible(parentNode == _rootNode || (parentNode->getIsVisible() && parentNode->getIsExpanded()));
+    const QPointer<ElaNavigationModel> alive(this);
+    _changing = true;
+    beginResetModel();
+    if (!alive)
+        return ElaNavigationType::TargetNodeInvalid;
+    key = node->getNodeKey();
+    parentNode->appendChildNode(node.get());
+    _nodesMap.insert(key, node.release());
+    _rebuildPresentation(_rootNode, true);
+    if (!_pSelectedNode && !expander && !category) {
+        auto added = _nodesMap.value(key);
+        if (added->getModelIndex().isValid())
+            _pSelectedNode = added;
     }
-    beginInsertRows(parentNode->getModelIndex(), parentNode->getChildrenNodes().count(), parentNode->getChildrenNodes().count());
-    parentNode->appendChildNode(node);
-    _nodesMap.insert(node->getNodeKey(), node);
-    endInsertRows();
-    pageKey = node->getNodeKey();
-    if (!_pSelectedNode)
-    {
-        _pSelectedNode = node;
-    }
-    return ElaNavigationType::NodeResult::Success;
+    endResetModel();
+    if (alive)
+        _changing = false;
+    return alive ? ElaNavigationType::Success : ElaNavigationType::TargetNodeInvalid;
 }
 
-ElaNavigationType::NodeResult ElaNavigationModel::addCategoryNode(const QString& categoryTitle, QString& categoryKey)
+ElaNavigationType::NodeResult ElaNavigationModel::addExpanderNode(const QString& title, QString& key,
+                                                                  ElaIconType::IconName awesome,
+                                                                  std::function<bool()> presentation)
 {
-    ElaNavigationNode* node = new ElaNavigationNode(categoryTitle, _rootNode);
-    node->setDepth(1);
-    node->setIsVisible(true);
-    node->setIsCategoryNode(true);
-    beginInsertRows(QModelIndex(), _rootNode->getChildrenNodes().count(), _rootNode->getChildrenNodes().count());
-    _rootNode->appendChildNode(node);
-    _nodesMap.insert(node->getNodeKey(), node);
-    endInsertRows();
-    categoryKey = node->getNodeKey();
-    return ElaNavigationType::NodeResult::Success;
+    return _addNode(title, key, {}, awesome, 0, true, false, std::move(presentation));
 }
 
-ElaNavigationType::NodeResult ElaNavigationModel::addCategoryNode(const QString& categoryTitle, QString& categoryKey, const QString& targetExpanderKey)
+ElaNavigationType::NodeResult ElaNavigationModel::addExpanderNode(const QString& title, QString& key,
+                                                                  const QString& parentKey,
+                                                                  ElaIconType::IconName awesome,
+                                                                  std::function<bool()> presentation)
 {
-    if (!_nodesMap.contains(targetExpanderKey))
-    {
-        return ElaNavigationType::NodeResult::TargetNodeInvalid;
-    }
-    ElaNavigationNode* parentNode = _nodesMap.value(targetExpanderKey);
-    if (!parentNode->getIsExpanderNode())
-    {
-        return ElaNavigationType::NodeResult::TargetNodeTypeError;
-    }
-    if (parentNode->getDepth() > 10)
-    {
-        return ElaNavigationType::NodeResult::TargetNodeDepthLimit;
-    }
-    ElaNavigationNode* node = new ElaNavigationNode(categoryTitle, parentNode);
-    node->setDepth(parentNode->getDepth() + 1);
-    node->setIsCategoryNode(true);
-    if (parentNode->getIsVisible() && parentNode->getIsExpanded())
-    {
-        node->setIsVisible(true);
-    }
-    beginInsertRows(parentNode->getModelIndex(), parentNode->getChildrenNodes().count(), parentNode->getChildrenNodes().count());
-    parentNode->appendChildNode(node);
-    _nodesMap.insert(node->getNodeKey(), node);
-    endInsertRows();
-    categoryKey = node->getNodeKey();
-    return ElaNavigationType::NodeResult::Success;
+    if (parentKey.isEmpty())
+        return ElaNavigationType::TargetNodeInvalid;
+    return _addNode(title, key, parentKey, awesome, 0, true, false, std::move(presentation));
 }
 
-QStringList ElaNavigationModel::removeNavigationNode(const QString& nodeKey)
+ElaNavigationType::NodeResult ElaNavigationModel::addPageNode(const QString& title, QString& key,
+                                                              ElaIconType::IconName awesome,
+                                                              std::function<bool()> presentation)
 {
-    QList<QString> removeKeyList;
-    if (!_nodesMap.contains(nodeKey))
-    {
-        return removeKeyList;
-    }
-    ElaNavigationNode* node = _nodesMap.value(nodeKey);
-    ElaNavigationNode* parentNode = node->getParentNode();
-    if (node->getIsExpanderNode())
-    {
-        QList<ElaNavigationNode*> childNodeList = node->getChildrenNodes();
-        for (int i = 0; i < childNodeList.count(); i++)
-        {
-            ElaNavigationNode* childNode = childNodeList[i];
-            QList<QString> childRemoveKeyList = removeNavigationNode(childNode->getNodeKey());
-            removeKeyList.append(childRemoveKeyList);
-        }
-    }
-    else
-    {
-        removeKeyList.append(node->getNodeKey());
-    }
+    return _addNode(title, key, {}, awesome, 0, false, false, std::move(presentation));
+}
+
+ElaNavigationType::NodeResult ElaNavigationModel::addPageNode(const QString& title, QString& key,
+                                                              const QString& parentKey, ElaIconType::IconName awesome,
+                                                              std::function<bool()> presentation)
+{
+    if (parentKey.isEmpty())
+        return ElaNavigationType::TargetNodeInvalid;
+    return _addNode(title, key, parentKey, awesome, 0, false, false, std::move(presentation));
+}
+
+ElaNavigationType::NodeResult ElaNavigationModel::addPageNode(const QString& title, QString& key, int points,
+                                                              ElaIconType::IconName awesome,
+                                                              std::function<bool()> presentation)
+{
+    return _addNode(title, key, {}, awesome, points, false, false, std::move(presentation));
+}
+
+ElaNavigationType::NodeResult ElaNavigationModel::addPageNode(const QString& title, QString& key,
+                                                              const QString& parentKey, int points,
+                                                              ElaIconType::IconName awesome,
+                                                              std::function<bool()> presentation)
+{
+    if (parentKey.isEmpty())
+        return ElaNavigationType::TargetNodeInvalid;
+    return _addNode(title, key, parentKey, awesome, points, false, false, std::move(presentation));
+}
+
+ElaNavigationType::NodeResult ElaNavigationModel::addCategoryNode(const QString& title, QString& key)
+{
+    return _addNode(title, key, {}, ElaIconType::None, 0, false, true, {});
+}
+
+ElaNavigationType::NodeResult ElaNavigationModel::addCategoryNode(const QString& title, QString& key,
+                                                                  const QString& parentKey)
+{
+    if (parentKey.isEmpty())
+        return ElaNavigationType::TargetNodeInvalid;
+    return _addNode(title, key, parentKey, ElaIconType::None, 0, false, true, {});
+}
+
+void ElaNavigationModel::_removeSubtree(ElaNavigationNode* node, QStringList& pages)
+{
+    for (auto child : node->getChildrenNodes())
+        _removeSubtree(child, pages);
+    if (!node->getIsExpanderNode())
+        pages.append(node->getNodeKey());
     _nodesMap.remove(node->getNodeKey());
-    // 删除选中页或展开项时同步清空借用，后续导航不能沿旧选择访问已释放节点。
     if (_pSelectedNode == node) _pSelectedNode = nullptr;
     if (_pSelectedExpandedNode == node) _pSelectedExpandedNode = nullptr;
-    int removeRow = parentNode->getChildrenNodes().indexOf(node);
-    beginRemoveRows(parentNode->getModelIndex(), removeRow, removeRow);
-    parentNode->removeChildNode(node);
-    endRemoveRows();
+    node->getParentNode()->removeChildNode(node);
     node->deleteLater();
-    return removeKeyList;
 }
 
-ElaNavigationNode* ElaNavigationModel::getNavigationNode(const QString& nodeKey) const
+QStringList ElaNavigationModel::removeNavigationNode(const QString& key)
 {
-    if (_nodesMap.contains(nodeKey))
-    {
-        return _nodesMap.value(nodeKey);
-    }
-    return nullptr;
+    QStringList pages;
+    if (_changing)
+        return pages;
+    auto node = getNavigationNode(key);
+    if (!node)
+        return pages;
+    const QPointer<ElaNavigationModel> alive(this);
+    _changing = true;
+    beginResetModel();
+    if (!alive)
+        return pages;
+    _removeSubtree(node, pages);
+    _rebuildPresentation(_rootNode, true);
+    endResetModel();
+    if (alive)
+        _changing = false;
+    return pages;
+}
+
+ElaNavigationNode* ElaNavigationModel::getNavigationNode(const QString& key) const
+{
+    return _nodesMap.value(key);
+}
+
+QModelIndex ElaNavigationModel::getNavigationNodeIndex(const QString& key) const
+{
+    auto node = getNavigationNode(key);
+    return node && node->isPresentable() ? node->getModelIndex() : QModelIndex{};
 }
 
 QList<ElaNavigationNode*> ElaNavigationModel::getRootExpanderNodes() const
 {
-    QList<ElaNavigationNode*> expandedNodeList;
-    for (auto node: _rootNode->getChildrenNodes())
-    {
+    QList<ElaNavigationNode*> result;
+    for (auto node : _rootNode->getPresentedChildren())
         if (node->getIsExpanderNode())
-        {
-            expandedNodeList.append(node);
-        }
-    }
-    return expandedNodeList;
+            result.append(node);
+    return result;
 }
 
 QList<ElaNavigationNode*> ElaNavigationModel::getRootExpandedNodes() const
 {
-    QList<ElaNavigationNode*> expandedNodeList;
-    for (auto node: _rootNode->getChildrenNodes())
-    {
+    QList<ElaNavigationNode*> result;
+    for (auto node : _rootNode->getPresentedChildren())
         if (node->getIsExpanderNode() && node->getIsExpanded())
-        {
-            expandedNodeList.append(node);
-        }
-    }
-    return expandedNodeList;
+            result.append(node);
+    return result;
 }
 
 QList<ElaNavigationNode*> ElaNavigationModel::getRootCategoryNodes() const
 {
-    QList<ElaNavigationNode*> categoryNodeList;
-    for (auto node: _rootNode->getChildrenNodes())
-    {
+    QList<ElaNavigationNode*> result;
+    for (auto node : _rootNode->getPresentedChildren())
         if (node->getIsCategoryNode())
-        {
-            categoryNodeList.append(node);
-        }
-    }
-    return categoryNodeList;
+            result.append(node);
+    return result;
 }

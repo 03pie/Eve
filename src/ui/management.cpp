@@ -1606,6 +1606,24 @@ bool hideManagementContribution(const std::shared_ptr<ManagementControl>& contro
         return control->protectedRuntimes.count(found.value().snapshot().value().runtime) != 0;
     return control->configuration.expired();
 }
+Result<std::vector<InstanceId>> unpublishedManagementInstances(const std::shared_ptr<ManagementControl>& control)
+{
+    using Output = Result<std::vector<InstanceId>>;
+    const auto checked = control->thread();
+    if (!checked.hasValue())
+        return Output::failure(checked.error());
+    const auto kernel = control->kernel.lock();
+    if (!kernel)
+        return Output::failure(makeError(ErrorCode::ContextClosing, "management kernel unavailable"));
+    auto graph = kernel->services().dependencyGraph();
+    if (!graph.hasValue())
+        return Output::failure(graph.error());
+    std::vector<InstanceId> instances;
+    for (const auto& row : graph.value().instances)
+        if (row.publicationHeld)
+            instances.push_back(row.instance);
+    return Output::success(std::move(instances));
+}
 /** @brief 管理操作结果只持宿主记录；关闭等待当前 UI 写入栈返回，不取消已进入的内核操作。 */
 Task<void> closeManagement(const std::shared_ptr<ManagementControl>& control)
 {

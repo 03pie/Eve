@@ -54,6 +54,8 @@ private:
     friend class ElaNavigationStyle;
     ElaThemeType::ThemeMode _themeMode;
     QList<ElaSuggestBox::SuggestData> _suggestDataList;
+    mutable QList<ElaSuggestBox::SuggestData> _presentedSuggestDataList;
+    bool _refreshingPresentation{false};
     QMap<QString, const QMetaObject*> _pageMetaMap;
     QMap<QString, int> _pageNewWindowCountMap;
     QMap<QString, ElaMenu*> _compactMenuMap;

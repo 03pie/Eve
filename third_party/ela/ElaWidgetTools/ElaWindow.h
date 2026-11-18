@@ -3,6 +3,8 @@
 
 #include "ElaPropertyMacro.h"
 #include <QMainWindow>
+#include <QModelIndex>
+#include <functional>
 
 #include "ElaAppBar.h"
 #include "ElaWidgetToolsDef.h"
@@ -55,6 +57,9 @@ public:
     void setWorkbenchWidgets(QWidget* sideBar, QWidget* panel);
     /** @brief 显示不占导航节点的空工作区；已有页面和工厂保持原有生命周期。 */
     void showEmptyWorkbench();
+    void refreshNavigationPresentation();
+    QModelIndex getNavigationNodeIndex(const QString& nodeKey) const;
+    bool isNodePresentable(const QString& nodeKey) const;
 
     void setCustomMenu(QMenu* customMenu);
     QMenu* getCustomMenu() const;
@@ -64,11 +69,26 @@ public:
     void setUserInfoCardTitle(const QString& title);
     void setUserInfoCardSubTitle(const QString& subTitle);
     ElaNavigationType::NodeResult addExpanderNode(const QString& expanderTitle, QString& expanderKey, ElaIconType::IconName awesome = ElaIconType::None) const;
+    ElaNavigationType::NodeResult addExpanderNode(const QString& expanderTitle, QString& expanderKey,
+                                                  ElaIconType::IconName awesome,
+                                                  std::function<bool()> presentation) const;
     ElaNavigationType::NodeResult addExpanderNode(const QString& expanderTitle, QString& expanderKey, const QString& targetExpanderKey, ElaIconType::IconName awesome = ElaIconType::None) const;
+    ElaNavigationType::NodeResult addExpanderNode(const QString& expanderTitle, QString& expanderKey,
+                                                  const QString& targetExpanderKey, ElaIconType::IconName awesome,
+                                                  std::function<bool()> presentation) const;
     ElaNavigationType::NodeResult addPageNode(const QString& pageTitle, QWidget* page, ElaIconType::IconName awesome = ElaIconType::None);
+    ElaNavigationType::NodeResult addPageNode(const QString& pageTitle, QWidget* page, ElaIconType::IconName awesome,
+                                              std::function<bool()> presentation);
     ElaNavigationType::NodeResult addPageNode(const QString& pageTitle, QWidget* page, int keyPoints, ElaIconType::IconName awesome = ElaIconType::None);
+    ElaNavigationType::NodeResult addPageNode(const QString& pageTitle, QWidget* page, int keyPoints,
+                                              ElaIconType::IconName awesome, std::function<bool()> presentation);
     ElaNavigationType::NodeResult addPageNode(const QString& pageTitle, QWidget* page, const QString& targetExpanderKey, ElaIconType::IconName awesome = ElaIconType::None);
+    ElaNavigationType::NodeResult addPageNode(const QString& pageTitle, QWidget* page, const QString& targetExpanderKey,
+                                              ElaIconType::IconName awesome, std::function<bool()> presentation);
     ElaNavigationType::NodeResult addPageNode(const QString& pageTitle, QWidget* page, const QString& targetExpanderKey, int keyPoints, ElaIconType::IconName awesome = ElaIconType::None);
+    ElaNavigationType::NodeResult addPageNode(const QString& pageTitle, QWidget* page, const QString& targetExpanderKey,
+                                              int keyPoints, ElaIconType::IconName awesome,
+                                              std::function<bool()> presentation);
     ElaNavigationType::NodeResult addFooterNode(const QString& footerTitle, QString& footerKey, int keyPoints = 0, ElaIconType::IconName awesome = ElaIconType::None) const;
     ElaNavigationType::NodeResult addFooterNode(const QString& footerTitle, QWidget* page, QString& footerKey, int keyPoints = 0, ElaIconType::IconName awesome = ElaIconType::None);
     ElaNavigationType::NodeResult addCategoryNode(const QString& categoryTitle, QString& categoryKey);

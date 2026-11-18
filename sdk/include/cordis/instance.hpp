@@ -148,6 +148,13 @@ private:
     template<class T> friend class EventBus;
     /** @brief 为事件/UI/Qt 适配器提供同 scheduler、本代业务门禁，不授予实例所有权。 */
     Result<std::function<Result<void>()>> eventGuard(const std::shared_ptr<IScheduler>& scheduler) const;
+    /** @brief 只读呈现资格与原索引通知；适配器保留令牌，通知不得强持贡献记录。 */
+    struct Presentation {
+        std::function<bool()> visible;
+        std::shared_ptr<ScheduledJob> observation;
+    };
+    /** @brief 登记验证业务能力，查询不调用业务或调度器；普通上下文不登记观察。 */
+    Result<Presentation> presentation(const std::shared_ptr<IScheduler>& scheduler, ScheduledJob changed) const;
     /** @brief 校验本代能力后登记并保存托管输出。 */
     Result<BindingId> provideErased(ServiceKey key, std::shared_ptr<void> object, std::type_index type) const;
     /** @brief 解析本实例托管注册表，不向插件暴露发布/释放控制。 */
