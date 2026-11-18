@@ -15,6 +15,11 @@ namespace workspace_stress_test {
 namespace {
 constexpr qint64 maximumTraceBytes = 16 * 1024 * 1024;
 
+bool supportedGenerator(const QJsonValue& value)
+{
+    return value == QJsonValue("splitmix64/1") || value == QJsonValue("authored/1");
+}
+
 void fields(const QJsonObject& value, const QStringList& expected)
 {
     if (value.size() != expected.size())
@@ -93,6 +98,8 @@ QJsonArray artifactInputs(const QString& sourceBin)
 void saveTrace(const Trace& trace, const QString& path)
 {
     parseDecimal(trace.seed);
+    if (!supportedGenerator(trace.generator))
+        throw InvalidTrace("unsupported action generator");
     QJsonArray actions;
     std::set<QString> identifiers;
     for (const auto& action : trace.actions) {
@@ -104,7 +111,7 @@ void saveTrace(const Trace& trace, const QString& path)
     if (trace.actions.empty() || trace.actions.size() > 64)
         throw InvalidTrace("trace action budget");
     const QJsonObject root{{"schema", "cordis.workspace.actions/1"},
-                           {"generator", "splitmix64/1"},
+                           {"generator", trace.generator},
                            {"seed", trace.seed},
                            {"artifacts", trace.artifacts},
                            {"actions", actions}};
@@ -130,13 +137,14 @@ Trace loadTrace(const QString& path, const QString& sourceBin)
         throw InvalidTrace("trace is not in canonical tool format");
     const auto root = document.object();
     fields(root, {"actions", "artifacts", "generator", "schema", "seed"});
-    if (root["schema"] != "cordis.workspace.actions/1" || root["generator"] != "splitmix64/1")
+    if (root["schema"] != "cordis.workspace.actions/1" || !supportedGenerator(root["generator"]))
         throw InvalidTrace("unsupported action schema or generator");
     parseDecimal(root["seed"]);
     if (!root["actions"].isArray() || !root["artifacts"].isArray() ||
         root["artifacts"].toArray() != artifactInputs(sourceBin))
         throw InvalidTrace("changed artifact inputs or malformed action array");
     Trace trace{root["seed"].toString(), root["artifacts"].toArray(), {}};
+    trace.generator = root["generator"].toString();
     std::set<QString> identifiers;
     const auto actions = root["actions"].toArray();
     if (actions.isEmpty() || actions.size() > 64)

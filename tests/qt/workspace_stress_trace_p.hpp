@@ -12,6 +12,7 @@ struct Trace {
     QString seed;
     QJsonArray artifacts;
     std::vector<Action> actions;
+    QString generator = "splitmix64/1";
 };
 
 std::uint64_t parseDecimal(const QJsonValue& value);

@@ -158,6 +158,10 @@ if(BUILD_TESTING)
             "${PROJECT_SOURCE_DIR}/tests/qt/workspace_stress_main.cpp"
             "${PROJECT_SOURCE_DIR}/tests/qt/workspace_stress_generate.cpp"
             "${PROJECT_SOURCE_DIR}/tests/qt/workspace_stress_trace.cpp"
+            "${PROJECT_SOURCE_DIR}/tests/qt/workspace_stress_child.cpp"
+            "${PROJECT_SOURCE_DIR}/tests/qt/workspace_stress_replay.cpp"
+            "${PROJECT_SOURCE_DIR}/tests/qt/workspace_stress_invalid.cpp"
+            "${PROJECT_SOURCE_DIR}/tests/qt/workspace_stress_reduce.cpp"
             "${PROJECT_SOURCE_DIR}/tests/qt/workspace_stress_actions.cpp"
             "${PROJECT_SOURCE_DIR}/tests/qt/workspace_stress_upgrade.cpp"
             "${PROJECT_SOURCE_DIR}/tests/qt/workspace_stress_observe.cpp")
@@ -171,6 +175,13 @@ if(BUILD_TESTING)
                 "${CMAKE_BINARY_DIR}/bin" "${seed}" "${CMAKE_BINARY_DIR}/p5-m5d2a/seed-${seed}")
             set_tests_properties(p5.workspace_stress_seed_${seed} PROPERTIES
                 LABELS "p5;module;qt;ui;replacement;stress;native_windows" TIMEOUT 180
+                ENVIRONMENT "QT_QPA_PLATFORM=windows")
+        endforeach()
+        foreach(proof IN ITEMS replay invalid reduce)
+            add_test(NAME p5.workspace_stress_${proof}_proof COMMAND cordis_workspace_stress_tests "${proof}-proof"
+                "${CMAKE_BINARY_DIR}/bin" "${CMAKE_BINARY_DIR}/p5-m5d2b/${proof}")
+            set_tests_properties(p5.workspace_stress_${proof}_proof PROPERTIES
+                LABELS "p5;module;qt;ui;replacement;stress;native_windows" TIMEOUT 900
                 ENVIRONMENT "QT_QPA_PLATFORM=windows")
         endforeach()
     endif()

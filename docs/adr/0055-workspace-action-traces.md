@@ -1,6 +1,6 @@
 # ADR-0055：真实工作台有限动作轨迹与独立进程回放
 
-日期：2026-11-19。状态：按实施前设计完成d2a实现、代码审查和三配置专项，随收口提交归档；d2b尚待实施。源码基线 f41860c（M5-d1 已审查提交同步）。
+日期：2026-11-19。状态：d2a 44202f9已审查提交同步；按实施前设计完成d2b实现、代码审查和三配置专项，随收口提交归档。初始源码基线 f41860c（M5-d1 已审查提交同步），d2b基线44202f9。
 
 ## 问题与边界
 
@@ -16,7 +16,7 @@ d2a 完成有限动作解释、固定 seed 生成、逐动作保存与原状态�
 
 测试私有目录 helper 返回原 generation/resources/origins/reservation/readers 的纯值。动作执行文件负责合法配置编辑、原任务及指定时序窗口；观察文件核对实际 desired 路径、Core/Driver/Native/UI/realm 与来源资源；轨迹文件负责严格字段、文件读写、完整错误树与产物摘要；入口仅负责生成/顺序执行/退出状态。避免把这些职责追加到 d1 的固定 validator 或生产 Workspace。
 
-动作参数独立于执行证据。每条动作先保存并 flush 再执行，记录前后纯值、原 revision/OperationId/phase、Plan/Replacement/Save 报告及递归 ErrorInfo。seed、revision、ID、计数等 uint64 一律规范十进制字符串；严格拒绝超界、非规范值、未知字段/动作/版本。动作文件仅接受本工具的规范 JSON 序列化，读取后与规范字节比较，拒绝 QJson 会折叠的重复键，不另造通用 JSON 解析器。PRNG 算法与版本固定，执行器不接收随机源。固定产物 locator 与 SHA 是轨迹输入，回放不允许替换或忽略产物变化。
+动作参数独立于执行证据。每条动作先保存并 flush 再执行，记录前后纯值、原 revision/OperationId/phase、Plan/Replacement/Save 报告及递归 ErrorInfo。seed、revision、ID、计数等 uint64 一律规范十进制字符串；严格拒绝超界、非规范值、未知字段/动作/版本。动作文件仅接受本工具的规范 JSON 序列化，读取后与规范字节比较，拒绝 QJson 会折叠的重复键，不另造通用 JSON 解析器。PRNG 算法与版本固定，执行器不接收随机源；实际seed生成标splitmix64/1，手工资格标authored/1，缩减保留真实来源。固定产物 locator 与 SHA 是轨迹输入，回放不允许替换或忽略产物变化。
 
 使用确定必达骨架加有界随机组合：Notebook 挂载/更新/停止启用/撤回、第二 realm 的 Counter/Reporter 成对往返、Native A/B 升级、明确 Prepared/Building 取消、相关路径拒绝与无关排队修订、显式保存冲突/rebase。普通动作后等待原收敛；排队组合内明确不 pump。合法 Native 配置只有 null 与现有故障字段，不伪造业务 schema。第二 realm 不在默认域重复发布提供者；撤回/realm 改动从当前目标保留 module/inject/children/local disabled/config 重建，再走原 preview/apply。config 原 JSON 数字片段不得经 QJson double 往返。
 

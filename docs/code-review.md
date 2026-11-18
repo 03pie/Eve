@@ -1,5 +1,13 @@
 # 提交前代码审查记录
 
+## P5-M5-d2b 独立回放与真实删除缩减审查（通过，2026-11-19）
+
+按ADR-0055及d2b实施前设计，父proof不建Scene/ModuleManager，唯一子runner管理实际绝对exe、结构化argv、PID/scratch、文件摘要及原退出/JSONL；三个实际proof消费者共用。首轮静态审查修复旧回执覆盖路径；父每次原子新run目录保留，子拒覆盖，重复执行不毁证据。删除main原Counter固定骨架假设，当前状态与历史Plan分别验证，不反推或改写Pending。seed/authored来源严格区分，旧schema1仍可读、未知拒绝，没有生产接口/第二状态机/清PIN。
+
+18有效输入（9本段code/build变化）/8改变C++格式，三配置首轮目标构建及所选5/5通过，无编译后修正或抑制。每配置normal6child/4次原文件回放，invalid20真实拒绝；reducer10child仅按原capture错误及完整未stop事实保留，7→2，实际两单删及65536对照均Passed。仅证明删除最小。实际start/timeout/crash分支作静态审查，不伪称注入运行覆盖；任何HarnessError不能成为复现。
+
+独立审计直接核原CTest stdout定位目录、child回执/文件/原报告/删除链，未用proof.passed替代。Release额外重复invalid1/1核83旧文件SHA保持，不累加原5项；d2a原73件归档保持。51实际ASan对象/174依赖及原36产物/12metadata/Core3/SDK64/旧SDK实物保持通过，未重复宣称旧SDK新运行。代码与既有证据无剩余阻断，最终暂存提交同步后进入M5-e；见 [d2b收口](p5-m5d-development.md#d2b-验证与收口)，整P5和新增桌面人工验收未完成。
+
 ## P5-M5-d2a 有限工作台动作与轨迹审查（通过，2026-11-19）
 
 按ADR-0055先设计动作/观察/轨迹边界，再从d1纯提取唯一目录采样供两个实际消费者，删除原定义且保持d1 validator。动作只经原Session/Workspace；config原数字片段、local disabled/realm/inject/children保留，未加生产入口/第二目录/状态机。观察按实际desired路径、Core/Driver/Coordinator/完整realm键、Native/UI与来源/完整资源kind-label核，不固定Active3，不放行未知Failed；临时能力/锁返回前释放。

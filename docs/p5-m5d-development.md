@@ -1,6 +1,6 @@
 # P5-M5-d 连续替换与压力验证
 
-最后更新：2026-11-19（北京时间）。M5-c 73cc08e、d0 a9f4230、d0b 1aa9e79、d1 f41860c 已审查提交同步。d2a完成实现、代码审查及三配置专项，随本次归档；d2b及M5-e待实施，M5、P5均未完成。
+最后更新：2026-11-19（北京时间）。M5-c 73cc08e、d0 a9f4230、d0b 1aa9e79、d1 f41860c、d2a 44202f9已审查提交同步。d2b完成实现、代码审查和三配置专项，随本次归档；M5-e待实施，M5、P5均未完成。
 
 ## 分段与职责
 
@@ -9,8 +9,8 @@
 | d0 | 原服务索引真实激活依赖评估批次的只读统计、语义与兼容性验证 | 已完成，a9f4230 已审查提交同步；见 [ADR-0052](adr/0052-dependency-evaluation-observation.md) |
 | d0b | 核对并兑现原指南的按服务键定向通知，保留声明图/发布/替换门禁的必要通知；与 d0 原口径比较 | 已完成，1aa9e79已审查提交同步；见 [ADR-0053](adr/0053-keyed-activation-notifications.md) |
 | d1 | 同一真实 Windows 平台进程预热后 100 次成功 Native 原事务；逐轮业务、配置保存、引用和物理回收，冻结资源基线与实测性能 | 已审查提交同步，f41860c；见 [ADR-0054](adr/0054-native-workspace-endurance.md) |
-| d2a | 固定 seed、有限真实动作解释器与落盘轨迹 | 实现、代码审查及三配置专项通过，随本次归档；见 [ADR-0055](adr/0055-workspace-action-traces.md) |
-| d2b | 独立进程严格回放、无效轨迹拒绝与真实删除最小缩减证明 | 待d2a审查提交同步后实施 |
+| d2a | 固定 seed、有限真实动作解释器与落盘轨迹 | 已审查提交同步，44202f9；见 [ADR-0055](adr/0055-workspace-action-traces.md) |
+| d2b | 独立进程严格回放、无效轨迹拒绝与真实删除最小缩减证明 | 实现、代码审查及三配置专项通过，随本次归档；见下文及ADR-0055 |
 
 每段先记录职责和拥有者，再实现、审计与验证，提交同步且工作区干净后进入下一段。d0 是后续对照与 d1 的实测依赖，不用队列数冒充重算次数；d1/d2 复用原 Workspace、ReplacementOperation、Module 目录与 Driver/Session/Store，不增加第二事务或假业务 RPC。
 
@@ -101,3 +101,33 @@ Release/Debug/ASan 当前输入各 3/3：原 d1 同进程8预热+100正式Applie
 47个实际ASan对象/169项实际编译依赖涵盖新helper/六stress TU、原d1及真实STATIC支持和因果生产者，实际插桩/deps/mtime/SHA、两个exe链接同一目录STATIC通过。正常36 DLL/manifest、12metadata/moc、原生产命令/业务源/协议、Core3、64 SDK头及旧SDK8件/provenance保持；本段没有生产或SDK改动，未重复宣称旧SDK新运行。旧d1原报告和exe先归档，提取后重新运行结果另属本段。
 
 逐动作证据及对象/产物独立复核通过，无剩余代码阻断；证据在build/p5-m5d2a-*。新输入专项通过后，最终精确暂存、提交同步且工作区干净才能进入d2b。d2b的fresh-child严格回放/无效输入和真实删除最小证明、M5-e精确名单/全支持矩阵/需求映射/新增原生桌面验收仍待完成，M5/P5未完成。
+
+## d2b 实施设计
+
+44202f9审查提交同步、19提交blob与原暂存一致且工作区干净后，沿ADR-0055实现具体proof入口。现动作解释器和唯一schema不复制；CLI仅增加读取已有动作文件的replay，以及正常回放、无效输入和真实缩减三个有限资格入口。父进程不建立Scene/ModuleManager，子进程通过本次实际exe绝对路径启动，同一源产物根但独立临时store/Scene；参数用QProcess结构化argv，不经shell。每次实际PID、输入/输出/产物摘要、正常退出与终态均保留。启动/超时/crash/HarnessError明确失败，不能当作产品复现或InvalidTrace。
+
+具体子进程runner单独管理进程、有限时间预算及原JSONL读取，供三个实际proof消费者使用，不建立通用fuzz框架。正常资格在新进程生成/执行两个seed，再按同一文件各独立重放，核动作参数、原回执语义与收敛状态；数值ID只作本次证据，不要求各进程相等。前置条件、schema/版本/字段/uint64/重复键/产物摘要不合法须InvalidTrace；超限草稿配Building取消时不能到达指定窗口，也必须InvalidTrace，不能自动改成capture故障目标。
+
+独立回放/删除候选可能保留缺服务目标跨多个动作，d2a入口仅按“本动作是否停用Counter”选择Plan期望不能继续使用。删除该固定骨架假设，当前状态仍按原desired/依赖图/来源完成verify；历史Plan单独核原entries的Applied/Pending及对应outcome，本段普通配置不接受Failed。不能用当前Driver状态反推或改写历史Pending，不复制执行计划器、不放行未知Failed或无缺依赖Pending。
+
+缩减从含噪声的真实Draft(65537 ASCII)→notebookUpgrade开始，在不同子进程复现两次。删除块候选始终保存为原规范动作文件、再原replay；只有同一原capture错误签名且未stop/身份/epoch/page/全文不变的真实事实才保留删除，InvalidTrace不算复现。最终逐删每个剩余动作另开进程，证明仅两动作且任删一个不复现；65536字节另外通过。原目标是插件实际边界拒绝，不伪造异常、不修改边界、不清理PIN或重建manager以绕过限制。只宣称删除最小，不宣称全局最短。
+
+手工故障/无效资格轨迹显式标为authored/1，与正常seed生成的splitmix64/1区分；缩减保留其来源标签。seed作为无损原输入身份保留，不能声称手工轨迹由该seed随机生成，也不能在回放/缩减时重新使用PRNG。
+
+实施前归档d2a的当前exe、动作/JSONL和报告，避免后续运行覆盖原资格；生产/SDK/正常业务产物不应变化。实现后审查父子拥有者与错误分类、实际独立scratch/PID及全部候选证据，Release/Debug/ASan相关入口串行运行。三配置构建可并行，源码冻结后才能构建，运行结束再复核真实ASan对象/依赖和产物。之后精确提交同步且clean，再进入M5-e最终名单/全支持矩阵/需求映射与新增桌面人工验收。
+
+proof每次在指定输出根下原子创建独立run目录并保留，实际路径写入本次CTest stdout；子runner拒绝覆盖任何已有回执/日志/输入。这样同一CTest可重复执行，前次原始证据不会被覆盖；目录随机名仅分配证据位置，不参与业务动作生成或回放。
+
+## d2b 验证与收口
+
+18项有效源码/构建输入冻结，其中9项是本段改变的源码/构建文件，另9项保留d2a原输入。8个改变的C++文件格式与差异通过，三配置原stress目标首轮构建全部成功，无警告抑制、预算放宽或编译后源码修正。共享runner由三个实际proof消费者使用，删除原main中只适用固定骨架的Counter动作推断，历史Plan/当前状态分开核；没有第二Scene/ModuleManager/事务或无调用预留接口。
+
+Release/Debug/ASan当前输入各所选5/5，分别约21/90/182秒，属于专项而非全量。两个原seed仍各34动作；normal proof每配置6个真实子进程：两个seed先生成执行，再按各自同一落盘文件分别回放两次，共4次回放，纯语义一致且不比较跨进程能力ID。无效proof每配置20子进程，严格字段/类型/版本/uint64/重复键/产物摘要及前置条件拒绝均raw exit21；指定Building窗口被真实超限capture阻断时保留原错误而终态仍InvalidTrace，未改成目标失败。
+
+缩减每配置10个实际新子进程，4次目标Failed与6次Passed：原7动作含噪声轨迹完整复现两次，按原规范文件删除块重放后只剩id5 Draft(65537 ASCII)与id6 Notebook升级。保留候选需同一真实module.state/CORDIS_E_LIMIT原因树、原未提交/恢复、empty映射及同child实例/epoch/页面/全文/服务/目标保持；不是只比较固定签名。两次最终单删和65536字节对照均实际Passed，证明删除最小，不宣称全局最短。所有候选文件、原JSONL、实际PID/独立scratch、结构化argv、退出码及输入/exe/报告摘要保留。
+
+独立原始证据审计按每配置复制的CTest LastTest实际stdout定位本次3个run目录，不猜latest；逐child核实际回执/事件和保留链，未把parent passed当唯一依据。另Release同一invalid CTest重复1/1，通过新目录且原83文件SHA保持；该重复只证明可重复性，不累加成原5项或更多业务覆盖。d2a原19提交blob、exe/轨迹/报告等73件已提前归档并核SHA，未覆盖旧资格。
+
+51个实际ASan对象/174项实际编译依赖、新头的实际消费者及STATIC链接通过运行后复核。36正常DLL/manifest、12metadata/moc、生产source/producer命令、Core3、64SDK及旧SDK8件/provenance与d2a/d1/d0b保持；本段无生产或SDK改动，也未声称新旧SDK运行。新D1未重跑：其源、依赖、实际exe及生产产物保持，原d2a三配置8+100资格继续作为已有证据，最终全矩阵另属M5-e。
+
+最终代码与证据审查无剩余阻断，证据在build/p5-m5d2b-*；精确暂存、提交同步并确认clean后进入M5-e。M5-d范围已兑现，仍不替代最终精确产物名单接入、全支持矩阵、需求映射、整P5审计及新增原生桌面升级/退出人工验收，M5/P5未完成。
