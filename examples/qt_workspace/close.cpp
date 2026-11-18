@@ -60,7 +60,7 @@ void Workspace::retainCloseFailure(ErrorInfo failure)
 void Workspace::flushBeforeClose()
 {
     if (!session) {
-        closeKernel();
+        closeModuleViews();
         return;
     }
     const auto state = session->snapshot();
@@ -69,7 +69,7 @@ void Workspace::flushBeforeClose()
         return;
     }
     if (!state.value().store.dirty) {
-        closeSession();
+        closeModuleViews();
         return;
     }
     const auto saved = session->save(state.value().coordinator.desiredRevision);
@@ -90,6 +90,26 @@ void Workspace::flushBeforeClose()
                                    : result.value().error.value_or(makeError(
                                          ErrorCode::ConfigConflict,
                                          "configuration was not saved; resolve disk conflict before closing")));
+    });
+}
+void Workspace::closeModuleViews()
+{
+    moduleViewsOpen_ = false;
+    if (!moduleViewDepth_) {
+        if (session)
+            closeSession();
+        else
+            closeKernel();
+        return;
+    }
+    const auto self = shared_from_this();
+    watch(moduleViewsIdle_.task(), [self](const Result<void>& result) {
+        if (!result.hasValue())
+            self->retainCloseFailure(result.error());
+        else if (self->session)
+            self->closeSession();
+        else
+            self->closeKernel();
     });
 }
 void Workspace::closeSession()

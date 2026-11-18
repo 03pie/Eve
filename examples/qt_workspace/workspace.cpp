@@ -95,11 +95,8 @@ void Workspace::initializeHost(const QString& file, ConfigurationFileSnapshot ba
                                                                },
                                                                PagePresentation::Dialog}));
         self->modulesPage = detail::require(
-            self->shell.pages()->add(context, {"modules", "模块诊断", "host.modules",
-                                               [manager = self->manager, diagnostics = self->shell.diagnostics()] {
-                                                   return moduleDiagnostics(manager, diagnostics);
-                                               },
-                                               PagePresentation::Dialog}));
+            self->shell.pages()->add(context, {"modules", "模块管理", "host.modules",
+                                               [weak] { return modulesPanel(weak); }, PagePresentation::Dialog}));
         return self->configurationPage->ready();
     }));
     std::vector<RuntimeId> protectedRuntimes{notebook_->runtime->id(), definition.id()};
@@ -114,6 +111,12 @@ void Workspace::initializeHost(const QString& file, ConfigurationFileSnapshot ba
         return self && self->configurationPage
                    ? self->configurationPage->navigate()
                    : Result<void>::failure(makeError(ErrorCode::ContextClosing, "configuration page unavailable"));
+    }));
+    detail::require(shell.onModulesRequested([weak] {
+        auto self = weak.lock();
+        return self && self->modulesPage
+                   ? self->modulesPage->navigate()
+                   : Result<void>::failure(makeError(ErrorCode::ContextClosing, "module page unavailable"));
     }));
 }
 Task<void> Workspace::ready() const

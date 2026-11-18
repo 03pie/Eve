@@ -180,6 +180,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
     std::map<Key, Group> groups;
     std::function<void()> closeHandler;
     std::function<Result<void>()> configurationHandler;
+    std::function<Result<void>()> modulesHandler;
     bool open = true;
     bool closing = false;
     bool starting = false;
@@ -297,6 +298,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
         windowClosing = true;
         closeHandler = {};
         configurationHandler = {};
+        modulesHandler = {};
         auto self = shared_from_this();
         cordis::detail::TaskAccess::observe(windowResource->close(), [self](Task<void>::Snapshot result) {
             if (result->hasValue()) self->closed.resolve();
@@ -974,6 +976,31 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
          [weak] {
              auto state = weak.lock();
              return state && state->open && static_cast<bool>(state->configurationHandler);
+         },
+         [weak] {
+             auto state = weak.lock();
+             if (!state || !state->open)
+                 return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closing"));
+             if (!state->modulesHandler)
+                 return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "module management unavailable"));
+             detail::ShellControl::NavigationAccess access(*state);
+             try {
+                 const auto callback = state->modulesHandler;
+                 if (!state->open)
+                     return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closing"));
+                 const auto result = callback();
+                 return state->open ? result
+                                    : Result<void>::failure(
+                                          makeError(ErrorCode::ContextClosing, "shell closed during module request"));
+             } catch (const std::exception& error) {
+                 return Result<void>::failure(makeError(ErrorCode::CallbackFailed, error.what()));
+             } catch (...) {
+                 return Result<void>::failure(makeError(ErrorCode::CallbackFailed, "module handler threw"));
+             }
+         },
+         [weak] {
+             const auto state = weak.lock();
+             return state && state->open && static_cast<bool>(state->modulesHandler);
          }},
         QString::fromStdString(preferencesFile), control_->output);
     window->addFooterNode(QString::fromUtf8("设置"), detail::workbenchSettings(control_->workbench), control_->settingsKey, 0, ElaIconType::GearComplex);
@@ -1089,6 +1116,27 @@ Result<void> ElaShell::onConfigurationRequested(std::function<Result<void>()> ca
         return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "empty configuration handler"));
     control_->configurationHandler = std::move(callback);
     return Result<void>::success();
+}
+/** @brief 仅宿主接入模块窗口；更新纯菜单状态，不读取目录或执行配置 provider。 */
+Result<void> ElaShell::onModulesRequested(std::function<Result<void>()> callback) const
+{
+    const auto state = control_;
+    if (!state->scheduler->isCurrentThread())
+        return Result<void>::failure(makeError(ErrorCode::WrongThread, "module handler requires owner thread"));
+    if (!state->open)
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closing"));
+    if (!callback)
+        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "empty module handler"));
+    detail::ShellControl::NavigationAccess access(*state);
+    auto previous = std::move(state->modulesHandler);
+    state->modulesHandler = std::move(callback);
+    previous = {};
+    if (!state->open)
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closed during module binding"));
+    detail::refreshWorkbenchModules(state->workbench);
+    return state->open
+               ? Result<void>::success()
+               : Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closed during module binding"));
 }
 /** @brief 仅重置尚未进入销毁的关闭请求，允许保存冲突处理后再次正常退出。 */
 Result<void> ElaShell::cancelCloseRequest() const

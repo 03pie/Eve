@@ -11,6 +11,7 @@
 #include <cordis/ui/configuration.hpp>
 #include <cordis/ui/ela_shell.hpp>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -49,6 +50,20 @@ struct WorkspaceUpgradeSnapshot {
     std::optional<WorkspaceUpgradeReport> active;
     std::optional<cordis::ReplacementPhase> phase;
     std::vector<WorkspaceUpgradeReport> history;
+};
+/** @brief 当前业务来源与已接受配置路径，不借出工厂或运行能力。 */
+struct WorkspaceModuleEntry {
+    std::string alias, plugin;
+    cordis::GenerationId generation;
+    cordis::RuntimeId runtime;
+    std::vector<std::string> paths;
+};
+/** @brief 原目录与实际配置/关闭错误的纯值投影，关闭后仍可读取。 */
+struct WorkspaceModulesSnapshot {
+    bool open = false;
+    std::vector<WorkspaceModuleEntry> current;
+    std::vector<cordis::module::ModuleGenerationSnapshot> generations;
+    std::vector<cordis::ErrorInfo> configurationErrors;
 };
 template <class T> T take(cordis::Result<T> result)
 {
@@ -95,6 +110,9 @@ public:
                                                   const std::string& manifestPath);
     cordis::Result<cordis::Task<WorkspaceUpgradeReport>> upgrade(const UpgradePreview& preview);
     cordis::Result<WorkspaceUpgradeSnapshot> upgradeSnapshot();
+    cordis::Result<WorkspaceModulesSnapshot> modulesSnapshot();
+    /** @brief 同步写栈保活并阻止破坏性关闭；不接管事务或异步回调。 */
+    cordis::Result<void> withModuleView(std::function<void()> action);
     const std::string& pluginRoot() const noexcept { return pluginRoot_; }
     cordis::Result<WorkspaceCloseSnapshot> closeSnapshot() const;
     bool deliveryBlocked() const noexcept { return deliveryBlocked_->load(); }
@@ -126,6 +144,7 @@ private:
                         std::vector<cordis::loader::ConfiguredPlugin> plugins, bool qualification);
     void flushBeforeClose();
     void closeAfterUpgrade();
+    void closeModuleViews();
     cordis::Result<void> synchronizeUpgrade();
     void closeSession();
     void closeKernel();
@@ -143,6 +162,9 @@ private:
     cordis::module::NativeUnloadWhitelist approvals_;
     std::shared_ptr<detail::WorkspaceUpgradeExecution> upgrade_;
     std::deque<WorkspaceUpgradeReport> upgradeHistory_;
+    bool moduleViewsOpen_ = true;
+    std::size_t moduleViewDepth_ = 0;
+    cordis::Promise<void> moduleViewsIdle_;
     std::vector<cordis::ProviderHandle> providers_;
     std::optional<cordis::Instance> host_;
     std::shared_ptr<Workspace> pin_;
@@ -163,6 +185,5 @@ private:
         });
     }
 };
-std::unique_ptr<QWidget> moduleDiagnostics(const std::shared_ptr<cordis::module::ModuleManager>& manager,
-                                           std::shared_ptr<cordis::ui::DiagnosticsService> diagnostics = {});
+std::unique_ptr<QWidget> modulesPanel(std::weak_ptr<Workspace> workspace);
 } // namespace notebook

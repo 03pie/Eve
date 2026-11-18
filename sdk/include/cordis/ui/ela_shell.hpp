@@ -46,6 +46,8 @@ public:
     Result<void> onCloseRequested(std::function<void()> callback) const;
     /** @brief 宿主绑定平台配置文件窗口入口；普通插件仍通过页面服务贡献内容。 */
     Result<void> onConfigurationRequested(std::function<Result<void>()> callback) const;
+    /** @brief 宿主绑定模块管理窗口入口；不向普通插件授予模块或升级能力。 */
+    Result<void> onModulesRequested(std::function<Result<void>()> callback) const;
     /** @brief 宿主保存失败而保留窗口时恢复关闭按钮；已经开始销毁后不能撤销关闭。 */
     Result<void> cancelCloseRequest() const;
     /** @brief owner 关门，等待页面/命令 effects 与窗口完整销毁，清理失败保留资源。 */

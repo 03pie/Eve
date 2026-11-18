@@ -154,7 +154,7 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
     QPointer<ElaSuggestBox> search;
     QPointer<ElaToolButton> back, forward;
     QPointer<QAction> backAction, forwardAction;
-    QPointer<QAction> addPluginAction, configurationFileAction;
+    QPointer<QAction> addPluginAction, configurationFileAction, modulesAction;
     QPointer<ElaMenuBar> menuBar;
     QPointer<QWidget> settings, about;
     QPointer<ElaText> location;
@@ -292,6 +292,16 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
             self->refreshHomeWithinAccess();
         });
     }
+    /** @brief 宿主模块入口只依赖 handler；晚绑定与定时刷新共用同一动作。 */
+    void refreshModules()
+    {
+        if (!open || !modulesAction)
+            return;
+        const auto available = callbacks.hasModules;
+        const bool enabled = available && available();
+        if (open && modulesAction)
+            modulesAction->setEnabled(enabled);
+    }
     /** @brief 仅在窗口访问屏障内合并快照并写入卡片；嵌套刷新由外层本次更新收敛。 */
     void refreshHomeWithinAccess()
     {
@@ -302,6 +312,9 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
             return;
         if (configurationFileAction)
             configurationFileAction->setEnabled(callbacks.hasConfigurationFile && callbacks.hasConfigurationFile());
+        if (!open)
+            return;
+        refreshModules();
         if (!open)
             return;
         // 配置回调可能关闭外壳或撤销页面；仅在它返回后读取当前页面目录。
@@ -885,6 +898,17 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     file->addSeparator();
     platformAction(QString::fromUtf8("添加插件配置…"), "CordisAddPlugin", true);
     platformAction(QString::fromUtf8("配置文件…"), "CordisConfigurationFile", false);
+    self->modulesAction =
+        self->action(file, QString::fromUtf8("模块管理…"), "CordisOpenModules", {}, [](WorkbenchControl& state) {
+            const auto callback = state.callbacks.modules;
+            if (!callback)
+                return;
+            const auto result = callback();
+            if (!result.hasValue() && state.open && state.logs)
+                (void)appendOutput(state.logs, {}, "platform", result.error().message, OutputLevel::Error);
+        });
+    self->modulesAction->setEnabled(false);
+    self->modulesAction->setToolTip(QString::fromUtf8("打开宿主提供的模块管理窗口。"));
     self->action(go, QString::fromUtf8("欢迎页"), "CordisOpenHome", {},
                  [](WorkbenchControl& state) { state.navigate(state.homeKey); });
     auto notifications =
@@ -1035,6 +1059,13 @@ void refreshWorkbenchPresentation(const std::shared_ptr<WorkbenchControl>& contr
         if (control->open)
             control->updateHistory();
     });
+}
+
+void refreshWorkbenchModules(const std::shared_ptr<WorkbenchControl>& control)
+{
+    if (!control || !control->open)
+        return;
+    control->withWindowAccess([control] { control->refreshModules(); });
 }
 
 void selectWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const QString& key)

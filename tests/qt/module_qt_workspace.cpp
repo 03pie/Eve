@@ -50,6 +50,12 @@ std::string source(const std::string& config = "{title: First, text: initial}", 
             "  - {id: other, plugin: example.notebook, module: notebook, config: {title: Second, text: separate}}\n";
     return text;
 }
+bool errorIncludes(const ErrorInfo& error, const std::string& message)
+{
+    return error.message.find(message) != std::string::npos ||
+           std::any_of(error.causes.begin(), error.causes.end(),
+                       [&](const auto& cause) { return errorIncludes(cause, message); });
+}
 std::size_t records(const notebook::Workspace& state, ResourceKind kind)
 {
     const auto modules = take(state.manager->snapshot());
@@ -153,7 +159,14 @@ int main(int argc, char** argv)
                 CHECK(disk.version.exists &&
                       disk.text == take(state->session->snapshot()).coordinator.desired->source().normalizedYaml());
             } else if (name == "diagnostics") {
-                auto widget = notebook::moduleDiagnostics(state->manager);
+                CHECK(state->modulesPage);
+                wait(state->modulesPage->ready());
+                take(state->modulesPage->navigate());
+                QWidget* widget = nullptr;
+                for (auto* candidate : QApplication::allWidgets())
+                    if (candidate->objectName() == "CordisModuleDiagnostics")
+                        widget = candidate;
+                CHECK(widget && widget->window()->isVisible());
                 auto text = widget->findChild<QPlainTextEdit*>("CordisModuleDiagnosticsText");
                 CHECK(text && text->isReadOnly() && text->toPlainText().contains("org.cordis.example.notebook"));
                 CHECK(text->toPlainText().contains("qt.instance.") && text->toPlainText().contains("nativeProcessPin"));
@@ -197,9 +210,15 @@ int main(int argc, char** argv)
             CHECK(!closed.tryResult()->hasValue() && records(*state, ResourceKind::Instance) == 1);
             CHECK(pages(*state).empty() && take(state->shell.commands()->snapshot()).empty());
             CHECK(!state->manager->drain(take(state->generation())).hasValue());
-            auto widget = notebook::moduleDiagnostics(state->manager, state->shell.diagnostics());
-            auto text = widget->findChild<QPlainTextEdit*>()->toPlainText();
-            CHECK(text.contains("qt.instance.") && text.contains("notebook cleanup failure requested"));
+            const auto diagnostics = take(state->modulesSnapshot());
+            CHECK(!diagnostics.open && diagnostics.current.size() == 1);
+            CHECK(std::any_of(diagnostics.generations.front().resources.records.begin(),
+                              diagnostics.generations.front().resources.records.end(), [](const auto& record) {
+                                  return record.label.find("qt.instance.") != std::string::npos;
+                              }));
+            CHECK(std::any_of(
+                diagnostics.configurationErrors.begin(), diagnostics.configurationErrors.end(),
+                [](const auto& error) { return errorIncludes(error, "notebook cleanup failure requested"); }));
         } else {
             wait(closed);
             pump([&] { return take(state->scheduler->snapshot()).queued == 0; });

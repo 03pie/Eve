@@ -51,6 +51,9 @@ struct WorkbenchActions {
     std::function<Result<void>()> addPlugin{};
     std::function<Result<void>()> configurationFile{};
     std::function<bool()> hasConfigurationFile{};
+    /** @brief 模块窗口由具体宿主提供，可用性只检查 handler，不读取业务目录。 */
+    std::function<Result<void>()> modules{};
+    std::function<bool()> hasModules{};
 };
 /** @brief 创建 Example 风格滚动首页，入口在工作台构造时连接。 */
 QWidget* createWelcomePage();
@@ -70,6 +73,8 @@ void registerWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, con
                            std::function<bool()> presentation = {});
 /** @brief 发布通知只刷新既有建议、卡片和历史投影，不执行工厂或重新登记页面。 */
 void refreshWorkbenchPresentation(const std::shared_ptr<WorkbenchControl>& control);
+/** @brief 晚绑定宿主入口只刷新菜单状态，不触发 Home 或配置 provider 读取。 */
+void refreshWorkbenchModules(const std::shared_ptr<WorkbenchControl>& control);
 /** @brief 页面撤销同步裁剪历史、建议和页签，旧搜索结果不能恢复旧贡献。 */
 void removeWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const QString& key);
 /** @brief 所有鼠标/键盘/程序入口统一记录选择，历史重放不产生新分支。 */

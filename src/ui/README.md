@@ -29,3 +29,5 @@ ElaShell 的可选第二参数为 UTF-8 界面偏好文件路径；空路径为�
 页面内的任意程序信号/worker 不自动成为托管资源；当前输入门禁覆盖所适配的输入事件，其他回调仍须遵循 Context/服务与专用清理契约。原生桌面验收按 [清单](../../tests/acceptance/p3-ui.md) 执行，随后推进配置/持久化/模块管理。页面契约见 [ADR-0006](../../docs/adr/0006-ela-page-contributions.md)，证据见 [P3 记录](../../docs/p3-development.md)。
 
 Home 卡片的“管理”“配置”打开定位到该对象的 ElaDialog，不再将管理列为活动栏/中央页签。顶部“文件”菜单添加已注册配置实例或打开完整配置文件窗口；手动实例未绑定 Session 时不提供配置编辑。PagePresentation::Dialog 复用原页面 effect、输入门禁及 QObjectResource，隐藏不等于停止；退役删除整个窗口和内容。协议与边界见 [ADR-0028](../../docs/adr/0028-home-management-windows.md)，验证见 [Home 管理记录](../../docs/home-management-development.md)。
+
+M5-c1 增加宿主专用 ElaShell.onModulesRequested，顶部模块管理 QAction与原平台命令模型使用同一入口。无 handler 时可见但禁用，晚绑定立即同步；回调在原窗口访问屏障中复制后调用，异常/关闭重入变为明确 Result。handler 仅私有控制块持有，关闭释放；Ui 不引入 Module/Loader/Replacement 依赖。具体目录/诊断视图留在实际宿主，见 [c1 结论](../../docs/p5-m5c-development.md#c1-收口结论)。新增方法非虚且保留七个数据成员/原符号，SDK 0.1.5 兼容结论限定于保存的真实工具链实物；不宣称稳定通用 ABI。

@@ -353,3 +353,19 @@ Output 的每外壳 pending 预算为 1000 条、1 MiB 字符串和 64 个精确
 新增 YAML 三项和 provider_home_close/provider_home_replace 两项锁住 locator 保真、Home 回调关闭/销毁重建。最终 Release/Debug/ASan 各 219/219 受影响专项、静态 29/29、GCC YAML 11/11；完整清单与唯一 Passed 名称对应，whole_stage=false。32 输入/30 格式、31 ASan 对象和36实际产物核对通过；原 .5 实物当前 normal 和六次真实入口失败收尾独立归档，不计入 219 或人工桌面验收。
 
 产品升级按钮、完整 H01/S09、同进程 100 次/随机、最终精确批准及新增原生桌面验收继续 M5-c/d/e。Qt 驻留、生产 Native 名单空，不能把本段有限物理证明扩为所有插件可卸载。
+
+## M5-c1 模块管理入口与视图拥有
+
+七项前缀 p5.modules_view_，实现及精确两轮验证见 [c1 结论](../../docs/p5-m5c-development.md#c1-收口结论)。
+
+| 场景 | 必须成立的事实 |
+|---|---|
+| menu | 无 handler 禁用、绑定/重绑、实际原命令模型、回调关闭；同一托管窗口反复打开，隐藏不停止 |
+| catalogue | 三模块实际来源、禁用/多配置路径、Notebook A→B 后 current/Runtime/locator 共同提交，不借出工厂 |
+| legacy | 原单 Notebook 入口只显示真实单模块，不伪造三个 |
+| guards | 错误线程/空/异常与实际视图门禁，异常退出后仍可正常关闭 |
+| view_close | 实际路径变化触发 model.dataChanged，嵌套泵保存/删除时 Session/Kernel/页仍存活，写栈退出后完整关闭 |
+| save_conflict | 保存冲突先于视图关门，刷新仍可读原错误，rebase 后关闭 |
+| view_discard | 真实 FIFO 先关闭队列、丢弃已接受 idle continuation；原关闭 Task 失败及原拥有链/页保留，不伪造完成 |
+
+三配置各 226 功能专项通过后，末次仅收窄四个映像引用显示字面量/排版；最终输入重建后上述七项加原诊断两项三配置各 9/9。两轮分别有清单/输入记录，不宣称文案后最终 226 全部重跑，也不把重复用例累加。31 ASan 对象/136实际依赖、36产物、旧/新 SDK 声明/符号/布局和真实旧宿主/插件加载当前 Ui/Core均核对，六次入口收尾独立归档。当前仍无候选选择/升级按钮、完整 H01/S09、100 次/随机或新增原生桌面验收。
