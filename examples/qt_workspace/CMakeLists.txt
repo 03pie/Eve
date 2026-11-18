@@ -135,12 +135,16 @@ if(BUILD_TESTING)
             TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endforeach()
     if(WIN32)
+        add_library(cordis_workspace_directory_support STATIC
+            "${PROJECT_SOURCE_DIR}/tests/qt/workspace_directory.cpp")
+        target_link_libraries(cordis_workspace_directory_support PUBLIC cordis_platform_upgrade_support)
+        cordis_target_defaults(cordis_workspace_directory_support)
         add_executable(cordis_workspace_endurance_tests
             "${PROJECT_SOURCE_DIR}/tests/qt/workspace_endurance_main.cpp"
             "${PROJECT_SOURCE_DIR}/tests/qt/workspace_endurance_round.cpp"
             "${PROJECT_SOURCE_DIR}/tests/qt/workspace_endurance_catalog.cpp"
             "${PROJECT_SOURCE_DIR}/tests/qt/workspace_endurance_windows.cpp")
-        target_link_libraries(cordis_workspace_endurance_tests PRIVATE cordis_platform_upgrade_support user32)
+        target_link_libraries(cordis_workspace_endurance_tests PRIVATE cordis_workspace_directory_support user32)
         set_target_properties(cordis_workspace_endurance_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
         cordis_target_defaults(cordis_workspace_endurance_tests)
         add_dependencies(cordis_workspace_endurance_tests cordis_example_counter_a cordis_example_counter_b
@@ -150,6 +154,25 @@ if(BUILD_TESTING)
         set_tests_properties(p5.workspace_endurance_native PROPERTIES
             LABELS "p5;module;qt;ui;replacement;endurance;native_windows" TIMEOUT 900
             ENVIRONMENT "QT_QPA_PLATFORM=windows")
+        add_executable(cordis_workspace_stress_tests
+            "${PROJECT_SOURCE_DIR}/tests/qt/workspace_stress_main.cpp"
+            "${PROJECT_SOURCE_DIR}/tests/qt/workspace_stress_generate.cpp"
+            "${PROJECT_SOURCE_DIR}/tests/qt/workspace_stress_trace.cpp"
+            "${PROJECT_SOURCE_DIR}/tests/qt/workspace_stress_actions.cpp"
+            "${PROJECT_SOURCE_DIR}/tests/qt/workspace_stress_upgrade.cpp"
+            "${PROJECT_SOURCE_DIR}/tests/qt/workspace_stress_observe.cpp")
+        target_link_libraries(cordis_workspace_stress_tests PRIVATE cordis_workspace_directory_support)
+        set_target_properties(cordis_workspace_stress_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+        cordis_target_defaults(cordis_workspace_stress_tests)
+        add_dependencies(cordis_workspace_stress_tests cordis_example_counter_a cordis_example_counter_b
+            cordis_example_reporter_a cordis_example_reporter_b cordis_example_notebook_a cordis_example_notebook_b)
+        foreach(seed IN ITEMS 1 18446744073709551615)
+            add_test(NAME p5.workspace_stress_seed_${seed} COMMAND cordis_workspace_stress_tests generate
+                "${CMAKE_BINARY_DIR}/bin" "${seed}" "${CMAKE_BINARY_DIR}/p5-m5d2a/seed-${seed}")
+            set_tests_properties(p5.workspace_stress_seed_${seed} PROPERTIES
+                LABELS "p5;module;qt;ui;replacement;stress;native_windows" TIMEOUT 180
+                ENVIRONMENT "QT_QPA_PLATFORM=windows")
+        endforeach()
     endif()
     add_executable(cordis_modules_view_tests
         "${PROJECT_SOURCE_DIR}/tests/qt/modules_view.cpp"

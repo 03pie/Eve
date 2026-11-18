@@ -1,5 +1,13 @@
 # 提交前代码审查记录
 
+## P5-M5-d2a 有限工作台动作与轨迹审查（通过，2026-11-19）
+
+按ADR-0055先设计动作/观察/轨迹边界，再从d1纯提取唯一目录采样供两个实际消费者，删除原定义且保持d1 validator。动作只经原Session/Workspace；config原数字片段、local disabled/realm/inject/children保留，未加生产入口/第二目录/状态机。观察按实际desired路径、Core/Driver/Coordinator/完整realm键、Native/UI与来源/完整资源kind-label核，不固定Active3，不放行未知Failed；临时能力/锁返回前释放。
+
+跨审补异常现场在Scene仍活时保存，观察错误不替换原错误；规范字节读取拒绝QJson重复键折叠，uint64严格字符串；正常PlanApplied与唯一停用Counter后的Pending分开核。Prepared无pump排队/claim拒绝/本次OpID取消，Building原候选Held/来源窗口取消，真实报告/恢复/草稿、Native旧及取消候选映像离开/文件独占、原Conflict→rebase→save均有具体判据。原d1采样不扩为stress模式，没有被替代实现遗留或预算/警告放宽。
+
+13最终输入/12格式；三共享配置各3/3，原d1 8+100资格保持，两个seed各34动作70事件；不是全量或人工验收。两轮编译问题按原日志归档修复，仅涉及测试字段比较和快照构造；47实际ASan对象/169依赖与生产36产物/元数据/Core/SDK保持通过。源码与已有证据无剩余阻断，最终逐动作和精确暂存审计后提交同步；详见 [d2a收口](p5-m5d-development.md#d2a-验证与收口)，独立回放/缩减仍属d2b，M5-e/P5未完成。
+
 ## P5-M5-d1 原生同进程连续替换审查（通过，2026-11-19）
 
 按ADR-0054将动作、原目录/Core纯值采样与Windows/Qt采样分开。原Scene/Operation/显式save/Image复用，没有第二事务、测试ABI或额外Scope冻结；collector锁/强代次引用返回前释放，阶段FIFO只弱宿主且采样前停止排空，QObject只称拥有树。删除误导的文件absent字段，无已发布兼容消费者，最终字段明确旧映像离开及现存文件独占；不为了测试清PIN、强卸载Current或提高预算。

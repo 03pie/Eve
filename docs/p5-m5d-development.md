@@ -1,6 +1,6 @@
 # P5-M5-d 连续替换与压力验证
 
-最后更新：2026-11-19（北京时间）。M5-c 73cc08e、d0 a9f4230、d0b 1aa9e79 已审查提交同步。d1按实施前设计完成实现、代码审查与三配置原生同进程100次资格，随本次归档；d2尚未实施，M5、P5均未完成。
+最后更新：2026-11-19（北京时间）。M5-c 73cc08e、d0 a9f4230、d0b 1aa9e79、d1 f41860c 已审查提交同步。d2a完成实现、代码审查及三配置专项，随本次归档；d2b及M5-e待实施，M5、P5均未完成。
 
 ## 分段与职责
 
@@ -8,8 +8,9 @@
 |---|---|---|
 | d0 | 原服务索引真实激活依赖评估批次的只读统计、语义与兼容性验证 | 已完成，a9f4230 已审查提交同步；见 [ADR-0052](adr/0052-dependency-evaluation-observation.md) |
 | d0b | 核对并兑现原指南的按服务键定向通知，保留声明图/发布/替换门禁的必要通知；与 d0 原口径比较 | 已完成，1aa9e79已审查提交同步；见 [ADR-0053](adr/0053-keyed-activation-notifications.md) |
-| d1 | 同一真实 Windows 平台进程预热后 100 次成功 Native 原事务；逐轮业务、配置保存、引用和物理回收，冻结资源基线与实测性能 | 实现、代码审查及三配置原生资格通过，随本次归档；见 [ADR-0054](adr/0054-native-workspace-endurance.md) |
-| d2 | 固定 seed 的真实挂载/更新/撤回/停止与升级故障组合，落盘动作回放及真实缩减证明 | 待实施 |
+| d1 | 同一真实 Windows 平台进程预热后 100 次成功 Native 原事务；逐轮业务、配置保存、引用和物理回收，冻结资源基线与实测性能 | 已审查提交同步，f41860c；见 [ADR-0054](adr/0054-native-workspace-endurance.md) |
+| d2a | 固定 seed、有限真实动作解释器与落盘轨迹 | 实现、代码审查及三配置专项通过，随本次归档；见 [ADR-0055](adr/0055-workspace-action-traces.md) |
+| d2b | 独立进程严格回放、无效轨迹拒绝与真实删除最小缩减证明 | 待d2a审查提交同步后实施 |
 
 每段先记录职责和拥有者，再实现、审计与验证，提交同步且工作区干净后进入下一段。d0 是后续对照与 d1 的实测依赖，不用队列数冒充重算次数；d1/d2 复用原 Workspace、ReplacementOperation、Module 目录与 Driver/Session/Store，不增加第二事务或假业务 RPC。
 
@@ -82,3 +83,21 @@ Release/Debug/ASan最终每配置一个真实windows QPA进程，各完成8预�
 Windows 自动验证使用真实 windows QPA 和有效本进程 HWND，可隐藏且不激活，不把 offscreen WId 当 HWND。QObject 仅报告可遍历的应用/Widget/Window 树并去重，不宣称是全进程对象计数。当前句柄/GDI/USER 的真实基线在测量前冻结，不临时放大容差。最终 Current Native 按原 close/drain 语义保留 Resident，Qt 保留原 loader root，不为测试改变生产退出契约。
 
 随机压力必须执行原配置所有权路径，落盘 seed、动作参数、实际接受的 revision/OperationId 和原错误原因树；所有 uint64 标识用无损字符串。回放执行保存的动作，前置条件失效应报告无效轨迹，不能静默跳过。缩减在新进程重放候选序列，避免原 PIN 或 Qt 代次谱系污染下一次；真实 65537 字节 Notebook 草稿拒绝迁移可用于验证缩减链，不伪造业务失败。详细动作状态机在 d2 实施前记录。
+
+## d2a 实施设计
+
+f41860c 已审查提交同步且工作区干净后，先按 ADR-0055 明确有限动作、原回执、观察与轨迹职责。将 d1 的 directory() 及两个纯值结构原样提到共享测试 helper，原位置删除；d1 validator 不增加压力分支。新观察器按实际 desired/path、Core/Driver/Coordinator、完整服务键/租约、Native/UI/Module 来源及资源 kind/label 交叉核验，支持禁用、撤回、多实例和真实缺服务 Pending，不将任意 Failed 当作成功。采样不执行插件、Scope 捕获或 pump，不保留代次/Runtime/控件能力。
+
+动作文件用原 Session/YAML helper 编辑，撤回/realm 从原目标重建并保留 config 数字原片段、module/inject/children/local disabled。普通动作收敛；Prepared 组合内部不 pump：拒绝相关合法 failCleanup 探针，连续接受两个无关 Notebook 修订，再按本次原 OpID 取消，核 Superseded/Applied。Building 通过真实命令源 rowsInserted 与候选 Held/来源命中后取消，窗口失效报 InvalidTrace。保存冲突以真实外写→原 Conflict→显式 rebase→原 save，身份不变。
+
+固定 SplitMix64/1、seed "1" 与 "18446744073709551615"，确定覆盖骨架加有界合法随机尾部。动作先完整保存为规范 JSON，再从该文件读取逐条解释；每动作开始 flush 后才执行，记录原报告、前后状态和完整 ErrorInfo。仅接受工具规范字节，避免重复字段被 QJson 折叠；uint64 均严格规范十进制字符串。异常现场在 Scene 仍活时尽力保存，观察失败单列，不改原错误出口。d2a仅提供生成并执行入口，外部独立回放和缩减须待d2b，不提前宣称完成。
+
+## d2a 验证与收口
+
+13 项最终源码/构建输入、12 个 C++ 格式和差异检查通过。初次三配置编译发现 Qt5 QStringList 比较触发旧 STL 警告，改逐字段 size/contains；第二次发现升级快照不可赋值，改一次聚合构造完整观察。均保留原日志/输入后修复，不抑制警告、不改生产接口。最终三配置两个具体测试目标构建成功，包含共享目录 STATIC；不是默认全目标构建。
+
+Release/Debug/ASan 当前输入各 3/3：原 d1 同进程8预热+100正式Applied、108唯一操作/111代次/最终业务163保持，资源基线未放宽；另两个 seed 各一个真实 windows QPA 进程，均34动作/70事件。核默认 Counter 停用后 Reporter 真 Pending、再启用 Active，第二 realm 成对加入/撤回，Native四次 Applied 及旧映像离开/文件独占，Prepared相关拒绝/两个排队修订/候选映像离开，seed1 Notebook Applied 与MAX seed真实Building Cancelled/recovered，草稿恢复、Conflict/rebase/save和最终原close通过。随机尾部两seed不同，三配置同seed动作一致；不是配置全量、任意seed穷举或桌面人工资格。
+
+47个实际ASan对象/169项实际编译依赖涵盖新helper/六stress TU、原d1及真实STATIC支持和因果生产者，实际插桩/deps/mtime/SHA、两个exe链接同一目录STATIC通过。正常36 DLL/manifest、12metadata/moc、原生产命令/业务源/协议、Core3、64 SDK头及旧SDK8件/provenance保持；本段没有生产或SDK改动，未重复宣称旧SDK新运行。旧d1原报告和exe先归档，提取后重新运行结果另属本段。
+
+逐动作证据及对象/产物独立复核通过，无剩余代码阻断；证据在build/p5-m5d2a-*。新输入专项通过后，最终精确暂存、提交同步且工作区干净才能进入d2b。d2b的fresh-child严格回放/无效输入和真实删除最小证明、M5-e精确名单/全支持矩阵/需求映射/新增原生桌面验收仍待完成，M5/P5未完成。

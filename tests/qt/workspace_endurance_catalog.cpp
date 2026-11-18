@@ -1,20 +1,18 @@
 /** @file workspace_endurance_catalog.cpp
  * @brief 从原 Core 和模块目录复制纯值；当前资源形状与递增身份、纯卸载历史分别记录。
  */
-#include "../../src/module/catalog_registry_p.hpp"
+#include "workspace_directory_p.hpp"
 #include "workspace_endurance_p.hpp"
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <algorithm>
 #include <map>
-#include <mutex>
 
 namespace workspace_endurance_test {
 namespace {
 using namespace cordis;
 using namespace cordis::module;
 using platform_workspace_test::take;
-namespace native = cordis::module::detail;
 
 QString text(const std::string& value)
 {
@@ -99,73 +97,6 @@ QJsonObject scopeDetail(const ScopeSnapshot& value)
     }
     return {{"errors", errors}, {"effects", effects}};
 }
-struct GenerationValues {
-    ModuleGenerationSnapshot module;
-    std::size_t admissions = 0;
-    bool loading = false, image = false, observationImage = false, artifactFile = false, backend = false;
-    std::optional<OperationId> reservation;
-    std::vector<ModuleRuntimeOrigin> runtimes;
-    std::vector<native::InstanceOrigin> instances;
-};
-struct DirectoryValues {
-    std::vector<GenerationValues> generations;
-    QJsonArray reservations, readers;
-    std::size_t readerOperations = 0;
-};
-DirectoryValues directory()
-{
-    DirectoryValues result;
-    auto& catalog = native::moduleCatalog();
-    std::lock_guard<std::mutex> catalogLock(catalog.mutex);
-    for (const auto& entry : catalog.replacements) {
-        const auto& value = *entry.second;
-        result.reservations.append(QJsonObject{{"module", text(entry.first)},
-                                               {"operation", number(value.operation.value())},
-                                               {"current", number(value.current.value())},
-                                               {"candidate", number(value.candidate.value())},
-                                               {"released", value.released.load()}});
-    }
-    for (const auto& entry : catalog.readers) {
-        result.readerOperations += entry.second.size();
-        QJsonArray operations;
-        for (const auto operation : entry.second)
-            operations.append(number(operation.value()));
-        result.readers.append(QJsonObject{{"module", text(entry.first)}, {"operations", operations}});
-    }
-    result.generations.reserve(catalog.generations.size());
-    for (const auto& generation : catalog.generations) {
-        std::lock_guard<std::mutex> generationLock(generation->mutex);
-        GenerationValues value{};
-        value.module = generation->data;
-        value.module.loadPolicy = generation->policy;
-        value.module.resources = generation->ledger.snapshot();
-        value.module.replacement.reset();
-        if (const auto reservation = generation->replacement.lock(); reservation && !reservation->released.load()) {
-            value.reservation = reservation->operation;
-            value.module.replacement = reservation->snapshot();
-        }
-        {
-            std::lock_guard<std::mutex> signalLock(generation->businessSignal->mutex);
-            if (generation->businessSignal->error) {
-                value.module.state = ModuleState::Failed;
-                value.module.businessFailure = generation->businessSignal->error;
-            }
-        }
-        value.admissions = generation->admissions;
-        value.loading = generation->loading;
-        value.image = generation->image != nullptr;
-        value.observationImage = generation->observationImage != nullptr;
-        value.artifactFile = static_cast<bool>(generation->artifactFile);
-        value.backend = static_cast<bool>(generation->backend);
-        for (const auto& origin : generation->runtimeOrigins)
-            value.runtimes.push_back(
-                {origin.first, value.module.generation, value.module.manifest.moduleId, origin.second});
-        for (const auto& origin : generation->instanceOrigins)
-            value.instances.push_back(origin.second);
-        result.generations.push_back(std::move(value));
-    }
-    return result;
-}
 QJsonObject nativeModule(const NativeModuleSnapshot& value, QJsonArray& identities, bool& healthy)
 {
     QJsonArray instances;
@@ -214,7 +145,7 @@ CatalogSample sampleCatalog(const Scene& scene)
     const auto session = take(scene.state->session->snapshot());
     const auto running = take(scene.state->driver->snapshot());
     const auto upgrade = take(scene.state->upgradeSnapshot());
-    const auto values = directory();
+    const auto values = workspace_directory_test::directory();
     bool healthy = !core.closing && !core.deliveryBlocked && claims.empty() && values.reservations.isEmpty() &&
                    values.readers.isEmpty() && !upgrade.active && upgrade.accepting && !upgrade.deliveryBlocked;
 
