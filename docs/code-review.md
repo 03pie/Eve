@@ -1,5 +1,13 @@
 # 提交前代码审查记录
 
+## P5-M5-e0 产品精确名单与最终出口设计审查（通过，2026-11-19）
+
+在d47210a审计提交同步、clean后先核原产品资格入口、ModuleManager唯一政策及五配置注册边界，再记录[ADR-0056](adr/0056-qualified-native-product-catalog.md)和[M5-e工作单](p5-m5e-development.md)。名单按已资格profile每项四份Native，受审档案只生成产品内部纯值，不自动批准当前manifest/任意运行时文件，不并三profile，不扩Qt或原resident Pipeline。产品/资格共享已有approvals_与装配/替换/关闭，资格入口有实际测试消费者而明确保留，产品默认资格路径须删除。
+
+独立设计审查澄清缺损档案是构建失败、无匹配profile生成空名单并沿原ModulePinned拒绝、实际SHA变化需重新资格；注入仅宿主内部，生成名单/最终证据不成为Native DLL链接或POST_BUILD依赖。冻结名单源与最终发布档案分开，避免回填报告循环重链。修正验收表把合法Failed/raw20误归Harness的宽泛措辞，并限定不覆旧run仅三个proof，保留seed固定输出归档要求。
+
+本段仅文档和只读登记/产物复核，1475/1475/1475/1002/459只是当前注册量，不声称新运行；既有d1/d2与SDK证据范围不改。e1产品接线、e2最终全量/需求/兼容、e3新Release人工/整P5审查每段提交屏障明确，无剩余设计阻断；源/SDK/实际批准尚未修改，M5/P5未完成。
+
 ## P5-M5-d2b 独立回放与真实删除缩减审查（通过，2026-11-19）
 
 按ADR-0055及d2b实施前设计，父proof不建Scene/ModuleManager，唯一子runner管理实际绝对exe、结构化argv、PID/scratch、文件摘要及原退出/JSONL；三个实际proof消费者共用。首轮静态审查修复旧回执覆盖路径；父每次原子新run目录保留，子拒覆盖，重复执行不毁证据。删除main原Counter固定骨架假设，当前状态与历史Plan分别验证，不反推或改写Pending。seed/authored来源严格区分，旧schema1仍可读、未知拒绝，没有生产接口/第二状态机/清PIN。

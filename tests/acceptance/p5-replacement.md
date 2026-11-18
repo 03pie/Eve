@@ -471,3 +471,24 @@ ctest --test-dir build/ela-msvc-release -R '^p5\.workspace_endurance_native$' --
 每配置报告位于该原构建目录 p5-m5d1/endurance.json/.jsonl，逐轮ID和uint64用字符串无损保存。只有每次最后一份完整8+100通过才算本配置资格；输出字段澄清前已通过的旧报告另存历史，不累计为更多轮次。此单用例资格不等于整配置全量、随机压力/缩减回放或新增桌面人工验收完成；最终矩阵/产物审计见 [d1工作单](../../docs/p5-m5d-development.md)。
 
 d1最终7输入/6格式，Release/Debug/ASan各完成上述完整单用例资格（每配置8+100、108唯一原操作、111代次、163）；每份219行事件及四相位固定资源基线已核。26实际ASan对象/134依赖、36原产物不变、SDK/metadata保持通过。d1代码审查、提交同步后才进入d2，不将旧重复运行、此H02成功资格或隐藏原生窗口当作d2/全量/桌面人工完成。
+
+## M5-d2 有限动作、独立回放与真实缩减
+
+设计见[ADR-0055](../../docs/adr/0055-workspace-action-traces.md)，实际收口见[d2a/d2b工作单](../../docs/p5-m5d-development.md)。d2a 44202f9、d2b d47210a均已审计提交同步。动作只用原Workspace/Session/Operation，不经Driver旁路；原目录纯值采样与d1共用，d1固定validator没有压力分支。
+
+| 入口 | 必须成立的事实 |
+|---|---|
+| workspace_stress_seed_1 / seed_18446744073709551615 | 原三业务bootstrap后各34动作，包含mount/configure/disable/enable/withdraw、多realm、Native往返、排队修订及取消、Conflict/rebase/save；动作落盘后执行，70事件完整，所有uint64字符串无损 |
+| workspace_stress_replay_proof | 两seed各新child生成，再按同一保存文件各两次新child回放；共6实际进程，PID/scratch与原退出/报告/文件SHA核；比较纯语义，不复用原数值ID作能力、不重新随机 |
+| workspace_stress_invalid_proof | 20类实际InvalidTrace/raw exit21：未知/缺/多字段、类型/版本/uint64/重复键、产物摘要及前置条件；原超限capture阻断指定Building窗口时仍InvalidTrace，不改判目标Failed |
+| workspace_stress_reduce_proof | 原7动作含真实65537 ASCII草稿/Notebook升级；完整两次复现、10候选新child，只保留同一原错误与未stop事实，最终id5 Draft+id6 Upgrade；两次单删及65536字节正控实际Passed，仅证明删除最小 |
+
+名称均带p5.前缀，原共享Qt/Ela目录执行：
+
+```powershell
+ctest --test-dir build/ela-msvc-release -R '^p5\.workspace_stress_' --output-on-failure --no-tests=error
+```
+
+实际字节、Runtime/Instance/Epoch/Binding、desired/Driver/Coordinator、完整realm、Native请求/调用、来源/完整资源kind-label及UI owner按原事实交叉核，未知Failed或无缺依赖Pending不得通过。历史Plan与当前状态分开核。父proof不建第二Scene；子进程无法启动、超时、crash或回执不一致归HarnessError，正常退出20的产品Failed按原报告判据判断复现。三个proof每次保留独立run目录，不覆盖既存证据，CTest原stdout记录真实路径；固定prefix的seed输出仍须按工作单在后续资格前归档。
+
+d2b三共享配置当前各所选5/5，不含未改变的d1新运行；18有效输入/8改变C++格式、51实际ASan对象/174依赖及原产物/SDK保持已核。Release另重复invalid1/1证实新目录且83旧文件SHA保持，不累加原5项。两seed原d2a动作字节当前保持可读，手工资格明确authored/1，不冒称seed随机生成。该专项和M5-d完成不替代M5-e最终名单/全支持矩阵/需求映射及新增原生桌面验收。
