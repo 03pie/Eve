@@ -1,97 +1,115 @@
 /** @file workspace.cpp
- * @brief 复用 Kernel/Session、既有配置管理和页面服务，不另建插件生命周期。
+ * @brief caller 队列准入、原宿主页与会话接线；不创建第二个业务平台。
  */
-#include "workspace.hpp"
-#include "contract.hpp"
+#include "workspace_p.hpp"
+#include <QApplication>
+#include <QThread>
 #include <QWidget>
 
 namespace notebook {
 using namespace cordis;
-using namespace cordis::module;
 using namespace cordis::loader;
 using namespace cordis::ui;
-std::shared_ptr<Workspace> Workspace::open(const QString& root, const QString& file)
+Workspace::Workspace(std::shared_ptr<qt::QtScheduler> target)
+    : scheduler(std::move(target)), kernel(std::make_shared<Kernel>(scheduler)), shell(scheduler),
+      manager(std::make_shared<module::ModuleManager>())
 {
-    auto self = std::make_shared<Workspace>();
-    self->pin = self;
-    self->initialize(root, file);
-    return self;
 }
-void Workspace::initialize(const QString& root, const QString& file)
+Result<std::shared_ptr<Workspace>> Workspace::open(const QString& root, const QString& file,
+                                                   std::shared_ptr<qt::QtScheduler> scheduler)
 {
-    take(shell.management()->attach(kernel));
-    auto publish = [&](const auto& value, const char* name) {
-        auto provider = take(kernel->services().stage({name}, value));
-        take(provider.publish());
-        providers.push_back(std::move(provider));
+    return create(root, {}, file, std::move(scheduler), false);
+}
+Result<std::shared_ptr<Workspace>> Workspace::openQualification(const QString& sourceBin, const QString& storeRoot,
+                                                                const QString& file,
+                                                                std::shared_ptr<qt::QtScheduler> scheduler)
+{
+    return create(sourceBin, storeRoot, file, std::move(scheduler), true);
+}
+Result<std::shared_ptr<Workspace>> Workspace::create(const QString& root, const QString& store, const QString& file,
+                                                     std::shared_ptr<qt::QtScheduler> scheduler, bool qualification)
+{
+    using Output = Result<std::shared_ptr<Workspace>>;
+    auto* app = qobject_cast<QApplication*>(QCoreApplication::instance());
+    if (!app || QCoreApplication::closingDown() || !scheduler)
+        return Output::failure(makeError(ErrorCode::InvalidArgument, "workspace requires QApplication and scheduler"));
+    if (QThread::currentThread() != app->thread() || !scheduler->isCurrentThread())
+        return Output::failure(makeError(ErrorCode::WrongThread, "workspace requires application owner thread"));
+    if (!scheduler->isOpen())
+        return Output::failure(makeError(ErrorCode::SchedulerClosed, "workspace scheduler closed"));
+    std::shared_ptr<Workspace> self;
+    try {
+        // UI 对象只在全部 caller/应用准入通过后构造。
+        self = std::shared_ptr<Workspace>(new Workspace(std::move(scheduler)));
+        self->initialize(root, store, file, qualification);
+        return Output::success(self);
+    } catch (const detail::InitializationFailure& failure) {
+        if (self)
+            (void)self->close();
+        return Output::failure(failure.error);
+    } catch (const std::exception& failure) {
+        if (self)
+            (void)self->close();
+        return Output::failure(makeError(ErrorCode::CallbackFailed, failure.what()));
+    } catch (...) {
+        if (self)
+            (void)self->close();
+        return Output::failure(makeError(ErrorCode::CallbackFailed, "workspace initialization threw"));
+    }
+}
+void Workspace::publishUi()
+{
+    detail::require(shell.management()->attach(kernel));
+    const auto publish = [&](const auto& value, const char* name) {
+        auto provider = detail::require(kernel->services().stage({name}, value));
+        providers_.push_back(std::move(provider));
+        detail::require(providers_.back().publish());
     };
     publish(shell.pages(), "ui.pages");
     publish(shell.commands(), "ui.commands");
     publish(shell.output(), "ui.output");
-    generation = take(loadQtModule(root.toStdString(), "notebook/module.json")).generation;
-    runtime = take(qtRuntime(
-        generation,
-        {"example.notebook",
-         {ServiceRequirement::of<UiPagesService>({"ui.pages"}), ServiceRequirement::of<CommandService>({"ui.commands"}),
-          ServiceRequirement::of<OutputService>({"ui.output"})},
-         {}},
-        scheduler));
-    take(kernel->registerRuntime("example.notebook", *runtime));
-    const PluginModule module{"notebook", "notebook/module.json"};
-    std::weak_ptr<ModuleManager> weakManager = manager;
-    auto available = [weakManager, id = generation] {
-        auto value = weakManager.lock();
-        if (value) {
-            auto snapshot = value->snapshot();
-            if (!snapshot.hasValue())
-                return Result<void>::failure(snapshot.error());
-            for (const auto& row : snapshot.value())
-                if (row.generation == id && !row.failure && !row.businessFailure &&
-                    (row.state == ModuleState::Loaded || row.state == ModuleState::Serving))
-                    return Result<void>::success();
-        }
-        return Result<void>::failure(makeError(ErrorCode::ModulePinned, "notebook module unavailable"));
-    };
-    const auto baseline = take(readConfigurationFile(file));
-    initial = baseline.version.exists ? baseline.text : take(readConfigurationFile(root + "/workspace.yaml")).text;
-    auto definitions = take(ConfigurationDefinitions::create({{{"example.notebook",
-                                                                {{"ui.pages"}, {"ui.commands"}, {"ui.output"}},
-                                                                [](const std::string& text) {
-                                                                    auto checked = configuration(text);
-                                                                    return checked.hasValue()
-                                                                               ? Result<void>::success()
-                                                                               : Result<void>::failure(checked.error());
-                                                                },
-                                                                module},
-                                                               *runtime,
-                                                               {},
-                                                               available}}));
-    driver = KernelReconcileDriver::configured(scheduler, kernel, definitions);
+}
+void Workspace::initializeHost(const QString& file, ConfigurationFileSnapshot baseline,
+                               std::vector<ConfiguredPlugin> plugins, bool qualification)
+{
+    definitions_ = detail::require(ConfigurationDefinitions::create(std::move(plugins)));
+    // 资格装配先核完整目标；原单 Notebook 仍允许打开坏配置后在 UI 中修正。
+    if (qualification)
+        (void)detail::require(definitions_->validate(detail::require(parseConfiguration(initial))));
+    std::map<std::string, RealmId> realms;
+    if (qualification)
+        realms.emplace("second", detail::require(kernel->services().createRealm()));
+    driver = KernelReconcileDriver::configured(scheduler, kernel, definitions_, std::move(realms));
     session = std::make_shared<ConfigurationSession>(scheduler, driver, std::make_shared<QtConfigurationWriter>(file),
-                                                     baseline);
+                                                     std::move(baseline));
     configurationManagement = createConfigurationManagement(session, scheduler);
-    std::weak_ptr<Workspace> weak = shared_from_this();
-    auto definition = take(kernel->registerPlugin("host.notebook", [weak](Context context) {
+    const std::weak_ptr<Workspace> weak = shared_from_this();
+    const auto definition = detail::require(kernel->registerPlugin("host.notebook", [weak](Context context) {
         auto self = weak.lock();
         if (!self)
             return failedTask(makeError(ErrorCode::ContextClosing, "workspace unavailable"));
         self->configurationPage =
-            take(self->shell.pages()->add(context, {"configuration", "配置文件", "host.configuration",
-                                                    [session = self->session, initial = self->initial] {
-                                                        return createConfigurationPage(session, initial);
-                                                    },
-                                                    PagePresentation::Dialog}));
-        self->modulesPage =
-            take(self->shell.pages()->add(context, {"modules", "模块诊断", "host.modules",
-                                                    [manager = self->manager, diagnostics = self->shell.diagnostics()] {
-                                                        return moduleDiagnostics(manager, diagnostics);
-                                                    },
-                                                    PagePresentation::Dialog}));
+            detail::require(self->shell.pages()->add(context, {"configuration", "配置文件", "host.configuration",
+                                                               [session = self->session, initial = self->initial] {
+                                                                   return createConfigurationPage(session, initial);
+                                                               },
+                                                               PagePresentation::Dialog}));
+        self->modulesPage = detail::require(
+            self->shell.pages()->add(context, {"modules", "模块诊断", "host.modules",
+                                               [manager = self->manager, diagnostics = self->shell.diagnostics()] {
+                                                   return moduleDiagnostics(manager, diagnostics);
+                                               },
+                                               PagePresentation::Dialog}));
         return self->configurationPage->ready();
     }));
-    take(shell.management()->attachConfiguration(configurationManagement, {runtime->id(), definition.id()}));
-    host = take(kernel->mount(definition));
-    take(shell.onConfigurationRequested([weak] {
+    std::vector<RuntimeId> protectedRuntimes{notebook_->runtime->id(), definition.id()};
+    if (counter_)
+        protectedRuntimes.push_back(counter_->runtime->id());
+    if (reporter_)
+        protectedRuntimes.push_back(reporter_->runtime->id());
+    detail::require(shell.management()->attachConfiguration(configurationManagement, std::move(protectedRuntimes)));
+    host_ = detail::require(kernel->mount(definition));
+    detail::require(shell.onConfigurationRequested([weak] {
         auto self = weak.lock();
         return self && self->configurationPage
                    ? self->configurationPage->navigate()
@@ -100,95 +118,29 @@ void Workspace::initialize(const QString& root, const QString& file)
 }
 Task<void> Workspace::ready() const
 {
-    return host->ready();
+    if (!scheduler->isCurrentThread())
+        return failedTask(makeError(ErrorCode::WrongThread, "workspace ready requires owner"));
+    if (closeState_->closing || closeState_->closed || !host_)
+        return failedTask(makeError(ErrorCode::ContextClosing, "workspace closing"));
+    return host_->ready();
 }
 Result<AcceptedTarget> Workspace::apply(const std::string& text)
 {
+    if (!scheduler->isCurrentThread())
+        return Result<AcceptedTarget>::failure(makeError(ErrorCode::WrongThread, "workspace apply requires owner"));
+    if (closeState_->closing || closeState_->closed || !session)
+        return Result<AcceptedTarget>::failure(makeError(ErrorCode::ContextClosing, "workspace closing"));
     auto draft = session->preview(text);
     return draft.hasValue() ? session->apply(draft.value()) : Result<AcceptedTarget>::failure(draft.error());
 }
-Task<void> Workspace::close()
+Result<WorkspaceCloseSnapshot> Workspace::closeSnapshot() const
 {
-    if (closing)
-        return stopped.task();
-    stopped = Promise<void>{};
-    closing = true;
-    flushBeforeClose();
-    return stopped.task();
-}
-void Workspace::flushBeforeClose()
-{
-    auto self = shared_from_this();
-    auto snapshot = session->snapshot();
-    if (!snapshot.hasValue()) {
-        closing = false;
-        stopped.reject(snapshot.error());
-        return;
-    }
-    if (snapshot.value().store.dirty) {
-        auto saved = session->save(snapshot.value().coordinator.desiredRevision);
-        if (!saved.hasValue()) {
-            closing = false;
-            stopped.reject(saved.error());
-            return;
-        }
-        watch(saved.value(), [self](const Result<SaveReport>& result) {
-            if (result.hasValue() &&
-                (result.value().outcome == SaveOutcome::Written || result.value().outcome == SaveOutcome::Unchanged))
-                self->flushBeforeClose();
-            else {
-                self->closing = false;
-                self->stopped.reject(
-                    !result.hasValue() ? result.error()
-                                       : result.value().error.value_or(makeError(
-                                             ErrorCode::ConfigConflict,
-                                             "configuration was not saved; resolve the disk conflict before closing")));
-            }
-        });
-        return;
-    }
-    watch(session->close(), [self](const Result<void>& result) {
-        if (!result.hasValue())
-            self->stopped.reject(result.error());
-        else
-            self->closeKernel();
-    });
-}
-void Workspace::closeKernel()
-{
-    auto self = shared_from_this();
-    watch(kernel->close(), [self](const Result<CleanupReport>& result) {
-        if (!result.hasValue())
-            self->stopped.reject(result.error());
-        else if (!result.value().quiescent)
-            self->stopped.reject(makeError(ErrorCode::CleanupFailed, "kernel retained resources"));
-        else
-            self->closeShell();
-    });
-}
-void Workspace::closeShell()
-{
-    auto self = shared_from_this();
-    watch(shell.close(), [self](const Result<void>& result) {
-        if (!result.hasValue()) {
-            self->stopped.reject(result.error());
-            return;
-        }
-        for (const auto& provider : self->providers) {
-            take(provider.retire());
-            take(provider.release());
-        }
-        self->providers.clear();
-        self->host.reset();
-        self->configurationPage.reset();
-        self->modulesPage.reset();
-        self->configurationManagement.reset();
-        self->session.reset();
-        self->driver.reset();
-        self->kernel.reset();
-        self->runtime.reset();
-        self->stopped.resolve();
-        self->pin.reset();
-    });
+    if (!scheduler->isCurrentThread())
+        return Result<WorkspaceCloseSnapshot>::failure(
+            makeError(ErrorCode::WrongThread, "workspace close snapshot requires owner"));
+    auto value = *closeState_;
+    value.deliveryBlocked = deliveryBlocked();
+    value.retained = value.retained || value.deliveryBlocked;
+    return Result<WorkspaceCloseSnapshot>::success(std::move(value));
 }
 } // namespace notebook

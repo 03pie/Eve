@@ -21,7 +21,6 @@ template <class T> T take(Result<T> result)
 }
 } // namespace
 using namespace cordis;
-using namespace cordis::module;
 using namespace cordis::loader;
 
 Result<std::shared_ptr<Pipeline>> Pipeline::open(const QString& root, const QString& sessionFile,
@@ -52,56 +51,18 @@ Result<std::shared_ptr<Pipeline>> Pipeline::open(const QString& root, const QStr
 void Pipeline::initialize(const QString& root, const QString& sessionFile)
 {
     const auto source = root.toUtf8().toStdString();
-    counter_->generation = take(manager_->load(source, "counter/module.json")).generation;
-    reporter_->generation = take(manager_->load(source, "reporter/module.json")).generation;
-    counter_->session.emplace(
-        take(NativeModule::open(*manager_, counter_->generation, scheduler_, kernel_->services())));
-    reporter_->session.emplace(
-        take(NativeModule::open(*manager_, reporter_->generation, scheduler_, kernel_->services())));
-    counter_->runtime.emplace(
-        take(counter_->session->runtime({"example.counter", {}, {{{"example.counter", 1}, true, {1, {"next"}}}}})));
-    reporter_->runtime.emplace(take(reporter_->session->runtime({"example.reporter",
-                                                                 {{{"example.counter", 1}, 1, {"next"}}},
-                                                                 {{{"example.report", 1}, true, {1, {"read"}}}}})));
+    counter_ = std::make_shared<CurrentModule>(ServiceKind::Counter,
+                                               take(manager_->load(source, "counter/module.json")).generation);
+    reporter_ = std::make_shared<CurrentModule>(ServiceKind::Reporter,
+                                                take(manager_->load(source, "reporter/module.json")).generation);
+    take(prepareServiceModule(counter_, *manager_, scheduler_, kernel_->services()));
+    take(prepareServiceModule(reporter_, *manager_, scheduler_, kernel_->services()));
     (void)take(kernel_->registerRuntime("example.counter", *counter_->runtime));
     (void)take(kernel_->registerRuntime("example.reporter", *reporter_->runtime));
     const auto second = take(kernel_->services().createRealm());
-    const auto gate = [](const std::shared_ptr<CurrentModule>& current) {
-        const std::weak_ptr<const CurrentModule> weak = current;
-        return [weak] {
-            // 定义始终查询它自己的稳定记录；替换当前槽不会使旧定义误查另一代。
-            const auto module = weak.lock();
-            if (!module || !module->session)
-                return Result<void>::failure(makeError(ErrorCode::ContextClosing, "module unavailable"));
-            const auto state = module->session->snapshot();
-            if (!state.hasValue())
-                return Result<void>::failure(state.error());
-            return state.value().closing || state.value().closed || state.value().faulted
-                       ? Result<void>::failure(makeError(ErrorCode::ContextClosing, "module unavailable"))
-                       : Result<void>::success();
-        };
-    };
-    const auto schema = [](const char* failure) {
-        return [failure](const std::string& config) {
-            return config == "null" || config == failure
-                       ? Result<void>::success()
-                       : Result<void>::failure(makeError(ErrorCode::ConfigInvalid, "unsupported example config"));
-        };
-    };
     definitions_ = take(ConfigurationDefinitions::create(
-        {{{"example.counter", {}, schema("{\"failCleanup\":true}"), {"counter", "counter/module.json"}},
-          *counter_->runtime,
-          {},
-          gate(counter_),
-          128},
-         {{"example.reporter",
-           {{"example.counter", 1, 1, {"next"}}},
-           schema("{\"failStart\":true}"),
-           {"reporter", "reporter/module.json"}},
-          *reporter_->runtime,
-          {},
-          gate(reporter_),
-          128}}));
+        {take(configuredServicePlugin(counter_, {"counter", "counter/module.json"})),
+         take(configuredServicePlugin(reporter_, {"reporter", "reporter/module.json"}))}));
     driver_ = KernelReconcileDriver::configured(scheduler_, kernel_, definitions_,
                                                 std::map<std::string, RealmId>{{"second", second}});
     session_ = std::make_shared<ConfigurationSession>(scheduler_, driver_,
@@ -136,7 +97,7 @@ void Pipeline::closeKernel()
 }
 void Pipeline::closeCounter()
 {
-    if (!counter_->session) {
+    if (!counter_ || !counter_->session) {
         counterClosed_.emplace(Result<CleanupReport>::success({true, {}}));
         closeReporter();
         return;
@@ -149,7 +110,7 @@ void Pipeline::closeCounter()
 }
 void Pipeline::closeReporter()
 {
-    if (!reporter_->session) {
+    if (!reporter_ || !reporter_->session) {
         reporterClosed_.emplace(Result<CleanupReport>::success({true, {}}));
         finish();
         return;
@@ -168,12 +129,12 @@ void Pipeline::finish()
     driver_.reset();
     kernel_.reset();
     definitions_.reset();
-    counter_->runtime.reset();
-    reporter_->runtime.reset();
-    const auto reporterDrain =
-        reporter_->generation.valid() ? manager_->drain(reporter_->generation) : Result<void>::success();
-    const auto counterDrain =
-        counter_->generation.valid() ? manager_->drain(counter_->generation) : Result<void>::success();
+    if (counter_)
+        counter_->runtime.reset();
+    if (reporter_)
+        reporter_->runtime.reset();
+    const auto reporterDrain = reporter_ ? manager_->drain(reporter_->generation) : Result<void>::success();
+    const auto counterDrain = counter_ ? manager_->drain(counter_->generation) : Result<void>::success();
     stopped_.resolve(PipelineCloseReport{*sessionClosed_, *kernelClosed_, *counterClosed_, *reporterClosed_, services,
                                          reporterDrain, counterDrain});
     pin_.reset();

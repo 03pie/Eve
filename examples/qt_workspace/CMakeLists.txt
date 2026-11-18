@@ -42,8 +42,9 @@ cordis_add_notebook_plugin(cordis_example_notebook_a qt-upgrade/notebook-a 1.1.0
 cordis_add_notebook_plugin(cordis_example_notebook_b qt-upgrade/notebook-b 1.2.0 1)
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bin/qt-workspace")
 configure_file(workspace.yaml "${CMAKE_BINARY_DIR}/bin/qt-workspace/workspace.yaml" COPYONLY)
-add_library(cordis_notebook_host STATIC workspace.cpp diagnostics.cpp)
-target_link_libraries(cordis_notebook_host PUBLIC Cordis::ModuleQt Cordis::ConfigUi Cordis::ConfigKernel Cordis::ConfigStoreQt)
+add_library(cordis_notebook_host STATIC workspace.cpp bootstrap.cpp close.cpp diagnostics.cpp workspace_p.hpp)
+target_link_libraries(cordis_notebook_host PUBLIC Cordis::ModuleQt Cordis::ModuleQtPreflight Cordis::ModuleInstall
+    Cordis::ConfigUi Cordis::ConfigKernel Cordis::ConfigStoreQt cordis_native_service_modules)
 target_link_libraries(cordis_notebook_host PRIVATE Ela::WidgetTools)
 target_include_directories(cordis_notebook_host PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 cordis_target_defaults(cordis_notebook_host)
@@ -53,6 +54,13 @@ if(CORDIS_BUILD_EXAMPLES)
     target_link_libraries(cordis_qt_workspace_demo PRIVATE cordis_notebook_host)
     cordis_target_defaults(cordis_qt_workspace_demo)
     cordis_attach_eve_icon(cordis_qt_workspace_demo)
+    add_executable(cordis_platform_workbench_demo main.cpp)
+    target_compile_definitions(cordis_platform_workbench_demo PRIVATE CORDIS_PLATFORM_QUALIFICATION=1)
+    target_link_libraries(cordis_platform_workbench_demo PRIVATE cordis_notebook_host)
+    cordis_target_defaults(cordis_platform_workbench_demo)
+    cordis_attach_eve_icon(cordis_platform_workbench_demo)
+    add_dependencies(cordis_platform_workbench_demo cordis_example_counter_a cordis_example_counter_b
+        cordis_example_reporter_a cordis_example_reporter_b cordis_example_notebook_a cordis_example_notebook_b)
 endif()
 if(BUILD_TESTING)
     add_executable(cordis_notebook_state_tests
@@ -78,5 +86,20 @@ if(BUILD_TESTING)
         add_test(NAME p4.qt_workspace_${case} COMMAND cordis_qt_workspace_tests "${CMAKE_BINARY_DIR}/bin/qt-workspace" "${case}")
         set_tests_properties(p4.qt_workspace_${case} PROPERTIES LABELS "p4;module;qt;ui;integration" TIMEOUT 25
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endforeach()
+    add_executable(cordis_platform_workspace_tests
+        "${PROJECT_SOURCE_DIR}/tests/qt/platform_workspace_main.cpp"
+        "${PROJECT_SOURCE_DIR}/tests/qt/platform_workspace_runtime.cpp"
+        "${PROJECT_SOURCE_DIR}/tests/qt/platform_workspace_close.cpp")
+    target_link_libraries(cordis_platform_workspace_tests PRIVATE cordis_notebook_host Ela::WidgetTools)
+    set_target_properties(cordis_platform_workspace_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    cordis_target_defaults(cordis_platform_workspace_tests)
+    add_dependencies(cordis_platform_workspace_tests cordis_example_counter_a cordis_example_counter_b
+        cordis_example_reporter_a cordis_example_reporter_b cordis_example_notebook_a cordis_example_notebook_b)
+    foreach(case IN ITEMS normal multi existing_current save_conflict open_failure partial_open_failure
+        retained_runtime discarded_close cleanup_failure)
+        add_test(NAME p5.platform_workspace_${case} COMMAND cordis_platform_workspace_tests "${CMAKE_BINARY_DIR}/bin" "${case}")
+        set_tests_properties(p5.platform_workspace_${case} PROPERTIES LABELS "p5;module;qt;ui;integration;platform_workspace"
+            TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endforeach()
 endif()

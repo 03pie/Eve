@@ -2,11 +2,11 @@
  * @brief 两个真实 Native 服务的宿主装配和异步退出，不包含场景或进程控制。
  */
 #pragma once
+#include "service_module.hpp"
 #include <QString>
 #include <cordis/loader/kernel_driver.hpp>
 #include <cordis/loader/session.hpp>
 #include <cordis/module/manager.hpp>
-#include <cordis/module/runtime.hpp>
 #include <cordis/qt/scheduler.hpp>
 #include <memory>
 #include <optional>
@@ -14,12 +14,6 @@
 #include <vector>
 
 namespace native_services {
-/** @brief 当前代的实际能力视图；关闭释放 Runtime，Native 会话仍须遵循自身业务门禁。 */
-struct CurrentModule {
-    cordis::GenerationId generation;
-    std::optional<cordis::module::NativeModule> session;
-    std::optional<cordis::Runtime> runtime;
-};
 /** @brief 各阶段原始值结果；任务失败与已完成但不静止的清理保持区别。 */
 struct PipelineCloseReport {
     cordis::Result<void> session;
@@ -67,8 +61,8 @@ private:
     std::shared_ptr<cordis::qt::QtScheduler> scheduler_;
     std::shared_ptr<cordis::Kernel> kernel_ = std::make_shared<cordis::Kernel>(scheduler_);
     std::shared_ptr<cordis::module::ModuleManager> manager_ = std::make_shared<cordis::module::ModuleManager>();
-    std::shared_ptr<CurrentModule> counter_ = std::make_shared<CurrentModule>();
-    std::shared_ptr<CurrentModule> reporter_ = std::make_shared<CurrentModule>();
+    std::shared_ptr<CurrentModule> counter_;
+    std::shared_ptr<CurrentModule> reporter_;
     std::shared_ptr<const cordis::loader::ConfigurationDefinitions> definitions_;
     std::shared_ptr<cordis::loader::KernelReconcileDriver> driver_;
     std::shared_ptr<cordis::loader::ConfigurationSession> session_;

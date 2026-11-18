@@ -1,5 +1,13 @@
 # 提交前代码审查记录
 
+## P5-M5-b4-1 单一平台与关闭拥有者复查（通过）
+
+3e74d52 提交同步后，先核对两套独立平台、队列和失败拥有者，再记录分段方案。Native 合同/schema/弱记录门禁提取为原 Pipeline 与 Workspace 共用的具体组件，旧重复实现删除；Workspace 一次准备三 Runtime 和同一配置目录/Driver/Session，复用原壳/页面/命令。显式队列取代私有队列路径，两个 exe 同源 main，装配/宿主接线/关闭按职责拆 TU。没有新泛型插件框架、第二目录或事务。
+
+三路复查补强失败初始化窗口完整销毁与关闭后 ready/apply 拒绝。资源审查删除无当前调用者的长期安装凭据成员，改局部跨安装至实际加载；DLL guard 与 manifest 值快照的真实契约按原加载器说明，不虚构永久 manifest/目录锁。Workspace 保留不静止/未知回执的完整拥有链，保存冲突可重试且普通外部 Runtime drain 拒绝不永久 pin；原 Pipeline 故障 facade 释放与实际控制块/PIN 保留的 CLI 语义有明确保留理由，没有证实 UAF 而不扩大重构。
+
+最终十七项输入、十五项格式，Release/Debug/ASan 各受影响专项 50/50、静态 Core Native probe 18/18，完整名称清单匹配且 whole_stage=false。两个实际入口三配置共六次错误输入均正常完成失败收尾并退出 1；不计桌面人工通过。十四个 ASan 实际对象前后插桩/哈希一致，三十三份原 DLL/manifest 及 Qt metadata 保持，SDK/平台源码未改。独立结构/生命周期/兼容与准确证据审计未见剩余阻断；九新增用例、半装配和 CLI 故障语义边界见 [收口记录](p5-m5b4-development.md#b4-1-收口结论)。本段没有整体事务或物理/压力/名单资格，提交同步后才进入 b4-2。
+
 ## P5-M5-b3 Notebook 草稿与实际版本复查（通过）
 
 1c9a1b4 提交同步后，先记录唯一草稿、同步输入时序、canonical Unicode/预算与实际版本/moc 方案，再实现原独立状态 IID。draft_ 替代直接读取 QWidget 作为运行状态；工厂 validate、实例 restore/capture 共用纯 codec。原配置仍是初值；恢复先于 activate，无页面/命令资源创建。legacy 无 IID，A/B 同 schema/各自真实版本且全部 resident。删除原单目标装配、全 Configuration 页面捕获和输出回读编辑器路径，未扩大 SDK/事务职责。

@@ -24,3 +24,13 @@ $env:PATH = "$PWD/build/Qt/5.15.2/msvc2019_64/bin;" + $env:PATH
 P5-M5-b3 另生成 `bin/qt-upgrade/notebook-a`（1.1.0）和 `notebook-b`（1.2.0）实际产物，使用现有独立状态 IID 保存实例当前草稿，全部继续驻留。原 demo 默认仍使用 `qt-workspace/notebook` 的 1.0.0 无状态入口；不能把它的普通编辑能力等同于支持草稿迁移。
 
 A/B 共用 `org.cordis.example.notebook.draft` v1 和规范 JSON 格式，迁移至多 65536 个 UTF-8 字节；正常编辑不截断，超限捕获明确拒绝。新增十一项实际协议/草稿/输入冻结/完整销毁检查和原十二项场景已在 Release/Debug/ASan 各专项 23/23 通过，见 [收口记录](../../docs/p5-m5b-development.md#b3-收口结论)。同进程代码替换、管理入口和最终桌面升级验收继续由 b4 与 M5-c/d/e 完成，本段不提供手动绕过代次门禁的装载路径。
+
+b4-1 增加明确的固定业务资格入口，和原 demo 共用同一 Workspace 与启动/退出实现：
+
+```powershell
+./build/ela-msvc-release/bin/cordis_platform_workbench_demo.exe
+```
+
+它在独立 `CordisBusinessPlatform` 应用数据目录中保存 session 和 hash 安装 store；也可依次传自己的 session 文件与 store 目录。单一 Kernel/manager/Driver/Session 同时装配 counter、reporter 和 Notebook。新 session 选择三个 A，已有文件按保存的合法 A/B 定位加载。仅固定四个 Native 资格产物的实际身份/摘要临时获准，生产名单仍空，Qt 固定驻留。
+
+保存冲突保留原窗口/业务以便处理后重试关闭；不静止/未知回执保留原拥有链，正常关闭先释放实际工厂再记录 drain，调用方额外工厂引用的拒绝与物理卸载分开。九项新场景加原回归在三配置各专项 50/50、静态 Native 18/18 通过，见 [b4-1 收口](../../docs/p5-m5b4-development.md#b4-1-收口结论)。该入口当前只交付统一运行/关闭，升级操作与管理按钮继续 b4-2/M5-c，不把当前卡片启停当作代码替换。

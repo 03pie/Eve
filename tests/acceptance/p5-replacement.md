@@ -314,3 +314,21 @@ Output 的每外壳 pending 预算为 1000 条、1 MiB 字符串和 64 个精确
 | legacy | 原入口无状态能力，普通编辑输出保持，状态输入拒绝 |
 
 当前九项冻结输入，Release/Debug/ASan 各受影响专项 23/23（新增十一项加原十二项），whole_stage=false；八项格式、七个实际 ASan 对象前后核对和九套实际产物/metadata/moc 核对通过。三个 Scope 句柄必须在 close 前析构，最终只保留 qt.loader.root，不能把 release 回执当工厂引用已销毁。未重复未变平台全量；没有同进程 A→B、物理卸载/100 次或新增桌面验收宣称。私有 PageHandle/CommandHandle 不为测试开放，本段以实际 key/撤销记录/QPointer 核退出。
+
+## M5-b4-1 单一三模块 Workspace
+
+实现与关闭语义见 [收口记录](../../docs/p5-m5b4-development.md#b4-1-收口结论)。全部使用同一 Workspace 的实际 Kernel/manager/Driver/Session、Native 两服务及 stateful Notebook，不拼两套示例。
+
+| 用例（前缀 p5.platform_workspace_） | 实际出口 |
+|---|---|
+| normal | 三个真实安装来源、schema、同平台实例/业务依赖及 Notebook 编辑输出、正常关闭 |
+| multi | 真实多实例/second realm 隔离，同 Session/Driver/Core 与页面归属 |
+| existing_current | 独立进程直接装配已保存三 B hash 定位，未强制 A 或改写原文件 |
+| save_conflict | 关闭保存冲突时完整业务/窗口仍在，rebase 后正常重试 |
+| open_failure | 空/关闭/错误线程队列拒绝，前置失败后新窗口销毁、原队列仍可装配正常平台 |
+| partial_open_failure | 三 Runtime 实际准备后 schema 拒绝，资源/窗口收尾且原文件不变；不复活已 drain Native |
+| retained_runtime | 外部工厂使单个 drain 真实拒绝，Workspace 已释放，解除外部引用后可再 drain |
+| discarded_close | Qt 真实丢弃关闭回执，Task 错误且所有实际拥有者/账目保留 |
+| cleanup_failure | counter 与 Notebook 的真实 cleanup 失败，仍尝试 reporter，原阶段结果与拥有者保留 |
+
+最终十七项输入冻结，Release/Debug/ASan 各受影响专项 50/50（新九项+原 Native 十八+Qt 二十三），静态 Native probe 18/18；whole_stage=false，不冒充全平台。十五项格式、十四个实际 ASan 对象前后哈希/插桩和三十三份原产物摘要核对通过。两个真实 exe 的三配置共六次错误文件输入收尾检查独立归档，预期退出 1，不计入五十项或原生桌面验收。legacy Pipeline 的故障报告/控制块保留不等于 facade 保活，Workspace 则完整保留 UI 诊断拥有链；具体保留原因和局限见工作单。整体替换、locator/动态管理保护、物理/压力和新增人工验收继续后续。

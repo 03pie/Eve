@@ -29,8 +29,13 @@ foreach(name IN ITEMS counter reporter)
 endforeach()
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bin/native-services")
 configure_file(pipeline.yaml "${CMAKE_BINARY_DIR}/bin/native-services/pipeline.yaml" COPYONLY)
+add_library(cordis_native_service_modules STATIC service_module.cpp service_module.hpp)
+target_link_libraries(cordis_native_service_modules PUBLIC
+    Cordis::ModuleHost Cordis::ModuleNative Cordis::ConfigDefinitions)
+target_include_directories(cordis_native_service_modules PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+cordis_target_defaults(cordis_native_service_modules)
 add_library(cordis_native_pipeline STATIC pipeline.cpp pipeline.hpp)
-target_link_libraries(cordis_native_pipeline PUBLIC Cordis::ModuleHost Cordis::ModuleNative Cordis::ConfigKernel
+target_link_libraries(cordis_native_pipeline PUBLIC cordis_native_service_modules Cordis::ConfigKernel
     Cordis::ConfigSession Cordis::ConfigStoreQt Cordis::Qt)
 target_include_directories(cordis_native_pipeline PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 cordis_target_defaults(cordis_native_pipeline)
