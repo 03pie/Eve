@@ -1,22 +1,16 @@
 /** @file host.cpp
- * @brief 用真实 Qt 循环、两个业务 DLL 和磁盘 Session 验证激活与退出。
+ * @brief 五个场景共用真实装配；运行器只负责输入、断言、打印和进程退出。
  */
+#include "pipeline.hpp"
 #include <QCoreApplication>
 #include <QDir>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <algorithm>
-#include <cordis/kernel.hpp>
-#include <cordis/loader/kernel_driver.hpp>
-#include <cordis/loader/qt_store.hpp>
-#include <cordis/loader/session.hpp>
-#include <cordis/module/manager.hpp>
-#include <cordis/module/runtime.hpp>
-#include <cordis/qt/scheduler.hpp>
+#include <cordis/loader/qt_file.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
-#include <optional>
 #include <stdexcept>
 
 namespace {
@@ -51,65 +45,17 @@ template <class F> void guarded(F callback)
         QCoreApplication::exit(EXIT_FAILURE);
     }
 }
-class Demo {
+class Runner : public std::enable_shared_from_this<Runner> {
 public:
-    Demo(QString root, std::string mode) : root_(std::move(root)), mode_(std::move(mode))
+    Runner(QString root, std::string mode, std::shared_ptr<cordis::qt::QtScheduler> scheduler)
+        : root_(std::move(root)), mode_(std::move(mode))
     {
         require(mode_ == "normal" || mode_ == "multi" || mode_ == "realms" || mode_ == "start_failure" ||
                     mode_ == "cleanup_failure",
                 "unknown scenario");
         require(scratch_.isValid(), "temporary session directory unavailable");
         path_ = scratch_.path() + "/session.yaml";
-        counterId_ = take(manager_.load(root_.toUtf8().toStdString(), "counter/module.json")).generation;
-        reporterId_ = take(manager_.load(root_.toUtf8().toStdString(), "reporter/module.json")).generation;
-        counter_.emplace(take(NativeModule::open(manager_, counterId_, scheduler_, kernel_->services())));
-        reporter_.emplace(take(NativeModule::open(manager_, reporterId_, scheduler_, kernel_->services())));
-        auto counter =
-            take(counter_->runtime({"example.counter", {}, {{{"example.counter", 1}, true, {1, {"next"}}}}}));
-        auto reporter = take(reporter_->runtime({"example.reporter",
-                                                 {{{"example.counter", 1}, 1, {"next"}}},
-                                                 {{{"example.report", 1}, true, {1, {"read"}}}}}));
-        take(kernel_->registerRuntime("example.counter", counter));
-        take(kernel_->registerRuntime("example.reporter", reporter));
-        auto gate = [](NativeModule module) {
-            return [module] {
-                auto state = module.snapshot();
-                if (!state.hasValue())
-                    return Result<void>::failure(state.error());
-                return state.value().closing || state.value().closed || state.value().faulted
-                           ? Result<void>::failure(makeError(ErrorCode::ContextClosing, "module unavailable"))
-                           : Result<void>::success();
-            };
-        };
-        const PluginModule counterModule{"counter", "counter/module.json"};
-        const PluginModule reporterModule{"reporter", "reporter/module.json"};
-        const auto second = take(kernel_->services().createRealm());
-        auto schema = [](const char* failure) {
-            return [failure](const std::string& config) {
-                return config == "null" || config == failure
-                           ? Result<void>::success()
-                           : Result<void>::failure(makeError(ErrorCode::ConfigInvalid, "unsupported example config"));
-            };
-        };
-        auto definitions = take(
-            ConfigurationDefinitions::create({{{"example.counter", {}, schema("{\"failCleanup\":true}"), counterModule},
-                                               counter,
-                                               {},
-                                               gate(*counter_),
-                                               128},
-                                              {{"example.reporter",
-                                                {{"example.counter", 1, 1, {"next"}}},
-                                                schema("{\"failStart\":true}"),
-                                                reporterModule},
-                                               reporter,
-                                               {},
-                                               gate(*reporter_),
-                                               128}}));
-        driver_ = KernelReconcileDriver::configured(scheduler_, kernel_, definitions,
-                                                    std::map<std::string, RealmId>{{"second", second}});
-        session_ = std::make_unique<ConfigurationSession>(
-            scheduler_, driver_,
-            std::make_shared<QtConfigurationWriter>(path_), take(readConfigurationFile(path_)));
+        pipeline_ = take(native_services::Pipeline::open(root_, path_, std::move(scheduler)));
     }
     void start()
     {
@@ -127,27 +73,30 @@ public:
                     "{example.counter: second}}\n"
                     "  - {id: reporter2, plugin: example.reporter, module: reporter, config: null, realms: "
                     "{example.counter: second, example.report: second}}\n";
-        auto draft = take(session_->preview(text));
-        require(take(counter_->snapshot()).instances.empty() && take(reporter_->snapshot()).instances.empty(),
+        const auto draft = take(pipeline_->session()->preview(text));
+        require(take(pipeline_->counter().session->snapshot()).instances.empty() &&
+                    take(pipeline_->reporter().session->snapshot()).instances.empty(),
                 "preview activated a DLL");
-        const auto accepted = take(session_->apply(draft));
-        watch(accepted.settled, [this, revision = accepted.revision](const Result<PlanReport>& result) {
+        const auto accepted = take(pipeline_->session()->apply(draft));
+        const auto self = shared_from_this();
+        watch(accepted.settled, [self, revision = accepted.revision](const Result<PlanReport>& result) {
             const auto report = take(result);
-            require(report.outcome == (mode_ == "start_failure" ? PlanOutcome::Failed : PlanOutcome::Applied),
+            require(report.outcome == (self->mode_ == "start_failure" ? PlanOutcome::Failed : PlanOutcome::Applied),
                     "unexpected plan outcome");
-            require(!take(counter_->snapshot()).faulted && !take(reporter_->snapshot()).faulted,
+            require(!take(self->pipeline_->counter().session->snapshot()).faulted &&
+                        !take(self->pipeline_->reporter().session->snapshot()).faulted,
                     "ordinary activation failure isolated a module");
-            if (mode_ != "start_failure")
-                checkBusiness();
-            watch(take(session_->save(revision)), [this](const Result<SaveReport>& saved) {
+            if (self->mode_ != "start_failure")
+                self->checkBusiness();
+            self->watch(take(self->pipeline_->session()->save(revision)), [self](const Result<SaveReport>& saved) {
                 require(take(saved).outcome == SaveOutcome::Written, "session save failed");
-                auto disk = take(readConfigurationFile(path_));
+                const auto disk = take(readConfigurationFile(self->path_));
                 require(disk.version.exists && parseConfiguration(disk.text).hasValue(), "disk YAML invalid");
-                const auto store = take(session_->snapshot()).store;
+                const auto store = take(self->pipeline_->session()->snapshot()).store;
                 require(!store.dirty && store.persisted && disk.text == store.persisted->source().normalizedYaml(),
                         "disk content differs from saved session");
                 std::cout << "configuration committed to disk\n";
-                closeSession();
+                self->closePipeline();
             });
         });
     }
@@ -161,12 +110,12 @@ private:
     }
     template <class T, class F> void watch(const Task<T>& task, F callback)
     {
-        task.thenOn(scheduler_,
+        task.thenOn(pipeline_->scheduler(),
                     [callback = std::move(callback)](const Result<T>& result) { guarded([&] { callback(result); }); });
     }
     void checkBusiness()
     {
-        const auto state = take(reporter_->snapshot());
+        const auto state = take(pipeline_->reporter().session->snapshot());
         require(state.instances.size() == (mode_ == "multi" || mode_ == "realms" ? 2u : 1u),
                 "incorrect reporter instance count");
         std::vector<std::string> values;
@@ -184,38 +133,31 @@ private:
         for (const auto& value : values)
             std::cout << value << '\n';
     }
-    void closeSession()
+    void closePipeline()
     {
-        watch(session_->close(), [this](const Result<void>& result) {
-            require(result.hasValue() != (mode_ == "cleanup_failure"), "incorrect session close result");
-            watch(kernel_->close(), [this](const Result<CleanupReport>& result) {
-                const auto report = take(result);
-                require(report.quiescent != (mode_ == "cleanup_failure"), "incorrect kernel cleanup report");
-                watch(counter_->close(), [this](const Result<CleanupReport>& counter) {
-                    require(take(counter).quiescent != (mode_ == "cleanup_failure"), "incorrect module close report");
-                    watch(reporter_->close(), [this](const Result<CleanupReport>& reporter) {
-                        require(take(reporter).quiescent, "reporter cleanup did not quiesce");
-                        finish();
-                    });
-                });
-            });
+        const auto self = shared_from_this();
+        watch(pipeline_->close(), [self](const Result<native_services::PipelineCloseReport>& result) {
+            const auto report = take(result);
+            require(report.session.hasValue() != (self->mode_ == "cleanup_failure"), "incorrect session close result");
+            require(take(report.kernel).quiescent != (self->mode_ == "cleanup_failure"),
+                    "incorrect kernel cleanup report");
+            require(take(report.counter).quiescent != (self->mode_ == "cleanup_failure"),
+                    "incorrect module close report");
+            require(take(report.reporter).quiescent, "reporter cleanup did not quiesce");
+            self->finish(report);
         });
     }
-    void finish()
+    void finish(const native_services::PipelineCloseReport& report)
     {
         if (mode_ != "cleanup_failure")
-            require(take(kernel_->services().snapshot()).empty(), "service keys survived successful close");
-        // close 回执只证明业务静止；定义目录和 Kernel 仍持有可执行工厂，必须先释放宿主所有者。
-        session_.reset();
-        driver_.reset();
-        kernel_.reset();
-        auto reporterDrained = manager_.drain(reporterId_);
-        if (!reporterDrained.hasValue()) {
-            require(mode_ == "cleanup_failure" && reporterDrained.error().code == ErrorCode::ContextClosing,
+            require(take(report.remainingServices).empty(), "service keys survived successful close");
+        if (!report.reporterDrain.hasValue()) {
+            require(mode_ == "cleanup_failure" && report.reporterDrain.error().code == ErrorCode::ContextClosing,
                     "reporter references survived successful close");
-            const auto states = take(manager_.snapshot());
-            const auto reporter = std::find_if(states.begin(), states.end(),
-                                               [this](const auto& value) { return value.generation == reporterId_; });
+            const auto states = take(pipeline_->manager()->snapshot());
+            const auto reporter = std::find_if(states.begin(), states.end(), [&](const auto& value) {
+                return value.generation == pipeline_->reporter().generation;
+            });
             require(reporter != states.end() && !reporter->resources.records.empty() &&
                         std::all_of(reporter->resources.records.begin(), reporter->resources.records.end(),
                                     [](const auto& record) {
@@ -225,28 +167,31 @@ private:
                     "reporter retained business resources");
         }
         if (mode_ == "cleanup_failure") {
-            require(!manager_.drain(counterId_).hasValue(), "failed cleanup falsely drained");
-            const auto states = take(manager_.snapshot());
-            const auto counter = std::find_if(states.begin(), states.end(),
-                                              [this](const auto& value) { return value.generation == counterId_; });
+            require(!report.counterDrain.hasValue(), "failed cleanup falsely drained");
+            const auto states = take(pipeline_->manager()->snapshot());
+            const auto counter = std::find_if(states.begin(), states.end(), [&](const auto& value) {
+                return value.generation == pipeline_->counter().generation;
+            });
             require(counter != states.end() && counter->nativePinned && !counter->resources.records.empty(),
                     "failed DLL resources were not retained");
             std::cout << "failed cleanup retained DLL and execution references\n";
         } else {
-            take(manager_.drain(counterId_));
-            for (const auto& state : take(manager_.snapshot()))
+            take(report.reporterDrain);
+            take(report.counterDrain);
+            for (const auto& state : take(pipeline_->manager()->snapshot()))
                 require(state.state == ModuleState::Resident && state.nativePinned && state.resources.drained(),
                         "module generation did not drain to Resident");
             std::cout << "session, kernel and modules quiescent; DLLs remain resident\n";
         }
         // Return to Qt before closing its queue, after all native retirement receipts above have run.
-        QTimer::singleShot(0, [this] {
+        const auto self = shared_from_this();
+        QTimer::singleShot(0, [self] {
             guarded([&] {
-                const auto queue = take(scheduler_->snapshot());
+                const auto queue = take(self->pipeline_->scheduler()->snapshot());
                 require(queue.queued == 0 && queue.discarded == 0 && queue.callbackErrors == 0,
                         "scheduler has pending or discarded receipts");
-                take(scheduler_->close());
-                require(take(scheduler_->snapshot()).callbackErrors == 0, "scheduler callback error");
+                take(self->pipeline_->scheduler()->close());
+                require(take(self->pipeline_->scheduler()->snapshot()).callbackErrors == 0, "scheduler callback error");
                 QCoreApplication::exit(EXIT_SUCCESS);
             });
         });
@@ -254,23 +199,19 @@ private:
     QString root_, path_;
     std::string mode_;
     QTemporaryDir scratch_;
-    std::shared_ptr<cordis::qt::QtScheduler> scheduler_ = std::make_shared<cordis::qt::QtScheduler>();
-    std::shared_ptr<Kernel> kernel_ = std::make_shared<Kernel>(scheduler_);
-    ModuleManager manager_;
-    GenerationId counterId_, reporterId_;
-    std::optional<NativeModule> counter_, reporter_;
-    std::shared_ptr<KernelReconcileDriver> driver_;
-    std::unique_ptr<ConfigurationSession> session_;
+    std::shared_ptr<native_services::Pipeline> pipeline_;
 };
 } // namespace
 int main(int argc, char** argv)
 {
     try {
         QCoreApplication app(argc, argv);
+        const auto scheduler = std::make_shared<cordis::qt::QtScheduler>();
         const auto arguments = app.arguments();
         const auto root =
             arguments.size() > 1 ? arguments.at(1) : QCoreApplication::applicationDirPath() + "/native-services";
-        Demo demo(QDir(root).absolutePath(), arguments.size() > 2 ? arguments.at(2).toStdString() : "normal");
+        const auto runner = std::make_shared<Runner>(
+            QDir(root).absolutePath(), arguments.size() > 2 ? arguments.at(2).toStdString() : "normal", scheduler);
         QTimer deadline;
         deadline.setSingleShot(true);
         QObject::connect(&deadline, &QTimer::timeout, &app, [] {
@@ -278,7 +219,7 @@ int main(int argc, char** argv)
             QCoreApplication::exit(EXIT_FAILURE);
         });
         deadline.start(10000);
-        QTimer::singleShot(0, [&demo] { guarded([&] { demo.start(); }); });
+        QTimer::singleShot(0, [runner] { guarded([&] { runner->start(); }); });
         return app.exec();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

@@ -264,3 +264,19 @@ Output 的每外壳 pending 预算为 1000 条、1 MiB 字符串和 64 个精确
 首次本段重建前保存的实际旧 SDK 0.1.5 notebook DLL（SHA256 `45267e3e698a259daf8e5bdb6187abcdb0f291a91f530cf7f6349d28d902eaf0`）已在当前 Release 宿主执行 normal 通过，嵌入元数据与摘要保持。首次脚本传相对路径被入口拒绝，改绝对路径后成功，两份日志分别保存；兼容结论仅限该实物与场景，不扩大为任意旧 C++ 二进制承诺。Scope 用例证明新贡献完整恢复并可重新进入，不代表自动恢复活动页签、焦点或 Notebook 草稿。
 
 本段不交付真实双版本 counter/reporter/notebook 业务升级、产品升级入口、业务白名单、完整 H01/H02/S09、同一 Windows 进程 100 次真实替换、随机压力或新增原生桌面升级验收。SDK 0.1.5、原业务/状态 C ABI、Qt resident 和默认空名单保持；M5/P5 尚未完成，后续仍须逐段审查、提交同步。
+
+## M5-b1 Native 宿主装配与关闭
+
+本段将原 Native 示例拆为实际装配/异步关闭库和薄运行器；调用方提前共享拥有并注入 QtScheduler，模块门禁弱持原代稳定记录，关闭结果只保留值诊断。实现、独立审查与专项证据见 [b1 收口记录](../../docs/p5-m5b-development.md#b1-收口结论)。
+
+| 验收条件 | 实际检查 |
+|---|---|
+| 原 CLI 仍验证真实 counter/reporter 业务、多实例/realm、磁盘保存和启动失败；cleanup failure 保留非静止资源 | 原 `p4.native_qt_normal`、`multi`、`realms`、`start_failure`、`cleanup_failure` 五项（简名补 `p4.native_qt_`） |
+| 未应用配置的装配可关闭且幂等；错误线程关闭拒绝，原拥有者仍可正常关闭 | `p5.native_pipeline_empty_close`、`wrong_thread` |
+| 外部 Runtime 保留使真实 counter drain 拒绝；释放后再 drain 成功，原关闭报告仍保留当时错误，装配不会额外永久 pin | `retained_runtime` |
+| 空队列/错误线程及缺 root 的初始化前置失败拒绝，同一真实队列随后排空复用 | `open_failure`；缺 root 不代表逐个中间装配步骤均已故障注入 |
+| 实际 QtScheduler.close 丢弃已接受关闭回执，Task 报 SchedulerClosed，未确认的装配/Kernel/Driver/Session 和 ledger 保留 | `discarded_close` |
+
+后四行简名补 `p5.native_pipeline_`，五项直接装配检查见 [实际用例](../qt/native_pipeline.cpp)。最终 MSVC Release、Debug、ASan 及静态 Core 关闭示例的 probe 配置分别通过相同受影响专项 10/10（原五 CLI + 五直接检查），各报告 `whole_stage=false`，不宣称重新运行平台全量。5 项源码/构建输入冻结、4 项 C++ 格式检查及 3 个实际 ASan 对象运行前后插桩/哈希核对通过，证据见 build/p5-m5b1-*；原 M5-a2 全量历史保持，未变 Core/SDK 与无 Qt GCC 不重跑。
+
+本段未增加 SDK 契约、业务 DLL 版本/状态能力或物理卸载名单，不以宿主整理代替升级验收。b1 审计提交同步后才进入 b2 实际 Native A/B；b3 Notebook 草稿与 b4 同平台事务，以及 M5-c/d/e 的产品入口、完整故障/压力和桌面验收仍待推进。
