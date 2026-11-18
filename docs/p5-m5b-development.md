@@ -1,11 +1,11 @@
 # P5-M5-b 实际业务版本与宿主装配
 
-日期：2026-11-18。基线 b1f7d4c：M5-a2 已审计、提交同步，工作区干净。沿 [M5 工作单](p5-m5-development.md)先核对实际代码与拥有者，再按下表推进；各段完成审查、修正和相称验证并提交同步后，才进入下一段。
+日期：2026-11-18。M5-a2 b1f7d4c、M5-b1 a263c0d 已审计提交同步，当前 b2 已完成实现、审计与四配置受影响验证，随本次收口归档。沿 [M5 工作单](p5-m5-development.md)先核对实际代码与拥有者，再按下表推进；各段完成审查、修正和相称验证并提交同步后，才进入下一段。
 
 | 小段 | 实际出口 | 状态 |
 |---|---|---|
-| b1 | Native 示例拆为可测试的装配/异步关闭库与薄运行器；manager/Session 真实共享拥有；保留原五个场景和故障资源语义 | 实现、独立审计与四配置专项通过，随本次收口提交归档 |
-| b2 | counter/reporter 实际 A/B 产物、明确版本与发现声明；counter 严格 uint64 状态扩展，reporter 缓存重新读取；有限真实边界检查 | 待 b1 提交同步 |
+| b1 | Native 示例拆为可测试的装配/异步关闭库与薄运行器；manager/Session 真实共享拥有；保留原五个场景和故障资源语义 | 已完成，a263c0d 已审计提交同步 |
+| b2 | counter/reporter 实际 A/B 产物、明确版本与发现声明；counter 严格 uint64 状态扩展，reporter 缓存重新读取；有限真实边界检查 | 已完成实现、独立审计与四配置专项，随本次收口归档 |
 | b3 | Notebook 实际 A/B 与真实编辑草稿状态接口；完整创建/销毁和导入顺序；原 Workspace 场景保留 | 待 b2 提交同步 |
 | b4 | 同一平台装配两个 Native 服务及独立 Notebook；复用安装、stage、Session/Driver 和 ReplacementOperation 做实际替换/恢复 | 待 b3 提交同步，接线前再次记录具体方案 |
 
@@ -54,6 +54,26 @@ b1 只改实际示例宿主与构建接线，不修改 SDK/Core/Loader/Module �
 counter 是真实运行状态，采用 schema id=org.cordis.example.counter、version=1 的 canonical unsigned JSON 十进制，A/B 兼容；to_chars/from_chars 全量解析 uint64，不经 DOM/double，拒绝负数、前导零、浮点、指数、空白/尾随和溢出。capture 读真实实例，validate 无业务资源，restore 在 start 前验证完再赋值；失败不部分写入，缓冲区错误 size 为零，不 PENDING。reporter 保持无状态，其缓存由启动时的真实 counter.next 重建，不为了覆盖而增加无必要的状态扩展。格式转换能力沿 M3 的有限真实 DLL 用例验证，业务 A/B 没有格式变化，不新增无业务需求的第三 schema/产物。
 
 counter 冻结捕获 N 后，旧 reporter.cleanup 的递增不改变 checkpoint，新 counter 导入 N，随后 m 个 reporter.start 得到 N+m。reporter 单模块升级借用活跃 counter，旧 cleanup 和新 start 通常合计 +2。边界导入检查可沿原状态协议/Scope，明确不计入完整 ReplacementOperation 的压力次数；不添加测试 setter 或伪造运行值。
+
+## b2 具体实施边界
+
+原 counter/reporter 目标继续是 version=1.0.0、resident，且不向原 counter 增加状态导出；新的资格产物是 counter-a/counter-b、reporter-a/reporter-b 四个固定目标，moduleId/PluginId 保持业务身份，版本分别 1.1.0/1.2.0，清单请求 explicit，默认应用白名单仍空。使用编译参数 CORDIS_EXAMPLE_MODULE_VERSION、CORDIS_EXAMPLE_EXPLICIT_UNLOAD、CORDIS_EXAMPLE_COUNTER_STATE，后两项默认零，只有两个 counter 资格目标启用状态。发现与业务表共用编译期版本常量，不复制四套业务代码。
+
+严格遵守既有 module_query.h：接受的返回 header minor 必须等于请求，minor0 仅 RESIDENT，minor1 仅 EXPLICIT_UNLOAD，未知 minor 或非 1.0 runtime ABI 拒绝；原 resident 目标拒绝 explicit 请求，不能返回与请求不符的 minor0 描述。资格目标可按 minor0 提供驻留兼容描述，实际显式装载由宿主 exact approval 后请求 minor1。descriptor/table/manifest 的 moduleId、version 与 PluginId 完全一致，WriteModuleManifest 仅新增 MODULE_VERSION/UNLOAD_POLICY 可选参数，默认保持。
+
+counter 的四个同步状态槽沿原 Instance.counter 工作，不建立镜像状态表。schema id 与 version 分开编码；canonical 标量最长 20 个 ASCII 字节，不允许其它 JSON 数值写法或空白。describe/validate/capture/restore 共用必要的 buffer/schema 与 uint64 codec，输入借用不保存；有效可写 buffer 调用的失败 size 归零，不写不足结构容量之外。实际未知 PluginId 不冒称无状态；只有 reporter/原 legacy 缺扩展才是既有无状态路径。已激活实例导出，恢复只对未启动的新实例赋值，不通过测试setter或业务回调改变数据。
+
+资格测试仅针对上述固定四目标及其实际 SHA256/moduleId 传临时允许集合，不从任意所选 manifest 自动授权，不写生产名单。先验证真实 DLL 发现/状态表、大小边界、非法 schema/十进制与 uint64 最大值，再通过原 Native Runtime/Core 状态接入验证导入先于 start、真实 next/捕获、Reporter 仍无状态及原业务不变；有限直接状态检查不计完整升级或 100 次。b4 才接实际 ReplacementOperation 与共同配置提交。
+
+## b2 收口结论
+
+四个实际 Native A/B DLL 已从同一业务源码生成，分别为 1.1.0/1.2.0，发现、业务表和 manifest 共用版本；原 1.0.0/resident 两产物和五个 CLI 场景保留。严格按原发现 minor0/Resident、minor1/Explicit 协商，生产名单仍为空。counter 的原实例字段是唯一运行状态，新资格版本通过独立状态表读写 canonical uint64；解析/编码不经 double，失败先验证再赋值，完整可写失败 buffer.size=0，短结构不越界。startedOnce 阻止已启动过的实例再次导入；reporter 保持无状态，由真实 next 调用重建派生缓存。
+
+新增八项用例分为标准导出的纯 ABI 检查和原 Native/Core 接入。前者持续固定实际文件来源并核映像身份，不伪造 HostTable；后者用实际 Context.inject 导入，再以真正 ReplacementScope.freeze 和原 InstanceStateAccess 捕获，不增加测试 setter/公开入口。实际 reporter start、cleanup、重建从 9007199254740993 依次得到精确 +1；另覆盖独立 realm 的 0/uint64 最大值导入捕获与非法数值/schema 清理。这里只验证最大值导入/捕获，没有额外调用最大值 next 拒绝、report/read 或逐一直接注入 live restore/HostTable 故障，不扩写证据范围。
+
+七项源码/构建输入冻结、五项 C++ 格式检查通过。当前最终断言重新编译后，MSVC Release/Debug/ASan 各受影响专项 30/30，静态 Core 关闭示例 probe 18/18；完整选择集合与唯一 Passed 名称一致，whole_stage=false。30 项含新增八项、原 Native 十项和因共享 manifest writer 受影响的 Notebook 十二项。八个实际 ASan 对象（同源各三种 Native 编译及两个测试 TU）插桩和运行前后哈希一致。SDK/Core/Module/Loader/Replacement/Ela 未改，原 M5-a2 平台全量基线保持，无 Qt GCC 不重复执行。本段日志、冻结输入、实际摘要和清单保存在 build/p5-m5b2-*。
+
+三路交叉审查覆盖职责、ABI/缓冲区、来源/精确权限、数值、生命周期和测试真实性，未发现剩余提交阻断项。只有固定四个目标的明确身份及实际摘要进入测试临时允许集合；drain 不称为物理卸载，独立 A/B 导入不称为整体 A→B ReplacementOperation 或 100 次压力。随本次提交审计同步、工作区干净后才进入 b3；Notebook 草稿、同平台替换和 M5-c/d/e 仍待完成。
 
 ## b3 与 b4 的后续约束
 

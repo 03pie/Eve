@@ -9,13 +9,28 @@
 #include <cstring>
 #include <limits>
 
+#ifndef CORDIS_EXAMPLE_MODULE_VERSION
+#define CORDIS_EXAMPLE_MODULE_VERSION "1.0.0"
+#endif
+#ifndef CORDIS_EXAMPLE_EXPLICIT_UNLOAD
+#define CORDIS_EXAMPLE_EXPLICIT_UNLOAD 0
+#endif
+#ifndef CORDIS_EXAMPLE_COUNTER_STATE
+#define CORDIS_EXAMPLE_COUNTER_STATE 0
+#endif
+
 namespace example {
+inline constexpr char moduleVersion[] = CORDIS_EXAMPLE_MODULE_VERSION;
+static_assert(sizeof(moduleVersion) > 1 && sizeof(moduleVersion) - 1 <= CORDIS_MAX_VERSION_BYTES);
 inline const CordisHostV1* host = nullptr;
 struct Instance {
     CordisHandle id = 0, context = 0, effect = 0, binding = 0;
     CordisRequestId pending = 0, outgoing = 0;
     std::uint64_t counter = 0;
     bool started = false, cleanup = false, fail = false;
+#if CORDIS_EXAMPLE_COUNTER_STATE
+    bool startedOnce = false;
+#endif
     std::array<char, 64> result{};
     std::size_t size = 0;
 };
@@ -108,21 +123,30 @@ CordisQueryStatus discover(const CordisModuleQueryV1* request, CordisModuleDescr
                            const char (&module)[M], const char (&plugin)[P]) noexcept
 {
     if (!request || !output || request->header.struct_size < sizeof(*request) || request->header.reserved ||
-        request->header.query_major != 1 || request->runtime_abi_major != 1 || request->flags)
+        request->header.query_major != CORDIS_MODULE_QUERY_MAJOR || request->runtime_abi_major != CORDIS_ABI_MAJOR ||
+        request->runtime_abi_minor != CORDIS_ABI_MINOR || request->flags)
+        return CORDIS_QUERY_UNSUPPORTED;
+    const auto minor = request->header.query_minor;
+#if CORDIS_EXAMPLE_EXPLICIT_UNLOAD
+    if (minor != CORDIS_MODULE_QUERY_MINOR && minor != CORDIS_MODULE_QUERY_EXPLICIT_UNLOAD_MINOR)
+#else
+    if (minor != CORDIS_MODULE_QUERY_MINOR)
+#endif
         return CORDIS_QUERY_UNSUPPORTED;
     const auto capacity = output->header.struct_size;
     if (capacity < sizeof(*output))
         return CORDIS_QUERY_INVALID_ARGUMENT;
     static const CordisQueryBytesV1 plugins[] = {{reinterpret_cast<const uint8_t*>(plugin), P - 1}};
-    const CordisModuleDescriptorV1 result{{sizeof(result), 1, 0, 0},
-                                          1,
-                                          0,
-                                          CORDIS_MODULE_RESIDENT,
-                                          {reinterpret_cast<const uint8_t*>(module), M - 1},
-                                          {reinterpret_cast<const uint8_t*>("1.0.0"), 5},
-                                          1,
-                                          0,
-                                          plugins};
+    const CordisModuleDescriptorV1 result{
+        {sizeof(result), CORDIS_MODULE_QUERY_MAJOR, minor, 0},
+        CORDIS_ABI_MAJOR,
+        CORDIS_ABI_MINOR,
+        minor == CORDIS_MODULE_QUERY_EXPLICIT_UNLOAD_MINOR ? CORDIS_MODULE_EXPLICIT_UNLOAD : CORDIS_MODULE_RESIDENT,
+        {reinterpret_cast<const uint8_t*>(module), M - 1},
+        {reinterpret_cast<const uint8_t*>(moduleVersion), sizeof(moduleVersion) - 1},
+        1,
+        0,
+        plugins};
     std::memcpy(output, &result, sizeof(result));
     return CORDIS_QUERY_OK;
 }
@@ -144,7 +168,7 @@ CordisStatus negotiate(std::uint32_t abi, const CordisHostV1* input, CordisPlugi
     result.header = {sizeof(result), CORDIS_ABI_MAJOR, CORDIS_ABI_MINOR, 0};
     result.capabilities = result.required_host_capabilities = caps;
     result.module_id = bytes(module);
-    result.module_version = bytes("1.0.0");
+    result.module_version = bytes(moduleVersion);
     result.plugin_count = 1;
     result.plugins = plugins;
     std::memcpy(output, &result, sizeof(result));

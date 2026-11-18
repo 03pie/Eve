@@ -3,6 +3,9 @@
  */
 #include "support.hpp"
 #include <charconv>
+#if CORDIS_EXAMPLE_COUNTER_STATE
+#include "counter_state.hpp"
+#endif
 
 namespace {
 using namespace example;
@@ -17,6 +20,9 @@ CordisStatus CORDIS_CALL start(CordisHandle id, CordisRequestId request) noexcep
     auto* value = find(id);
     if (!value || !request || value->started)
         return CORDIS_E_INVALID_ARGUMENT;
+#if CORDIS_EXAMPLE_COUNTER_STATE
+    value->startedOnce = true;
+#endif
     value->started = true;
     return publish(*value, "example.counter", "[\"next\"]");
 }
@@ -80,3 +86,9 @@ extern "C" CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_query_v1(std::uint32_t 
     result.request_cleanup = cleanup;
     return example::negotiate(abi, input, output, moduleId, pluginId, result);
 }
+#if CORDIS_EXAMPLE_COUNTER_STATE
+extern "C" CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_query_state_v1(std::uint32_t abi, CordisStateApiV1* output)
+{
+    return example::counter_state::query(abi, output);
+}
+#endif

@@ -1,5 +1,11 @@
 # 提交前代码审查记录
 
+## P5-M5-b2 实际 Native 版本与状态契约复查（通过）
+
+a263c0d 提交同步后，先固定四产物/版本、发现协商、原状态拥有者和临时精确授权边界，再实现同源 A/B。counter_state 只编码原 Instance.counter，不创建第二状态表/事务；reporter 的派生缓存仍来自真实服务。保留有实际兼容调用者的两个 legacy resident 目标，资格 counter 才启用状态，版本在发现/业务表/manifest 中一致。SDK 0.1.5 及原公开布局/协议未改，生产名单仍空。
+
+三路只读交叉审查覆盖 ABI 容量、来源保护、uint64 精度、线程/生命周期、失败释放和测试真实性，未发现剩余阻断项。真实 Context.inject、Scope.freeze/原捕获桥和 reporter 启停/重建核对精确运行值；纯 ABI 不伪造 HostTable。七项源码/构建输入、五项格式通过；Release/Debug/ASan 受影响专项各 30/30，静态关闭示例 probe 18/18，清单唯一名称匹配且 whole_stage=false。八个实际 ASan 对象插桩/运行前后哈希一致，原 CLI 与 Notebook 回归保持。测试不等于完整 A→B 操作、物理卸载或最终名单资格，最大值与非法 live restore 的有限覆盖按 [b2 收口记录](p5-m5b-development.md#b2-收口结论)说明。本段提交同步后才进入 b3。
+
 ## P5-M5-b1 Native 宿主拥有者复查（通过）
 
 b1f7d4c 提交同步、工作区干净后，先记录装配/运行器边界、真实共享拥有、原代 gate 和关闭报告，再拆出 cordis_native_pipeline。原五场景 YAML/业务/磁盘/错误断言和进程退出仍在运行器；库只有一个实际装配/关闭算法，报告为原 Result 纯值，不复制 Core/Loader 事务。当前实际槽持工厂，gate 仅弱持原代记录，旧混合路径和复制 NativeModule 的可用性闭包已删除。

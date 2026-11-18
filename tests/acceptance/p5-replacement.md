@@ -280,3 +280,19 @@ Output 的每外壳 pending 预算为 1000 条、1 MiB 字符串和 64 个精确
 后四行简名补 `p5.native_pipeline_`，五项直接装配检查见 [实际用例](../qt/native_pipeline.cpp)。最终 MSVC Release、Debug、ASan 及静态 Core 关闭示例的 probe 配置分别通过相同受影响专项 10/10（原五 CLI + 五直接检查），各报告 `whole_stage=false`，不宣称重新运行平台全量。5 项源码/构建输入冻结、4 项 C++ 格式检查及 3 个实际 ASan 对象运行前后插桩/哈希核对通过，证据见 build/p5-m5b1-*；原 M5-a2 全量历史保持，未变 Core/SDK 与无 Qt GCC 不重跑。
 
 本段未增加 SDK 契约、业务 DLL 版本/状态能力或物理卸载名单，不以宿主整理代替升级验收。b1 审计提交同步后才进入 b2 实际 Native A/B；b3 Notebook 草稿与 b4 同平台事务，以及 M5-c/d/e 的产品入口、完整故障/压力和桌面验收仍待推进。
+
+## M5-b2 实际 Native A/B 与状态契约
+
+实现与有限覆盖见 [b2 收口记录](../../docs/p5-m5b-development.md#b2-收口结论)。四个固定资格 DLL 为 counter/reporter 各 1.1.0、1.2.0，临时精确允许集合不修改生产名单；原 1.0.0/resident 保持。
+
+| 用例（前缀 p5.business_state_） | 实际检查 |
+|---|---|
+| abi_discovery | 六个实际 DLL 的版本/minor/flags/容量，真实来源及映像身份，legacy 无状态扩展 |
+| abi_state_schema | 两个 counter A/B 的状态查询/描述和 schema，短结构边界 |
+| abi_state_values | canonical uint64、2^53+1/MAX、非法数字/schema 与未知 PluginId |
+| abi_state_buffers | 实际可写容量/canary、size=0、空/短/非法 buffer 与未知实例 |
+| runtime_a / runtime_b | 实际 Context 导入、Scope 冻结捕获、真实 reporter start/cleanup/重建的精确计数 |
+| runtime_boundaries | 独立 realm 的 0/MAX 导入捕获，两个真实实例 |
+| runtime_rejections | 实际状态桥拒绝非法数字/schema 后无实例残留、健康会话和完整关闭 |
+
+当前最终源码 Release/Debug/ASan 各受影响专项 30/30（新增八项、原 Native 十项及 Notebook 十二项）；静态 Core 关闭示例 probe 18/18，whole_stage=false。七项输入、五项格式、八个实际 ASan 对象前后核对通过。未重跑未变平台全量；没有完整 A→B 操作、物理卸载/100 次或业务名单资格宣称。b3/b4 和 M5-c/d/e 继续后续验收。
