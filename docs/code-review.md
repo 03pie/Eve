@@ -1,5 +1,11 @@
 # 提交前代码审查记录
 
+## P5-M5-b3 Notebook 草稿与实际版本复查（通过）
+
+1c9a1b4 提交同步后，先记录唯一草稿、同步输入时序、canonical Unicode/预算与实际版本/moc 方案，再实现原独立状态 IID。draft_ 替代直接读取 QWidget 作为运行状态；工厂 validate、实例 restore/capture 共用纯 codec。原配置仍是初值；恢复先于 activate，无页面/命令资源创建。legacy 无 IID，A/B 同 schema/各自真实版本且全部 resident。删除原单目标装配、全 Configuration 页面捕获和输出回读编辑器路径，未扩大 SDK/事务职责。
+
+独立审查补强 buffer 失败 payload 不写、解冻后无迟到输出及合法嵌入 NUL。实际构建纠正 Qt 旧 QList 比较警告；首测 20/23 的三个退出失败由真实 ledger 定位为测试自身 Scope 工厂引用尚存，改词法生命周期后保留原严格断言。九项冻结输入、八项格式与三配置当前专项各 23/23 通过，whole_stage=false；七个实际 ASan 对象前后插桩/哈希一致，九套实际 manifest/metadata/moc/digest 核对一致。SDK/平台源码与 Native 产物未改，不重跑静态/无 Qt 或平台全量。三路最终结构/所有权/兼容/证据复查无剩余阻断；具体边界、过程失败与新增十一项见 [b3 收口记录](p5-m5b-development.md#b3-收口结论)。Qt root 正常驻留、私有句柄与未直接探测的故障不扩大宣称，同进程整体升级继续归 b4。本段提交同步后才进入下一段。
+
 ## P5-M5-b2 实际 Native 版本与状态契约复查（通过）
 
 a263c0d 提交同步后，先固定四产物/版本、发现协商、原状态拥有者和临时精确授权边界，再实现同源 A/B。counter_state 只编码原 Instance.counter，不创建第二状态表/事务；reporter 的派生缓存仍来自真实服务。保留有实际兼容调用者的两个 legacy resident 目标，资格 counter 才启用状态，版本在发现/业务表/manifest 中一致。SDK 0.1.5 及原公开布局/协议未改，生产名单仍空。

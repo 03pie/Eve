@@ -1,12 +1,12 @@
 # P5-M5-b 实际业务版本与宿主装配
 
-日期：2026-11-18。M5-a2 b1f7d4c、M5-b1 a263c0d 已审计提交同步，当前 b2 已完成实现、审计与四配置受影响验证，随本次收口归档。沿 [M5 工作单](p5-m5-development.md)先核对实际代码与拥有者，再按下表推进；各段完成审查、修正和相称验证并提交同步后，才进入下一段。
+日期：2026-11-18。M5-a2 b1f7d4c、M5-b1 a263c0d、M5-b2 1c9a1b4 已审计提交同步，工作区干净后进入 b3；当前 b3 已完成实现、审计和三配置受影响验证，随本次收口归档。沿 [M5 工作单](p5-m5-development.md)先核对实际代码与拥有者，再按下表推进；各段完成审查、修正和相称验证并提交同步后，才进入下一段。
 
 | 小段 | 实际出口 | 状态 |
 |---|---|---|
 | b1 | Native 示例拆为可测试的装配/异步关闭库与薄运行器；manager/Session 真实共享拥有；保留原五个场景和故障资源语义 | 已完成，a263c0d 已审计提交同步 |
-| b2 | counter/reporter 实际 A/B 产物、明确版本与发现声明；counter 严格 uint64 状态扩展，reporter 缓存重新读取；有限真实边界检查 | 已完成实现、独立审计与四配置专项，随本次收口归档 |
-| b3 | Notebook 实际 A/B 与真实编辑草稿状态接口；完整创建/销毁和导入顺序；原 Workspace 场景保留 | 待 b2 提交同步 |
+| b2 | counter/reporter 实际 A/B 产物、明确版本与发现声明；counter 严格 uint64 状态扩展，reporter 缓存重新读取；有限真实边界检查 | 已完成，1c9a1b4 已审计提交同步 |
+| b3 | Notebook 实际 A/B 与真实编辑草稿状态接口；完整创建/销毁和导入顺序；原 Workspace 场景保留 | 已完成实现、独立审计与三配置专项，随本次收口归档 |
 | b4 | 同一平台装配两个 Native 服务及独立 Notebook；复用安装、stage、Session/Driver 和 ReplacementOperation 做实际替换/恢复 | 待 b3 提交同步，接线前再次记录具体方案 |
 
 该拆分优先解决实际拥有者和职责，避免在原 Demo 或管理按钮中继续追加升级分支。b2/b3 的纯产物契约不等同于 b4 的整体事务；管理交互、H01/S09 全范围、100 次/随机压力、名单资格与新增桌面验收仍按 M5-c/d/e 收口。
@@ -74,6 +74,30 @@ counter 的四个同步状态槽沿原 Instance.counter 工作，不建立镜像
 七项源码/构建输入冻结、五项 C++ 格式检查通过。当前最终断言重新编译后，MSVC Release/Debug/ASan 各受影响专项 30/30，静态 Core 关闭示例 probe 18/18；完整选择集合与唯一 Passed 名称一致，whole_stage=false。30 项含新增八项、原 Native 十项和因共享 manifest writer 受影响的 Notebook 十二项。八个实际 ASan 对象（同源各三种 Native 编译及两个测试 TU）插桩和运行前后哈希一致。SDK/Core/Module/Loader/Replacement/Ela 未改，原 M5-a2 平台全量基线保持，无 Qt GCC 不重复执行。本段日志、冻结输入、实际摘要和清单保存在 build/p5-m5b2-*。
 
 三路交叉审查覆盖职责、ABI/缓冲区、来源/精确权限、数值、生命周期和测试真实性，未发现剩余提交阻断项。只有固定四个目标的明确身份及实际摘要进入测试临时允许集合；drain 不称为物理卸载，独立 A/B 导入不称为整体 A→B ReplacementOperation 或 100 次压力。随本次提交审计同步、工作区干净后才进入 b3；Notebook 草稿、同平台替换和 M5-c/d/e 仍待完成。
+
+## b3 具体实施方案
+
+现 Notebook 的编辑文本只存在 QPlainTextEdit，原配置 text 仅是初值；原工厂/实例没有独立 state IID。状态必须归业务实例，页面只是投影：同一 Notebook 源码保留 legacy 1.0.0 和无状态接口兼容，再编译 A=1.1.0、B=1.2.0 两个实际 resident DLL，只有新两目标声明现有 IQtStatePluginV1/IQtStateInstanceV1。各目标使用独立生成目录、moc 和嵌入 metadata，条件宏同时传给 C++ 与 moc，manifest 由原 writer 生成。公共 SDK/IID、原 Workspace 装配与十二场景不扩张。
+
+Notebook 只新增唯一 QString draft_，不保留第二份编辑缓存。restore 在新实例 activate 前验证完毕并复制 draft；activate 仅在未导入时取配置 text，再创建显示该 draft 的 editor。捕获读取 draft，不读取 QWidget 或配置。实际页面 textChanged 必须同步更新 draft：原 Context::identity 内部复用 business(epoch) 的 owner/冻结/退役门禁；private eventGuard 不开放给插件。门禁拒绝时用 QSignalBlocker 将显示还原到原 draft。不能使用始终排队的 QtConnection 再把它当成同步编辑：用户编辑后立即 freeze 会拒绝尚未交付的回调而漏掉最后输入。原 QObject 连接归页面 receiver，页面 effect 完整退出后原 Module QObjectResource 才销毁 Notebook；不新造 scheduler、连接目录或清理入口。
+
+新状态 schema 为 org.cordis.example.notebook.draft、version=1，JSON 为仅有 draft 字符串的对象。纯 codec 供真实工厂 validate 和实例 restore/capture 共用，检查 schema、完整 UTF-8、JSON 形状和字符串 UTF-16/UTF-8 可往返，不能默默替换无效编码或孤立 surrogate。迁移文本至多 65536 个 UTF-8 字节，与配置 text 上限一致；正常编辑仍保留原行为，超过迁移预算时 capture 明确 E_LIMIT，不截断或改写用户当前草稿。所有状态方法同步、无页面/命令/业务资源创建、不 PENDING、不保存借用输入；完整可写失败 buffer.size=0，容量不足不写 JSON，短结构不碰容量外。activate 已开始后不再 restore；失败导入不部分赋值。
+
+编码取舍明确为本 codec 的 canonical compact JSON：解码后重新编码必须与输入逐字节一致，因而拒绝重复 draft 键、额外字段以及非规范空白/转义，不额外复制 JSON 解析器。A/B 共用相同 schema/codec 和精确 Qt 工具链，未声明接纳任意等价 JSON。QPlainTextEdit 可能规范化换行和分隔符；初次 setPlainText 后才连接 textChanged，不从编辑器回读覆盖已恢复的 draft。纯状态保留原字符串，只有真实后续编辑才以编辑器文本更新模型；配置仍是独立初值，不随草稿自动写盘。
+
+测试使用实际 DLL、UiPages/Command/Output providers 和原 Context/Scope 状态桥。必须覆盖编辑后不推进事件队列立即 freeze/capture、冻结期间程序信号不能改变草稿、解除后可继续编辑；导入先于 editor 创建且覆盖不同配置初值；分别验证 A/B 的同一 schema 导入/编辑/捕获，旧页/命令完整销毁且旧页面 key 无法重新导航，多实例草稿隔离。业务私有 PageHandle/CommandHandle 不为测试新增导出；已有泛型句柄门禁回归保持，本段用实际旧 key、撤销记录及控件 QPointer 核对退出。相同 moduleId 的驻留 A/B 不能在同进程被普通 load 两次；实际同进程 A→B 必须由 b4 原 stage/ReplacementOperation 负责，不能手动复制提交算法或篡改模块身份。另验证 Unicode/边界/非法输入和 legacy 无状态；错误导入/启动失败沿原资源屏障退出。Qt 仍 resident，不尝试卸载或用于累计 100 次。先交叉审查，再完成当前 Release/Debug/ASan 的新专项与原十二项；静态 Core/无 UI 不编译该示例，不重跑未变平台矩阵。
+
+## b3 收口结论
+
+Notebook 现在以实例 draft_ 作为唯一运行草稿，编辑器只是投影，输出与捕获都读取该模型。真实 textChanged 同步通过原 Context.identity 门禁，冻结时拒绝并恢复显示；未使用异步连接掩盖输入窗口。恢复在原 Core/Qt 状态桥内、activate 前完整校验并复制，初次建页不回读规范化后的显示覆盖原文，空稿不退回配置。capture 超限明确拒绝且不改变草稿；缩短后可以再次捕获，原输出预算独立保留。
+
+实际 A/B 为 1.1.0/1.2.0，同源编译并声明原独立状态 IID，schema/codec 按上述取舍一致。legacy 1.0.0 继续无状态接口；三个目标各自独立 metadata/moc，宏与实际元数据/版本/清单一致，全部 resident。原单目标 CMake 路径被一个有三个实际调用者的 helper 替换，没有另造工具链契约、事务或清理目录。公共 SDK 0.1.5、原 IID/C 表与平台 Core/Module/Loader/Ui/Ela 未改，Native 产物摘要保持 b2。
+
+首轮新测试构建因 Qt 5.15 QStringList 比较实例化旧 checked iterator，在 /WX 下失败；改为直接核插件数量与首项，未屏蔽警告。首次联合 20/23 中三项退出断言失败，真实账目均为 qt.loader.root 加 runtime.definition.example.notebook。原因是测试自身已 release 的 Scope 仍持 selection.inputs 工厂直至句柄析构；改用词法块在 close 前结束，保留严格账目断言和失败诊断，没有改生产 release 或放宽资源要求。另补完整失败 buffer payload 不写、嵌入 NUL 及解冻后无迟到输出检查。
+
+九项源码/构建输入最终冻结，八项 C++ 格式通过；当前最终版本 MSVC Release/Debug/ASan 各受影响专项 23/23，十一项新增状态加原十二项工作台场景，唯一 Passed 名称与完整选择集合一致，whole_stage=false。七个实际 ASan 对象（Notebook 三种编译和四个测试 TU）插桩与运行前后哈希一致，九份实际 DLL/manifest/嵌入元数据/MOC 对应核对通过。静态 Core、无 Ui 与无 Qt 不编译这些目标，未重复未变平台全量；原过程失败和当前证据保存在 build/p5-m5b3-*。
+
+三路交叉复查覆盖设计、构建/实际生成物、业务状态、ABI/Unicode/缓冲区、同步输入、真实 UI 生命周期及证据范围，未发现剩余提交阻断项。实际检查包括不泵队列的编辑后立即捕获、CRLF 原状态与显示分离、程序/键盘/按钮冻结拒绝及解除后恢复、0/65536/65537 字节边界、多实例、失败导入/启动、旧 key 撤销与完整 QWidget/editor/button 删除。业务私有句柄不新增测试接口，沿既有泛型门禁；本段不直接探测所有 live restore/OS 故障。最终只剩正常驻留 Qt root，不称物理排空/卸载。独立进程 A/B 状态契约不是同进程 A→B ReplacementOperation；提交同步、工作区干净后才进入 b4。
 
 ## b3 与 b4 的后续约束
 

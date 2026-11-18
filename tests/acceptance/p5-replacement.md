@@ -296,3 +296,21 @@ Output 的每外壳 pending 预算为 1000 条、1 MiB 字符串和 64 个精确
 | runtime_rejections | 实际状态桥拒绝非法数字/schema 后无实例残留、健康会话和完整关闭 |
 
 当前最终源码 Release/Debug/ASan 各受影响专项 30/30（新增八项、原 Native 十项及 Notebook 十二项）；静态 Core 关闭示例 probe 18/18，whole_stage=false。七项输入、五项格式、八个实际 ASan 对象前后核对通过。未重跑未变平台全量；没有完整 A→B 操作、物理卸载/100 次或业务名单资格宣称。b3/b4 和 M5-c/d/e 继续后续验收。
+
+## M5-b3 Notebook 草稿状态与实际版本
+
+实现、协议取舍与准确边界见 [b3 收口记录](../../docs/p5-m5b-development.md#b3-收口结论)。实际 legacy 1.0.0 无状态 IID，A/B=1.1.0/1.2.0 声明原独立 IID；三者均 resident，A/B 每用例独立进程，不绕过同身份代次门禁。
+
+| 用例（前缀 p5.notebook_state_） | 实际出口 |
+|---|---|
+| protocol_a / protocol_b | 来源/toolchain/标准 root 与纯状态 IID；schema/canonical、UTF-8/Unicode/NUL、容量与失败不部分写 |
+| draft_a / draft_b | 导入覆盖配置初值、CRLF 纯状态保留、真实输出、编辑后不泵事件立即捕获、旧 key 与控件完整退出 |
+| draft_empty | 空稿导入不退回配置 |
+| draft_limits | UTF-8 恰 65536 字节、65537 拒绝且不截断/新 pin，缩短后再捕获成功 |
+| draft_multi | 两真实实例草稿/页面/命令/输出隔离，停止一个后另一可用 |
+| draft_frozen | 程序信号回滚、真实键盘/按钮拒绝，解除后无迟到输出且可继续编辑 |
+| draft_rejections | 非法 schema/数字/重复字段/非规范输入/超限不损原健康实例 |
+| draft_start_failure | 导入后实际启动失败完整退出，既有页面/草稿保持 |
+| legacy | 原入口无状态能力，普通编辑输出保持，状态输入拒绝 |
+
+当前九项冻结输入，Release/Debug/ASan 各受影响专项 23/23（新增十一项加原十二项），whole_stage=false；八项格式、七个实际 ASan 对象前后核对和九套实际产物/metadata/moc 核对通过。三个 Scope 句柄必须在 close 前析构，最终只保留 qt.loader.root，不能把 release 回执当工厂引用已销毁。未重复未变平台全量；没有同进程 A→B、物理卸载/100 次或新增桌面验收宣称。私有 PageHandle/CommandHandle 不为测试开放，本段以实际 key/撤销记录/QPointer 核退出。
