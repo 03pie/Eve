@@ -2,15 +2,21 @@
  * @brief 同一托管模块窗口；所有更新沿 Workspace 具体视图屏障，不拥有业务能力。
  */
 #include "modules_panel_p.hpp"
+#include "upgrade_panel.hpp"
 #include <ElaPlainTextEdit.h>
 #include <ElaPushButton.h>
+#include <ElaTabWidget.h>
 #include <ElaTableView.h>
 #include <ElaText.h>
 #include <QHeaderView>
 #include <QHideEvent>
+#include <QItemSelectionModel>
+#include <QMouseEvent>
+#include <QScopedValueRollback>
 #include <QShowEvent>
 #include <QStandardItemModel>
 #include <QStringList>
+#include <QTabBar>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QVariant>
@@ -18,12 +24,37 @@
 
 namespace notebook {
 namespace {
+// ElaTabBar can detach pages independently of movable; these children belong to the host Dialog.
+class ModuleTabs final : public ElaTabWidget {
+public:
+    explicit ModuleTabs(QWidget* parent) : ElaTabWidget(parent)
+    {
+        setObjectName("CordisModuleTabs");
+        setMovable(false);
+        setTabsClosable(false);
+        setIsContainerAcceptDrops(false);
+        setAcceptDrops(false);
+        tabBar()->setAcceptDrops(false);
+        tabBar()->installEventFilter(this);
+        tabBar()->setExpanding(false);
+        setIsTabTransparent(true);
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (watched == tabBar() && event->type() == QEvent::MouseMove &&
+            static_cast<QMouseEvent*>(event)->buttons() != Qt::NoButton)
+            return true;
+        return ElaTabWidget::eventFilter(watched, event);
+    }
+};
 class ModulesPanel final : public QWidget {
 public:
     explicit ModulesPanel(std::weak_ptr<Workspace> workspace) : workspace_(std::move(workspace))
     {
         setObjectName("CordisModuleDiagnostics");
-        setMinimumSize(700, 470);
+        setMinimumSize(840, 620);
         auto layout = new QVBoxLayout(this);
         layout->setContentsMargins(20, 20, 20, 20);
         auto heading = new ElaText(QString::fromUtf8("模块管理"), 24, this);
@@ -45,19 +76,27 @@ public:
         table_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
         table_->horizontalHeader()->setStretchLastSection(true);
         table_->verticalHeader()->setVisible(false);
-        layout->addWidget(table_, 1);
+        table_->setMaximumHeight(170);
+        layout->addWidget(table_);
+        QObject::connect(table_->selectionModel(), &QItemSelectionModel::currentRowChanged, this,
+                         [this](const QModelIndex&, const QModelIndex&) {
+                             if (!rendering_)
+                                 refreshView();
+                         });
         status_ = new ElaText(this);
         status_->setTextPixelSize(13);
         status_->setWordWrap(true);
         status_->setTextFormat(Qt::PlainText);
         status_->setObjectName("CordisModuleStatus");
         layout->addWidget(status_);
-        auto detailsTitle = new ElaText(QString::fromUtf8("资源与诊断"), 16, this);
-        layout->addWidget(detailsTitle);
-        details_ = new ElaPlainTextEdit(this);
+        auto tabs = new ModuleTabs(this);
+        upgrade_ = new UpgradePanel(workspace_, tabs, [this] { refreshView(); });
+        tabs->addTab(upgrade_, QString::fromUtf8("升级"));
+        details_ = new ElaPlainTextEdit(tabs);
         details_->setObjectName("CordisModuleDiagnosticsText");
         details_->setReadOnly(true);
-        layout->addWidget(details_, 2);
+        tabs->addTab(details_, QString::fromUtf8("资源与诊断"));
+        layout->addWidget(tabs, 1);
         auto refresh = new ElaPushButton(QString::fromUtf8("刷新"), this);
         refresh->setObjectName("CordisModuleDiagnosticsRefresh");
         layout->addWidget(refresh);
@@ -89,12 +128,22 @@ private:
     ElaText* status_ = nullptr;
     ElaPlainTextEdit* details_ = nullptr;
     QTimer* timer_ = nullptr;
+    UpgradePanel* upgrade_ = nullptr;
+    bool rendering_ = false;
 
-    void render(const WorkspaceModulesSnapshot& snapshot)
+    void render(const WorkspaceModulesSnapshot& snapshot, const WorkspaceUpgradeSnapshot& upgrades)
     {
+        const QScopedValueRollback<bool> rendering(rendering_, true);
+        const auto selected =
+            upgrades.active
+                ? QString::fromStdString(upgrades.active->alias)
+                : table_->currentIndex().sibling(table_->currentIndex().row(), 0).data(Qt::UserRole).toString();
         model_->setRowCount(static_cast<int>(snapshot.current.size()));
+        int selectedRow = snapshot.current.empty() ? -1 : 0;
         for (std::size_t index = 0; index < snapshot.current.size(); ++index) {
             const auto& entry = snapshot.current[index];
+            if (QString::fromStdString(entry.alias) == selected)
+                selectedRow = static_cast<int>(index);
             const auto generation = std::find_if(snapshot.generations.begin(), snapshot.generations.end(),
                                                  [&](const auto& row) { return row.generation == entry.generation; });
             QStringList paths;
@@ -121,11 +170,16 @@ private:
                 }
             }
         }
+        table_->setCurrentIndex(model_->index(selectedRow, 0));
+        table_->setEnabled(snapshot.open && !upgrades.active);
         const auto text = detail::moduleDiagnosticsText(snapshot);
         if (details_->toPlainText() != text)
             details_->setPlainText(text);
         status_->setText(snapshot.open ? QString::fromUtf8("%1 个模块").arg(snapshot.current.size())
                                        : QString::fromUtf8("工作台正在关闭或停止接纳操作；这里保留已知状态。"));
+        const auto alias =
+            selectedRow < 0 ? std::string{} : snapshot.current[static_cast<std::size_t>(selectedRow)].alias;
+        upgrade_->refresh(snapshot, upgrades, alias);
     }
     void refreshView()
     {
@@ -134,11 +188,16 @@ private:
             return;
         // 当前同步写栈结束前，Workspace 的破坏性关闭不得删除本页。
         (void)workspace->withModuleView([this, workspace] {
+            if (rendering_)
+                return;
             const auto snapshot = workspace->modulesSnapshot();
-            if (snapshot.hasValue())
-                render(snapshot.value());
-            else
+            const auto upgrades = workspace->upgradeSnapshot();
+            if (snapshot.hasValue() && upgrades.hasValue())
+                render(snapshot.value(), upgrades.value());
+            else if (!snapshot.hasValue())
                 status_->setText(QString::fromStdString(snapshot.error().message));
+            else
+                status_->setText(QString::fromStdString(upgrades.error().message));
         });
     }
 };

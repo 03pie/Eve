@@ -29,9 +29,7 @@ void WorkspaceUpgradeExecution::start(const UpgradePreview& preview)
         require(installModuleArtifact(preview.sourceRoot, preview.artifact.manifestPath(), owner->pluginRoot_)));
     const auto& copied = installed->artifact().manifest();
     const auto& selected = preview.artifact.manifest();
-    if (copied.moduleId != selected.moduleId || copied.moduleVersion != selected.moduleVersion ||
-        copied.library != selected.library || copied.sha256 != selected.sha256 || copied.loader != selected.loader ||
-        copied.unloadPolicy != selected.unloadPolicy || copied.plugins != selected.plugins)
+    if (!sameManifest(copied, selected))
         throw InitializationFailure{
             makeError(ErrorCode::ConfigConflict, "candidate source changed during installation")};
     candidateLocator = copied.sha256 + "/module.json";
@@ -79,7 +77,7 @@ void WorkspaceUpgradeExecution::start(const UpgradePreview& preview)
         throw InitializationFailure{begun.error()};
     operation.emplace(std::move(begun).value());
     if (cancelRequested || owner->closeState_->closing)
-        cancel();
+        (void)cancel();
     const auto self = shared_from_this();
     watch(operation->settled(), [self](const Result<ReplacementReport>& result) { self->settled(result); });
 }
@@ -143,11 +141,12 @@ Result<void> WorkspaceUpgradeExecution::project()
     owner->definitions_ = definitions;
     return Result<void>::success();
 }
-void WorkspaceUpgradeExecution::cancel()
+Result<void> WorkspaceUpgradeExecution::cancel()
 {
-    cancelRequested = true;
     if (operation)
-        (void)operation->cancel();
+        return operation->cancel();
+    cancelRequested = true;
+    return Result<void>::success();
 }
 void WorkspaceUpgradeExecution::retain(ErrorInfo failure)
 {

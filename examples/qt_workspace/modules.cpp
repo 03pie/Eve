@@ -1,7 +1,7 @@
 /** @file modules.cpp
  * @brief 模块视图仅复制原目录/会话值；同步写栈与破坏性关闭共享退出屏障。
  */
-#include "workspace.hpp"
+#include "upgrade_p.hpp"
 
 namespace notebook {
 using namespace cordis;
@@ -18,15 +18,20 @@ Result<WorkspaceModulesSnapshot> Workspace::modulesSnapshot()
     value.open =
         moduleViewsOpen_ && !closeState_->closing && !closeState_->closed && scheduler->isOpen() && !deliveryBlocked();
     value.generations = std::move(generations).value();
-    const auto appendCurrent = [&](const char* alias, GenerationId generation, RuntimeId runtime) {
-        value.current.push_back({alias, std::string("example.") + alias, generation, runtime, {}});
+    const auto appendCurrent = [&](const char* alias, GenerationId generation, const std::optional<Runtime>& runtime) {
+        value.current.push_back({alias,
+                                 std::string("example.") + alias,
+                                 generation,
+                                 runtime ? runtime->id() : RuntimeId{},
+                                 {},
+                                 detail::supportsBusinessUpgrade(alias, runtime ? &*runtime : nullptr)});
     };
     if (counter_)
-        appendCurrent("counter", counter_->generation, counter_->runtime ? counter_->runtime->id() : RuntimeId{});
+        appendCurrent("counter", counter_->generation, counter_->runtime);
     if (reporter_)
-        appendCurrent("reporter", reporter_->generation, reporter_->runtime ? reporter_->runtime->id() : RuntimeId{});
+        appendCurrent("reporter", reporter_->generation, reporter_->runtime);
     if (notebook_)
-        appendCurrent("notebook", notebook_->generation, notebook_->runtime ? notebook_->runtime->id() : RuntimeId{});
+        appendCurrent("notebook", notebook_->generation, notebook_->runtime);
     if (session) {
         const auto state = session->snapshot();
         if (!state.hasValue()) {
@@ -34,6 +39,10 @@ Result<WorkspaceModulesSnapshot> Workspace::modulesSnapshot()
             value.configurationErrors.push_back(state.error());
         } else {
             const auto& source = state.value();
+            value.desiredRevision = source.coordinator.desiredRevision;
+            value.persistedRevision = source.store.persistedRevision;
+            value.dirty = source.store.dirty;
+            value.writing = source.store.writing;
             const auto appendError = [&](const std::optional<ErrorInfo>& error) {
                 if (error)
                     value.configurationErrors.push_back(*error);
@@ -61,6 +70,20 @@ Result<WorkspaceModulesSnapshot> Workspace::modulesSnapshot()
     if (stopped && !stopped->hasValue())
         value.configurationErrors.push_back(stopped->error());
     return Output::success(std::move(value));
+}
+Result<Task<loader::SaveReport>> Workspace::saveConfiguration(std::uint64_t expectedRevision)
+{
+    using Output = Result<Task<loader::SaveReport>>;
+    if (!scheduler->isCurrentThread())
+        return Output::failure(makeError(ErrorCode::WrongThread, "configuration save requires owner"));
+    if (closeState_->closing || closeState_->closed || !session || !scheduler->isOpen())
+        return Output::failure(makeError(ErrorCode::ContextClosing, "workspace configuration save closed"));
+    const auto state = session->snapshot();
+    if (!state.hasValue())
+        return Output::failure(state.error());
+    if (state.value().coordinator.desiredRevision != expectedRevision)
+        return Output::failure(makeError(ErrorCode::ConfigConflict, "configuration revision changed before save"));
+    return session->save(expectedRevision);
 }
 Result<void> Workspace::withModuleView(std::function<void()> action)
 {

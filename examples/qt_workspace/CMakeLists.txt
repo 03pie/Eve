@@ -47,7 +47,7 @@ cordis_add_notebook_plugin(cordis_example_notebook_b qt-upgrade/notebook-b 1.2.0
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bin/qt-workspace")
 configure_file(workspace.yaml "${CMAKE_BINARY_DIR}/bin/qt-workspace/workspace.yaml" COPYONLY)
 add_library(cordis_notebook_host STATIC workspace.cpp bootstrap.cpp close.cpp modules.cpp
-    modules_panel.cpp modules_panel_p.hpp diagnostics.cpp workspace_p.hpp
+    modules_panel.cpp modules_panel_p.hpp diagnostics.cpp upgrade_panel.cpp upgrade_panel.hpp upgrade_text.cpp workspace_p.hpp
     source.cpp source_p.hpp upgrade.cpp upgrade_execution.cpp upgrade_retirement.cpp upgrade_p.hpp)
 target_link_libraries(cordis_notebook_host PUBLIC Cordis::ModuleQt Cordis::ModuleQtPreflight Cordis::ModuleInstall
     Cordis::ConfigUi Cordis::ConfigKernel Cordis::ConfigStoreQt Cordis::Replacement cordis_native_service_modules)
@@ -113,13 +113,15 @@ if(BUILD_TESTING)
         set_tests_properties(p5.platform_workspace_${case} PROPERTIES LABELS "p5;module;qt;ui;integration;platform_workspace"
             TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endforeach()
+    add_library(cordis_platform_upgrade_support STATIC "${PROJECT_SOURCE_DIR}/tests/qt/platform_upgrade_support.cpp")
+    target_link_libraries(cordis_platform_upgrade_support PUBLIC cordis_platform_workspace_support)
+    cordis_target_defaults(cordis_platform_upgrade_support)
     add_executable(cordis_platform_upgrade_tests
         "${PROJECT_SOURCE_DIR}/tests/qt/platform_upgrade_main.cpp"
-        "${PROJECT_SOURCE_DIR}/tests/qt/platform_upgrade_support.cpp"
         "${PROJECT_SOURCE_DIR}/tests/qt/platform_upgrade_native.cpp"
         "${PROJECT_SOURCE_DIR}/tests/qt/platform_upgrade_qt.cpp"
         "${PROJECT_SOURCE_DIR}/tests/qt/platform_upgrade_contract.cpp")
-    target_link_libraries(cordis_platform_upgrade_tests PRIVATE cordis_platform_workspace_support)
+    target_link_libraries(cordis_platform_upgrade_tests PRIVATE cordis_platform_upgrade_support)
     set_target_properties(cordis_platform_upgrade_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     cordis_target_defaults(cordis_platform_upgrade_tests)
     add_dependencies(cordis_platform_upgrade_tests cordis_example_counter_a cordis_example_counter_b
@@ -142,6 +144,22 @@ if(BUILD_TESTING)
     foreach(case IN ITEMS menu catalogue legacy view_close save_conflict view_discard guards)
         add_test(NAME p5.modules_view_${case} COMMAND cordis_modules_view_tests "${CMAKE_BINARY_DIR}/bin" "${case}")
         set_tests_properties(p5.modules_view_${case} PROPERTIES LABELS "modules_view;p5;module;qt;ui;integration"
+            TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endforeach()
+    add_executable(cordis_upgrade_view_tests
+        "${PROJECT_SOURCE_DIR}/tests/qt/upgrade_view_main.cpp"
+        "${PROJECT_SOURCE_DIR}/tests/qt/upgrade_view_controls.cpp"
+        "${PROJECT_SOURCE_DIR}/tests/qt/upgrade_view_operations.cpp"
+        "${PROJECT_SOURCE_DIR}/tests/qt/upgrade_view_failures.cpp")
+    target_link_libraries(cordis_upgrade_view_tests PRIVATE cordis_platform_upgrade_support)
+    set_target_properties(cordis_upgrade_view_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    cordis_target_defaults(cordis_upgrade_view_tests)
+    add_dependencies(cordis_upgrade_view_tests cordis_example_counter_a cordis_example_counter_b
+        cordis_example_reporter_a cordis_example_reporter_b cordis_example_notebook_a cordis_example_notebook_b)
+    foreach(case IN ITEMS preview picker_close invalidation changed_source counter notebook cancel_prepared
+        cancel_building save_conflict committed_discard)
+        add_test(NAME p5.upgrade_view_${case} COMMAND cordis_upgrade_view_tests "${CMAKE_BINARY_DIR}/bin" "${case}")
+        set_tests_properties(p5.upgrade_view_${case} PROPERTIES LABELS "upgrade_view;p5;module;qt;ui;replacement"
             TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endforeach()
 endif()

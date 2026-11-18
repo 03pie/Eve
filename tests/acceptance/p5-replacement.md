@@ -368,4 +368,23 @@ Output 的每外壳 pending 预算为 1000 条、1 MiB 字符串和 64 个精确
 | save_conflict | 保存冲突先于视图关门，刷新仍可读原错误，rebase 后关闭 |
 | view_discard | 真实 FIFO 先关闭队列、丢弃已接受 idle continuation；原关闭 Task 失败及原拥有链/页保留，不伪造完成 |
 
-三配置各 226 功能专项通过后，末次仅收窄四个映像引用显示字面量/排版；最终输入重建后上述七项加原诊断两项三配置各 9/9。两轮分别有清单/输入记录，不宣称文案后最终 226 全部重跑，也不把重复用例累加。31 ASan 对象/136实际依赖、36产物、旧/新 SDK 声明/符号/布局和真实旧宿主/插件加载当前 Ui/Core均核对，六次入口收尾独立归档。当前仍无候选选择/升级按钮、完整 H01/S09、100 次/随机或新增原生桌面验收。
+三配置各 226 功能专项通过后，末次仅收窄四个映像引用显示字面量/排版；最终输入重建后上述七项加原诊断两项三配置各 9/9。两轮分别有清单/输入记录，不宣称文案后最终 226 全部重跑，也不把重复用例累加。31 ASan 对象/136实际依赖、36产物、旧/新 SDK 声明/符号/布局和真实旧宿主/插件加载当前 Ui/Core均核对，六次入口收尾独立归档。c1 当时尚无候选选择/升级按钮；c2 实际交互见下段。完整 H01/S09、100 次/随机与新增桌面验收仍待后续。
+
+## M5-c2 实际升级窗口
+
+十项前缀 `p5.upgrade_view_`，复用单一实际 Workspace 与原事务，见 [c2 结论](../../docs/p5-m5c-development.md#c2-收口结论)。
+
+| 场景 | 必须成立的事实 |
+|---|---|
+| preview | 绝对候选路径、旧新完整身份/hash、真实消费者及 disabled 目标路径；不安装/装载/预约，篡改预览值拒绝 |
+| picker_close | 真实 QFileDialog 选择/接受，NonModal 且归原窗口；切 alias 撤销选择器，固定 Ela 标签不能拖出，平台关闭完整析构 |
+| invalidation | 改源/模块/目标修订撤销预览；实际呈现 textChanged 和 chooser Show 栈内改源也立即失效，不执行旧候选 |
+| changed_source | 独立源副本的 DLL 在预览后改变，执行重新检查并拒绝，原业务/store/目录不变 |
+| counter | 同步锁选择/输入、双击只有一个 OperationId；隐藏后仍完成，重开同窗，计数/消费者/current/locator 共同提交，Notebook 不换 |
+| notebook | 最后一次同步编辑未 pump 即 Start，新 widget/命令与草稿，Native 实例/代次/计数不变 |
+| cancel_prepared | 错误线程/无效/旧 id 拒绝；真实旧显示按钮不能取消后来的操作；原 Prepared 取消不重建旧实例 |
+| cancel_building | 实际 source model 同步观测 Held/旧页销毁后点 Cancel；原 Cancelled+recovered，旧代/locator/草稿以新页恢复 |
+| save_conflict | Applied 后 dirty/磁盘旧定位，显式 Save 冲突不撤销业务；原 rebase 后保存成功，错修订/线程/关闭拒绝 |
+| committed_discard | UI 发起原升级，实际发布/共同提交后丢 Qt 回执，真实 committed/current/locator 与原拥有链保留；关队列后不声称最终 UI 已刷新 |
+
+原 `p5.modules_view_legacy` 同时检查代码升级只读与实际配置保存互不误伤。最终十九输入三配置各受影响专项 236/236，不将首轮十一项重复累加；37 实际 ASan 对象/144 依赖、36 产物及六次指定错误入口收尾另核。只做有限真实交互验证，完整 H01/S09/高级重试、100 次/随机、精确名单及新增原生桌面验收继续 c3/d/e。

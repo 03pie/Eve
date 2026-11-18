@@ -6,5 +6,13 @@
 #include <QString>
 
 namespace notebook::detail {
+QString moduleErrorText(const cordis::ErrorInfo& error, unsigned depth = 0);
 QString moduleDiagnosticsText(const WorkspaceModulesSnapshot& snapshot);
+QString upgradePreviewText(const UpgradePreview& preview);
+QString upgradeReportText(const WorkspaceUpgradeSnapshot& upgrade, const WorkspaceModulesSnapshot& modules,
+                          const std::string& alias);
+QString upgradePhaseText(const WorkspaceUpgradeSnapshot& upgrade);
+bool upgradePhaseTerminal(cordis::ReplacementPhase phase);
+QString upgradeSaveText(const WorkspaceModulesSnapshot& modules,
+                        const cordis::Task<cordis::loader::SaveReport>::Snapshot& result, bool pending);
 }

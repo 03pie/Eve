@@ -23,7 +23,7 @@ struct WorkspaceUpgradeExecution : std::enable_shared_from_this<WorkspaceUpgrade
     void start(const UpgradePreview&);
     void preparationFailed(cordis::ErrorInfo);
     cordis::Result<void> project();
-    void cancel();
+    cordis::Result<void> cancel();
     void settled(const cordis::Result<cordis::ReplacementReport>&);
     void retain(cordis::ErrorInfo);
     void retire();
@@ -45,4 +45,6 @@ struct WorkspaceUpgradeExecution : std::enable_shared_from_this<WorkspaceUpgrade
     }
 };
 bool sameArtifact(const cordis::module::PreflightArtifact&, const cordis::module::PreflightArtifact&);
+bool sameManifest(const cordis::module::ModuleManifest&, const cordis::module::ModuleManifest&);
+bool supportsBusinessUpgrade(const std::string& alias, const cordis::Runtime* runtime);
 } // namespace notebook::detail

@@ -6,9 +6,11 @@
 #include <QApplication>
 #include <QDir>
 #include <QEvent>
+#include <QLineEdit>
 #include <QListView>
 #include <QPlainTextEdit>
 #include <QPointer>
+#include <QPushButton>
 #include <QTableView>
 #include <algorithm>
 #include <exception>
@@ -244,10 +246,20 @@ void legacy(const QString& sourceBin)
     scene.apply(scene.state->initial);
     const auto snapshot = take(scene.state->modulesSnapshot());
     PLATFORM_CHECK(snapshot.open && snapshot.current.size() == 1 && snapshot.current.front().alias == "notebook" &&
-                   snapshot.generations.size() == 1 && snapshot.generations.front().manifest.moduleVersion == "1.0.0" &&
+                   !snapshot.current.front().supportsUpgrade && snapshot.generations.size() == 1 &&
+                   snapshot.generations.front().manifest.moduleVersion == "1.0.0" &&
                    snapshot.current.front().paths == std::vector<std::string>{"notes"});
-    auto* table = openModules(scene)->findChild<QTableView*>("CordisModuleTable");
+    auto* panel = openModules(scene);
+    auto* table = panel->findChild<QTableView*>("CordisModuleTable");
     PLATFORM_CHECK(table && table->model()->rowCount() == 1);
+    auto* source = panel->findChild<QLineEdit*>("CordisUpgradeSource");
+    auto* save = panel->findChild<QPushButton*>("CordisUpgradeSave");
+    PLATFORM_CHECK(source && !source->isEnabled() && save && save->isEnabled() && snapshot.dirty);
+    save->click();
+    until([&] {
+        const auto current = take(scene.state->modulesSnapshot());
+        return !current.dirty && !current.writing && current.persistedRevision == snapshot.desiredRevision;
+    });
     finishModules(scene);
 }
 void guards(const QString& sourceBin)

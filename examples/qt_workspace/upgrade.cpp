@@ -7,14 +7,25 @@
 
 namespace notebook::detail {
 using namespace cordis;
+bool sameManifest(const module::ModuleManifest& a, const module::ModuleManifest& b)
+{
+    return a.moduleId == b.moduleId && a.moduleVersion == b.moduleVersion && a.library == b.library &&
+           a.sha256 == b.sha256 && a.plugins == b.plugins && a.loader == b.loader && a.unloadPolicy == b.unloadPolicy;
+}
 bool sameArtifact(const module::PreflightArtifact& a, const module::PreflightArtifact& b)
 {
-    const auto& x = a.manifest();
-    const auto& y = b.manifest();
     return a.isValid() && b.isValid() && a.manifestPath() == b.manifestPath() && a.libraryPath() == b.libraryPath() &&
-           a.libraryBytes() == b.libraryBytes() && x.moduleId == y.moduleId && x.moduleVersion == y.moduleVersion &&
-           x.library == y.library && x.sha256 == y.sha256 && x.plugins == y.plugins && x.loader == y.loader &&
-           x.unloadPolicy == y.unloadPolicy;
+           a.libraryBytes() == b.libraryBytes() && sameManifest(a.manifest(), b.manifest());
+}
+bool supportsBusinessUpgrade(const std::string& alias, const Runtime* runtime)
+{
+    if (!runtime || !runtime->id().valid())
+        return false;
+    if (alias == "notebook") {
+        const auto schema = runtime->stateSchema();
+        return schema && schema->id == "org.cordis.example.notebook.draft" && schema->version == 1;
+    }
+    return alias == "counter" || alias == "reporter";
 }
 bool sameImpact(const ReplacementClosure& a, const ReplacementClosure& b)
 {
@@ -86,8 +97,7 @@ Result<UpgradePreview> Workspace::previewUpgrade(const std::string& alias, const
                                                                 : std::optional<Runtime>{};
         if (!runtime)
             return Output::failure(makeError(ErrorCode::InvalidArgument, "business module is not configured"));
-        if (alias == "notebook" &&
-            (!runtime->stateSchema() || runtime->stateSchema()->id != "org.cordis.example.notebook.draft"))
+        if (!detail::supportsBusinessUpgrade(alias, &*runtime))
             return Output::failure(makeError(ErrorCode::ConfigInvalid, "legacy notebook has no draft state contract"));
         const auto generation = native ? native->generation : notebook_->generation;
         const auto origin = detail::require(manager->runtimeOrigin(runtime->id()));
@@ -96,6 +106,8 @@ Result<UpgradePreview> Workspace::previewUpgrade(const std::string& alias, const
         const auto state = detail::require(session->snapshot());
         if (!state.coordinator.desired || state.coordinator.activeRevision || state.closing || state.deliveryBlocked)
             return Output::failure(makeError(ErrorCode::ConfigConflict, "configuration is not settled"));
+        if (state.coordinator.runningError)
+            return Output::failure(*state.coordinator.runningError);
         const auto root = QDir(sourceRoot).absolutePath().toUtf8().toStdString();
         auto artifact = detail::reviewBusinessArtifact(alias, root, manifestPath);
         detail::requireApproved(artifact, approvals_);
@@ -108,8 +120,19 @@ Result<UpgradePreview> Workspace::previewUpgrade(const std::string& alias, const
         if (previous->manifest.sha256 == artifact.manifest().sha256)
             return Output::failure(makeError(ErrorCode::InvalidArgument, "candidate is already current content"));
         auto impact = detail::require(kernel->replacementClosure({runtime->id()}));
+        std::vector<std::string> paths;
+        for (const auto& entry : state.coordinator.running)
+            if (std::any_of(impact.members.begin(), impact.members.end(), [&](const auto& member) {
+                    return member.instance == entry.instance && member.epoch == entry.epoch;
+                }))
+                paths.push_back(entry.path);
+        for (const auto& entry : state.coordinator.desired->source().structure().entries())
+            if (entry.second.module == alias)
+                paths.push_back(entry.first);
+        std::sort(paths.begin(), paths.end());
+        paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
         return Output::success({alias, root, generation, runtime->id(), state.coordinator.desiredRevision,
-                                std::move(artifact), std::move(impact)});
+                                std::move(artifact), std::move(impact), previous->manifest, std::move(paths)});
     } catch (const detail::InitializationFailure& failure) {
         return Output::failure(failure.error);
     } catch (const std::exception& failure) {
@@ -127,7 +150,9 @@ Result<Task<WorkspaceUpgradeReport>> Workspace::upgrade(const UpgradePreview& pr
     if (current.previous != preview.previous || current.previousRuntime != preview.previousRuntime ||
         current.desiredRevision != preview.desiredRevision || current.sourceRoot != preview.sourceRoot ||
         !detail::sameArtifact(current.artifact, preview.artifact) ||
-        !detail::sameImpact(current.impact, preview.impact))
+        !detail::sameImpact(current.impact, preview.impact) ||
+        !detail::sameManifest(current.previousManifest, preview.previousManifest) ||
+        current.affectedPaths != preview.affectedPaths)
         return Output::failure(makeError(ErrorCode::ConfigConflict, "upgrade preview is stale or source changed"));
     auto execution = std::make_shared<detail::WorkspaceUpgradeExecution>(shared_from_this(), current);
     upgrade_ = execution;
@@ -141,6 +166,24 @@ Result<Task<WorkspaceUpgradeReport>> Workspace::upgrade(const UpgradePreview& pr
         execution->preparationFailed(makeError(ErrorCode::CallbackFailed, "upgrade preparation threw"));
     }
     return Output::success(execution->completed.task());
+}
+Result<void> Workspace::cancelUpgrade(OperationId expectedOperationId)
+{
+    if (!scheduler->isCurrentThread())
+        return Result<void>::failure(makeError(ErrorCode::WrongThread, "upgrade cancellation requires owner"));
+    if (!expectedOperationId.valid())
+        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "upgrade operation identity is invalid"));
+    if (closeState_->closing || closeState_->closed || !scheduler->isOpen())
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "workspace upgrade cancellation closed"));
+    const auto execution = upgrade_;
+    if (!execution || !execution->operation)
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "no cancellable upgrade operation"));
+    const auto state = execution->operation->snapshot();
+    if (!state.hasValue())
+        return Result<void>::failure(state.error());
+    if (state.value().report.operation != expectedOperationId)
+        return Result<void>::failure(makeError(ErrorCode::ConfigConflict, "upgrade operation identity changed"));
+    return execution->cancel();
 }
 Result<WorkspaceUpgradeSnapshot> Workspace::upgradeSnapshot()
 {
@@ -165,8 +208,10 @@ Result<WorkspaceUpgradeSnapshot> Workspace::upgradeSnapshot()
         value.active->retained = value.active->retained || value.deliveryBlocked;
         if (upgrade_->operation) {
             const auto operation = upgrade_->operation->snapshot();
-            if (operation.hasValue())
+            if (operation.hasValue()) {
                 value.phase.emplace(operation.value().phase);
+                value.cancellationRequested = operation.value().cancelled;
+            }
         }
     }
     return Result<WorkspaceUpgradeSnapshot>::success(std::move(value));

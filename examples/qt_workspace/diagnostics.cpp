@@ -4,15 +4,15 @@
 #include "modules_panel_p.hpp"
 
 namespace notebook::detail {
-namespace {
-QString errorText(const cordis::ErrorInfo& error, unsigned depth = 0)
+QString moduleErrorText(const cordis::ErrorInfo& error, unsigned depth)
 {
     auto text = QString::fromStdString(error.phase + ": " + error.message);
     if (depth < 4)
         for (std::size_t i = 0; i < error.causes.size() && i < 8; ++i)
-            text += '\n' + QString(static_cast<int>(depth + 1) * 2, ' ') + errorText(error.causes[i], depth + 1);
+            text += '\n' + QString(static_cast<int>(depth + 1) * 2, ' ') + moduleErrorText(error.causes[i], depth + 1);
     return text;
 }
+namespace {
 const char* stateName(cordis::module::ModuleState state)
 {
     using cordis::module::ModuleState;
@@ -60,11 +60,11 @@ QString moduleDiagnosticsText(const WorkspaceModulesSnapshot& snapshot)
             text += QString::fromUtf8("  驻留原因：") + QString::fromStdString(reason) + '\n';
         for (const auto* failure : {&row.failure, &row.businessFailure, &row.unloadFailure})
             if (*failure)
-                text += QString::fromUtf8("  错误：") + errorText(**failure) + '\n';
+                text += QString::fromUtf8("  错误：") + moduleErrorText(**failure) + '\n';
         text += '\n';
     }
     for (const auto& error : snapshot.configurationErrors)
-        text += errorText(error) + '\n';
+        text += moduleErrorText(error) + '\n';
     return text;
 }
 } // namespace notebook::detail

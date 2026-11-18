@@ -112,7 +112,7 @@ void Workspace::closeAfterUpgrade()
         return;
     }
     const auto execution = upgrade_;
-    execution->cancel();
+    (void)execution->cancel();
     const auto self = shared_from_this();
     watch(execution->completed.task(), [self, execution](const Result<WorkspaceUpgradeReport>& result) {
         if (!result.hasValue() || result.value().retained || execution->blocked->load()) {

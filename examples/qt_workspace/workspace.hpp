@@ -32,6 +32,9 @@ struct UpgradePreview {
     std::uint64_t desiredRevision;
     cordis::module::PreflightArtifact artifact;
     cordis::ReplacementClosure impact;
+    /** @brief 展示值随执行重新预览核对，不能授予安装或替换权限。 */
+    cordis::module::ModuleManifest previousManifest;
+    std::vector<std::string> affectedPaths;
 };
 /** @brief 原事务结果与其后的物理清理分别保存；不持有任何执行资源。 */
 struct WorkspaceUpgradeReport {
@@ -50,6 +53,8 @@ struct WorkspaceUpgradeSnapshot {
     std::optional<WorkspaceUpgradeReport> active;
     std::optional<cordis::ReplacementPhase> phase;
     std::vector<WorkspaceUpgradeReport> history;
+    /** @brief 原操作已收到取消请求，不表示恢复或清理已经完成。 */
+    bool cancellationRequested = false;
 };
 /** @brief 当前业务来源与已接受配置路径，不借出工厂或运行能力。 */
 struct WorkspaceModuleEntry {
@@ -57,6 +62,8 @@ struct WorkspaceModuleEntry {
     cordis::GenerationId generation;
     cordis::RuntimeId runtime;
     std::vector<std::string> paths;
+    /** @brief 现有运行契约支持升级；在途/候选/关闭准入仍由原入口判断。 */
+    bool supportsUpgrade = false;
 };
 /** @brief 原目录与实际配置/关闭错误的纯值投影，关闭后仍可读取。 */
 struct WorkspaceModulesSnapshot {
@@ -64,6 +71,9 @@ struct WorkspaceModulesSnapshot {
     std::vector<WorkspaceModuleEntry> current;
     std::vector<cordis::module::ModuleGenerationSnapshot> generations;
     std::vector<cordis::ErrorInfo> configurationErrors;
+    std::uint64_t desiredRevision = 0;
+    std::optional<std::uint64_t> persistedRevision;
+    bool dirty = false, writing = false;
 };
 template <class T> T take(cordis::Result<T> result)
 {
@@ -109,8 +119,12 @@ public:
     cordis::Result<UpgradePreview> previewUpgrade(const std::string& alias, const QString& sourceRoot,
                                                   const std::string& manifestPath);
     cordis::Result<cordis::Task<WorkspaceUpgradeReport>> upgrade(const UpgradePreview& preview);
+    /** @brief 只向本次原操作请求取消，接纳不表示清理或恢复已完成。 */
+    cordis::Result<void> cancelUpgrade(cordis::OperationId expectedOperationId);
     cordis::Result<WorkspaceUpgradeSnapshot> upgradeSnapshot();
     cordis::Result<WorkspaceModulesSnapshot> modulesSnapshot();
+    /** @brief 显式保存当前已接受修订并返回原 Session/Store 回执，不应用编辑草稿。 */
+    cordis::Result<cordis::Task<cordis::loader::SaveReport>> saveConfiguration(std::uint64_t expectedRevision);
     /** @brief 同步写栈保活并阻止破坏性关闭；不接管事务或异步回调。 */
     cordis::Result<void> withModuleView(std::function<void()> action);
     const std::string& pluginRoot() const noexcept { return pluginRoot_; }
