@@ -317,11 +317,26 @@ void observerDiscarded()
     CHECK(wait(instance.ready(), scene.scheduler)->hasValue());
     CHECK(state->widget && state->command && state->page);
     const auto key = state->widget->property("ElaPageKey").toString();
+    barrier(scene.scheduler);
+    CHECK(take(group.snapshot()).state == PublicationState::Open && !scene.window->isNodePresentable(key));
+    const auto before = take(scene.scheduler->snapshot());
+    CHECK(before.queued == 0);
+    const auto evaluations = take(scene.kernel->services().dependencyEvaluationCount());
+    // 本实例没有这个依赖；仍须通知 Context::presentation 的真实通用观察者。
+    auto external = take(scene.kernel->services().stage({"unrelated-presentation"}, std::make_shared<int>(1)));
+    take(external.publish());
+    const auto accepted = take(scene.scheduler->snapshot());
+    CHECK(accepted.queued > 0 && accepted.accepted > before.accepted);
+    CHECK(take(scene.kernel->services().dependencyEvaluationCount()) == evaluations);
     take(group.commit());
     CHECK(scene.window->isNodePresentable(key));
     // 实际已接受的 Qt 作业尚未进入 owner；close 会调用它们的 discarded，不伪造原子诊断。
     take(scene.scheduler->close());
     CHECK(take(scene.scheduler->snapshot()).discarded > 0);
+    take(external.retire());
+    take(external.release());
+    CHECK(take(external.snapshot()).state == BindingState::Released &&
+          take(scene.kernel->services().snapshot()).empty());
     CHECK(take(scene.scheduler->snapshot()).callbackErrors == 0);
     CHECK(take(state->command->snapshot()).deliveryBlocked);
     CHECK(!scene.window->isNodePresentable(key));

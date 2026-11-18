@@ -427,3 +427,23 @@ ctest --test-dir build/ela-msvc-release -R '^p5\.dependency_evaluation_' --outpu
 溢出是饱和并锁存的诊断失败，不得回绕或改变业务评估。该不可自然穷尽分支只作静态审查，不增加测试写入口或假称动态覆盖。旧公开布局/符号与真实 SDK 0.1.5 宿主、插件兼容须另核；使用私有控制块的内部平台组件必须联动重建。最终验证记录随 [d0 工作单](../../docs/p5-m5d-development.md)归档，不能把新增六项或受影响选择清单当作整个 M5/P5 已完成。
 
 d0 最终五输入：共享 Release/Debug/ASan 各受影响专项584/584，静态Core关闭Ela/示例专项448/448，无Qt GCC全量453/453；四格式、30实际ASan对象/147依赖、旧公开布局/符号及两个旧SDK实物normal通过。三共享与静态均非全量；probe不重复累加。d0b 定向通知、d1 同进程100次、d2 随机/回放缩减和M5-e新增桌面验收仍待完成。
+
+## M5-d0b 服务可用性定向通知
+
+实现边界见 [ADR-0053](../../docs/adr/0053-keyed-activation-notifications.md)。实例唯一强持激活作业，原声明弱持，完整服务键索引只存实例 ID。publish/retire 定向；release、声明、发布组和替换门禁仍广播，不能用直接 key 通知代替联合声明环检查。旧激活通用 watch 登记和旧通知函数位置的实现应删除，通用 UI 观察按原一次性生命周期保留。
+
+| 真实用例 | 必须满足 |
+|---|---|
+| dependency_evaluation_unrelated_keys | 分别只改变名称、接口主版本、realm，三次无关发布均不增加 Pending 评估或排激活作业；记录实际前后值 |
+| dependency_evaluation_pending_coalescing | needed/blocker 两依赖：相关 key 的32次通知合并为一次真实 Pending 评估，满足 blocker 后激活，Active 空唤醒不增加 |
+| dependency_evaluation_release_cycle | 外部 Staged x 遮蔽 A/B/C 声明环；释放后原三实例全部 DependencyCycle，epoch0、activate0；不把初始批次数误当实例数 |
+| dependency_evaluation_stopped_keys | 相关通知已排后停止，原实例真实 Disposed/声明移除，保留句柄再发布无旧激活；新实例仍正确登记 |
+| dependency_evaluation_keyed_publish_failure / keyed_retire_failure | 无 committed 的双依赖 Pending，按键通知拒投只锁存真实 deliveryBlocked，不激活、不增加评估；恢复接收后原停止链静止 |
+| dependency_evaluation_keyed_reentry | post 栈内真实 stop→forget 删除声明和兴趣；外层稳定作业列表安全，另一个消费者读取真实17并只激活一次 |
+| ui_publication_observer_discarded | Held 准备稳定后，无激活兴趣的 key 仍排真实 UI 通用观察作业；随后 commit、不泵事件即 close，原 blocked/门禁/拒入/callbackErrors 与外部绑定释放判据保持 |
+
+上述名称均带 p5. 前缀，原六项计数/线程/Held 用例继续保留，依赖评估目标共12项。原通用拒投/发布组/替换门禁及真实业务恢复继续回归，不以直接用例替代联合出口。
+
+对照证据区分预期负例与最终通过：原 a9f4230 Core 的9项对照为8通过、仅无关键预期失败，实际1→2；新12项直接回归分别记录三维无关键1→1且queued0。初次新增环用例的初始计数假设、UI观察阶段选择错误，以及构建封装参数错误均保留原件；不得隐藏或改写为产品已通过。最终矩阵及 Debug 不重叠组合覆盖按 [工作单](../../docs/p5-m5d-development.md)记录，不累加 probe、重跑或不同输入的重复名称。
+
+d0b最终11输入：Release/ASan各591/591为最终输入新专项；Debug旧558未变exe原通过+修正后UI33复验形成不重叠591覆盖，非新591运行；静态455/455、无Qt GCC417/417同为专项。9格式、32真实ASan对象/151依赖、旧公开接口及两个旧SDK实物通过；登记分配失败只静态审查，无setter/假友元。完成本段审查提交同步后进入d1；未以此完成H02同进程100次或d2随机/回放缩减。

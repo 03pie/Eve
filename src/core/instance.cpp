@@ -1104,10 +1104,15 @@ void Instance::startMount() const
     const auto control = control_;
     if (control->services) {
         std::weak_ptr<detail::InstanceControl> weak = control;
-        control->subscription = control->services->watch({
-            [weak] { if (auto self = weak.lock()) self->enqueue(); },
-            [weak] { if (auto self = weak.lock()) self->blocked.store(true); }
-        });
+        ScheduledJob activationJob{[weak] {
+                                       if (auto self = weak.lock())
+                                           self->enqueue();
+                                   },
+                                   [weak] {
+                                       if (auto self = weak.lock())
+                                           self->blocked.store(true);
+                                   }};
+        control->subscription = std::make_shared<ScheduledJob>(std::move(activationJob));
         std::vector<ServiceKey> required, outputs, optionalOutputs;
         for (const auto& dependency : control->dependencies) required.push_back(control->realms.resolve(dependency.key));
         for (const auto& output : control->declarations)
@@ -1132,7 +1137,8 @@ void Instance::startMount() const
             [weak] {
                 if (auto self = weak.lock())
                     self->stop();
-            });
+            },
+            control->subscription);
     }
     if (!control->stopping)
         control->enqueue();

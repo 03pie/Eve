@@ -1,16 +1,20 @@
 /** @file publication.cpp
  * @brief 托管发布组的真实激活、可见性、租约、失败与清理边界。
  */
+#include "../support/notification_scheduler.hpp"
 #include <algorithm>
 #include <cordis/kernel.hpp>
 #include <cordis/testing/fake_scheduler.hpp>
 #include <exception>
-#include <functional>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <thread>
+#include <utility>
 using namespace cordis;
+using cordis::test::NotificationScheduler;
 using cordis::testing::FakeScheduler;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
@@ -18,32 +22,6 @@ using cordis::testing::FakeScheduler;
             throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__));                             \
     } while (false)
 
-struct PublicationScheduler final : IScheduler {
-    FakeScheduler queue;
-    bool reject = false;
-    std::function<void()> onPost;
-    std::exception_ptr hookFailure;
-    bool post(ScheduledJob job) override
-    {
-        if (onPost) {
-            try {
-                const auto callback = onPost;
-                callback();
-            } catch (...) {
-                if (!hookFailure)
-                    hookFailure = std::current_exception();
-            }
-        }
-        return !reject && queue.post(std::move(job));
-    }
-    bool isCurrentThread() const noexcept override { return queue.isCurrentThread(); }
-    bool isOpen() const override { return queue.isOpen(); }
-    void checkHook() const
-    {
-        if (hookFailure)
-            std::rethrow_exception(hookFailure);
-    }
-};
 bool publicationHeld(Kernel& kernel, InstanceId instance)
 {
     const auto graph = kernel.services().dependencyGraph().value();
@@ -373,7 +351,7 @@ void cycle()
 }
 void notification(bool reject, bool reassign = false)
 {
-    auto scheduler = std::make_shared<PublicationScheduler>();
+    auto scheduler = std::make_shared<NotificationScheduler>();
     Kernel kernel(scheduler);
     auto group = kernel.holdPublication().value();
     auto handle = std::make_unique<PublicationGroup>(group);
@@ -419,7 +397,7 @@ void notification(bool reject, bool reassign = false)
 /** @brief 没有成员或 Binding 的组也通知原索引；失败不撤销其他真实实例的清理能力。 */
 void abortNotification(bool reject, bool reassign = false)
 {
-    auto scheduler = std::make_shared<PublicationScheduler>();
+    auto scheduler = std::make_shared<NotificationScheduler>();
     Kernel kernel(scheduler);
     auto group = kernel.holdPublication().value();
     auto other = kernel.holdPublication().value();

@@ -16,6 +16,7 @@ add_library(cordis_core ${cordis_core_type}
     state_budget.cpp
     kernel.cpp
     service.cpp
+    service_notifications.cpp
     service_contract.cpp
     service_plan.cpp
     publication.cpp

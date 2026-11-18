@@ -12,6 +12,7 @@ struct InstanceDeclaration {
     std::vector<ServiceKey> outputs;
     std::shared_ptr<PublicationControl> publication;
     std::vector<ServiceKey> optionalOutputs;
+    std::weak_ptr<ScheduledJob> activationJob;
 };
 struct PublicationMember {
     std::function<Result<void>()> ready;
@@ -36,6 +37,7 @@ struct ServiceRegistryControl {
     bool dependencyEvaluationsOverflowed = false;
     std::map<InstanceId, InstanceId> parents;
     std::map<InstanceId, InstanceDeclaration> declarations;
+    std::map<ServiceKey, std::set<InstanceId>> interestedInstances;
     std::map<OperationId, std::shared_ptr<ReplacementScopeControl>> replacements;
     std::map<RuntimeId, OperationId> replacementRuntimes;
     std::map<InstanceId, OperationId> replacementInstances;
@@ -86,6 +88,7 @@ void applyPublication(const std::shared_ptr<PublicationControl>& control,
 Result<void> replacementBindingReadAccess(const std::shared_ptr<BindingControl>& binding);
 void checkUnused(const std::shared_ptr<BindingControl>& binding);
 bool notifyRegistry(const std::shared_ptr<ServiceRegistryControl>& registry);
+bool notifyRegistry(const std::shared_ptr<ServiceRegistryControl>& registry, const ServiceKey& key);
 bool visiblePublication(const std::shared_ptr<PublicationControl>& binding,
                         const std::shared_ptr<PublicationControl>& viewer);
 bool availableBinding(const BindingControl& binding, const std::shared_ptr<PublicationControl>& viewer,

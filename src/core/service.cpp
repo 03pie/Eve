@@ -17,22 +17,21 @@ void checkUnused(const std::shared_ptr<BindingControl>& binding)
     if (binding->state == BindingState::Retiring && binding->committed == 0 && binding->calls == 0) binding->unused.resolve();
 }
 
-/** @brief 索引通知只排队，投递受阻时调用宿主诊断入口。 */
-bool notifyRegistry(const std::shared_ptr<ServiceRegistryControl>& registry)
+namespace {
+/** @brief 退出或登记回滚共用原声明的兴趣键；不通知，也不调用作业。 */
+void removeActivationInterests(ServiceRegistryControl& registry, InstanceId instance,
+                               const std::vector<ServiceKey>& dependencies)
 {
-    std::vector<std::shared_ptr<ScheduledJob>> jobs;
-    for (auto it = registry->watchers.begin(); it != registry->watchers.end();) {
-        if (auto job = it->lock()) { jobs.push_back(std::move(job)); ++it; }
-        else it = registry->watchers.erase(it);
+    for (const auto& key : dependencies) {
+        const auto interested = registry.interestedInstances.find(key);
+        if (interested == registry.interestedInstances.end())
+            continue;
+        interested->second.erase(instance);
+        if (interested->second.empty())
+            registry.interestedInstances.erase(interested);
     }
-    bool delivered = true;
-    for (const auto& job : jobs) {
-        try { if (registry->scheduler->post(*job)) continue; } catch (...) {}
-        delivered = false;
-        if (job->discarded) job->discarded();
-    }
-    return delivered;
 }
+} // namespace
 
 /** @brief 优先使用已有绑定；缺绑定时仅为唯一必供声明建立候选提供者边。 */
 InstanceId declaredProvider(const ServiceRegistryControl& registry, const ServiceKey& key,
@@ -318,19 +317,40 @@ void ServiceRegistry::attachParent(InstanceId child, InstanceId parent) const { 
 /** @brief 确认静止后删除所有权边，不由句柄析构推断终结。 */
 void ServiceRegistry::forgetInstance(InstanceId instance) const
 {
+    const auto declaration = control_->declarations.find(instance);
+    if (declaration != control_->declarations.end()) {
+        detail::removeActivationInterests(*control_, instance, declaration->second.dependencies);
+        control_->declarations.erase(declaration);
+    }
     control_->parents.erase(instance);
-    control_->declarations.erase(instance);
     detail::notifyRegistry(control_);
 }
 /** @brief 挂载登记只发排队通知，Pending 实例会重新预检新候选形成的环。 */
 void ServiceRegistry::declareInstance(InstanceId instance, std::vector<ServiceKey> dependencies,
                                       std::vector<ServiceKey> outputs, std::vector<ServiceKey> optionalOutputs,
-                                      std::function<Result<void>()> ready, std::function<void()> abort) const
+                                      std::function<Result<void>()> ready, std::function<void()> abort,
+                                      std::weak_ptr<ScheduledJob> activationJob) const
 {
-    control_->declarations.emplace(instance, detail::InstanceDeclaration{std::move(dependencies), std::move(outputs),
-                                                                         publication_, std::move(optionalOutputs)});
-    if (publication_ && publication_->state == PublicationState::Open)
-        publication_->members.emplace(instance, detail::PublicationMember{std::move(ready), std::move(abort)});
+    const auto inserted = control_->declarations.emplace(
+        instance, detail::InstanceDeclaration{std::move(dependencies), std::move(outputs), publication_,
+                                              std::move(optionalOutputs), std::move(activationJob)});
+    if (!inserted.second)
+        throw std::invalid_argument("instance declaration already registered");
+    try {
+        for (const auto& key : inserted.first->second.dependencies)
+            control_->interestedInstances[key].insert(instance);
+        // 最后接纳组成员；成功后登记已完整，之后的通知可重入停止并移除本行。
+        if (publication_ && publication_->state == PublicationState::Open) {
+            const auto member =
+                publication_->members.emplace(instance, detail::PublicationMember{std::move(ready), std::move(abort)});
+            if (!member.second)
+                throw std::invalid_argument("publication member already registered");
+        }
+    } catch (...) {
+        detail::removeActivationInterests(*control_, instance, inserted.first->second.dependencies);
+        control_->declarations.erase(inserted.first);
+        throw;
+    }
     detail::notifyRegistry(control_);
 }
 /** @brief 只拒绝确实返回当前实例的环，路径中的域与边类型保留在错误中。 */
@@ -556,7 +576,8 @@ Result<void> ProviderHandle::publish() const
     binding_->state = binding_->publication && binding_->publication->state == PublicationState::Open
                           ? BindingState::Held
                           : BindingState::Published;
-    if (auto owner = binding_->owner.lock()) detail::notifyRegistry(owner);
+    if (auto owner = binding_->owner.lock())
+        detail::notifyRegistry(owner, binding_->key);
     return Result<void>::success();
 }
 
@@ -582,7 +603,8 @@ Result<void> ProviderHandle::retireForCleanup() const
     for (const auto& weak : binding_->consumers) if (auto lease = weak.lock()) if (lease->active) consumers.push_back(lease);
     for (const auto& lease : consumers) if (lease->invalidated) lease->invalidated();
     detail::checkUnused(binding_);
-    if (auto owner = binding_->owner.lock()) detail::notifyRegistry(owner);
+    if (auto owner = binding_->owner.lock())
+        detail::notifyRegistry(owner, binding_->key);
     return Result<void>::success();
 }
 

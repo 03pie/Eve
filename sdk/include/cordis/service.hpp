@@ -265,7 +265,7 @@ private:
     /** @brief 登记已解析的强依赖及输出；可选输出用于闭包，不参与必供输出的环预检。 */
     void declareInstance(InstanceId instance, std::vector<ServiceKey> dependencies, std::vector<ServiceKey> outputs,
                          std::vector<ServiceKey> optionalOutputs, std::function<Result<void>()> ready,
-                         std::function<void()> abort) const;
+                         std::function<void()> abort, std::weak_ptr<ScheduledJob> activationJob) const;
     /** @brief 对确定提供者的声明边和所有权边预检，缺失或歧义提供者不臆测连边。 */
     Result<void> checkDeclarations(InstanceId instance) const;
     /** @brief 检查托管实例与索引是否归属同一调度器。 */
