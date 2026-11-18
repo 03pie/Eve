@@ -338,6 +338,10 @@ Result<void> ServiceRegistry::checkDeclarations(InstanceId instance) const
 {
     const auto node = control_->declarations.find(instance);
     if (node == control_->declarations.end()) return Result<void>::success();
+    if (control_->dependencyEvaluations == std::numeric_limits<std::uint64_t>::max())
+        control_->dependencyEvaluationsOverflowed = true;
+    else
+        ++control_->dependencyEvaluations;
     for (const auto& key : node->second.dependencies) {
         const auto provider = detail::declaredProvider(*control_, key, node->second.publication);
         std::vector<ErrorInfo> path;
@@ -498,6 +502,16 @@ Result<std::vector<BindingSnapshot>> ServiceRegistry::snapshot() const
     std::vector<BindingSnapshot> bindings;
     for (const auto& entry : control_->bindings) bindings.push_back(entry.second->snapshot());
     return Result<std::vector<BindingSnapshot>>::success(std::move(bindings));
+}
+
+Result<std::uint64_t> ServiceRegistry::dependencyEvaluationCount() const
+{
+    using Output = Result<std::uint64_t>;
+    if (!control_->scheduler->isCurrentThread())
+        return Output::failure(makeError(ErrorCode::WrongThread, "dependency evaluation count requires owner thread"));
+    if (control_->dependencyEvaluationsOverflowed)
+        return Output::failure(makeError(ErrorCode::InvalidArgument, "dependency evaluation count overflowed"));
+    return Output::success(control_->dependencyEvaluations);
 }
 
 Result<ServiceGraphSnapshot> ServiceRegistry::dependencyGraph() const

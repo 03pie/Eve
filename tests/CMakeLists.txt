@@ -593,6 +593,14 @@ foreach(case IN ITEMS recovery transitive update_draining rollback cycle_realm b
     set_tests_properties(w4.dependency_${case} PROPERTIES LABELS "w4;core" TIMEOUT 15)
 endforeach()
 
+add_executable(cordis_dependency_evaluation_tests unit/dependency_evaluation.cpp)
+target_link_libraries(cordis_dependency_evaluation_tests PRIVATE Cordis::Core)
+cordis_target_defaults(cordis_dependency_evaluation_tests)
+foreach(case IN ITEMS accounting pending_coalescing version cycle held guards)
+    add_test(NAME p5.dependency_evaluation_${case} COMMAND cordis_dependency_evaluation_tests ${case})
+    set_tests_properties(p5.dependency_evaluation_${case} PROPERTIES LABELS "p5;core;dependency_evaluation" TIMEOUT 15)
+endforeach()
+
 add_executable(cordis_service_contract_tests unit/service_contract.cpp)
 target_link_libraries(cordis_service_contract_tests PRIVATE Cordis::Core)
 cordis_target_defaults(cordis_service_contract_tests)

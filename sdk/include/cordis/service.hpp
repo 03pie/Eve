@@ -237,6 +237,10 @@ public:
     Result<std::vector<BindingSnapshot>> snapshot() const;
     /** @brief owner 值快照：实际 committed 边、声明边与父子边，不解析或调用服务对象。 */
     Result<ServiceGraphSnapshot> dependencyGraph() const;
+    /** @brief owner 读取本索引累计的实际激活依赖评估批次；共享视图同源，关闭队列后仍可读。
+     * 包含失败和零依赖评估，不计通知、入队、空执行或查询；溢出返回 InvalidArgument。
+     */
+    Result<std::uint64_t> dependencyEvaluationCount() const;
 
 private:
     friend struct module::detail::NativeServices;

@@ -404,3 +404,26 @@ Output 的每外壳 pending 预算为 1000 条、1 MiB 字符串和 64 个精确
 | retirement | 实际Runtime外借使排空拒绝；释放/FIFO后同一高级按钮卸载，HMODULE/旧MEM_IMAGE/独占文件三重证据；原Applied与第一次失败drain历史不改 |
 
 最终23输入三配置各受影响专项245/245；首7/9负例及修正后9/9分别归档，不重复累加。21格式、52ASan对象/162实际依赖、正常36+四配置故障16产物、24正常Native命令及六次入口收尾另核。SDK/平台层未变，无Ela仅故障产物构建/导出证明。M5-c 分段出口完成；M5-d 同进程100次/随机回放、M5-e 最终精确资格/支持矩阵/需求映射和新增原生桌面验收仍待完成。
+
+## M5-d0 依赖评估观测
+
+计数口径见 [ADR-0052](../../docs/adr/0052-dependency-evaluation-observation.md)：统计原注册表中有声明记录、真正进入激活依赖预检的批次，包括零依赖和失败尝试；不是通知、队列任务、边访问或成功激活数。不得以此宣称已实现按服务键定向通知、同进程100次或随机压力。
+
+| 真实公开路径用例 | 必须满足 |
+|---|---|
+| p5.dependency_evaluation_accounting | 初始为零；零依赖实际激活计入；复制视图同源，snapshot/graph/find/域查询不增加 |
+| p5.dependency_evaluation_pending_coalescing | 区分真实 Pending 重评估与多通知合并；依赖满足后真实激活；Active 空唤醒不增加 |
+| p5.dependency_evaluation_version | minor/能力拒绝计入尝试；没有业务激活或新 epoch；单独 find 不增加 |
+| p5.dependency_evaluation_cycle | 原 Held 声明环预检失败计入；commit/abort 本身不冒充依赖评估 |
+| p5.dependency_evaluation_held | 同组 Held 与组外 Pending 使用同一累计源；发布后恢复；独立 Kernel 不共享统计 |
+| p5.dependency_evaluation_guards | WrongThread 先拒绝读取；start 前 stop 不计；正常关闭和调度器关闭后仍可诊断 |
+
+在原构建目录运行：
+
+```powershell
+ctest --test-dir build/ela-msvc-release -R '^p5\.dependency_evaluation_' --output-on-failure
+```
+
+溢出是饱和并锁存的诊断失败，不得回绕或改变业务评估。该不可自然穷尽分支只作静态审查，不增加测试写入口或假称动态覆盖。旧公开布局/符号与真实 SDK 0.1.5 宿主、插件兼容须另核；使用私有控制块的内部平台组件必须联动重建。最终验证记录随 [d0 工作单](../../docs/p5-m5d-development.md)归档，不能把新增六项或受影响选择清单当作整个 M5/P5 已完成。
+
+d0 最终五输入：共享 Release/Debug/ASan 各受影响专项584/584，静态Core关闭Ela/示例专项448/448，无Qt GCC全量453/453；四格式、30实际ASan对象/147依赖、旧公开布局/符号及两个旧SDK实物normal通过。三共享与静态均非全量；probe不重复累加。d0b 定向通知、d1 同进程100次、d2 随机/回放缩减和M5-e新增桌面验收仍待完成。

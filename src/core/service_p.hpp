@@ -32,6 +32,8 @@ struct ServiceRegistryControl {
     std::set<RealmId> realms{RealmId{1}};
     std::shared_ptr<ServiceRegistryControl> pin;
     std::vector<std::weak_ptr<ScheduledJob>> watchers;
+    std::uint64_t dependencyEvaluations = 0;
+    bool dependencyEvaluationsOverflowed = false;
     std::map<InstanceId, InstanceId> parents;
     std::map<InstanceId, InstanceDeclaration> declarations;
     std::map<OperationId, std::shared_ptr<ReplacementScopeControl>> replacements;
