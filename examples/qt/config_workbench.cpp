@@ -308,13 +308,14 @@ int main(int argc, char** argv)
         app.setApplicationName("CordisConfigWorkbench");
         bool smoke = false, dark = false;
         QString path;
-        for (int i = 1; i < argc; ++i) {
-            const std::string value = argv[i];
+        const auto arguments = app.arguments();
+        for (int i = 1; i < arguments.size(); ++i) {
+            const auto& value = arguments[i];
             if (value == "--smoke" || value == "--smoke-dark") {
                 smoke = true;
                 dark = value == "--smoke-dark";
-            } else if (value == "--file" && i + 1 < argc)
-                path = QString::fromLocal8Bit(argv[++i]);
+            } else if (value == "--file" && i + 1 < arguments.size())
+                path = arguments[++i];
             else
                 throw std::invalid_argument("use --file <path>, --smoke or --smoke-dark");
         }

@@ -238,6 +238,8 @@ class PackagingTests(unittest.TestCase):
         put(self.assets / "README.txt", "临时包 with spaces\n".encode())
         put(self.assets / "qt.conf", b"[Paths]\nPlugins=plugins\n")
         put(self.assets / "verification/verify-package.ps1", b"# value-only fixture verifier\n")
+        for name in ("record-desktop.ps1", "preview-windows.psm1", "preview-ui.psm1", "preview-acl.ps1"):
+            put(self.assets / "verification" / name, b"# fixture desktop support; never executed\n")
         material = put(self.assets / "licenses/NOTICE.txt", b"fixture material\n")
         put_json(self.assets / "licenses/sources.json", {"schema": "cordis.preview.license-sources/1",
                  "files": [{"path": material.name, "bytes": material.stat().st_size, "sha256": digest(material)}]})
@@ -275,6 +277,34 @@ class PackagingTests(unittest.TestCase):
                          "p5CloseoutCommit": "closeout-fixture", "qualificationSourceSha256": digest(self.catalog),
                          "evidence": evidence}
         put_json(self.assets / "verification/p5-baseline.json", self.baseline)
+        # Preserve the original receipts, then model the one separately reviewed repair.
+        source = put(self.root / pack.CONFIGURATION_SOURCE, b"// fixture Qt Unicode arguments repair\n")
+        executable = put(self.build / "bin" / pack.ENTRY_POINTS[0], image + b"\nreviewed Unicode host fixture\n")
+        evidence = {}
+        for role in sorted(pack.HOST_EVIDENCE_ROLES):
+            path = put_json(self.p5 / "host" / (role + ".json"), {"fixtureRole": role})
+            evidence[role] = {"path": path.relative_to(self.p5).as_posix(), "sha256": digest(path)}
+        self.host = {"schema": "cordis.preview.configuration-host/1", "profile": "ela-msvc-release",
+                     "source": {"path": pack.CONFIGURATION_SOURCE,
+                                "previousSha256": self.source_inputs[pack.CONFIGURATION_SOURCE], "sha256": digest(source)},
+                     "executable": {"path": pack.ENTRY_POINTS[0],
+                                    "previousSha256": pack.evidence_hash(self.configuration_files, "/bin/" + pack.ENTRY_POINTS[0]),
+                                    "sha256": digest(executable)}, "evidence": evidence}
+        self.host_path = self.assets / "verification/configuration-host.json"
+        self.review_path = self.p5 / "host/review.json"
+        self.write_host()
+
+    def write_host(self, host=None, review=None):
+        host = self.host if host is None else host
+        candidate = {key: value for key, value in host.items() if key != "review"}
+        if review is None:
+            review = {"schema": "cordis.preview.host-review/1", "passed": True,
+                      "candidateSha256": hashlib.sha256(pack.canonical(candidate)).hexdigest(),
+                      "configurationSourceSha256": host["source"]["sha256"],
+                      "configurationExecutableSha256": host["executable"]["sha256"]}
+        put_json(self.review_path, review)
+        host["review"] = {"path": self.review_path.relative_to(self.p5).as_posix(), "sha256": digest(self.review_path)}
+        put_json(self.host_path, host)
 
     def write_cache(self):
         put(self.build / "CMakeCache.txt", "".join(key + ":STRING=" + value + "\n"
@@ -293,6 +323,7 @@ class PackagingTests(unittest.TestCase):
         manifest = json.loads((payload / "build-manifest.json").read_text(encoding="utf-8"))
         expected = {entry["path"]: entry["sha256"] for entry in manifest["files"]}
         self.assertEqual(len(expected), len(manifest["files"]))
+        self.assertIn("verification/preview-acl.ps1", expected)
         self.assertEqual({p.relative_to(payload).as_posix() for p in payload.rglob("*") if p.is_file()},
                          set(expected) | {"build-manifest.json", "SHA256SUMS.txt"})
         for entry in manifest["files"]:
@@ -300,6 +331,18 @@ class PackagingTests(unittest.TestCase):
             self.assertEqual(digest(entry["source"]["path"]), entry["sha256"])
         self.assertFalse(receipt["packageRuntimeVerified"])
         self.assertFalse(receipt["cleanMachineVerified"])
+        self.assertNotIn("sameQualifiedBytes", receipt)
+        self.assertIs(receipt["sameP5ModuleAndRuntimeBytes"], True)
+        self.assertIs(receipt["p5BusinessProductUnchanged"], True)
+        self.assertEqual(receipt["reviewedConfigurationHostSha256"], self.host["executable"]["sha256"])
+        host = manifest["configurationHost"]
+        self.assertEqual(host["source"], self.host["source"])
+        self.assertEqual(host["executable"], self.host["executable"])
+        self.assertEqual(host["record"], {"path": "verification/configuration-host.json", "sha256": digest(self.host_path)})
+        self.assertEqual(set(manifest["qualification"]["evidence"]), set(self.baseline["evidence"]))
+        config = [entry for entry in manifest["files"] if entry["path"] == pack.ENTRY_POINTS[0]][0]
+        self.assertEqual(config["role"], "reviewed-configuration-host")
+        self.assertNotEqual(config["sha256"], self.host["executable"]["previousSha256"])
         archive = self.output / receipt["archive"]["path"]
         self.assertEqual(digest(archive), receipt["archive"]["sha256"])
         with zipfile.ZipFile(archive) as package:
@@ -344,6 +387,99 @@ class PackagingTests(unittest.TestCase):
         put(self.root / "examples/qt_workspace/main.cpp", b"changed after receipt\n")
         with self.assertRaisesRegex(ValueError, "compilation input"):
             pack.load_baseline(self.p5)
+
+    def test_configuration_host_is_required_even_with_original_source_and_exe(self):
+        self.host_path.unlink()
+        put(self.root / pack.CONFIGURATION_SOURCE, b"// frozen fixture source\n")
+        put(self.build / "bin" / pack.ENTRY_POINTS[0], pe_bytes())
+        with self.assertRaisesRegex(ValueError, "missing regular input"):
+            self.collect()
+
+    def test_host_schema_cannot_authorize_another_source_or_a_dll(self):
+        original = copy.deepcopy(self.host)
+        attempts = [("source", "examples/qt_workspace/main.cpp"),
+                    ("executable", "native-upgrade/counter-a/cordis_example_counter_a.dll")]
+        for field, path in attempts:
+            host = copy.deepcopy(original); host[field]["path"] = path
+            self.write_host(host)
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "cannot override"):
+                self.collect()
+        host = copy.deepcopy(original); host["source"]["overrides"] = {"src/module/manager.cpp": "0" * 64}
+        self.write_host(host)
+        with self.assertRaisesRegex(ValueError, "cannot override"):
+            self.collect()
+        host = copy.deepcopy(original); host["dllOverrides"] = {"cordis_core.dll": "0" * 64}
+        self.write_host(host)
+        with self.assertRaisesRegex(ValueError, "schema/profile"):
+            self.collect()
+
+    def test_host_predecessors_must_match_the_original_two_p5_records(self):
+        original = copy.deepcopy(self.host)
+        for field in ("source", "executable"):
+            host = copy.deepcopy(original); host[field]["previousSha256"] = "0" * 64
+            self.write_host(host)
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "P5 predecessor"):
+                self.collect()
+            host = copy.deepcopy(original); host[field]["sha256"] = host[field]["previousSha256"]
+            self.write_host(host)
+            with self.subTest(unchanged=field), self.assertRaisesRegex(ValueError, "P5 predecessor"):
+                self.collect()
+
+    def test_old_configuration_executable_and_unreviewed_source_are_rejected(self):
+        path = self.build / "bin" / pack.ENTRY_POINTS[0]
+        current = path.read_bytes(); put(path, pe_bytes())
+        with self.assertRaisesRegex(ValueError, "frozen artifact changed"):
+            self.collect()
+        put(path, current)
+        put(self.root / pack.CONFIGURATION_SOURCE, b"// unreviewed further edit\n")
+        with self.assertRaisesRegex(ValueError, "compilation input"):
+            self.collect()
+
+    def test_host_evidence_and_review_tampering_are_rejected(self):
+        evidence = self.p5 / self.host["evidence"]["unicodeCompletion"]["path"]
+        before = evidence.read_bytes(); put(evidence, before + b" ")
+        with self.assertRaisesRegex(ValueError, "host evidence changed: unicodeCompletion"):
+            self.collect()
+        put(evidence, before)
+        with self.review_path.open("ab") as stream: stream.write(b" ")
+        with self.assertRaisesRegex(ValueError, "host evidence changed: review"):
+            self.collect()
+
+    def test_review_must_bind_this_exact_candidate_and_two_new_digests(self):
+        original_review = pack.read_json(self.review_path)
+        for key, value in (("candidateSha256", "0" * 64), ("configurationSourceSha256", "0" * 64),
+                           ("configurationExecutableSha256", "0" * 64), ("passed", False)):
+            review = {**original_review, key: value}
+            self.write_host(review=review)
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "review does not bind"):
+                self.collect()
+
+    def test_host_evidence_roles_and_paths_cannot_be_omitted_or_escape(self):
+        original = copy.deepcopy(self.host)
+        host = copy.deepcopy(original); del host["evidence"]["unicodeCompletion"]
+        self.write_host(host)
+        with self.assertRaisesRegex(ValueError, "exact reviewed evidence roles"):
+            self.collect()
+        host = copy.deepcopy(original); host["evidence"]["unicodeCompletion"]["path"] = "../outside.json"
+        self.write_host(host)
+        with self.assertRaisesRegex(ValueError, "unsafe relative"):
+            self.collect()
+
+    def test_review_binds_canonical_candidate_not_raw_line_endings(self):
+        raw = self.host_path.read_bytes()
+        put(self.host_path, raw.replace(b"\n", b"\r\n"))
+        self.collect()
+
+    def test_exact_desktop_helpers_are_required_and_other_assets_still_rejected(self):
+        for name in ("preview-ui.psm1", "preview-acl.ps1"):
+            helper = self.assets / "verification" / name
+            before = helper.read_bytes(); helper.unlink()
+            with self.subTest(helper=name), self.assertRaisesRegex(ValueError, "missing regular input"):
+                self.collect()
+            put(helper, before)
+        put(self.assets / "verification/unreviewed-helper.psm1", b"not in the fixed delivery inputs")
+        with self.assertRaisesRegex(ValueError, "unreviewed preview asset"):
+            self.collect()
 
     def test_baseline_cannot_escape_its_evidence_root(self):
         baseline = copy.deepcopy(self.baseline)
@@ -417,6 +553,21 @@ class PackagingTests(unittest.TestCase):
                 pack.package(self.args)
         self.assertTrue((self.output / "INCOMPLETE.txt").exists())
         self.assertFalse(list(self.output.glob("*.zip")))
+
+    def test_host_evidence_and_compilation_sources_are_rechecked_after_copy(self):
+        original_copy = pack.copy_inputs
+        for index, changed in enumerate((self.review_path, self.root / pack.CONFIGURATION_SOURCE)):
+            self.args.output = str(self.work / ("raced-output-" + str(index)))
+            original = changed.read_bytes()
+            def change_after_copy(inputs, payload):
+                original_copy(inputs, payload)
+                put(changed, original + b" ")
+            with self.subTest(path=str(changed)), mock.patch.object(pack, "copy_inputs", side_effect=change_after_copy):
+                with self.assertRaisesRegex(ValueError, "source evidence changed after"):
+                    pack.package(self.args)
+            self.assertFalse(list(Path(self.args.output).glob("*.zip")))
+            self.assertTrue((Path(self.args.output) / "INCOMPLETE.txt").exists())
+            put(changed, original)
 
     def test_new_unlisted_payload_file_during_zip_is_rejected(self):
         original_write = zipfile.ZipFile.write

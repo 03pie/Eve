@@ -11,6 +11,6 @@ indent_size = 4
 [*.{md,json,yml,yaml}]
 indent_size = 2
 
-[*.ps1]
+[*.{ps1,psm1}]
 charset = utf-8-bom
 end_of_line = crlf

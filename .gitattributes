@@ -10,9 +10,11 @@
 *.cmake text eol=lf
 *.py text eol=lf
 .gitignore text eol=lf
+.editorconfig text eol=lf
 .gitattributes text eol=lf
 CMakeLists.txt text eol=lf
 *.ps1 text eol=crlf
+*.psm1 text eol=crlf
 third_party/libyaml/LICENSE text eol=lf
 # Preserve upstream notice bytes, including original whitespace, recorded by the material inventory.
 delivery/windows/licenses/** -text -whitespace

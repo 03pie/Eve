@@ -1,0 +1,76 @@
+{
+  "evidence": {
+    "asanBuild": {
+      "path": "p6-2-host-fix/p3-q3-asan/build.json",
+      "sha256": "938d65cccc1c2966cc4846a6ff6a0262f27b811b8a0624f8d11bc59e12131907"
+    },
+    "asanTestLog": {
+      "path": "p6-2-host-fix/p3-q3-asan/tests.stdout",
+      "sha256": "2b3ca57329e7ac2080ab2a9ca8deda24fb36d9d077b1ce2620b3dc78a610c861"
+    },
+    "asanTests": {
+      "path": "p6-2-host-fix/p3-q3-asan/tests.json",
+      "sha256": "382a797928d7216a3560c54b1ec87b0c7402ef596a1125ded38dc3061b36ced2"
+    },
+    "debugBuild": {
+      "path": "p6-2-host-fix/ela-msvc-debug/build.json",
+      "sha256": "53d64555d413b764caa0f91fbfafb9b39a2aa55178d0782eb08b76634d031a0b"
+    },
+    "debugTestLog": {
+      "path": "p6-2-host-fix/ela-msvc-debug/tests.stdout",
+      "sha256": "406606af73b741615614300d4aeba0f10a759ac9c140656a3a484e7f3d2c718f"
+    },
+    "debugTests": {
+      "path": "p6-2-host-fix/ela-msvc-debug/tests.json",
+      "sha256": "fc92d3207f2b8c4b7a30159a9a9a5fd92d60f1790ec1df213983206a153a2496"
+    },
+    "originalComponents": {
+      "path": "p6-2-host-fix/before.json",
+      "sha256": "6d700498d82d70b8c310fe9f6b8741f9c9abde0f9777ac828141458772f72e32"
+    },
+    "originalUnicodeFailure": {
+      "path": "p6-2-unicode-probe/report.json",
+      "sha256": "dabaf5e284cc54ccd31752bf89adcbbe7b36fcd6984bb40e7704c6515ac0c260"
+    },
+    "releaseArtifact": {
+      "path": "p6-2-host-fix/ela-msvc-release/artifact.json",
+      "sha256": "7e1e64eae9de904bd30e5b8a4a5f131c44068db477b452f69e122eed2f3c1b22"
+    },
+    "releaseBuild": {
+      "path": "p6-2-host-fix/release-build-tool-result.json",
+      "sha256": "c19759b4ed5682ae126f6616f96295cf4d38db995f6fdf3955894b33cd7ca977"
+    },
+    "releaseTestLog": {
+      "path": "p6-2-host-fix/ela-msvc-release/tests.stdout",
+      "sha256": "c63dce33022b061d978c7b900690c71750e5d6465f5b5a6583f43248bd0633ab"
+    },
+    "releaseTests": {
+      "path": "p6-2-host-fix/ela-msvc-release/tests.json",
+      "sha256": "7c3c0697628e9af46399d4d5dea5eaa91331e434696e20f359459420d1c9c5a8"
+    },
+    "unchangedComponents": {
+      "path": "p6-2-host-fix/unchanged-components.json",
+      "sha256": "1e30fa42b544d224429b61359c8a90908874d09055b5bcebd864e82a0629ca92"
+    },
+    "unicodeCompletion": {
+      "path": "p6-2-host-fix/unicode-completion.json",
+      "sha256": "e54e16420187ec59c911f259a9224b3d43b3be735f4fd4a24f469d5007b13d2e"
+    }
+  },
+  "executable": {
+    "path": "cordis_config_workbench.exe",
+    "previousSha256": "8eaa6bfa48749f0955dbf2835cd2b8765c9f740f273ceb7174a9dade6c2cf8c5",
+    "sha256": "e268a1f2a62d60cb62cf3648b13928e2114071fa33a45e6c57402fbd4f3a795e"
+  },
+  "profile": "ela-msvc-release",
+  "review": {
+    "path": "p6-2-host-fix/independent-host-audit.json",
+    "sha256": "9d123a29a13995c98c8eeb17a9890f56219d55600354fff3472d9b840e7bd48f"
+  },
+  "schema": "cordis.preview.configuration-host/1",
+  "source": {
+    "path": "examples/qt/config_workbench.cpp",
+    "previousSha256": "5d59fa8cf4ab781070227457dc2bd2fe5c1e29e49eb4d5f865197addb67fd8ba",
+    "sha256": "e9f19b801b451844ecebbb2b0c5aff21c6377d63bf9c6d16998559a81a84e458"
+  }
+}

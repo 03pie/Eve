@@ -1,4 +1,4 @@
-"""Copy the frozen P5 Release artifacts into an independently verifiable internal preview."""
+"""Package frozen P5 artifacts and the separately reviewed Unicode configuration host."""
 import argparse
 import hashlib
 import json
@@ -23,6 +23,14 @@ QT_PLUGINS = ("platforms/qwindows.dll", "styles/qwindowsvistastyle.dll",
               "imageformats/qjpeg.dll", "imageformats/qgif.dll", "imageformats/qico.dll")
 CRT_FILES = ("msvcp140.dll", "msvcp140_1.dll", "vcruntime140.dll", "vcruntime140_1.dll")
 ENTRY_POINTS = ("cordis_config_workbench.exe", "cordis_platform_workbench_demo.exe")
+CONFIGURATION_SOURCE = "examples/qt/config_workbench.cpp"
+HOST_EVIDENCE_ROLES = {"asanBuild", "asanTestLog", "asanTests", "debugBuild", "debugTestLog", "debugTests",
+                       "originalComponents", "originalUnicodeFailure", "releaseArtifact", "releaseBuild",
+                       "releaseTestLog", "releaseTests", "unchangedComponents", "unicodeCompletion"}
+SUPPORT_ASSETS = {"README.txt", "qt.conf", "verification/verify-package.ps1", "verification/p5-baseline.json",
+                  "verification/record-desktop.ps1", "verification/preview-windows.psm1",
+                  "verification/preview-ui.psm1", "verification/configuration-host.json",
+                  "verification/preview-acl.ps1"}
 
 
 def require(condition, message):
@@ -100,10 +108,53 @@ def evidence_hash(mapping, suffix):
     return matches[0]
 
 
+def load_configuration_host(p5_root, documents):
+    """One fixed source/EXE repair, never an alternate plugin/source approval mechanism."""
+    path = regular(ASSETS / "verification/configuration-host.json")
+    records = [{"path": str(path), "sha256": sha(path)}]
+    host = read_json(path)
+    require(isinstance(host, dict) and set(host) == {"schema", "profile", "source", "executable", "evidence", "review"}
+            and host["schema"] == "cordis.preview.configuration-host/1" and host["profile"] == "ela-msvc-release",
+            "invalid reviewed configuration host schema/profile")
+    for field, fixed_path, previous in (
+            ("source", CONFIGURATION_SOURCE, documents["sourceInputs"][CONFIGURATION_SOURCE]),
+            ("executable", ENTRY_POINTS[0], evidence_hash(documents["configurationExecutables"], "/bin/" + ENTRY_POINTS[0]))):
+        entry = host[field]
+        require(isinstance(entry, dict) and set(entry) == {"path", "previousSha256", "sha256"}
+                and entry["path"] == fixed_path, "configuration host cannot override another source/executable")
+        require(entry["previousSha256"] == previous and isinstance(entry["sha256"], str)
+                and re.fullmatch("[0-9a-f]{64}", entry["sha256"]) and entry["sha256"] != previous,
+                "configuration host old/new digest does not match its P5 predecessor: " + field)
+    require(isinstance(host["evidence"], dict) and set(host["evidence"]) == HOST_EVIDENCE_ROLES,
+            "configuration host requires the exact reviewed evidence roles")
+    seen = set()
+    for role, entry in [*host["evidence"].items(), ("review", host["review"])]:
+        require(isinstance(entry, dict) and set(entry) == {"path", "sha256"}
+                and isinstance(entry["sha256"], str) and re.fullmatch("[0-9a-f]{64}", entry["sha256"]),
+                "invalid configuration host evidence record: " + role)
+        name = relative_path(entry["path"])
+        require(name.casefold() not in seen, "configuration host evidence paths must be unique")
+        seen.add(name.casefold())
+        evidence = regular(Path(p5_root) / name)
+        require(sha(evidence) == entry["sha256"], "configuration host evidence changed: " + role)
+        records.append({"path": str(evidence), "sha256": entry["sha256"]})
+    review = read_json(Path(p5_root) / host["review"]["path"])
+    candidate = {key: value for key, value in host.items() if key != "review"}
+    require(isinstance(review, dict) and review.get("schema") == "cordis.preview.host-review/1"
+            and review.get("passed") is True
+            and review.get("candidateSha256") == hashlib.sha256(canonical(candidate)).hexdigest()
+            and review.get("configurationSourceSha256") == host["source"]["sha256"]
+            and review.get("configurationExecutableSha256") == host["executable"]["sha256"],
+            "configuration host review does not bind this candidate/source/executable")
+    return host, records
+
+
 def load_baseline(p5_root):
     baseline_path = regular(ASSETS / "verification/p5-baseline.json")
     baseline = read_json(baseline_path)
     require(baseline["schema"] == "cordis.preview.baseline/1", "unsupported delivery baseline")
+    require(set(baseline["evidence"]) == {"artifacts", "sourceInputs", "productFiles", "configurationExecutables"},
+            "expected the original four P5 evidence records")
     records, documents = {}, {}
     for role, entry in baseline["evidence"].items():
         path = regular(Path(p5_root) / relative_path(entry["path"]))
@@ -114,9 +165,20 @@ def load_baseline(p5_root):
     require(artifacts["passed"] is True and artifacts["base_commit"] == baseline["implementationCommit"],
             "artifact evidence has a different implementation baseline")
     require(artifacts["frozen_source_inputs"] == documents["sourceInputs"], "frozen source maps differ")
-    for name, expected in documents["sourceInputs"].items():
-        require(sha(regular(ROOT / relative_path(name))) == expected, "P5 compilation input changed: " + name)
+    catalog = regular(ROOT / "qualification/native-business.json")
+    require(sha(catalog) == baseline["qualificationSourceSha256"], "reviewed qualification source changed")
     require(len(documents["productFiles"]) == 21, "expected the exact 21-piece product receipt")
+    host, host_records = load_configuration_host(p5_root, documents)
+    source_records = []
+    for name, expected in documents["sourceInputs"].items():
+        if name == CONFIGURATION_SOURCE:
+            expected = host["source"]["sha256"]
+        source = regular(ROOT / relative_path(name))
+        require(sha(source) == expected, "P5 compilation input changed: " + name)
+        source_records.append({"path": str(source), "sha256": expected})
+    documents["configurationHost"] = host
+    documents["configurationHostRecords"] = host_records
+    documents["compilationSourceRecords"] = source_records
     return baseline, records, documents
 
 
@@ -205,8 +267,10 @@ def collect_inputs(build, qt, crt, baseline, documents):
 
     product = documents["productFiles"]
     for name in ENTRY_POINTS:
-        receipt = documents["configurationExecutables"] if name == ENTRY_POINTS[0] else product
-        add(build / "bin" / name, name, "application", evidence_hash(receipt, "/bin/" + name))
+        if name == ENTRY_POINTS[0]:
+            add(build / "bin" / name, name, "reviewed-configuration-host", documents["configurationHost"]["executable"]["sha256"])
+        else:
+            add(build / "bin" / name, name, "application", evidence_hash(product, "/bin/" + name))
     profile, build_records = profile_inputs(build, qt, baseline, documents)
     for entry in profile["dependencies"]:
         name = Path(entry["path"]).name
@@ -248,14 +312,14 @@ def collect_inputs(build, qt, crt, baseline, documents):
         add(crt / name, name, "release-crt-deployment")
     require((ASSETS / "licenses/sources.json").is_file(), "missing third-party materials inventory")
     check_license_materials()
-    require((ASSETS / "verification/verify-package.ps1").is_file(), "missing independent package verifier")
+    for name in SUPPORT_ASSETS:
+        regular(ASSETS / name)
     for source in sorted(ASSETS.rglob("*")):
         reject_reparse(source)
         if source.is_dir():
             continue
         destination = source.relative_to(ASSETS).as_posix()
-        require(destination in ("README.txt", "qt.conf", "verification/verify-package.ps1",
-                                "verification/p5-baseline.json") or destination.startswith("licenses/"),
+        require(destination in SUPPORT_ASSETS or destination.startswith("licenses/"),
                 "unreviewed preview asset: " + destination)
         add(source, destination, "license-material" if destination.startswith("licenses/") else "delivery-support")
     folded = [entry["path"].casefold() for entry in inputs]
@@ -358,6 +422,9 @@ def package(args):
                                   "implementationCommit": baseline["implementationCommit"],
                                   "p5CloseoutCommit": baseline["p5CloseoutCommit"],
                                   "nativeApprovalCount": 4, "qtPolicy": "resident", "evidence": evidence_records},
+                "configurationHost": {**documents["configurationHost"],
+                                      "record": {"path": "verification/configuration-host.json",
+                                                 "sha256": documents["configurationHostRecords"][0]["sha256"]}},
                 "packaging": {"commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT,
                                                                  text=True).strip(),
                               "dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT)),
@@ -386,12 +453,15 @@ def package(args):
         require(identity(source) == entry["source"]["identity"] and sha(source) == entry["sha256"],
                 "source changed after packaging")
     verify_payload(payload, expected_files)
-    for record in [*evidence_records.values(), *build_records, *tool_records]:
+    for record in [*evidence_records.values(), *build_records, *tool_records,
+                   *documents["configurationHostRecords"], *documents["compilationSourceRecords"]]:
         require(sha(regular(record["path"])) == record["sha256"], "source evidence changed after packaging")
     archive = archive.rename(output / (name + ".zip"))
     receipt = {"schema": "cordis.preview.packaging/1", "passed": True, "package": name, "files": len(inputs) + 2,
                "archive": {"path": archive.name, "bytes": archive.stat().st_size, "sha256": sha(archive)},
-               "manifestSha256": sums["build-manifest.json"], "sameQualifiedBytes": True,
+               "manifestSha256": sums["build-manifest.json"], "sameP5ModuleAndRuntimeBytes": True,
+               "p5BusinessProductUnchanged": True,
+               "reviewedConfigurationHostSha256": documents["configurationHost"]["executable"]["sha256"],
                "packageRuntimeVerified": False, "cleanMachineVerified": False,
                "deploymentEnvironment": "app-local CRT and extra Qt plugins require P6-2 validation"}
     write_exclusive(output / "packaging.json", canonical(receipt))
