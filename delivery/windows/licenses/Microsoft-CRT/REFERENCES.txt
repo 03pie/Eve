@@ -1,0 +1,24 @@
+Microsoft Visual C++ runtime: actual source and terms references
+
+Formal source directory:
+C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/
+Selected Release x64 files: msvcp140.dll, msvcp140_1.dll,
+vcruntime140.dll, vcruntime140_1.dll.
+Observed file version: 14.44.35211.0; the directory name is not file version.
+No debug_nonredist or arbitrary System32 files are selected. These candidates
+differ from the developer machine's System32 14.50.35719.0 and are a new
+P6 deployment environment, not byte identity of the entire P5 CRT environment.
+
+Official redistribution list (Visual C++ Runtime Files section):
+https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution
+Official guidance:
+https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files?view=msvc-170
+Original Visual Studio 2022 Professional/Enterprise terms landing page:
+https://visualstudio.microsoft.com/license-terms/vs2022-ga-proenterprise/
+
+The two original official DOCX files are preserved byte-for-byte with their
+SHA/source URLs in sources.json. Adjacent TXT reading copies extract
+word/document.xml paragraph text; original layout/numbering may differ, so
+DOCX remains authoritative. The original terms and redistribution list define
+conditions; this inventory does not establish the user's VS entitlement,
+choose a Cordis license, or authorize a later public release.

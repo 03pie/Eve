@@ -1,0 +1,469 @@
+Qt 5.15.2 third-party notices
+
+This software is based in part on the work of the Independent JPEG Group.
+Portions of this software are based on the FreeType Project (www.freetype.org).
+
+The full upstream license files remain authoritative. Preserving alternatives
+is not a first-party license selection. Upstream usage below describes module
+source and compile-time conditions, not execution of every optional path.
+Pixman is explicitly an ARM-NEON source-inventory reference, not a claim of
+ARM code in this Windows x64 package. No Android/Gradle, Cocoa, XCB, QtTest or
+SQLite runtime is added. Raw attribution bytes are preserved as TXT because
+some upstream JSON-like records use literal newlines in Copyright strings.
+
+ANGLE Library [angle]
+Version: chromium/3280
+License: BSD 3-clause "New" or "Revised" License
+Usage (upstream): Used on Windows to implement OpenGL ES on top of DirectX. Configure with -no-opengl, or -opengl desktop to exclude.
+Copyright (upstream):
+Copyright (C) 2002-2013 The ANGLE Project Authors
+Material: Qt-5.15.2/upstream/src/3rdparty/angle/LICENSE, Qt-5.15.2/upstream/src/3rdparty/angle/qt_attribution.txt
+
+ANGLE: Array Bounds Clamper for WebKit [angle-arrayboundsclamper]
+Version: not separately stated
+License: BSD 2-clause "Simplified" License
+Usage (upstream): Used on Windows to implement OpenGL ES on top of DirectX. Configure with -no-opengl, or -opengl desktop to exclude.
+Copyright (upstream):
+Copyright (C) 2012 Apple Inc.
+Material: Qt-5.15.2/upstream/src/3rdparty/angle/qt_attribution.txt, Qt-5.15.2/upstream/src/3rdparty/angle/src/third_party/compiler/LICENSE
+
+ANGLE: Murmurhash [angle-murmurhash]
+Version: not separately stated
+License: Public Domain
+Usage (upstream): Used on Windows to implement OpenGL ES on top of DirectX. Configure with -no-opengl, or -opengl desktop to exclude.
+Copyright (upstream):
+MurmurHash3 was written by Austin Appleby, and is placed in the public domain. The author hereby disclaims copyright to this source code.
+Material: Qt-5.15.2/upstream/src/3rdparty/angle/qt_attribution.txt
+
+ANGLE: Systeminfo [angle-systeminfo]
+Version: not separately stated
+License: BSD 2-clause "Simplified" License
+Usage (upstream): Used on Windows to implement OpenGL ES on top of DirectX. Configure with -no-opengl, or -opengl desktop to exclude.
+Copyright (upstream):
+Copyright (C) 2009 Apple Inc. All Rights Reserved.
+Material: Qt-5.15.2/upstream/src/3rdparty/angle/SYSTEMINFO_LICENSE, Qt-5.15.2/upstream/src/3rdparty/angle/qt_attribution.txt
+
+ANGLE: trace_event [angle-trace_event]
+Version: not separately stated
+License: BSD 3-clause "New" or "Revised" License
+Usage (upstream): Used on Windows to implement OpenGL ES on top of DirectX. Configure with -no-opengl, or -opengl desktop to exclude.
+Copyright (upstream):
+Copyright (c) 2013 The Chromium Authors.
+Material: Qt-5.15.2/upstream/src/3rdparty/angle/TRACEEVENT_LICENSE, Qt-5.15.2/upstream/src/3rdparty/angle/qt_attribution.txt
+
+ANGLE: Khronos Headers [angle-khronos]
+Version: not separately stated
+License: MIT License
+Usage (upstream): Used on Windows to implement OpenGL ES on top of DirectX. Configure with -no-opengl, or -opengl desktop to exclude.
+Copyright (upstream):
+Copyright (c) 2007-2017 The Khronos Group Inc.
+Material: Qt-5.15.2/upstream/src/3rdparty/angle/KHRONOS_LICENSE, Qt-5.15.2/upstream/src/3rdparty/angle/qt_attribution.txt
+
+Efficient Binary-Decimal and Decimal-Binary Conversion Routines for IEEE Doubles [doubleconversion]
+Version: 3.1.5
+License: BSD 3-clause "New" or "Revised" License
+Usage (upstream): Used in Qt Core. Configure with -system-doubleconversion or -no-doubleconversion to avoid.
+Copyright (upstream):
+Copyright 2006-2012, the V8 project authors
+Material: Qt-5.15.2/upstream/src/3rdparty/double-conversion/LICENSE, Qt-5.15.2/upstream/src/3rdparty/double-conversion/qt_attribution.txt
+
+Easing Equations by Robert Penner [easing]
+Version: not separately stated
+License: BSD 3-clause "New" or "Revised" License
+Usage (upstream): Used in Qt Core (QEasingCurve).
+Copyright (upstream):
+Copyright (c) 2001 Robert Penner
+Material: Qt-5.15.2/upstream/src/3rdparty/easing/LICENSE, Qt-5.15.2/upstream/src/3rdparty/easing/qt_attribution.txt
+
+Freetype 2 [freetype]
+Version: 2.10.1
+License: Freetype Project License or GNU General Public License v2.0 only
+Usage (upstream): Optionally used in Qt GUI and platform plugins. Configure with -no-freetype, or -system-freetype to avoid.
+Copyright (upstream):
+Copyright 2006-2015 by David Turner, Robert Wilhelm, and Werner Lemberg.
+Material: Qt-5.15.2/upstream/src/3rdparty/freetype/LICENSE.txt, Qt-5.15.2/upstream/src/3rdparty/freetype/qt_attribution.txt
+
+Freetype 2 - zlib [freetype-zlib]
+Version: not separately stated
+License: zlib License
+Usage (upstream): Optionally used in Qt GUI and platform plugins. Configure with -no-freetype, or -system-freetype to avoid.
+Copyright (upstream):
+Copyright (C) 1995-2002 Jean-loup Gailly and Mark Adler
+Material: Qt-5.15.2/upstream/src/3rdparty/freetype/ZLIB-LICENSE.txt, Qt-5.15.2/upstream/src/3rdparty/freetype/qt_attribution.txt
+
+Freetype 2 - Bitmap Distribution Format (BDF) support [freetype-bdf]
+Version: not separately stated
+License: MIT License
+Usage (upstream): Optionally used in Qt GUI and platform plugins. Configure with -no-freetype, or -system-freetype to avoid.
+Copyright (upstream):
+Copyright (C) 2001-2002 by Francesco Zappa Nardelli
+Copyright 2000 Computing Research Labs, New Mexico State University
+Copyright 2001-2002, 2011 Francesco Zappa Nardelli
+Material: Qt-5.15.2/upstream/src/3rdparty/freetype/BDF-LICENSE.txt, Qt-5.15.2/upstream/src/3rdparty/freetype/qt_attribution.txt
+
+Freetype 2 - Portable Compiled Format (PCF) support [freetype-pcf]
+Version: not separately stated
+License: MIT License
+Usage (upstream): Optionally used in Qt GUI and platform plugins. Configure with -no-freetype, or -system-freetype to avoid.
+Copyright (upstream):
+Copyright (C) 2000 by Francesco Zappa Nardelli
+Material: Qt-5.15.2/upstream/src/3rdparty/freetype/PCF-LICENSE.txt, Qt-5.15.2/upstream/src/3rdparty/freetype/qt_attribution.txt
+
+HarfBuzz-NG [harfbuzz-ng]
+Version: 1.7.4
+License: MIT License
+Usage (upstream): Optionally used in Qt GUI. Configure with -system-harfbuzz to force the use of the system library, or -qt-harfbuzz to link statically to the library that is bundled with your Qt version.
+Copyright (upstream):
+Copyright © 2010,2011,2012  Google, Inc.
+Copyright © 2012  Mozilla Foundation
+Copyright © 2011  Codethink Limited
+Copyright © 2008,2010  Nokia Corporation and/or its subsidiary(-ies)
+Copyright © 2009  Keith Stribley
+Copyright © 2009  Martin Hosken and SIL International
+Copyright © 2007  Chris Wilson
+Copyright © 2006  Behdad Esfahbod
+Copyright © 2005  David Turner
+Copyright © 2004,2007,2008,2009,2010  Red Hat, Inc.
+Copyright © 1998-2004  David Turner and Werner Lemberg
+
+Material: Qt-5.15.2/upstream/src/3rdparty/harfbuzz-ng/COPYING, Qt-5.15.2/upstream/src/3rdparty/harfbuzz-ng/qt_attribution.txt
+
+LibJPEG-turbo [libjpeg]
+Version: 2.0.5
+License: Independent JPEG Group License
+Usage (upstream): Used in the qjpeg image plugin. Configure with -system-libjpeg or -no-libjpeg to avoid.
+Copyright (upstream):
+Copyright (C) 2009-2020 D. R. Commander
+Copyright (C) 2011-2016 Siarhei Siamashka
+Copyright (C) 2015-2016, 2018 Matthieu Darbois
+Copyright (C) 2015 Intel Corporation
+Copyright (C) 2015 Google, Inc.
+Copyright (C) 2013-2014 MIPS Technologies, Inc.
+Copyright (C) 2013 Linaro Limited
+Copyright (C) 2009-2011 Nokia Corporation and/or its subsidiary(-ies)
+Copyright (C) 2009 Pierre Ossman for Cendio AB
+Copyright (C) 1999-2006 MIYASAKA Masaru
+Copyright (C) 1991-2016 Thomas G. Lane, Guido Vollbeding
+Material: Qt-5.15.2/upstream/src/3rdparty/libjpeg/LICENSE, Qt-5.15.2/upstream/src/3rdparty/libjpeg/qt_attribution.txt
+
+LibPNG [libpng]
+Version: 1.6.37
+License: libpng License and PNG Reference Library version 2
+Usage (upstream): Used in the qpng image plugin. Configure with -system-libpng or -no-libpng to avoid.
+Copyright (upstream):
+Copyright (c) 1998-2018 Glenn Randers-Pehrson
+Copyright (c) 2000-2017 Simon-Pierre Cadieux
+Copyright (c) 2000-2017 Eric S. Raymond
+Copyright (c) 2000-2017 Mans Rullgard
+Copyright (c) 2000-2019 Cosmin Truta
+Copyright (c) 2000-2017 Gilles Vollant
+Copyright (c) 2000-2017 James Yu
+Copyright (c) 2000-2017 Mandar Sahastrabuddhe
+Copyright (c) 1998-2000 Tom Lane
+Copyright (c) 1998-2000 Willem van Schaik
+Copyright (c) 1996-1997 Andreas Dilger
+Copyright (c) 1996-1997 John Bowler
+Copyright (c) 1996-1997 Kevin Bracey
+Copyright (c) 1996-1997 Sam Bushell
+Copyright (c) 1996-1997 Magnus Holmgren
+Copyright (c) 1996-1997 Greg Roelofs
+Copyright (c) 1996-1997 Tom Tanner
+Copyright (c) 1995-1996 Dave Martindale
+Copyright (c) 1995-1996 Paul Schmidt
+Copyright (c) 1995-1996 Tim Wegner
+Copyright (c) 1995-1996 Guy Eric Schalnat, Group 42, Inc.
+Material: Qt-5.15.2/upstream/src/3rdparty/libpng/LICENSE, Qt-5.15.2/upstream/src/3rdparty/libpng/qt_attribution.txt
+
+MD4 [md4]
+Version: not separately stated
+License: Public Domain
+Usage (upstream): Used in Qt Core (QCryptographicHash). Configure with -DQT_CRYPTOGRAPHICHASH_ONLY_SHA1 to avoid.
+Copyright (upstream):
+Written by Alexander Peslyak - better known as Solar Designer <solar@openwall.com> - in 2001, and placed in the public domain. There's absolutely no warranty.
+Material: Qt-5.15.2/upstream/src/3rdparty/md4/qt_attribution.txt
+
+MD5 [md5]
+Version: not separately stated
+License: Public Domain
+Usage (upstream): Used in Qt Core (QCryptographicHash). Configure with -DQT_CRYPTOGRAPHICHASH_ONLY_SHA1 to avoid.
+Copyright (upstream):
+Written by Colin Plumb in 1993, no copyright is claimed.
+Ian Jackson <ian@chiark.greenend.org.uk>.
+Material: Qt-5.15.2/upstream/src/3rdparty/md5/qt_attribution.txt
+
+PCRE2 [pcre2]
+Version: 10.35
+License: BSD 3-clause "New" or "Revised" License
+Usage (upstream): Optionally used in Qt Core (QRegularExpression). Configure with -system-pcre or -no-pcre to avoid.
+Copyright (upstream):
+Copyright (c) 1997-2020 University of Cambridge
+Copyright (c) 2010-2020 Zoltan Herczeg
+Material: Qt-5.15.2/upstream/src/3rdparty/pcre2/LICENCE, Qt-5.15.2/upstream/src/3rdparty/pcre2/qt_attribution.txt
+
+PCRE2 - Stack-less Just-In-Time Compiler [pcre2-sljit]
+Version: 10.35
+License: BSD 2-clause "Simplified" License
+Usage (upstream): Optionally used in Qt Core (QRegularExpression). Configure with -system-pcre or -no-pcre to avoid.
+Copyright (upstream):
+Copyright (c) 2009-2020 Zoltan Herczeg
+Copyright 2013-2013 Tilera Corporation(jiwang@tilera.com)
+Material: Qt-5.15.2/upstream/src/3rdparty/pcre2/LICENCE-SLJIT, Qt-5.15.2/upstream/src/3rdparty/pcre2/qt_attribution.txt
+
+Secure Hash Algorithms SHA-384 and SHA-512 [rfc6234]
+Version: not separately stated
+License: BSD 3-clause "New" or "Revised" License
+Usage (upstream): Used in Qt Core (QCryptographicHash and QMessageAuthenticationCode)
+Copyright (upstream):
+Copyright (c) 2011 IETF Trust and the persons identified as authors of the code.
+Material: Qt-5.15.2/upstream/src/3rdparty/rfc6234/LICENSE, Qt-5.15.2/upstream/src/3rdparty/rfc6234/qt_attribution.txt
+
+Secure Hash Algorithm SHA-1 [sha1]
+Version: not separately stated
+License: Public Domain
+Usage (upstream): Used in Qt Core (QCryptographicHash).
+Copyright (upstream):
+Copyright (C) Dominik Reichl <dominik.reichl@t-online.de>
+Copyright (C) 2016 The Qt Company Ltd
+Material: Qt-5.15.2/upstream/src/3rdparty/sha1/qt_attribution.txt
+
+Secure Hash Algorithm SHA-3 - brg_endian [sha3_endian]
+Version: https://github.com/BrianGladman/sha/ commit 4b9e13ead2c5b5e41ca27c65de4dd69ae0bac228
+License: BSD 2-clause "Simplified" License
+Usage (upstream): Used in Qt Core (QCryptographicHash).
+Copyright (upstream):
+Copyright (c) 1998-2013, Brian Gladman, Worcester, UK. All rights reserved.
+Material: Qt-5.15.2/upstream/src/3rdparty/sha3/BRG_ENDIAN_LICENSE, Qt-5.15.2/upstream/src/3rdparty/sha3/qt_attribution.txt
+
+Secure Hash Algorithm SHA-3 - Keccak [sha3_keccak]
+Version: 3.2
+License: Creative Commons Zero v1.0 Universal
+Usage (upstream): Used in Qt Core (QCryptographicHash).
+Copyright (upstream):
+Guido Bertoni, Joan Daemen, Michaël Peeters and Gilles Van Assche.
+
+To the extent possible under law, the implementers have waived all copyright
+and related or neighboring rights to the source code in this file.
+Material: Qt-5.15.2/upstream/src/3rdparty/sha3/CC0_LICENSE, Qt-5.15.2/upstream/src/3rdparty/sha3/qt_attribution.txt
+
+TinyCBOR [tinycbor]
+Version: 0.6+patches
+License: MIT License
+Usage (upstream): Used for QCborStreamReader and QCborStreamWriter.
+Copyright (upstream):
+Copyright (C) 2015-2019 Intel Corporation
+Material: Qt-5.15.2/upstream/src/3rdparty/tinycbor/LICENSE, Qt-5.15.2/upstream/src/3rdparty/tinycbor/qt_attribution.txt
+
+Wintab API [wintab]
+Version: not separately stated
+License: LCS-Telegraphics License
+Usage (upstream): Used in the Qt platform plugin for Windows. Configure with -no-feature-tabletevent to avoid.
+Copyright (upstream):
+Copyright 1991-1998 by LCS/Telegraphics.
+Material: Qt-5.15.2/upstream/src/3rdparty/wintab/LICENSE.txt, Qt-5.15.2/upstream/src/3rdparty/wintab/qt_attribution.txt
+
+Data Compression Library (zlib) [zlib]
+Version: 1.2.11
+License: zlib License
+Usage (upstream): Optionally used in Qt Core and and development tools. Configure with -system-zlib to avoid.
+Copyright (upstream):
+(C) 1995-2017 Jean-loup Gailly and Mark Adler
+Material: Qt-5.15.2/upstream/src/3rdparty/zlib/LICENSE, Qt-5.15.2/upstream/src/3rdparty/zlib/qt_attribution.txt
+
+Vulkan Memory Allocator [VulkanMemoryAllocator]
+Version: 2.2.0
+License: MIT License
+Usage (upstream): Memory management for the Vulkan backend of QRhi.
+Copyright (upstream):
+Copyright (c) 2017-2018 Advanced Micro Devices, Inc. All rights reserved.
+Material: Qt-5.15.2/upstream/src/3rdparty/VulkanMemoryAllocator/LICENSE.txt, Qt-5.15.2/upstream/src/3rdparty/VulkanMemoryAllocator/qt_attribution.txt
+
+IAccessible2 IDL Specification [iaccessible2]
+Version: 1.3.0
+License: BSD 3-clause "New" or "Revised" License
+Usage (upstream): Optionally used in the Windows platform plugin. Configure with -no-accessibility to avoid.
+Copyright (upstream):
+Copyright (c) 2000, 2006 Sun Microsystems, Inc.
+Copyright (c) 2006 IBM Corporation
+Copyright (c) 2007, 2010, 2012, 2013 Linux Foundation
+
+IAccessible2 is a trademark of the Linux Foundation. The IAccessible2 mark may be used in accordance with the Linux Foundation Trademark Policy to indicate compliance with the IAccessible2 specification.
+Material: Qt-5.15.2/upstream/src/3rdparty/iaccessible2/LICENSE, Qt-5.15.2/upstream/src/3rdparty/iaccessible2/qt_attribution.txt
+
+sRGB color profile icc file [icc-sRGB-color-profile]
+Version: not separately stated
+License: International Color Consortium License
+Usage (upstream): Used in Qt Gui (Embedded into PDF/A-1b files generated by QPrinter/QPdfWriter).
+Copyright (upstream):
+Copyright International Color Consortium, 2015
+Material: Qt-5.15.2/upstream/src/3rdparty/icc/LICENSE.txt, Qt-5.15.2/upstream/src/3rdparty/icc/qt_attribution.txt
+
+MD4C [md4c]
+Version: 0.4.3
+License: MIT License
+Usage (upstream): Optionally used in QTextDocument if configured with textmarkdownreader.
+Copyright (upstream):
+Copyright © 2016-2020 Martin Mitáš
+Material: Qt-5.15.2/upstream/src/3rdparty/md4c/LICENSE.md, Qt-5.15.2/upstream/src/3rdparty/md4c/qt_attribution.txt
+
+Pixman [pixman]
+Version: 0.17.12
+License: MIT License
+Usage (upstream): Used in Qt GUI on ARM NEON.
+Copyright (upstream):
+Copyright © 2009 Nokia Corporation
+Material: Qt-5.15.2/upstream/src/3rdparty/pixman/LICENSE, Qt-5.15.2/upstream/src/3rdparty/pixman/qt_attribution.txt
+
+Text Codecs: Big5, Big5-HKSCS [qbig5codecs]
+Version: not separately stated
+License: BSD 2-clause "Simplified" License
+Usage (upstream): Used in Qt Core if ICU is not used. Configure with -icu to avoid.
+Copyright (upstream):
+Copyright (C) 2000  Ming-Che Chuang
+Copyright (C) 2001, 2002  James Su, Turbolinux Inc.
+Copyright (C) 2002  WU Yi, HancomLinux Inc.
+Copyright (C) 2001, 2002  Anthony Fok, ThizLinux Laboratory Ltd.
+Material: Qt-5.15.2/upstream/src/corelib/codecs/QBIG5CODEC_LICENSE.txt, Qt-5.15.2/upstream/src/corelib/codecs/qt_attribution.txt
+
+Text Codec: EUC-JP [qeucjpcodec]
+Version: not separately stated
+License: BSD 2-clause "Simplified" License
+Usage (upstream): Used in Qt Core if ICU is not used. Configure with -icu to avoid.
+Copyright (upstream):
+Copyright (C) 1999 Serika Kurusugawa.
+Material: Qt-5.15.2/upstream/src/corelib/codecs/QEUCJPCODEC_LICENSE.txt, Qt-5.15.2/upstream/src/corelib/codecs/qt_attribution.txt
+
+Text Codec: EUC-KR [qeuckrcodec]
+Version: not separately stated
+License: BSD 2-clause "Simplified" License
+Usage (upstream): Used in Qt Core if ICU is not used. Configure with -icu to avoid.
+Copyright (upstream):
+Copyright (C) 1999-2000 Mizi Research Inc.
+Material: Qt-5.15.2/upstream/src/corelib/codecs/QEUCKRCODEC_LICENSE.txt, Qt-5.15.2/upstream/src/corelib/codecs/qt_attribution.txt
+
+Text Codec: ISO 2022-JP (JIS) [qjiscodec]
+Version: not separately stated
+License: BSD 2-clause "Simplified" License
+Usage (upstream): Used in Qt Core if ICU is not used. Configure with -icu to avoid.
+Copyright (upstream):
+Copyright (C) 1999 Serika Kurusugawa.
+Material: Qt-5.15.2/upstream/src/corelib/codecs/QJISCODEC_LICENSE.txt, Qt-5.15.2/upstream/src/corelib/codecs/qt_attribution.txt
+
+Text Codec: Shift-JIS [qsjiscodec]
+Version: not separately stated
+License: BSD 2-clause "Simplified" License
+Usage (upstream): Used in Qt Core if ICU is not used. Configure with -icu to avoid.
+Copyright (upstream):
+Copyright (C) 1999 Serika Kurusugawa.
+Material: Qt-5.15.2/upstream/src/corelib/codecs/QSJISCODEC_LICENSE.txt, Qt-5.15.2/upstream/src/corelib/codecs/qt_attribution.txt
+
+Text Codec: TSCII [qtsciicodec]
+Version: not separately stated
+License: BSD 2-clause "Simplified" License
+Usage (upstream): Used in Qt Core.
+Copyright (upstream):
+Copyright (C) 2000 Hans Petter Bieker.
+Material: Qt-5.15.2/upstream/src/corelib/codecs/QTSCIICODEC_LICENSE.txt, Qt-5.15.2/upstream/src/corelib/codecs/qt_attribution.txt
+
+Text Codec: GBK [qbkcodec]
+Version: not separately stated
+License: BSD 2-clause "Simplified" License
+Usage (upstream): Used in Qt Core if ICU is not used. Configure with -icu to avoid.
+Copyright (upstream):
+Copyright (C) 2000 TurboLinux, Inc.  Written by Justin Yu and Sean Chen.
+Copyright (C) 2001, 2002 Turbolinux, Inc.  Written by James Su.
+Copyright (C) 2001, 2002 ThizLinux Laboratory Ltd.  Written by Anthony Fok.
+Material: Qt-5.15.2/upstream/src/corelib/codecs/QBKCODEC_LICENSE.txt, Qt-5.15.2/upstream/src/corelib/codecs/qt_attribution.txt
+
+The Public Suffix List [psl]
+Version: b880425f09bca902da412bdece4f68e942f3a23b, fetched on 2020-03-13
+License: Mozilla Public License 2.0
+Usage (upstream): Used in Qt Core to avoid setting "supercookies" in the cookie jar
+supported by Qt (by the QNetworkCookieJar class).
+Copyright (upstream):
+The list was originally provided by Jo Hermans <jo.hermans@gmail.com>.
+It is now maintained on github (https://github.com/publicsuffix/list).
+Material: Qt-5.15.2/upstream/src/corelib/io/PSL-LICENSE.txt, Qt-5.15.2/upstream/src/corelib/io/qt_attribution.txt
+
+Unicode Character Database (UCD) [unicode-character-database]
+Version: 26
+License: Unicode License Agreement - Data Files and Software (2016)
+Usage (upstream): Qt Core uses data obtained from UCD files for working with characters and strings.
+Copyright (upstream):
+Copyright (C) 1991-2018 Unicode, Inc.
+Material: Qt-5.15.2/upstream/src/corelib/text/UNICODE_LICENSE.txt, Qt-5.15.2/upstream/src/corelib/text/qt_attribution.txt
+
+Unicode Common Locale Data Repository (CLDR) [unicode-cldr]
+Version: v36
+License: Unicode License Agreement - Data Files and Software (2016)
+Usage (upstream): Used in Qt Core (QTimeZone, QLocale).
+Copyright (upstream):
+Copyright (C) 1991-2019 Unicode, Inc.
+Material: Qt-5.15.2/upstream/src/corelib/text/UNICODE_LICENSE.txt, Qt-5.15.2/upstream/src/corelib/text/qt_attribution.txt
+
+OpenGL Headers [opengl-headers]
+Version: Revision 27684
+License: MIT License
+Usage (upstream): Used on Windows and Linux in the OpenGL related headers of Qt GUI.
+Copyright (upstream):
+Copyright (c) 2013-2014 The Khronos Group Inc.
+Material: Qt-5.15.2/upstream/src/gui/opengl/KHRONOS_LICENSE.txt, Qt-5.15.2/upstream/src/gui/opengl/qt_attribution.txt
+
+OpenGL ES 2 Headers [opengl-es2-headers]
+Version: Revision 27673
+License: MIT License
+Usage (upstream): Used on Windows and Linux in the OpenGL related headers of Qt GUI.
+Copyright (upstream):
+Copyright (c) 2013-2014 The Khronos Group Inc.
+Material: Qt-5.15.2/upstream/src/gui/opengl/KHRONOS_LICENSE.txt, Qt-5.15.2/upstream/src/gui/opengl/qt_attribution.txt
+
+Anti-aliasing rasterizer from FreeType 2 [grayraster]
+Version: not separately stated
+License: Freetype Project License or GNU General Public License v2.0 only
+Usage (upstream): Used in Qt GUI.
+Copyright (upstream):
+Copyright 2000-2016 by David Turner, Robert Wilhelm, and Werner Lemberg.
+Material: Qt-5.15.2/upstream/src/3rdparty/freetype/docs/LICENSE.TXT, Qt-5.15.2/upstream/src/gui/painting/qt_attribution.txt
+
+Smooth Scaling Algorithm [smooth-scaling-algorithm]
+Version: not separately stated
+License: BSD 2-clause "Simplified" License and Imlib2 License
+Usage (upstream): Used in Qt Gui (QImage::transformed() functions).
+Copyright (upstream):
+Copyright (C) 2004, 2005 Daniel M. Duley.
+    (C) Carsten Haitzler and various contributors.
+    (C) Willem Monsuwe <willem@stack.nl>
+Material: Qt-5.15.2/upstream/src/gui/painting/QIMAGETRANSFORM_LICENSE.txt, Qt-5.15.2/upstream/src/gui/painting/qt_attribution.txt
+
+WebGradients [webgradients]
+Version: not separately stated
+License: MIT License
+Usage (upstream): Used in Qt GUI to provide presets for QGradient.
+Copyright (upstream):
+Copyright (c) 2017 itmeo
+Material: Qt-5.15.2/upstream/src/gui/painting/WEBGRADIENTS_LICENSE.txt, Qt-5.15.2/upstream/src/gui/painting/qt_attribution.txt
+
+X Server helper [xserverhelper]
+Version: not separately stated
+License: X11 License and Historical Permission Notice and Disclaimer
+Usage (upstream): Used in Qt GUI (QRegion).
+Copyright (upstream):
+Copyright (c) 1987, 1988 X Consortium
+Copyright 1987, 1988 by Digital Equipment Corporation, Maynard, Massachusetts.
+Material: Qt-5.15.2/upstream/src/gui/painting/XCONSORTIUM_LICENSE.txt, Qt-5.15.2/upstream/src/gui/painting/qt_attribution.txt
+
+Adobe Glyph List For New Fonts [aglfn]
+Version: 1.7
+License: BSD 3-Clause "New" or "Revised" License
+Usage (upstream): Used by PDF generator to make it easier for reader applications to resolve  the original contents of rendered text.
+Copyright (upstream):
+Copyright 2002, 2003, 2005, 2006, 2008, 2010, 2015 Adobe Systems
+Material: Qt-5.15.2/upstream/src/gui/text/AGLFN_LICENSE.txt, Qt-5.15.2/upstream/src/gui/text/qt_attribution.txt
+
+Vulkan API Registry [vulkan-xml-spec]
+Version: 1.0.39
+License: MIT License
+Usage (upstream): Used to dynamically generate the sources for the QVulkan(Device)Functions classes.
+Copyright (upstream):
+Copyright (c) 2015-2017 The Khronos Group Inc.
+Material: Qt-5.15.2/upstream/src/gui/vulkan/KHRONOS_LICENSE.txt, Qt-5.15.2/upstream/src/gui/vulkan/qt_attribution.txt
+

@@ -14,7 +14,7 @@ P5受控替换的M1–M5实现与当前支持矩阵验收已完成，最终文�
 
 ## P6发布交付（进行中）
 
-原P0–P5路线已收口。[后续路线](post-p5-roadmap.md)中的P6已启动，P6-0交付契约与架构已通过独立审查，随本段提交归档。用户选择内部技术预览、另一台干净Windows电脑验收；入口、目录、依赖与用户数据边界见[ADR-0057](adr/0057-portable-preview-delivery.md)，阶段出口见[P6工作单](p6-development.md)和[验收表](../tests/acceptance/p6-delivery.md)。P6-1–5尚未实施，现有资格和产品字节不得由普通构建或打包工具自动批准/改写；P7仍待P6收口。
+原P0–P5路线已收口。P6-0已dbe8add审查提交同步；P6-1同字节包/独立验包已通过整段审查，随本段提交归档。候选134文件、16.64 MB，24项打包/PE负例和9项PS验包测试通过，实际包再由独立PS核对通过；原产品/六A-B/七依赖及四Native批准保持。材料95件加索引，内部预览不代选第一方开源许可或宣称外发材料已齐。下一步P6-2验证实际部署闭包、运行/保存/退出、负例及另一台干净Windows；P6-3–5和P7仍待推进。详见[工作单](p6-development.md)、[ADR-0057](adr/0057-portable-preview-delivery.md)和[验收表](../tests/acceptance/p6-delivery.md)。
 
 ## 历史验证记录
 

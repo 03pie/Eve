@@ -1,0 +1,103 @@
+{
+  "Microsoft": [
+    {
+      "url": "https://visualstudio.microsoft.com/wp-content/uploads/2021/11/Visual-Studio-2022-Enterprise-Professional-License-EN.docx",
+      "resolvedUrl": "https://visualstudio.microsoft.com/wp-content/uploads/2021/11/Visual-Studio-2022-Enterprise-Professional-License-EN.docx",
+      "original": {
+        "path": "Microsoft-CRT/Visual-Studio-2022-Enterprise-Professional-License-EN.docx",
+        "sha256": "9c0cd52b20db9d081854c75bd1b50c75514b8f8cb09c8cad15e89d90b97b5bf3",
+        "bytes": 63513
+      },
+      "readingCopy": {
+        "path": "Microsoft-CRT/Visual-Studio-2022-Enterprise-Professional-License-EN.txt",
+        "sha256": "3f8ed5a873fcea9e41b0f7bba1b39c284a7a986405ca335c5f446cece0d86c4a",
+        "bytes": 27031
+      },
+      "extraction": "word/document.xml w:p/w:t text in document order; original DOCX remains authoritative."
+    },
+    {
+      "url": "https://visualstudio.microsoft.com/wp-content/uploads/2021/09/Visual-C-Runtime-2015-2022-License-1.docx",
+      "resolvedUrl": "https://visualstudio.microsoft.com/wp-content/uploads/2021/09/Visual-C-Runtime-2015-2022-License-1.docx",
+      "original": {
+        "path": "Microsoft-CRT/Visual-C-Runtime-2015-2022-License-1.docx",
+        "sha256": "f1e3d56ceb2ad68aae0711b910375009e651ac5530fa0760f0dea6e81e54fae1",
+        "bytes": 39644
+      },
+      "readingCopy": {
+        "path": "Microsoft-CRT/Visual-C-Runtime-2015-2022-License-1.txt",
+        "sha256": "ed875263593823eb4b685cd543eda0ab075a6f57a76f7718908f2237466c442f",
+        "bytes": 6590
+      },
+      "extraction": "word/document.xml w:p/w:t text in document order; original DOCX remains authoritative."
+    }
+  ],
+  "Ela": [
+    {
+      "url": "https://raw.githubusercontent.com/Liniyous/ElaWidgetTools/aae58f5d0d98e05eabe10c263aa7da5f2491d702/LICENSE",
+      "upstreamCommit": "aae58f5d0d98e05eabe10c263aa7da5f2491d702",
+      "upstreamSha256": "3c44bfd93a64e6d0e6f324f68ab0d3d21f3b97b9bc7573bd445a50d8855c88d2",
+      "localSource": "third_party/ela/LICENSE",
+      "localSha256": "3c44bfd93a64e6d0e6f324f68ab0d3d21f3b97b9bc7573bd445a50d8855c88d2",
+      "exactLocalMatch": true,
+      "material": {
+        "path": "Ela/upstream-LICENSE.txt",
+        "sha256": "3c44bfd93a64e6d0e6f324f68ab0d3d21f3b97b9bc7573bd445a50d8855c88d2",
+        "bytes": 1065
+      }
+    },
+    {
+      "url": "https://raw.githubusercontent.com/Liniyous/ElaWidgetTools/aae58f5d0d98e05eabe10c263aa7da5f2491d702/ElaWidgetTools/ElaWidgetTools.qrc",
+      "upstreamCommit": "aae58f5d0d98e05eabe10c263aa7da5f2491d702",
+      "upstreamSha256": "2f400cc37317d87ab2778540f1e56870aa7b13a26318ca743f40c7edefedf4a5",
+      "localSource": "third_party/ela/ElaWidgetTools/ElaWidgetTools.qrc",
+      "localSha256": "2f400cc37317d87ab2778540f1e56870aa7b13a26318ca743f40c7edefedf4a5",
+      "exactLocalMatch": true,
+      "material": {
+        "path": "Ela/upstream-resource-list.qrc.txt",
+        "sha256": "2f400cc37317d87ab2778540f1e56870aa7b13a26318ca743f40c7edefedf4a5",
+        "bytes": 255
+      }
+    },
+    {
+      "url": "https://raw.githubusercontent.com/Liniyous/ElaWidgetTools/aae58f5d0d98e05eabe10c263aa7da5f2491d702/ElaWidgetTools/Font/ElaAwesome.ttf",
+      "upstreamCommit": "aae58f5d0d98e05eabe10c263aa7da5f2491d702",
+      "upstreamSha256": "95c2f6853e9b3b7f2b03f380cd5e3202161c82c431d192c141a69ad0cf98eb46",
+      "localSource": "third_party/ela/ElaWidgetTools/Font/ElaAwesome.ttf",
+      "localSha256": "95c2f6853e9b3b7f2b03f380cd5e3202161c82c431d192c141a69ad0cf98eb46",
+      "exactLocalMatch": true
+    },
+    {
+      "url": "https://raw.githubusercontent.com/Liniyous/ElaWidgetTools/aae58f5d0d98e05eabe10c263aa7da5f2491d702/ElaWidgetTools/Image/Cirno.jpg",
+      "upstreamCommit": "aae58f5d0d98e05eabe10c263aa7da5f2491d702",
+      "upstreamSha256": "de51eff5c7fdf63cecef71f9146e577ffe8151cd7ead69f0e7c124e8392e2f03",
+      "localSource": "third_party/ela/ElaWidgetTools/Image/Cirno.jpg",
+      "localSha256": "de51eff5c7fdf63cecef71f9146e577ffe8151cd7ead69f0e7c124e8392e2f03",
+      "exactLocalMatch": true
+    },
+    {
+      "url": "https://raw.githubusercontent.com/Liniyous/ElaWidgetTools/aae58f5d0d98e05eabe10c263aa7da5f2491d702/ElaWidgetTools/Image/Moon.jpg",
+      "upstreamCommit": "aae58f5d0d98e05eabe10c263aa7da5f2491d702",
+      "upstreamSha256": "32da8e0f76a5c7e21c39a34af65e30338e2797ae669b74deab39d6ec4fca5a4e",
+      "localSource": "third_party/ela/ElaWidgetTools/Image/Moon.jpg",
+      "localSha256": "32da8e0f76a5c7e21c39a34af65e30338e2797ae669b74deab39d6ec4fca5a4e",
+      "exactLocalMatch": true
+    },
+    {
+      "url": "https://raw.githubusercontent.com/Liniyous/ElaWidgetTools/aae58f5d0d98e05eabe10c263aa7da5f2491d702/ElaWidgetTools/Image/noise.png",
+      "upstreamCommit": "aae58f5d0d98e05eabe10c263aa7da5f2491d702",
+      "upstreamSha256": "8e53ce59802e625355168a68767023bb371d4a52dd140c20f86bbc973a152467",
+      "localSource": "third_party/ela/ElaWidgetTools/Image/noise.png",
+      "localSha256": "8e53ce59802e625355168a68767023bb371d4a52dd140c20f86bbc973a152467",
+      "exactLocalMatch": true
+    },
+    {
+      "url": "https://raw.githubusercontent.com/Liniyous/ElaWidgetTools/aae58f5d0d98e05eabe10c263aa7da5f2491d702/ElaWidgetTools/Image/MicaBase.png",
+      "upstreamCommit": "aae58f5d0d98e05eabe10c263aa7da5f2491d702",
+      "upstreamSha256": "7cce7cde9527855c27546a86a94f01391df148a36ec3ad3a5724d208f915653e",
+      "localSource": "third_party/ela/ElaWidgetTools/Image/MicaBase.png",
+      "localSha256": "7cce7cde9527855c27546a86a94f01391df148a36ec3ad3a5724d208f915653e",
+      "exactLocalMatch": true
+    }
+  ],
+  "retrievedUtc": "2026-11-19T04:11:11.798567+00:00"
+}
