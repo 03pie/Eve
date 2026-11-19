@@ -2,13 +2,13 @@
 
 基于 Cordis 思路设计的 C++17 插件内核，目标桌面环境为 Qt 5.15.2 + ElaWidgetTools。
 
-当前已完成 **P1–P4 及第一方 Windows UI 专项（当前支持矩阵）**，阶段依据见 [P3 收口](docs/p3-closeout.md)和 [P4 收口](docs/p4-closeout.md)。配置工作台支持预览、应用、期望启停、保存和磁盘冲突处理；Home 卡片可打开管理/配置窗口，顶部菜单可添加已注册插件的配置实例。Windows 托管 worker 支持类型化结果及完整退出屏障。
+当前已完成 **P1–P5 及第一方 Windows UI 专项（当前支持矩阵）**，阶段依据见 [P3 收口](docs/p3-closeout.md)、[P4 收口](docs/p4-closeout.md)和[P5证据索引](docs/p5-release.md)；最终文档随本次审查后精确提交同步。配置工作台支持预览、应用、期望启停、保存和磁盘冲突处理；Home 卡片可打开管理/配置窗口，顶部菜单可添加已注册插件的配置实例。Windows 托管 worker 支持类型化结果及完整退出屏障。
 
 底部工作区支持搜索并执行已注册命令、按平台/插件实例选择真实输出，以及运行问题的筛选、详情和定位。插件通过 `ui.output/v1` 写入隔离通道，见[工作区接入说明](docs/workbench-panel-development.md)。
 
 **P4 已完成（Windows x64 / MSVC / Qt 5.15.2 / 默认驻留）**：原生装载、ABI 请求/资源桥、两个业务服务 DLL、Core/Kernel/Session 与同工具链 UI DLL 已实现；需求映射、用户原生验收和退出回执见 [P4 最终审计](docs/p4-closeout.md)。
 
-[P5 受控替换](docs/p5-development.md)进行中。候选目录、hash安装、完整运行事务、版本化状态迁移/恢复和白名单物理卸载已交付；实际Native/Notebook A/B、模块升级/取消/报告、H01/S09及高级回收见[M5工作单](docs/p5-m5-development.md)。[M5-d](docs/p5-m5d-development.md)已完成三配置同进程8+100、资源基线、seed动作及独立回放/真实删除缩减。[M5-e1](docs/p5-m5e-development.md#e1-公开资格名单采用与收口)已完成公开资格、产品精确名单及相关审计，随本提交归档；e2最终全支持矩阵/需求映射、e3新增桌面验收和整P5审查尚待完成。业务工作台启动与新构建重新资格见[Native资格流程](docs/native-qualification.md)。
+[P5 受控替换](docs/p5-development.md)在当前支持范围内已完成实现与验收。候选目录、hash安装、完整运行事务、版本化状态迁移/恢复和白名单物理卸载已交付；实际Native/Notebook A/B、模块升级/取消/报告、H01/S09及高级回收见[M5工作单](docs/p5-m5-development.md)。[M5-d](docs/p5-m5d-development.md)已完成三配置同进程8+100、资源基线、seed动作及独立回放/真实删除缩减。[M5-e1](docs/p5-m5e-development.md#e1-公开资格名单采用与收口)公开资格、产品精确名单及相关审计已随1188b58提交同步；[e2](docs/p5-m5e-development.md#e2-收口结论)最终五配置全量、需求映射及新公开资格已完成，fdf099c已审计提交同步。e3新增实际产品UI升级/保存/重开闭环、本轮笔记人工体验及两次正常退出均已通过，见[最终验收](tests/acceptance/p5-replacement.md#m5-e3-实际产品ui闭环与新增人工验收)。M5/P5当前支持矩阵内出口已兑现，最终索引与文档随本次审查后精确提交同步。业务工作台启动与新构建重新资格见[Native资格流程](docs/native-qualification.md)。
 
 当前 C++ 源码 SDK 不构成稳定二进制 ABI；SDK 0.1.5 的宿主与同工具链插件须一起重建，旧 0.1.0/0.1.1/0.1.2/0.1.3/0.1.4 Qt 声明在映射前拒绝。原业务 C ABI 不变，显式装载使用独立的发现 1.1 协商；默认 Native 和 Qt 仍驻留。
 

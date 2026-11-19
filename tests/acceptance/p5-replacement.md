@@ -563,4 +563,27 @@ SDK0.1.5八件旧实物及provenance保持；本轮另外真实执行current-hos
 
 后置独立record与保存报告比较均exit0：189对象、372依赖、75目标/链接拥有者的字节、mtime、真实编译链接记录及artifacts整报告保持。ASan对象报告的query_inputs唯一差异为.ninja_log追加206字节、两条cmake.verify_globs记录；原日志SHA恰等于新日志此前缀，不将其称为whole Ninja元数据未变。严格比较及本轮独立复核见 `build/p5-m5e2-post-capture-comparison.json`、`build/p5-closeout-agent-public-postscope-review-1.json`，原五配置全量与18份固定输出归档不改写。
 
-本节e2全矩阵、需求映射、实际兼容、公开重取及后置产物核对已通过，仍须按工作单审计提交同步、clean后才进入e3。e3新增Release产品桌面升级/应用与显式保存区别/退出人工回执、整P5代码与架构审计及最终发布仍pending，既有P3/UI人工不替代它。旧e1的71项和各轮27项各保留原输入与范围，不与本轮全量拼接，旧失败16个Event的ownership仍未知，M5及整个P5尚未完成。
+本节e2全矩阵、需求映射、实际兼容、公开重取及后置产物核对已通过，并随fdf099c审计提交同步、clean后进入e3。旧e1的71项和各轮27项各保留原输入与范围，不与本轮全量拼接；旧失败16个Event的ownership仍未知。新增产品UI与人工出口见下节，既有P3/UI人工保持历史范围。
+
+## M5-e3 实际产品UI闭环与新增人工验收
+
+2026-11-19，使用e2相同的Release产品 `cordis_platform_workbench_demo.exe`、windows QPA及独立 `build/p5-m5e3-ui-repro/session.yaml` / `store`。产品SHA仍为 `fbece70b8583e006be7199826909b96a574fdc98de97a4cd98cb05248c444f77`，未改生产代码、重编或改变6c批准源。本轮实际界面动作与人工体验分别留证，不将自动UI动作写为用户手工执行。
+
+root通过现有产品OS UIAutomation在PID17032完成Notebook A→B，原UI报告为Applied，先见“配置未保存”，再显式保存得到Written修订2；正常退出0后，同yaml/store打开新PID16824，实际Grid显示Notebook B/1.2.0且进程驻留。在该新进程又通过原界面完成Counter B、Reporter B、Counter A、Reporter A，四个原OperationId分别5/9/11/15，每次Applied及显式Written均有原UI记录，最终Grid为A/A/B。原件为 `build/p5-m5e3-ui-repro/uia-upgraded-unsaved.json`、`uia-saved.json`、`uia-reopened-grid.json`、`native-ui-roundtrip.json`及逐次raw UI树。UI的物理成功文本仅证明实际呈现，Native精确数值及HMODULE/完整MEM_IMAGE/文件独占仍由e2原product/D1联合证据承担。
+
+用户对已经重开并核实的当前B窗口体验笔记编辑、页面输出按钮、Ctrl+Shift+P输出笔记命令及正常关闭，新的明确原话是：
+
+> 已体验，通过，并已关闭当前窗口
+
+回执保存于 `build/p5-m5e3-ui-repro/human-receipt.json`，其范围仅为本轮已验证B页的人工体验与关闭；升级/保存/Native往返由上述实际UI记录承担。记录器原 `report.json`仍保持recording-only及human_acceptance_recorded=false，与独立人工回执合用，不改写原记录器职责。
+
+| 实际进程 | 本轮事实 | 正常退出 |
+|---|---|---:|
+| PID17032 | 原产品Notebook升级、显式保存B | 0 |
+| 新PID16824 | 同yaml/store重开B、Native四次往返保存、当前B页人工体验 | 0 |
+
+两进程退出后的保存文件SHA均为 `8f2d745d6cc2a229ff36a34e066698104233af155219b24e07a243b611273ce0`，保存定位精确为Counter A（a80db76f…）、Reporter A（86d58a1c…）、Notebook B（6bd37afe…）。四组启动前/退出后21件摘要完全相等，最终实物摘要也保持；对应 `run-1/2-before/after.json`、`run-1/2.json`及 `report.json`分别保留，不以窗口消失代替进程退出。运行态草稿不声称跨进程持久化，Qt A/B及PIN仍按原策略驻留。
+
+早期 `build/p5-m5e3-native/` 的A-only保存/重开、`build/p5-m5e3-notebook-recheck/` 的A结果及guard失败连同原用户陈述均保持；其不一致原因未知，不计作本轮成功，也不据此推断用户是否执行操作。D1旧16个Event的ownership未知及原失败归档继续保留。本轮通过来自新的实际产品UI闭环、保存/重开原件和范围明确的新人工回执。
+
+M1–M5实现、完整自动验证、实际产品UI及本轮新增人工验收在当前支持矩阵内已通过，M5/P5出口完成；正式来源与限制见[P5证据索引](../../docs/p5-release.md)。最终索引、文档及整P5审查随本次精确提交同步，提交后再核远端一致和clean，不虚构尚未发生的最终提交SHA；不扩展为任意插件、跨工具链C++ ABI、Qt物理卸载或全部泄漏检测承诺。

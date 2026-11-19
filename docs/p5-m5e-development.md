@@ -1,6 +1,6 @@
 # P5-M5-e 最终资格与交付
 
-日期：2026-11-19。M5-d基线d47210a已审计同步，e0设计5fb3f0b已审计提交同步、8提交blob匹配且clean。e1按[ADR-0056](adr/0056-qualified-native-product-catalog.md)完成产品接线、公开资格、名单审核与相关审查，1188b58已审计提交同步；e2最终矩阵/兼容/资格与审查已完成，随本次精确提交同步；人工/整P5尚待e3。
+日期：2026-11-19。M5-d基线d47210a已审计同步，e0设计5fb3f0b已审计提交同步、8提交blob匹配且clean。e1按[ADR-0056](adr/0056-qualified-native-product-catalog.md)完成产品接线、公开资格、名单审核与相关审查，1188b58已审计提交同步；e2最终矩阵/兼容/资格与审查已随fdf099c审计提交同步；e3桌面补充及整P5出口现已齐备，最终文档随本次审查提交同步。
 
 ## 分段与提交屏障
 
@@ -8,8 +8,8 @@
 |---|---|---|
 | e0 | 核名单来源/产品入口/拥有者、资格更新及最终矩阵/人工出口；审查设计 | 已审计提交同步，5fb3f0b |
 | e1 | 受审精确档案、显式候选导出、私有产品名单与原Workspace接线、正确桌面启动项；相关验证/审计 | 已审计提交同步，1188b58；结论见下 |
-| e2 | 最终五配置完整构建/全量清单与实际执行、兼容/产物/ASan审计、FR-10/H01/H02/S09等完整映射 | 已完成验证与审查，随本次精确提交同步；首轮失败保持 |
-| e3 | 新Release产品桌面升级/保存/退出人工回执、整P5代码与架构审计、正式发布档案及状态收口 | 待e2提交同步且clean |
+| e2 | 最终五配置完整构建/全量清单与实际执行、兼容/产物/ASan审计、FR-10/H01/H02/S09等完整映射 | 已审计提交同步，fdf099c；首轮失败保持 |
+| e3 | 新Release产品桌面升级/保存/退出人工回执、整P5代码与架构审计、正式发布档案及状态收口 | 验收/证据齐备，最终文档审计后随本次提交同步 |
 
 每段先设计再实现，完成审查修正和必要验证后精确提交同步，clean才进下一段。发现实质缺口先修正承担该职责的实现，不堆叠旁路；不以新增代码量或测试数代表完成。
 
@@ -172,3 +172,62 @@ Core-only三fresh child对照实际完成，control/try0 Event增量0且池未�
 结构/所有权及M1–M5关键链复审未发现本段剩余阻断：新代码仅在原Windows/Qt私有prepare准备真实框架状态，collector不产生副作用，原事务、唯一目录/ledger、发布/恢复、卸载和关闭拥有链不扩张；保留资格入口及resident Pipeline有真实消费者，被替代的产品资格默认路径已删除。公开SDK/C ABI和批准策略不变，不引入第二注册表、旁路事务或新生产抽象。审计范围为实际关键路径及上述完整矩阵，不宣称穷举全仓死代码或检测所有泄漏。
 
 本段只提交最小测试修正与设计/验证/审查文档，资格工具、批准源、产品和业务DLL均保持。e2完成代码/格式/证据审查后精确提交同步；清洁且HEAD与origin一致后才进入e3最终Release产品桌面升级/应用保存/正常退出、正式证据索引及整P5收口。e3人工尚未取得，M5/P5不标完成。
+
+
+## e3 实施前设计与人工边界
+
+前段fdf099c6b585a8db142b7e3d57f5e5d361bf4876已审计提交同步，七提交blob精确相等，fetch后0/0且clean才进入本段。职责检查表明最终发布只需证据索引和原产品桌面回执，无须扩展生产架构或新增通用Native数值RPC控件。继续使用原Release产品/四条嵌入批准和唯一Workspace/Operation/Session；不改SDK、名单、业务DLL或原关闭机制。
+
+桌面使用原build/ela-msvc-release/bin/cordis_platform_workbench_demo.exe、windows QPA及本次新build/p5-m5e3-native/session.yaml和store。只从现有模块窗口执行Counter/Reporter B往返A、Notebook A→B，观察实际影响/报告、配置未保存与显式保存、消费者和Notebook草稿/页/命令换代、Qt驻留及正常关闭；新进程同文件重开核保存定位，再正常关闭。Native精确业务数值/完整物理卸载由e2原product/d1证据承担，不要求人工操作不存在的数值控件；不把运行态草稿泛化为跨进程持久化。
+
+启动记录器仅管理本次自行创建的两个实际进程和原stdout/stderr/退出码、可见窗口/PID/DPI等只读OS信息。所有产物SHA在启动前或进程退出后读取，运行中不读取/duplicate模块文件以免干扰物理独占检查；不自动点击、升级、保存或杀进程，不监视写入中的YAML。第一次正常退出且存在保存文件后同参数重开；保存文件快照也只在进程退出后采，UI的Applied/dirty→Written区别由本次人工核，磁盘中间不变由e2自动证据核。
+
+正式档案复用本工作单/验收映射并新增纯文档证据索引，绑定e2源码commit、6c批准源、相同产品/Native/Qt/依赖、五矩阵/资格/ABI/失败取舍及本次人工原回执。它不是第二准入文件或运行时输入，不为证据刷新重编产物。先完成具体运行和可复查记录，再向用户取得本次明确回执；回执、实际两次正常退出和最终审计齐备后才能标M5/P5完成、提交同步。
+
+
+### e3 本次启动记录（人工待回执）
+
+按先前设计实际启动最终Release产品，原运行记录器build/p5-m5e3-desktop-run.py SHA d87b6d40d6ad5afef24009ee86da8f0b6b49292b17bb63416c74256d73e3b787。首次实际PID8964，controller9136，命令与独立session/store、windows QPA见build/p5-m5e3-native/；只读OS观察到可见“Cordis 插件平台”窗口，GetDpiForWindow为120，仅属该窗口DPI，不替代Windows系统缩放人工结论。
+
+启动前21份实物摘要已保存run-1-before.json，产品SHA fbece70b8583e006be7199826909b96a574fdc98de97a4cd98cb05248c444f77，与原受审产品归档相同。运行中不读/hash模块文件或YAML，所有后置实物/配置记录等待真实退出。已提供[本次步骤](p5-desktop-verification.md)并异步请求新回执；第一次正常关闭后同配置自动重开，必须再正常关闭。当前不能将已打开窗口、自动全量、原P3/UI回执或尚未取得的用户回复当作本次通过。正式索引与M5/P5仍待本次回执、两正常exit0及最终审查提交同步。
+
+
+### e3 通过回执与保存定位不一致：聚焦复核方案
+
+用户于2026-11-19明确回复“已完成，全部通过（两次均正常关闭）”，随后澄清Notebook“看到 Applied 且已保存，重开也显示 B”；两份原回复分别独立保存human-receipt.json与human-receipt-clarification-1.json，不修改原recording-only报告。原进程8964/2868确实exit0、21件前后保持，但两退出配置均为6ab8bed2…，实际Notebook locator82c124…仍A1.1.0，store只见三A；不能把用户观察改写成已落盘B，也不能未经证实归因于漏步骤或产品bug。
+
+只读检查显示原Upgrade共同提交按alias写候选hash，显式Save使用同Session，bootstrap存在文件时按所存locator加载，无可定位的成功B静默回退A路径。现有UI用例覆盖Notebook按钮Applied/草稿贡献换代，平台用例覆盖接受B+Session保存，产品新进程case仅Counter/Reporter；组合覆盖缺口与原因未知分别记录。
+
+复核不先改生产代码或重编。沿同一最终Release产品和既有记录器，仅为本次新目录build/p5-m5e3-notebook-recheck另存一份ignored运行脚本；保留旧目录所有原件。用户只需Notebook A→B、显式保存、正常关闭与自动同文件重开；Native往返交互原回执及e2自动证据保留各自范围。新脚本在每次正常退出后实际读取保存配置，明确要求Notebook B的受审6bd37…定位；不匹配保存原件并报未完成，不自动重开A来混同成功。运行中仍不读取模块文件/配置，不自动点击/升级/保存/关闭。若聚焦可复现不一致，再依据实际执行/保存/重开边界先设计最小修复和必要回归；不为解释未知先堆UI或第二状态。
+
+
+聚焦复核原件也与回执不一致：用户回复重开1.2.0/两次关闭，但实际PID15504仅一次exit0，保存仍A，guard实际exit1且未启动第二进程；原report和第三份human-receipt保持。继续重复口头确认不能补齐物证，下一步由root在同一最终产品通过现有Windows UIAutomation实际驱动菜单、候选输入、升级和Save，再正常关闭/同文件新进程检查；另用新build/p5-m5e3-ui-repro目录，不复用或改写旧配置。自动操作只走产品现有界面，不调用内部Workspace替代界面、不直接写入B定位、不改SDK/生产源码或批准值。记录器保持21件前后/退出后目标locator guard，所有UIA及日志仅ignored诊断。此取证是自动GUI复现，必须与用户原回执分别标明范围，不冒称人工动作；若有真实故障再设计最小修复。
+
+
+### e3 实际产品界面自动复现（最终体验待回执）
+
+新build/p5-m5e3-ui-repro不修改旧目录；同一fbece70b…产品，记录器仅更换OUT并保留退出后A/A/B精确guard。root通过本机Windows UIAutomation实际打开“文件→模块管理”、写候选输入并调用现有按钮；选择表格行时使用已核PID/窗口下的DPI-aware鼠标及键盘，未调用内部Workspace或直接写配置。最初UIA cell Invoke未实际改变当前行，候选检查报business artifact identity differs；该拒绝和选择过程原快照保持，不能将动作请求返回当作已选Notebook，也不能据此归因旧人工结果。
+
+真实选中Notebook后，PID17032的界面预览明确旧82c124…/1.1.0与候选6bd37…/1.2.0；实际Start后OperationId5为Applied/committed1/retained0，当前表格1.2.0且目标修订2未保存。再实际点击Save，界面明确Written、目标2/已保存2；ui源快照uia-notebook-preview、uia-upgraded-unsaved、uia-saved及action12–17均保留。正常关闭17032后exit0，原退出配置副本精确Notebook B；记录器guard通过才同参数重开16824，实际UI Grid读取CounterA/ReporterA/NotebookB1.2，见uia-reopened-grid.json。这是自动GUI实证，不冒称用户原动作。
+
+随后root在16824通过相同真实UI完成CounterB、ReporterB、CounterA、ReporterA，每轮核原预览别名、不同OperationId5/9/11/15、Applied/committed1/当前版本、未保存状态，再实际Save均Written；完整动作/快照及原回执在native-ui-roundtrip.json。最后uia-final-grid再次为A1.1/A1.1/B1.2。此补充顺序为QtB后Native往返，与e2/原回执范围分别记录，不拼作同一原人工序列。
+
+当前保留16824这个已验证的B主窗口给用户实际体验笔记编辑、页面按钮和命令，再正常关闭；新问题只要求体验并关当前一个窗口，不要求再操作升级/保存。21件前后摘要、第二次真实退出和最终配置等待该进程结束采集。旧两次A配置/聚焦guard失败和用户原陈述全部保留，原因仍未知；没有证据证明生产代码成功B保存后静默回退A，因此未盲目修改生产或放宽判据。
+
+
+### e3 收口结论
+
+最终用户原话“已体验，通过，并已关闭当前窗口”已独立保存于build/p5-m5e3-ui-repro/human-receipt.json（SHA c6a24029d5a24d0fc83fca0fbf22175d75d65acc36945515d6a02d6ef294eb1e）。它对应已客观核为B1.2.0的16824窗口的笔记编辑、页面输出按钮、Ctrl+Shift+P命令及正常关闭体验；升级/保存/Native往返是前述自动GUI实证，不能合称全部用户亲手操作。
+
+原运行会话31016实际exit0，最终report.recording_completed=true，PID17032/16824分别正常exit0；第二进程确为同一命令/文件/store新OS进程。run1、run2及最终session.yaml字节相同，SHA8f2d745d6cc2a229ff36a34e066698104233af155219b24e07a243b611273ce0，模块精确为Counter A、Reporter A、Notebook B的受审hash定位。四份启动前/退出后21实物摘要全等且当前实物逐项吻合，最终产品仍fbece70b…、6c名单/六A-B模块与七依赖保持。原recording-only报告的human_acceptance_recorded=false原样保留，用户回执单独关联，不回填原录制字段。
+
+早期native目录两次A退出、notebook-recheck一次A/guard拒绝及原三份用户陈述原件全部保持，不改为成功，不猜测历史差异原因。最终结论来自同产品真实UI的Notebook Applied/dirty→Written→B新进程、Native四往返各Written、最终A/A/B原件和本次当前B的人工体验；不把自动动作冒充人工，也不从新成功倒推旧记录。未发现可定位的成功B静默回退A代码，本段没有未经证实修改生产逻辑、扩大白名单或重写配置制造通过。
+
+整P5结构/职责、M1–M5出口、原说明书/指南21映射、五完整配置、旧SDK准确范围、资源/状态/物理/随机证据与本次桌面补充均经复查。正式[证据索引](p5-release.md)只关联源码fdf099c、相同资格字节和原件，不成为第二准入/运行时输入。当前939项编译输入保持，最后检查实际对象/依赖/产物；本段最终变更仅文档，按影响不重复已通过的全量或重新编译业务产品。
+
+M5/P5功能与验收出口已齐备，最终文档/源码边界、引用和精确暂存审计后随本次提交同步；HEAD与origin一致且clean后完成整个目标。不宣称跨工具链C++ ABI、任意第三方Native可卸载、Qt物理卸载、所有泄漏检测或硬时延SLA。源码SDK0.1.5和既有受控策略保持。
+
+
+最终独立桌面审计build/p5-m5e3-ui-repro-command-final-audit.json（SHA95987135d7f9caea7a150f2108bdb8c8d3650aae8151bc4f0a552ac51d61efe3）核137份原件、全部实际UIA/原生输入、五次升级/保存/重开、fresh回执、两退出/21映射以及store六组manifest与DLL摘要，无剩余阻断。自动与人工分scope、旧原件未知原因均复查通过。
+
+最后重新实物记录并严格比较见build/p5-m5e3-final-physical-comparison.json：189对象/372依赖/75目标及完整ASan报告（含六query输入）与post-capture原记录全等；artifacts只有base_commit从取证时1188b58变为已提交实现fdf099c，其余所有产物/SDK/目录/政策记录相等。直接复用旧whole-report check曾因该HEAD元数据差异exit1，原情况留于p5-m5e3-post-check-history.json；不修改旧报告，也不把元数据变化称为二进制变化。没有放宽任何实物SHA/源/编译链接判据。source939、引用、LF/空白和最终精确提交关系再核后同步。
