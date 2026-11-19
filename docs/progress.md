@@ -12,6 +12,10 @@ P5受控替换的M1–M5实现与当前支持矩阵验收已完成，最终文�
 
 默认Native名单仍空，产品仅批准本构建四条精确Native身份/SHA，Qt保持驻留；不泛化第三方卸载安全、跨工具链ABI或时延SLA。运行见[资格指南](native-qualification.md)。
 
+## P6发布交付（进行中）
+
+原P0–P5路线已收口。[后续路线](post-p5-roadmap.md)中的P6已启动，P6-0交付契约与架构已通过独立审查，随本段提交归档。用户选择内部技术预览、另一台干净Windows电脑验收；入口、目录、依赖与用户数据边界见[ADR-0057](adr/0057-portable-preview-delivery.md)，阶段出口见[P6工作单](p6-development.md)和[验收表](../tests/acceptance/p6-delivery.md)。P6-1–5尚未实施，现有资格和产品字节不得由普通构建或打包工具自动批准/改写；P7仍待P6收口。
+
 ## 历史验证记录
 
 以下为各阶段当时的证据与范围，不覆盖上面的当前状态。

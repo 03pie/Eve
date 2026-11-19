@@ -121,6 +121,7 @@ QtWorker 支持协作取消，在原生线程和 TLS 退出后释放捕获，随
 ## 设计及实施入口
 
 - [开发进度](docs/progress.md)：当前状态、工作包、验证台账及下一任务。
+- [P5 后续路线](docs/post-p5-roadmap.md)：P6发布交付、P7外部SDK/真实插件及按需扩展的阶段与验收门禁；P6已启动，实时状态见[P6工作单](docs/p6-development.md)。
 - [P4 原生模块](docs/p4-development.md)：分阶段范围、预检/驻留账目、测试及诊断入口。
 - [UI 设计与优化专项](docs/ui-optimization-plan.md)：P3 收口后的工作台/页面/状态/偏好优化、工作包和完成条件。
 - [Home 管理窗口与平台添加](docs/home-management-development.md)：卡片管理/配置窗口、顶部添加已注册配置实例及验证记录。
