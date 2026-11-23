@@ -1,4 +1,5 @@
 """Pure evidence/precondition checks: no Windows UI, process or product execution."""
+import argparse
 import copy
 from pathlib import Path
 import sys
@@ -17,6 +18,27 @@ def snapshot(*elements):
 
 
 class PreviewUiValues(unittest.TestCase):
+    def test_evidence_label_is_only_an_exclusive_ascii_directory_suffix(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args = argparse.Namespace(package_root=Path(directory), run_root=Path(directory),
+                                      mode='business', phase='reopen', pid=42, evidence_label=None)
+            original = ui.Driver(args)
+            self.assertEqual(original.output.name, 'ui-business-reopen-pid-42')
+            ui.write_new(original.output / 'summary.json', {'outcome': 'Unknown'})
+            before = (original.output / 'summary.json').read_bytes()
+            args.evidence_label = 'continuation-1'
+            continued = ui.Driver(args)
+            self.assertEqual(continued.output.name, 'ui-business-reopen-pid-42-continuation-1')
+            self.assertEqual((args.mode, args.phase, args.pid, continued.data),
+                             ('business', 'reopen', 42, Path(directory).resolve()))
+            with self.assertRaises(FileExistsError): ui.Driver(args)
+            self.assertEqual((original.output / 'summary.json').read_bytes(), before)
+            for label in ('../escape', '..', 'a/b', r'a\b', 'a:b', 'a b', '中文', '', '-start', 'a' * 49):
+                args.evidence_label = label
+                with self.subTest(label=label), self.assertRaises(argparse.ArgumentTypeError): ui.Driver(args)
+            self.assertEqual(ui.evidence_label('A_1-z'), 'A_1-z')
+            self.assertEqual(ui.evidence_label('a' * 48), 'a' * 48)
+
     def test_selector_has_component_boundary_and_unique_visible_match(self):
         value = snapshot(('root.CordisConfigEditor', 'one'), ('OtherCordisConfigEditor', 'two'))
         self.assertEqual(ui.text(value, 'CordisConfigEditor'), 'one')
@@ -191,6 +213,116 @@ class PreviewUiValues(unittest.TestCase):
         driver.action = mock.Mock(side_effect=ui.Unknown('unavailable'))
         with mock.patch.object(ui.time, 'sleep'), self.assertRaises(ui.Unknown): driver.snapshot()
         self.assertEqual(driver.action.call_args_list, [mock.call('Read')] * 3)
+
+
+class PreviewUiActivation(unittest.TestCase):
+    def setUp(self):
+        self.native = ui.NativeInput.__new__(ui.NativeInput)
+        self.native.pid = 42
+        self.native.record = mock.Mock()
+        self.snapshot = {'pid': 42, 'errors': [], 'truncated': False,
+                         'roots': [{'id': 'ElaWindow', 'pid': 42, 'hwnd': 200}]}
+        self.native.observe = mock.Mock(return_value=self.snapshot)
+        self.native.user = mock.Mock()
+        self.native.user.SetForegroundWindow.return_value = False
+        self.native.user.SetFocus.return_value = 0
+        self.native.user.AttachThreadInput.return_value = True
+        self.native.user.GetForegroundWindow.return_value = 100
+        self.native.user.GetWindowThreadProcessId.side_effect = lambda hwnd, _owner: {100: 9, 200: 11}[hwnd]
+        self.native.kernel = mock.Mock()
+        self.native.kernel.GetCurrentThreadId.return_value = 7
+        self.native.owner = mock.Mock(return_value=42)
+        self.native.focus_facts = mock.Mock(return_value={'foregroundPid': 99, 'focusPid': 99})
+        self.good = {'foregroundPid': 42, 'focusPid': 42}
+        self.native.wait_guard = mock.Mock(side_effect=[ui.Unknown('other PID'), self.good, self.good])
+        self.errors = mock.patch.object(ui.ctypes, 'get_last_error', return_value=0, create=True)
+        self.clear_error = mock.patch.object(ui.ctypes, 'set_last_error', create=True)
+        self.errors.start(); self.clear_error.start()
+        self.addCleanup(self.errors.stop); self.addCleanup(self.clear_error.stop)
+
+    def test_normal_guard_success_does_not_attach_even_when_api_returns_zero(self):
+        self.native.wait_guard.side_effect = [self.good]
+        self.native.activate(self.snapshot)
+        self.native.user.AttachThreadInput.assert_not_called()
+        self.native.observe.assert_not_called()
+        self.native.user.SetFocus.assert_not_called()
+        self.assertFalse(self.native.record.call_args.args[1]['setForegroundReturn'])
+
+    def test_fallback_fresh_identity_queue_and_final_guard_surround_temporary_attachment(self):
+        self.native.user.PeekMessageW.return_value = False  # No pending messages is normal.
+        self.native.activate(self.snapshot)
+        self.native.observe.assert_called_once_with()
+        self.native.user.PeekMessageW.assert_called_once()
+        self.assertEqual(self.native.user.AttachThreadInput.call_args_list,
+                         [mock.call(7, 9, True), mock.call(7, 11, True),
+                          mock.call(7, 11, False), mock.call(7, 9, False)])
+        self.native.user.SetFocus.assert_called_once_with(200)
+        self.assertEqual(self.native.wait_guard.call_count, 3)
+        facts = self.native.record.call_args.args[1]
+        self.assertEqual(facts['after'], self.good)
+        self.assertEqual(facts['threads'], {'current': 7, 'foreground': 9, 'target': 11})
+
+    def test_incomplete_duplicate_or_wrong_pid_window_metadata_never_activates(self):
+        for change in ({'errors': ['timeout']}, {'truncated': True}, {'pid': 99},
+                       {'roots': self.snapshot['roots'] * 2},
+                       {'roots': [{'id': 'ElaWindow', 'pid': 99, 'hwnd': 200}]},
+                       {'roots': [{'id': 'ElaWindow', 'pid': 42, 'hwnd': 0}]}):
+            with self.subTest(change=change), self.assertRaises(ui.Unknown):
+                self.native.activate({**self.snapshot, **change})
+        self.native.owner.return_value = 99
+        with self.assertRaises(ui.Unknown): self.native.activate(self.snapshot)
+        self.native.user.SetForegroundWindow.assert_not_called()
+        self.native.user.AttachThreadInput.assert_not_called()
+
+    def test_fresh_window_changed_before_fallback_never_attaches(self):
+        self.native.observe.return_value = {**self.snapshot, 'roots': [{'id': 'ElaWindow', 'pid': 42, 'hwnd': 300}]}
+        with self.assertRaises(ui.Unknown): self.native.activate(self.snapshot)
+        self.native.user.AttachThreadInput.assert_not_called()
+        self.native.user.SetFocus.assert_not_called()
+
+    def test_same_thread_is_attached_only_once_and_self_is_skipped(self):
+        for foreground, target, expected in ((9, 9, 9), (7, 11, 11)):
+            self.native.user.GetWindowThreadProcessId.side_effect = lambda hwnd, _owner: foreground if hwnd == 100 else target
+            self.native.wait_guard.side_effect = [ui.Unknown('other PID'), self.good, self.good]
+            self.native.user.AttachThreadInput.reset_mock()
+            self.native.activate(self.snapshot)
+            self.assertEqual(self.native.user.AttachThreadInput.call_args_list,
+                             [mock.call(7, expected, True), mock.call(7, expected, False)])
+
+    def test_partial_attach_failure_releases_the_first_successful_pair(self):
+        self.native.user.AttachThreadInput.side_effect = [True, False, True]
+        with self.assertRaises(ui.Unknown): self.native.activate(self.snapshot)
+        self.assertEqual(self.native.user.AttachThreadInput.call_args_list,
+                         [mock.call(7, 9, True), mock.call(7, 11, True), mock.call(7, 9, False)])
+        self.native.user.SetFocus.assert_not_called()
+
+    def test_activation_and_attached_guard_exceptions_always_detach(self):
+        for where in ('foreground', 'focus', 'guard'):
+            self.setUp()
+            if where == 'foreground': self.native.user.SetForegroundWindow.side_effect = [False, RuntimeError('activation failed')]
+            if where == 'focus': self.native.user.SetFocus.side_effect = RuntimeError('focus failed')
+            if where == 'guard': self.native.wait_guard.side_effect = [ui.Unknown('other PID'), ui.Unknown('still other PID')]
+            with self.subTest(where=where), self.assertRaises((ui.Unknown, RuntimeError)):
+                self.native.activate(self.snapshot)
+            self.assertEqual(self.native.user.AttachThreadInput.call_args_list[-2:],
+                             [mock.call(7, 11, False), mock.call(7, 9, False)])
+
+    def test_detach_failure_still_releases_other_pair_and_reports_unknown(self):
+        self.native.user.AttachThreadInput.side_effect = [True, True, False, True]
+        with self.assertRaisesRegex(ui.Unknown, 'detach'): self.native.activate(self.snapshot)
+        self.assertEqual(self.native.user.AttachThreadInput.call_args_list[-1], mock.call(7, 9, False))
+        self.assertIn('detach', self.native.record.call_args.args[1]['error'])
+
+    def test_success_while_attached_does_not_authorize_input_after_focus_is_lost(self):
+        self.native.wait_guard.side_effect = [ui.Unknown('other PID'), self.good, ui.Unknown('other PID after detach')]
+        with self.assertRaisesRegex(ui.Unknown, 'after detach'): self.native.activate(self.snapshot)
+        self.assertTrue(all(entry['ok'] for entry in self.native.record.call_args.args[1]['detached']))
+
+    def test_evidence_write_failure_occurs_after_all_detaches(self):
+        self.native.record.side_effect = OSError('disk full')
+        with self.assertRaises(OSError): self.native.activate(self.snapshot)
+        self.assertEqual(self.native.user.AttachThreadInput.call_args_list[-2:],
+                         [mock.call(7, 11, False), mock.call(7, 9, False)])
 
 
 if __name__ == '__main__':

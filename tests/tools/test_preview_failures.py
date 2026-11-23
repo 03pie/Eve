@@ -286,6 +286,12 @@ class PreviewFailuresTests(unittest.TestCase):
             if (Path(report["aclScopeParent"]) / "acl-state-application.json").exists():
                 restored = self.invoke_acl("Restore", output)
                 self.assertEqual(restored.returncode, 0, restored.stderr.decode(errors="replace"))
+                restored_value = json.loads(restored.stdout.decode('utf-8-sig'))
+                self.assertEqual(restored_value['comparison']['allowedControlFlagsDifference'], 0x0400)
+                self.assertEqual(restored_value['comparison']['mismatches'], [])
+                self.assertGreater(restored_value['comparison']['objectCount'], 0)
+                self.assertLessEqual(restored_value['comparison']['normalizedObjectCount'],
+                                     restored_value['comparison']['objectCount'])
         put(application, "after-restore.txt", b"writable again")
 
     def test_acl_scope_and_target_identity_are_validated_before_changes(self):

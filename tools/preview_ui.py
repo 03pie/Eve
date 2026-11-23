@@ -208,16 +208,33 @@ def config_value(title):
     return {'formatVersion': 1, 'plugins': [{'id': 'notes', 'plugin': 'demo.notes', 'config': {'title': title}}]}
 
 
+def evidence_label(value):
+    if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,47}', value, flags=re.ASCII) is None:
+        raise argparse.ArgumentTypeError('Evidence label must be 1-48 ASCII letters/digits, underscore or hyphen')
+    return value
+
+
 class NativeInput:
     """Actual foreground/point/focus guards surround every OS input operation."""
-    def __init__(self, pid, record):
-        self.pid, self.record = pid, record
+    def __init__(self, pid, record, observe=None):
+        self.pid, self.record, self.observe = pid, record, observe
         self.user = ctypes.WinDLL('user32', use_last_error=True)
+        self.kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        self.kernel.GetCurrentThreadId.restype = wintypes.DWORD
         self.user.GetForegroundWindow.restype = wintypes.HWND
         self.user.WindowFromPoint.argtypes = [wintypes.POINT]
         self.user.WindowFromPoint.restype = wintypes.HWND
         self.user.SetForegroundWindow.argtypes = [wintypes.HWND]
+        self.user.SetForegroundWindow.restype = wintypes.BOOL
+        self.user.SetFocus.argtypes = [wintypes.HWND]
+        self.user.SetFocus.restype = wintypes.HWND
+        self.user.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+        self.user.AttachThreadInput.restype = wintypes.BOOL
+        self.user.PeekMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND,
+                                          wintypes.UINT, wintypes.UINT, wintypes.UINT]
+        self.user.PeekMessageW.restype = wintypes.BOOL
         self.user.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+        self.user.GetWindowThreadProcessId.restype = wintypes.DWORD
         if not self.user.IsProcessDPIAware():
             self.user.SetProcessDPIAware()
         if not self.user.IsProcessDPIAware():
@@ -228,7 +245,7 @@ class NativeInput:
         self.user.GetWindowThreadProcessId(hwnd, ctypes.byref(value))
         return value.value
 
-    def guard(self, point=None):
+    def focus_facts(self):
         class GuiInfo(ctypes.Structure):
             _fields_ = [('cbSize', wintypes.DWORD), ('flags', wintypes.DWORD)] + [
                 (key, wintypes.HWND) for key in ('active', 'focus', 'capture', 'menu', 'move', 'caret')
@@ -236,27 +253,90 @@ class NativeInput:
         info = GuiInfo(); info.cbSize = ctypes.sizeof(info)
         if not self.user.GetGUIThreadInfo(0, ctypes.byref(info)):
             raise Unknown('Cannot inspect actual input focus')
-        facts = {'foregroundPid': self.owner(self.user.GetForegroundWindow()), 'focusPid': self.owner(info.focus)}
+        return {'foregroundPid': self.owner(self.user.GetForegroundWindow()), 'focusPid': self.owner(info.focus)}
+
+    def guard(self, point=None):
+        facts = self.focus_facts()
         if point is not None:
             facts['pointPid'] = self.owner(self.user.WindowFromPoint(wintypes.POINT(*point)))
         if any(value != self.pid for value in facts.values()):
             raise Unknown('Actual OS input would reach another PID: ' + str(facts))
         return facts
 
-    def activate(self, snapshot):
+    def main_window(self, snapshot):
+        if snapshot.get('errors') or snapshot.get('truncated') or snapshot.get('pid') != self.pid:
+            raise Unknown('Cannot establish complete live window metadata for the registered PID')
         roots = [item for item in snapshot['roots'] if item['id'] == 'ElaWindow']
-        if len(roots) != 1:
+        if (len(roots) != 1 or roots[0].get('pid') != self.pid
+                or not isinstance(roots[0].get('hwnd'), int) or roots[0]['hwnd'] <= 0
+                or self.owner(roots[0]['hwnd']) != self.pid):
             raise Unknown('Cannot identify the live main window')
-        self.user.SetForegroundWindow(int(roots[0]['hwnd']))
+        return roots[0]['hwnd']
+
+    def wait_guard(self):
         until = time.monotonic() + 1
         while True:
             try:
-                self.guard()
-                return
+                return self.guard()
             except Unknown:
                 if time.monotonic() >= until:
                     raise
                 time.sleep(.03)
+
+    def activate(self, snapshot):
+        hwnd = self.main_window(snapshot)
+        facts = {'hwnd': hwnd, 'before': self.focus_facts(), 'attached': [], 'detached': []}
+        try:
+            facts['setForegroundReturn'] = bool(self.user.SetForegroundWindow(hwnd))
+            try:
+                facts['after'] = self.wait_guard()
+                return
+            except Unknown as error:
+                facts['normalGuardError'] = str(error)
+            if self.observe is None or self.main_window(self.observe()) != hwnd:
+                raise Unknown('Fresh registered main window changed before activation fallback')
+            current = self.kernel.GetCurrentThreadId()
+            foreground = self.user.GetForegroundWindow()
+            foreground_thread = self.user.GetWindowThreadProcessId(foreground, None)
+            target_thread = self.user.GetWindowThreadProcessId(hwnd, None)
+            if not current or not foreground_thread or not target_thread or self.owner(hwnd) != self.pid:
+                raise Unknown('Cannot establish actual activation thread identities')
+            facts['threads'] = {'current': current, 'foreground': foreground_thread, 'target': target_thread}
+            message = wintypes.MSG()
+            facts['peekMessageReturn'] = bool(self.user.PeekMessageW(ctypes.byref(message), None, 0, 0, 0))
+            pairs = list(dict.fromkeys((current, thread) for thread in (foreground_thread, target_thread)
+                                       if current != thread))
+            attached = []
+            try:
+                for pair in pairs:
+                    ok = bool(self.user.AttachThreadInput(*pair, True))
+                    facts['attached'].append({'threads': list(pair), 'ok': ok, 'error': ctypes.get_last_error() if not ok else 0})
+                    if not ok:
+                        raise Unknown('Cannot temporarily attach activation input queues')
+                    attached.append(pair)
+                facts['attachedSetForegroundReturn'] = bool(self.user.SetForegroundWindow(hwnd))
+                ctypes.set_last_error(0)
+                facts['setFocusPreviousHwnd'] = self.user.SetFocus(hwnd) or 0
+                facts['setFocusError'] = ctypes.get_last_error()
+                facts['whileAttached'] = self.wait_guard()
+            finally:
+                detach_failed = False
+                for pair in reversed(attached):
+                    try:
+                        ok = bool(self.user.AttachThreadInput(*pair, False))
+                        facts['detached'].append({'threads': list(pair), 'ok': ok, 'error': ctypes.get_last_error() if not ok else 0})
+                        detach_failed |= not ok
+                    except Exception as error:
+                        facts['detached'].append({'threads': list(pair), 'ok': False, 'error': str(error)})
+                        detach_failed = True
+                if detach_failed:
+                    raise Unknown('Cannot detach temporary activation input queues; stop without input')
+            facts['after'] = self.wait_guard()
+        except Exception as error:
+            facts['error'] = str(error)
+            raise
+        finally:
+            self.record('activate', facts)
 
     def click(self, element):
         rect = element['rect']
@@ -295,7 +375,10 @@ class Driver:
     def __init__(self, args):
         self.args = args
         self.package, self.data = args.package_root.resolve(), args.run_root.resolve()
-        self.output = self.data / f'ui-{args.mode}-{args.phase}-pid-{args.pid}'
+        label = getattr(args, 'evidence_label', None)
+        if label is not None:
+            label = evidence_label(label)
+        self.output = self.data / (f'ui-{args.mode}-{args.phase}-pid-{args.pid}' + (f'-{label}' if label else ''))
         self.output.mkdir(exist_ok=False)
         self.sequence = 0
         self.operations = []
@@ -306,7 +389,7 @@ class Driver:
         manifest = self.package / 'build-manifest.json'
         if hashlib.sha256(manifest.read_bytes()).hexdigest() != self.registration['manifestSha256']:
             raise Unknown('Registered package manifest differs')
-        self.input = NativeInput(self.args.pid, self.record)
+        self.input = NativeInput(self.args.pid, self.record, self.snapshot)
 
     def validate(self):
         self.registration = read_json(self.data / 'registration.json')
@@ -605,6 +688,8 @@ def main(argv=None):
     parser.add_argument('--mode', choices=['business', 'configuration'], required=True)
     parser.add_argument('--phase', choices=['initial', 'reopen'], default='initial')
     parser.add_argument('--configuration-file', type=Path)
+    parser.add_argument('--evidence-label', type=evidence_label,
+                        help='Explicit new evidence suffix; does not authorize replay or change the registered run')
     args = parser.parse_args(argv)
     driver = None
     try:

@@ -90,6 +90,42 @@ function Get-ObjectAcl([string]$Path) {
     return [IO.File]::GetAccessControl($Path)
 }
 
+function Compare-PreviewRestoredAcl(
+    [Security.AccessControl.RawSecurityDescriptor]$Expected,
+    [Security.AccessControl.RawSecurityDescriptor]$Actual
+) {
+    $differences = @()
+    $expectedOwner = if ($null -ne $Expected.Owner) { $Expected.Owner.Value } else { $null }
+    $actualOwner = if ($null -ne $Actual.Owner) { $Actual.Owner.Value } else { $null }
+    $expectedGroup = if ($null -ne $Expected.Group) { $Expected.Group.Value } else { $null }
+    $actualGroup = if ($null -ne $Actual.Group) { $Actual.Group.Value } else { $null }
+    if ($expectedOwner -cne $actualOwner) { $differences += 'owner' }
+    if ($expectedGroup -cne $actualGroup) { $differences += 'group' }
+    $flagsXor = [int]$Expected.ControlFlags -bxor [int]$Actual.ControlFlags
+    if (($flagsXor -band (-bnot 0x0400)) -ne 0) { $differences += 'controlFlags' }
+    $expectedDacl = $Expected.DiscretionaryAcl
+    $actualDacl = $Actual.DiscretionaryAcl
+    if (($null -eq $expectedDacl) -ne ($null -eq $actualDacl)) {
+        $differences += 'daclNullness'
+    } elseif ($null -ne $expectedDacl) {
+        $expectedBytes = [byte[]]::new($expectedDacl.BinaryLength)
+        $actualBytes = [byte[]]::new($actualDacl.BinaryLength)
+        $expectedDacl.GetBinaryForm($expectedBytes, 0)
+        $actualDacl.GetBinaryForm($actualBytes, 0)
+        if ([Convert]::ToBase64String($expectedBytes) -cne [Convert]::ToBase64String($actualBytes)) {
+            $differences += 'orderedDaclBinary'
+        }
+    }
+    [pscustomobject]@{
+        passed = ($differences.Count -eq 0)
+        autoInheritedNormalized = ($differences.Count -eq 0 -and $flagsXor -eq 0x0400)
+        differences = $differences; controlFlagsXor = $flagsXor
+        expectedControlFlags = [int]$Expected.ControlFlags; actualControlFlags = [int]$Actual.ControlFlags
+        expectedOwner = $expectedOwner; actualOwner = $actualOwner
+        expectedGroup = $expectedGroup; actualGroup = $actualGroup
+    }
+}
+
 function Set-ObjectAcl([string]$Path, $Acl) {
     if ([IO.Directory]::Exists($Path)) { [IO.Directory]::SetAccessControl($Path, $Acl) }
     else { [IO.File]::SetAccessControl($Path, $Acl) }
@@ -450,12 +486,25 @@ if ($Action -eq 'Protect') {
         Set-ObjectAcl $path $acl
     }
     $restored = $true
+    $report.comparison = [ordered]@{
+        rule = 'OwnerGroupOrderedDaclBinaryAllFlagsExceptDaclAutoInherited/1'
+        allowedControlFlagsDifference = 0x0400; objectCount = $expected.Count
+        normalizedObjectCount = 0; mismatches = @()
+    }
     foreach ($row in $expected) {
-        if ((Get-ObjectAcl (Join-Path $root $row.relativePath.Replace('/', '\'))).GetSecurityDescriptorSddlForm(
-                [Security.AccessControl.AccessControlSections]::Access -bor
-                [Security.AccessControl.AccessControlSections]::Owner -bor
-                [Security.AccessControl.AccessControlSections]::Group) -cne $row.sddl) {
+        $actualSddl = (Get-ObjectAcl (Join-Path $root $row.relativePath.Replace('/', '\'))).GetSecurityDescriptorSddlForm(
+            [Security.AccessControl.AccessControlSections]::Access -bor
+            [Security.AccessControl.AccessControlSections]::Owner -bor
+            [Security.AccessControl.AccessControlSections]::Group)
+        $comparison = Compare-PreviewRestoredAcl ([Security.AccessControl.RawSecurityDescriptor]::new($row.sddl)) `
+            ([Security.AccessControl.RawSecurityDescriptor]::new($actualSddl))
+        if ($comparison.autoInheritedNormalized) { $report.comparison.normalizedObjectCount++ }
+        if (-not $comparison.passed) {
             $restored = $false
+            $report.comparison.mismatches += [ordered]@{
+                relativePath = $row.relativePath; comparison = $comparison
+                expectedSddl = $row.sddl; actualSddl = $actualSddl
+            }
         }
     }
     $report.passed = $restored
