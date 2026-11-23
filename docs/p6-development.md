@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-P6-0 已以 dbe8add、P6-1 已以 9af5d4d、P6-2 已以 `37d1cf4878966d3d007572fb29b04160257a4d9a` 审查提交同步并核 clean。P6-3按[ADR-0059](adr/0059-fresh-qualification-and-offline-recovery.md)完成新资格、明确采用、完整矩阵及准确新包，离线演练及最终closed经独审并由根采用，D12/D13通过；P6-3已以56c47c1提交同步并核clean，独立总包和包外关闭回执已归档。P6-4分层CI进行中，P6-5尚未实施，P6未完成。用户确认19份关键历史资格原件没有备份，目前无法恢复，要求重新采证；旧SHA继续标缺，新证据不回填旧报告或自动扩大Native批准。范围仍为内部技术预览、暂不公开发布；物理机或独立Windows虚拟机均可承载验收，当前证明仅覆盖已记录的具体环境与准确候选包。
+P6-0 已以 dbe8add、P6-1 已以 9af5d4d、P6-2 已以 `37d1cf4878966d3d007572fb29b04160257a4d9a` 审查提交同步并核 clean。P6-3按[ADR-0059](adr/0059-fresh-qualification-and-offline-recovery.md)完成新资格、明确采用、完整矩阵及准确新包，离线演练及最终closed经独审并由根采用，D12/D13通过；P6-3已以56c47c1提交同步并核clean，独立总包和包外关闭回执已归档。P6-4分层CI四层技术验收通过，独立归档和最终提交闭环中；P6-5尚未实施，P6未完成。用户确认19份关键历史资格原件没有备份，目前无法恢复，要求重新采证；旧SHA继续标缺，新证据不回填旧报告或自动扩大Native批准。范围仍为内部技术预览、暂不公开发布；物理机或独立Windows虚拟机均可承载验收，当前证明仅覆盖已记录的具体环境与准确候选包。
 
 | 小阶段 | 状态 | 当前证据/剩余工作 |
 |---|---|---|
@@ -12,7 +12,7 @@ P6-0 已以 dbe8add、P6-1 已以 9af5d4d、P6-2 已以 `37d1cf4878966d3d007572f
 | P6-1 同字节运行包 | 已完成 | 9af5d4d；134 文件/16.64 MB、24+9 工具测试、独立实际验包和整段审计；运行闭包证据见 P6-2 |
 | P6-2 包级验收 | 已完成 | 37d1cf4；客体四流程、人工第五进程、拒写恢复及accepted QA13件五失败保护通过，独审/独立总包/同步clean已核 |
 | P6-3 更新恢复 | 已完成 | 56c47c1；D12/D13、新资格/5904矩阵/41cd包、68b独立总包及be8e关闭回执，提交同步clean已核 |
-| P6-4 分层 CI | 进行中 | 候选/产品/发行层已实际验证，源码/远端及阶段闭环待核；普通构建不自动批准 |
+| P6-4 分层 CI | 技术验收通过，阶段闭环待核 | 最终963/dde四层已实跑和独审；独立总包、最终文档提交同步clean待核 |
 | P6-5 最终交付 | 未开始 | 待最终包/原件归档、独立干净环境人工验收与整体审查 |
 
 ## 2026-11-23 P6-2 提交收口与P6-3启动
@@ -71,7 +71,11 @@ P6-3关闭后按[ADR-0060](adr/0060-layered-ci-and-artifact-promotion.md)实施�
 
 修订仅将三个套件的日志label设为固定合法名称，测试pattern、选择及C++代码不变。新增实际Windows目录回归在旧代码真实exit1，在修后18项测试实际exit0；[修复原件](../build/p6-4-source-suite-label-fix-20261123-1/source-963-ee5f/receipt.json)保留旧963项完整源码，首轮Failed、候选和产品记录不改写。最终 `ci.py` SHA `15d02df9adc7b591c72ae5d7199e338f980627e88488544200e469185c9378de`、测试SHA `4a4d9d9763a948200a5342f5ef9a5f8b0f90915fcc67e2a9284207220d90c1f4`，新963源图为 `dde49628e913f7492c6e3b4f580a9337b4729caa52ea6ba310fd2d13e60d56c0`，原961保持。最终资格/产品/发行按此图复核，源码层由真实GitHub Windows2022 MSVC完整入口验证，保留首轮GCC失败而不重复构建与标签无关的C++。
 
-最终图发行层已实际复核：错误摘要PID23820/Failed/exit2，正确41cd/fdff包PID43788/StaticVerified/exit0，stock验包、138项库存及前后源图保持，见[新版结果](../build/p6-ci-release-20261123-2/result.json)。最终图候选/产品与远端源码job尚待原件，P6-4未关闭；GitHub source及P6-5 GUI均不由静态验包替代。
+最终图发行层已实际复核：错误摘要PID23820/Failed/exit2，正确41cd/fdff包PID43788/StaticVerified/exit0，stock验包、138项库存及前后源图保持，见[新版结果](../build/p6-ci-release-20261123-2/result.json)。最终图候选为d0496e57、capture2bd518b8，仍607归档/651引用/三profile各27项，独立重导同字节；[最终候选审查](../build/p6-ci-candidate-independent-review-20261123-2/review.json) SHA `e626661cf3efdd89bee415b3750b7bd72cc126328489f9bdb57cd1d49127c039` 保持PendingReview、不采用新候选。沿既有根授权复用现受审447字节，最终product2三个profile各6项通过，[审查](../build/p6-ci-product-independent-review-20261123-2/review.json) SHA `2fefc9c6f65c0762340af24fdda5327afa1fd1175bfd6d4b7bd1fad393a9b214`；原9项消费者/generated字节仍同，无重建。缺环境负例和最终三本地层由[组合审查](../build/p6-ci-final-local-layers-review-20261123-1/review.json) SHA `7b71e483cc87b0a3b472e8cf16f28657da5f012cd143e50eaeb81cfff01a3422` 核完整dde源图与Envelope前后保持。
+
+初步CI提交 `8ebfe9672c6f610369d1fe90129a29050078a8a7` 实际推送、远端同且clean，触发[真实源码run45172242089](https://github.com/03pie/Eve/actions/runs/45172242089)，job137684433373及全部五步success。实际Windows2022/MSVC19.44.35230.0/x64、Python3.12.10、CMake/CTest3.31.6、Ninja1.13.2；全构建175步、源码CTest459项及Python55/24/18各通过。此MSVC版本只支持本次NoQt源码回归，不扩大原19.44.35222/Qt5.15.2的Native资格。候选采集源仍是其实际前驱56c47，不回写为后续提交。
+
+[最终D14技术独审](../build/p6-ci-source-independent-review-20261123-1/review.json) SHA `ce8084ae4be6c17649e93e965b6453d6a8d7f28c7e9bfc00560f16342744f312` 通过：官方API成功、唯一无label前缀的外层SourceVerified、10个实际子命令0、459逐名一致及真实55/24/18，四层均使用最终963/dde；根[明确采用](../build/p6-ci-d14-root-adoption-20261123-1/review.json) SHA `7fe7d2f3df68531692f411f268caec89f0da32ec740f40cd209f69b0b9e475ab`。保存的是官方connector decoded日志，不声称下载或逐SHA核对runner原raw/编译文件；报告内这些SHA仅按CI声明保留。各层、首GCC失败及旧/新源快照分开保存，不混入5904矩阵或最终GUI。D14技术通过，独立总包及最终文档提交同步clean待闭环，P6-5未实施、P6未完成。
 
 ## 2026-11-23 P6-2 分项验收收口
 

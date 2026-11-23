@@ -1,6 +1,6 @@
 # P6 Windows 内部技术预览交付验收
 
-状态：P6-0/1/2已完成；P6-2提交37d1cf4已独审、同步并核clean。P6-3按[ADR-0059](../../docs/adr/0059-fresh-qualification-and-offline-recovery.md)已完成新资格、5904矩阵和准确新包，更新回退与最终旧版重开/closed均独审并由根采用，D12/D13及P6-3技术验收通过；P6-3已以56c47c1提交同步并核clean，独立总包68b及关闭回执be8e已归档。P6-4进行中，P6-5未开始，P6尚未收口。范围见[ADR-0057](../../docs/adr/0057-portable-preview-delivery.md)，新配置宿主的精确采用见[ADR-0058](../../docs/adr/0058-reviewed-configuration-host-fix.md)，当前原件和交接包见[工作单](../../docs/p6-development.md)。
+状态：P6-0/1/2已完成；P6-2提交37d1cf4已独审、同步并核clean。P6-3按[ADR-0059](../../docs/adr/0059-fresh-qualification-and-offline-recovery.md)已完成新资格、5904矩阵和准确新包，更新回退与最终旧版重开/closed均独审并由根采用，D12/D13及P6-3技术验收通过；P6-3已以56c47c1提交同步并核clean，独立总包68b及关闭回执be8e已归档。P6-4四层技术通过、归档和最终提交闭环待核，P6-5未开始，P6尚未收口。范围见[ADR-0057](../../docs/adr/0057-portable-preview-delivery.md)，新配置宿主的精确采用见[ADR-0058](../../docs/adr/0058-reviewed-configuration-host-fix.md)，当前原件和交接包见[工作单](../../docs/p6-development.md)。
 
 ## 要求与证据
 
@@ -21,7 +21,7 @@
 | D11 | 独立干净 Windows 环境可用；允许另一台物理机或独立 Windows 虚拟机（可运行于开发主机） | P6-2/5：环境类型、OS/普通用户/无开发工具及污染信息、加载路径、包摘要、PID/退出；虚拟机另记平台/版本、资源、显示/渲染、干净基线和共享设置；最终包人工回执与保存重开原件 |
 | D12 | 真实旧包→新包离线更新、配置迁移与恢复 | P6-3技术通过：准确d236→41cd、映射/两入口/中断恢复/激活重开/回退及post独审5cce；56c47c1已同步clean，独立总包68b/关闭回执be8e |
 | D13 | 不覆盖加载库、不误删 store/用户数据 | P6-3技术通过：closed与lease、旧16/新22/两backup及未知PIN/opaque/空目录保留；无自动清hash，post独审5cce |
-| D14 | CI 分离源码/候选/受审产品/发行验证 | P6-4：仓库内可执行入口、实际执行记录/失败状态；freshbuild 不更新批准源，不将待资格说成全量通过 |
+| D14 | CI 分离源码/候选/受审产品/发行验证 | P6-4技术通过：四个CLI入口、最终963/dde三本地层与真实GitHub源码run45172242089，459及55/24/18分层记录；候选不自动采用，归档/最后提交闭环待核 |
 | D15 | 资格/验收原件可独立保存与核对 | P6-5：包外证据归档及索引/SHA，解压后不依赖本机 ignored build 或绝对路径 |
 | D16 | 最终交付材料、范围及审计完整 | P6-5：运行包/清单/说明/兼容与限制/许可资料；逐要求审查、提交同步和 clean |
 
