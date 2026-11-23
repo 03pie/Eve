@@ -11,6 +11,7 @@ import subprocess
 
 SCHEMA = "cordis.native-business.qualification/1"
 CAPTURE = "cordis.native-business.capture/1"
+REVIEWED_SOURCES = ("qualification/native-business.json", "qualification/native-business-p6-3-20261123.json")
 PROFILES = {"ela-msvc-release": ("Release", "MD", False), "ela-msvc-debug": ("Debug", "MDd", False),
             "p3-q3-asan": ("RelWithDebInfo", "MD", True)}
 FAULTS = {"p5.upgrade_fault_" + name for name in (
@@ -110,7 +111,7 @@ def source_inputs(root, exclude=None):
     return {name: sha(root / name) for name in names if name and
             (exclude is None or not (root / name).resolve().is_relative_to(exclude.resolve())) and (
         Path(name).suffix in {".cpp", ".hpp", ".h", ".c", ".cmake", ".py", ".ps1"} or
-        Path(name).name == "CMakeLists.txt" or name == "qualification/native-business.json")}
+        Path(name).name == "CMakeLists.txt" or name in REVIEWED_SOURCES)}
 
 
 def inspect_profile(root, tree, identity):
@@ -368,7 +369,7 @@ def qualify(root, build_root, run_directory, ctest):
 
 
 def export_candidate(root, evidence, output):
-    require(not output.exists() and output != root / "qualification/native-business.json",
+    require(not output.exists() and output not in {root / name for name in REVIEWED_SOURCES},
             "candidate exporter cannot overwrite an existing output or the reviewed approval source")
     capture = read_json(evidence)
     require(capture["schema"] == CAPTURE and capture["status"] == "Completed", "incomplete/unknown current capture")

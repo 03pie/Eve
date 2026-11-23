@@ -4,18 +4,58 @@
 
 ## 当前状态
 
-P6-0 已以 dbe8add、P6-1 已以 9af5d4d 审查提交同步并核 clean。P6-2本轮D10/D11分项技术与人工验收均已通过，正在整体审查、独立归档及提交同步/clean收口：客体19项技术原件、用户明确正常体验与实际退出、同PID同修订拒写/恢复保存，以及真实已接受QA数据的五启动负例均已独审。P6-3–5尚未实施，P6未完成。用户确认19份关键历史资格原件没有备份，要求重新采证；旧SHA继续标缺，新证据不回填旧报告或自动扩大Native批准。范围仍为内部技术预览、暂不公开发布；物理机或独立Windows虚拟机均可承载验收，当前证明仅覆盖已记录的具体环境与准确候选包。
+P6-0 已以 dbe8add、P6-1 已以 9af5d4d、P6-2 已以 `37d1cf4878966d3d007572fb29b04160257a4d9a` 审查提交同步并核 clean。P6-3按[ADR-0059](adr/0059-fresh-qualification-and-offline-recovery.md)完成新资格、明确采用、完整矩阵及准确新包，离线演练及最终closed经独审并由根采用，D12/D13技术验收通过，独立总包与精确提交/同步/clean待本次闭环；P6-4/5尚未实施，P6未完成。用户确认19份关键历史资格原件没有备份，目前无法恢复，要求重新采证；旧SHA继续标缺，新证据不回填旧报告或自动扩大Native批准。范围仍为内部技术预览、暂不公开发布；物理机或独立Windows虚拟机均可承载验收，当前证明仅覆盖已记录的具体环境与准确候选包。
 
 | 小阶段 | 状态 | 当前证据/剩余工作 |
 |---|---|---|
 | P6-0 交付契约 | 已完成 | dbe8add；D01 通过，独立审查及提交同步/clean 已核 |
-| P6-1 同字节运行包 | 已完成 | 9af5d4d；134 文件/16.64 MB、24+9 工具测试、独立实际验包和整段审计；运行闭包仍属 P6-2 |
-| P6-2 包级验收 | D10/D11分项通过，整体审查/提交同步待核 | 准确候选包的客体四流程、人工第五进程、真实拒写恢复及accepted QA数据13件的五失败保护均有独审原件；全P6仍未完成 |
-| P6-3 更新恢复 | 未开始 | 待实际包基础上的迁移设计、真实升级/中断/恢复验证 |
+| P6-1 同字节运行包 | 已完成 | 9af5d4d；134 文件/16.64 MB、24+9 工具测试、独立实际验包和整段审计；运行闭包证据见 P6-2 |
+| P6-2 包级验收 | 已完成 | 37d1cf4；客体四流程、人工第五进程、拒写恢复及accepted QA13件五失败保护通过，独审/独立总包/同步clean已核 |
+| P6-3 更新恢复 | 技术验收通过，提交闭环待核 | 新资格/5904矩阵/41cd包、新旧版运行/中断恢复/回退及closed已独审；独立总包与精确提交/同步/clean继续 |
 | P6-4 分层 CI | 未开始 | 待可执行编排和实际运行记录，普通构建不自动批准 |
 | P6-5 最终交付 | 未开始 | 待最终包/原件归档、独立干净环境人工验收与整体审查 |
 
+## 2026-11-23 P6-2 提交收口与P6-3启动
+
+P6-2精确15文件完成整体23项及暂存11项独立审查，提交 `37d1cf4878966d3d007572fb29b04160257a4d9a` 已推送master，远端refs及全量untracked clean实核通过。[外部阶段关闭回执](../../../../delivery/Cordis-P6-2-acceptance-20261123-1.closure/phase2-complete.json) SHA `1f9022dc2e444cb4a6f85cd539dba899a197619807130c2f39b7d9d4f783dad4`记P6Stage2Complete=true、P6Complete=false。独立总包 `D:/WorkSpace/delivery/Cordis-P6-2-acceptance-20261123-1.zip`（73,737,401字节，SHA `d9e74fb114a155ba7c8c8bc294c90013b86c45470417eb84bb7c3f26089b34dc`）254外层文件及8个嵌套ZIP逐件解压复核；提交前快照中的阶段false作为历史保持，由外部关闭回执补足实际提交事实。
+
+P6-2关闭后依ADR-0059开始新campaign；其实施事实、旧/新证据边界和当前剩余项集中见下节，不以启动时的准备状态覆盖后续真实结果。
+
+## 2026-11-23 P6-3 新资格与运行包（进行中）
+
+按ADR-0059在五个全新目录实际默认全目标构建。三共享profile原公开资格各27/27，589份归档及960项源快照闭合；[候选独审](../build/p6-native-candidate-review-20261123-1/result-1/review.json) SHA `872a9ecb4cd7568c2acf47e1da557ae988a44cea89afc3c992ff787792d7ba5b`通过并独立重导同字节，明确采用新源 `44758309aede7a215874d4d8307fd3421e20da2befbdd5f288516de5b7382246`。原6c保持；采用后961源与capture仅有CMake固定路径/硬SHA、导出器双受信保护/源规则、新JSON和值级测试四项明确差异。[采用独审](../build/p6-native-adoption-independent-review-20261123-1/review.json) SHA `08eb5778ec65a27c12762fe4a48a0cb7f64dd78e51b63e9e9e69b1bdb2c287ee`通过；10项值级测试及采用后55项打包fixture实际通过，首普通shell缺CMake PATH/短TEMP测试夹具错误另保留，不放宽生产归档检查。
+
+仅重建两名单消费者，各profile的19份生产模块/manifest/依赖前后保持、生成名单各恰4条；三个profile各6项产品测试通过。随后完整串行矩阵实际为Release/Debug/ASan各1481/1481、静态Qt1002/1002、无Qt GCC459/459，选择名与Passed逐项相同。[矩阵独审](../build/p6-adopted-support-matrix-review-20261123-1/result-1/review.json) SHA `019fe955134a905a5c33c1c65668c90410c3a2e81fe2c4b12aedb46688ea215b`核5904次全矩阵执行，公开27和产品6不累加；19×3最终物理字节及源961保持。ASan另核实际flags/命令及三个真实COFF样本，不冒称逐个对象全覆盖审计。
+
+新严格打包基线经[根独审](../build/p6-fresh-baseline-root-review-20261123-1/audit.json) SHA `b58098f9135b76a692ed836c1f87e6e3b6531dde45e90941335fc338fe5bbcc8`及真实strict loader核验，固定资产SHA `40ee2c4807a43022096611fa6cdf14181c7c462db9f53dbb3a18c49e965ff85e`，不替代旧19份原件或旧legacy门禁。实际只复制已测字节生成 `D:/WorkSpace/delivery/Cordis-preview3-20261123-1/Cordis-0.1.5-preview.3-windows-x64.zip`，17,134,381字节、138文件，ZIP SHA `41cd2aa93b23f0780bd1f7fb6a934a82933556bf49303b43e360997ca640702f`，manifest SHA `fdff0203a649922a43b3668574b30c0eec09313f5d038065467515072e45b13b`。[实包独审](../build/p6-preview3-independent-review-20261123-1/review.json) SHA `921e5bc0983612ec7abc2631d15077a4ac8f5d070e572d61aec3dae9c9dba6e9`确认完整解压、stock PS验包及26项x64 PE闭包；新包GUI/cleanMachine此时仍未验证，打包原件中的false保持。
+
+离线工具经24项真实文件夹具测试及非作者审查，修正了输出与原输入重叠的提前拒绝、相对路径外部宿主保守阻断及回退journal精确绑定。工具仅在普通QA新controller操作并列应用与完整数据副本。真实旧包在客体通过工具正常运行两入口：配置596实际Apply/Save R1（UI仅可观察Saved）、业务6952实际A/A/B/按钮/命令/显式Save Unchanged R1，两产品及其owner/driver均正常退出0，原13业务/102字节配置不变。651文件closed导出、648件客体源前后闭合，[旧运行基线独审](../build/p6-3-old-runtime-independent-review-20261123-1/audit.json) SHA `f45fdf74735299fc462be6c80179c6acbf06770147fd6e78cc4d4aa3d5acbcc2`通过1842项核对，并另生成外部批准回执。该旧运行基线是后续迁移的前驱；迁移/中断/恢复/回退实际结果见下节及最终闭合段，P6-3仍待整体补审和提交，不进入P6-4实施。
+
+### 迁移、新候选运行与首次实际中断
+
+[显式映射独审](../build/p6-migration-map-independent-review-20261123-1/result-1/review.json) SHA `13a9d8c79006a2175ee9d8aebb7b21c25ea7a1a241f4b3bafca4f32f7a1d5f49`通过：真实旧A/A/B到新包同身份/版本/ABI/状态schema的三个定位映射，映射SHA `df76e7bd95dfe820f05e45405b7425d319d3124bca182d7988608585adf07624`；实际纯函数只改三个manifest定位，plugins/config等语义不变，不按同版本自动批准。新Native仍只有Release四条，Qt仍resident。
+
+独立工具目录扩展只承载普通QA的有界验收；第一版已传入146文件但未运行任何next任务。审查发现启动后证据写入/第二日志读取器构造失败可能留下未接管管道，故该版本原样保留并另建suffix2。新版本先取得日志所有权，失败时将未接管流排空到EOF、保留原错并标不完整，不杀产品、不伪报成功。[实际两失败块窄补审](../build/p6-next-wrapper-resource-review-20261123-1/result-3/review.json) SHA `c21bc85de287ba070e495d26c090008a019dfb0feb235c63597e5228c3aec485`绑定新wrapper8ebf9301；受控双流flood进程自然退出，stdout240000字节、stderr兜底排空。测试观察器自身末尾取值错误及前两夹具失败全部保留，不能将该有限检查称为整套GUI通过。
+
+在新managed旧数据副本中CreateNew加入明确自有的opaque/PIN/空目录保留夹具，14原文件不变、旧active仍 `d3d7d4693277737ffa416d27b81af2088f4188fc8ea96e72ec5e6c68d2999ddf`。第一次真实prepare在完整备份后owned checkpoint自退77，事务 `fd290279925741c385e7992797ec10f7`未提交；原recover实际返回old-selection-not-committed/filesDeleted=false，旧数据16件及备份保持。此为真实文件部署进程中断，不是产品kill或运行状态注入，PIN是验收自有夹具，不冒称真实quarantine产生的PIN。
+
+新事务 `b5a0921858cb4832a4495988a9581801`另行准备，00-plan SHA `8a13055f05c29145e64c96155c12c3acdd951149e7df97de0ea56d205de8ce62`、10-prepared SHA `1772bbc231ae5d5dd53a43e186ef8ddfe54fc67d39c0bd0fa9b0ddbab5cff5be`。新配置5080实际Saved R1、新业务6468实际加载新A/A/B、按钮/命令及Written R1，两产品和driver均自然exit0；业务文件变为新定位对应的 `d472d1ab4173700e1d78232e56e87d7de896c517171f8b350060585036c07c20`。1472文件/1469客体原件及275源目录在closed后导出，完整目录身份/属性/SDDL及文件SHA前后不变，宿主真实重建空目录。[新运行独审](../build/p6-new-runtime-independent-review-20261123-1/result-3/review.json) SHA `f6055e239a05df24ceb1418b72df576902bc3e7e0200664a087cfca2dc150045`通过18101项核对，并由根另采用准确tuple `94c6db921e918413b35d35390bb1ba2ef4a187c18e28ef951d2bcfdb1da2c2cf`的[最终运行批准](../build/p6-new-runtime-final-approval-20261123-1/runtime-validation.approved.json) SHA `5990e2b35c802c071d3ec0a7005a4cb34b136015eb77264f0b4f4a3174964f05`。审计器前两次接口适配失败原件保留；该1472导出时旧active仍未切换。后续selector边界中断、恢复提交和版本重开/回退另留原件，不回写该次快照或据候选通过提前关闭P6-3。
+
+当前阶段源码已独立双份保存：capture960与product961各按原SHA复制，三份采用前文件来自准确37d1cf4 Git blob，其余源码复制前后稳定。外部 `D:/WorkSpace/delivery/Cordis-P6-3-source-snapshots-20261123-1.zip`含1926文件，4,656,849字节、SHA `0beed4d4f4a6f20ed851ecf5fc5aba319bbea1be67489ad6ebab9f11e68f8121`；根另逐文件集合/长度/SHA及ZIP完整复核。该源码快照不包含凭据/运行二进制，不等于找回缺失19份历史报告。
+
+### 最终D12技术闭合（提交待核）
+
+在原候选外部批准后，激活前selector边界的owned updater实际自退77，经原recover验证后恢复提交到94c6；新active配置6180实际Saved R1、业务9372实际Unchanged R1并正常退出。rollback子进程9948实际exit0；回退后的旧配置10096实际Saved R1、旧业务7276实际Unchanged R1并正常退出。最终selector SHA `0864026579d8a5926a05c021328e7821d3a06ea853ab5014d6537a473acd292b`指向原旧release/data `3941e5f215b2440297b9d61921aad2e3`，previous为94c6、transaction仍为b5；这是带新selectionId/前驱的回退tuple，不是原d3 selector字节复原。
+
+最终[recovery closed导出](../build/p6-3-vm-next-20261123-2/recovery-closed-export-20261123-101207-043/receipt.json) SHA `4b4565f8a163ca35f5eeef9d161f3c5e471031e2c48737d9de4bffa009321d05`含2411件客体文件及3件导出核验原件，host共2414文件、306目录；其中298为真实源目录；[外侧索引](../build/p6-3-vm-next-20261123-2/recovery-closed-export-20261123-101207-043.sha256-index.json) SHA `537c86bd4394507193c2dcab41552805a94acd89d1f8bb4117b98de71e1c09f8`，[执行摘要](../build/p6-3-vm-next-20261123-2/recovery-closed-export-20261123-101207-043.execution-summary.json) SHA `7fb1fd3395699338fa26689c8448d82865cca4ca7d33d95e9dd4c52501d5a227`。旧初始、新候选、新active、回退旧版共8个持句柄产品及driver均exit0，13个任务均Ready/LastTaskResult0，0个活产品/owner/driver。两次77现场、旧16/新22文件、两份backup及自有PIN/opaque/空目录保留，不删除或重放迁移。
+
+[最终post独审](../build/p6-new-runtime-independent-review-20261123-1/postrun-result-2/review.json) SHA `5cce12fe5ac1ce675b1eda6075b1b1ad12d29ff2d00e58ee3d07c08ded4b5a8d`的20009项检查、0失败通过；2423件[输入索引](../build/p6-new-runtime-independent-review-20261123-1/postrun-result-2/source-sha256.json) SHA `69b47da2ca01cecca3541ec894ccb20d034490b9fe975396af5f742dc37c8341`闭合。根[明确采用D12/D13](../build/p6-3-acceptance-archive-20261123-1/root-d12-adoption.json) SHA `1531fd34c772fd655fc7dbc745fd3b98ed84ae7846fb639eadf550b9fe952e54`，故本轮P6-3技术验收通过。首post checker将pretty JSON误用于tuple摘要而失败，保留其原件；改用原updater.value_sha的一行修正后通过，未修改产品、实际UI或放宽断言。实际中断范围是after-backup及before-selector两次77，未将after-selector夹具覆盖冒称现场实测。
+
+原导出、执行摘要及独审中的阶段false保持，不回填。独立总包仅消费已明确通过的实际原件，打包时P6Stage3Complete/P6Complete保持false；精确提交、同步和clean另行关闭本阶段。P6-4/5尚未实施，P6未完成；P6-4实施须等本次阶段闭环。
+
 ## 2026-11-23 P6-2 分项验收收口
+
+以下记录各份P6-2验收原件生成时的状态；其中false、Unknown和失败不回写，当前阶段关闭以本页顶部37d1cf4及独立关闭回执为准。
 
 用户本轮明确反馈“显示和操作正常，已关闭窗口”，同时确认历史原件“没有备份，需要重新采证”。[正确UTF-8人工回执v2](../build/p6-d11-completion-20261123-1/human-receipt-v2.json) SHA `a85292848c96c0d7e87de3d1a4cd66ff7c63748fad5aebf25421f4f584607dd9`引用本对话实际回答；首版派生文书因PowerShell管道转码把中文写成问号，作为错误版保留并由v2明确替代，不改任何客体原件。[D11组合v2](../build/p6-d11-completion-20261123-1/d11-completion-v2.json) SHA `fc295de2c1a7d53d8dbe25d86b7cac53ee3140eacd32660ae4ddd20e0ccdaea2`绑定原19项技术审与新15项人类会话结束审；原2516持句柄实际exit0、wrapper任务0、139件包未变、A/A/B保存保持，故当前准确候选D11通过。原guest summary中的human/D11=false不回写。
 

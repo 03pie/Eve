@@ -26,7 +26,8 @@ def bracket(value):
 class NativeCatalogTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.catalog = json.loads((ROOT / "qualification/native-business.json").read_text(encoding="utf-8"))
+        cls.catalog_raw = (ROOT / "qualification/native-business-p6-3-20261123.json").read_text(encoding="utf-8")
+        cls.catalog = json.loads(cls.catalog_raw)
         cls.cmake = shutil.which("cmake")
         if cls.cmake is None:
             known = Path("E:/Qt/Tools/CMake_64/bin/cmake.exe")
@@ -37,11 +38,12 @@ class NativeCatalogTests(unittest.TestCase):
 
     def invoke(self, profile, catalog=None, overrides=None, configurations=None, missing=False, raw=None):
         with tempfile.TemporaryDirectory(prefix="cordis-catalog-") as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             (root / "qualification").mkdir()
             if not missing:
-                (root / "qualification/native-business.json").write_text(
-                    raw if raw is not None else json.dumps(catalog if catalog is not None else self.catalog), encoding="utf-8")
+                (root / "qualification/native-business-p6-3-20261123.json").write_text(
+                    raw if raw is not None else json.dumps(catalog) if catalog is not None else self.catalog_raw,
+                    encoding="utf-8", newline="\n")
             values = {"PROJECT_SOURCE_DIR": root.as_posix(), "PROJECT_VERSION": profile["sdkVersion"],
                       "CMAKE_CURRENT_BINARY_DIR": (root / "output").as_posix(), "CMAKE_SYSTEM_NAME": "Windows",
                       "CMAKE_CXX_COMPILER_ID": profile["compiler"], "CMAKE_CXX_COMPILER_VERSION": profile["compilerVersion"],
@@ -101,6 +103,12 @@ class NativeCatalogTests(unittest.TestCase):
             self.assertTrue(all(product["sha256"] in source for product in expected["products"]))
         self.assertNotIn('{"org.cordis.example.', files["native_catalog_RelWithDebInfo.cpp"])
 
+    def test_changed_reviewed_bytes_are_not_automatically_adopted(self):
+        profile = self.catalog["profiles"][0]
+        code, log, _, _ = self.invoke(profile, raw=self.catalog_raw + "\n")
+        self.assertNotEqual(code, 0)
+        self.assertIn("SHA256 differs", log)
+
     def test_missing_malformed_and_illegal_identity_fail(self):
         profile = self.catalog["profiles"][0]
         for options in ({"missing": True}, {"raw": "{broken"}):
@@ -140,10 +148,11 @@ class ExportInputTests(unittest.TestCase):
             EXPORT.passed_names(b"1/1 Test #1: example Passed\n1/1 Test #1: example Passed\n")
 
     def test_export_cannot_modify_reviewed_source_or_accept_unknown_capture(self):
-        with self.assertRaises(ValueError):
-            EXPORT.export_candidate(ROOT, Path("does-not-exist"), ROOT / "qualification/native-business.json")
+        for name in EXPORT.REVIEWED_SOURCES:
+            with self.subTest(source=name), self.assertRaises(ValueError):
+                EXPORT.export_candidate(ROOT, Path("does-not-exist"), ROOT / name)
         with tempfile.TemporaryDirectory(prefix="cordis-capture-") as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             evidence = root / "qualification.json"
             evidence.write_text('{"schema":"unknown","status":"Completed"}', encoding="utf-8")
             with self.assertRaises(ValueError):
@@ -151,7 +160,7 @@ class ExportInputTests(unittest.TestCase):
 
     def test_nested_evidence_reference_must_be_an_exact_unique_archived_record(self):
         with tempfile.TemporaryDirectory(prefix="cordis-reference-") as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             data = root / "source.json"
             data.write_text("{}", encoding="utf-8")
             record = {"role": "source", "sourcePath": data.as_posix(), "path": "source.json", "sha256": EXPORT.sha(data)}
