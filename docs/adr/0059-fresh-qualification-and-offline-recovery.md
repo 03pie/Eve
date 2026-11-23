@@ -1,6 +1,6 @@
 # ADR-0059：重新采证与离线更新恢复
 
-日期：2026-11-23。状态：P6-3 技术验收通过，精确提交、同步与clean待本次闭环；P6-2 已由 `37d1cf4878966d3d007572fb29b04160257a4d9a` 提交、同步并核 clean。范围仍为内部 Windows x64 技术预览。
+日期：2026-11-23。状态：P6-3 已以56c47c1完成审查、归档、提交同步与clean；P6-2 已由 `37d1cf4878966d3d007572fb29b04160257a4d9a` 提交、同步并核 clean。范围仍为内部 Windows x64 技术预览。
 
 ## 问题与现有边界
 
@@ -44,4 +44,4 @@
 
 新包 `0.1.5-preview.3` 只复制已测字节，138文件，ZIP SHA `41cd2aa93b23f0780bd1f7fb6a934a82933556bf49303b43e360997ca640702f`；独立完整展开、stock验包及26项x64 PE闭包通过。采证960源与明确采用后的产品961源分别冻结，当前源码快照包含两套完整原件；旧6c与19份缺失报告的原SHA仍保留，新包不声称与旧P5字节相同。原legacy打包入口继续保留其准确旧基线门禁；显式新基线适配不回填旧报告，也不自动选择任意候选。
 
-离线演练已实际完成新候选两入口验证、备份后自退77及旧tuple保留、激活前selector边界自退77后经原验证恢复提交、新版本两入口重开及回退。回退后旧两入口也已实际保存并正常退出；最终closed导出2414文件/306宿主目录（298源目录），8个持句柄产品及其driver均exit0。回退selector具有新selectionId及前驱94c6，仍指向原旧release/data，不声称恢复原d3 selector字节。最终[post独审](../../build/p6-new-runtime-independent-review-20261123-1/postrun-result-2/review.json) SHA `5cce12fe5ac1ce675b1eda6075b1b1ad12d29ff2d00e58ee3d07c08ded4b5a8d`的20009项检查、0失败已由根明确采用，D12/D13技术验收通过；阶段精确提交、同步与clean仍待本次闭环，P6未完成。完整命令、退出、映射及证据索引统一见[P6工作单](../p6-development.md)。最终准确包人工验收仍属P6-5，不借旧包人工回执；P6-4实施须等本阶段提交同步并核clean。
+离线演练已实际完成新候选两入口验证、备份后自退77及旧tuple保留、激活前selector边界自退77后经原验证恢复提交、新版本两入口重开及回退。回退后旧两入口也已实际保存并正常退出；最终closed导出2414文件/306宿主目录（298源目录），8个持句柄产品及其driver均exit0。回退selector具有新selectionId及前驱94c6，仍指向原旧release/data，不声称恢复原d3 selector字节。最终[post独审](../../build/p6-new-runtime-independent-review-20261123-1/postrun-result-2/review.json) SHA `5cce12fe5ac1ce675b1eda6075b1b1ad12d29ff2d00e58ee3d07c08ded4b5a8d`的20009项检查、0失败已由根明确采用，D12/D13技术验收通过；阶段已以56c47c1提交同步并核clean，独立归档68b及关闭回执be8e已保存，P6未完成。完整命令、退出、映射及证据索引统一见[P6工作单](../p6-development.md)。最终准确包人工验收仍属P6-5，不借旧包人工回执；P6-3门禁已关闭，P6-4现可实施。

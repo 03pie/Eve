@@ -1,0 +1,62 @@
+name: Source verification
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - 'docs/**'
+      - 'tests/acceptance/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Verify source with MSVC x64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
+            throw 'The runner does not provide vswhere.'
+          }
+          $installations = @(& $vswhere -latest -products '*' -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
+          if ($LASTEXITCODE -ne 0 -or $installations.Count -ne 1) {
+            throw 'Expected exactly one Visual Studio 2022 VC x64 installation.'
+          }
+          $devCmd = Join-Path $installations[0] 'Common7/Tools/VsDevCmd.bat'
+          if (-not (Test-Path -LiteralPath $devCmd -PathType Leaf)) {
+            throw 'The selected installation does not provide VsDevCmd.bat.'
+          }
+          $python = (Get-Command python.exe -CommandType Application -ErrorAction Stop).Source
+          $cmake = (Get-Command cmake.exe -CommandType Application -ErrorAction Stop).Source
+          $ctest = (Get-Command ctest.exe -CommandType Application -ErrorAction Stop).Source
+          $ninja = (Get-Command ninja.exe -CommandType Application -ErrorAction Stop).Source
+          $script = Join-Path $env:RUNNER_TEMP 'cordis-ci-source.cmd'
+          foreach ($path in @($devCmd, $python, $cmake, $ctest, $ninja, $script)) {
+            if ($path -match '[\r\n"%!]' -or $path -match '[^\x20-\x7e]') {
+              throw 'A runner tool path cannot be represented in the fixed command script.'
+            }
+          }
+          $lines = @(
+            '@echo off'
+            'setlocal DisableDelayedExpansion'
+            ('call "{0}" -no_logo -arch=x64 -host_arch=x64' -f $devCmd)
+            'if errorlevel 1 exit /b %errorlevel%'
+            ('"{0}" tools\ci.py source --preset core-msvc-debug --output build/ci-source --cmake "{1}" --ctest "{2}" --ninja "{3}"' -f $python, $cmake, $ctest, $ninja)
+            'exit /b %errorlevel%'
+          )
+          [System.IO.File]::WriteAllLines($script, $lines, [System.Text.Encoding]::ASCII)
+          & $env:ComSpec /d /c "call `"$script`""
+          if ($LASTEXITCODE -ne 0) {
+            throw "Source verification exited with code $LASTEXITCODE."
+          }
