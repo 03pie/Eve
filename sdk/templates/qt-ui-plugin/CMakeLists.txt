@@ -1,0 +1,9 @@
+cmake_minimum_required(VERSION 3.21)
+project(ExternalCordisPage VERSION 1.0.0 LANGUAGES CXX)
+
+find_package(Cordis 0.1.5 EXACT CONFIG REQUIRED COMPONENTS QtUiPluginSdk)
+cordis_add_qt_ui_plugin(external_page
+    SOURCE plugin.cpp
+    MODULE_ID org.example.cordis.page
+    PLUGIN_ID example.page
+    MODULE_VERSION ${PROJECT_VERSION})

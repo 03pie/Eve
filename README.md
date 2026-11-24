@@ -2,6 +2,8 @@
 
 基于 Cordis 思路设计的 C++17 插件内核，目标桌面环境为 Qt 5.15.2 + ElaWidgetTools。
 
+**文献阅读插件（P7）** 将本地 PDF、阅读位置、书签和按页笔记保存在个人工作区。解压 Windows x64 阅读运行包，双击 `cordis_plugin_workbench.exe`，打开「文献阅读」，选择 PDF 并点击「导入书库」。离开前点击「保存书库」，下次打开同一工作区即可继续。插件源码可以搭配独立 SDK 在仓库外构建。[插件使用与构建](plugins/literature-reader/README.md) · [SDK 接入](docs/sdk-consumer.md) · [P7 验收](docs/p7-acceptance.md)
+
 当前已完成 **P1–P5 及第一方 Windows UI 专项（当前支持矩阵）**，阶段依据见 [P3 收口](docs/p3-closeout.md)、[P4 收口](docs/p4-closeout.md)和[P5证据索引](docs/p5-release.md)；最终文档随本次审查后精确提交同步。配置工作台支持预览、应用、期望启停、保存和磁盘冲突处理；Home 卡片可打开管理/配置窗口，顶部菜单可添加已注册插件的配置实例。Windows 托管 worker 支持类型化结果及完整退出屏障。
 
 底部工作区支持搜索并执行已注册命令、按平台/插件实例选择真实输出，以及运行问题的筛选、详情和定位。插件通过 `ui.output/v1` 写入隔离通道，见[工作区接入说明](docs/workbench-panel-development.md)。
