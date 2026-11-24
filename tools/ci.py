@@ -136,7 +136,8 @@ def source(run, args):
     run.call([cmake, '--build', str(tree), '--parallel', '2'], 'build')
     run.result['tests'] = ctest(run, test, tree, 'full-core')
     for label, pattern, count in (('packaging-units', 'test_preview_*packaging.py', 55),
-                                  ('update-units', 'test_preview_update.py', 24), ('ci-units', 'test_ci.py', None)):
+                                  ('update-units', 'test_preview_update.py', 24), ('ci-units', 'test_ci.py', None),
+                                  ('readonly-owner-units', 'test_record_readonly_save.py', 2)):
         logs = run.call([sys.executable, '-B', '-m', 'unittest', 'discover', '-s', 'tests/tools', '-p', pattern], label)
         data = (logs / 'stdout.raw').read_bytes() + (logs / 'stderr.raw').read_bytes()
         match = re.search(rb'Ran (\d+) tests? in ', data)

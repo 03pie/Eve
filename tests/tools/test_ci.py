@@ -205,7 +205,7 @@ class CiGates(unittest.TestCase):
 
 
 
-    def test_source_loop_creates_three_fixed_windows_legal_suite_directories(self):
+    def test_source_loop_creates_four_fixed_windows_legal_suite_directories(self):
         """Directory creation is real; CMake/CTest/unit outputs are controlled file fixtures."""
         run = self.run_context(); directories = []; suite_labels = []
         def directory_only(argv, label):
@@ -218,7 +218,7 @@ class CiGates(unittest.TestCase):
             stdout, stderr = b'', b''
             if '-m' in argv:
                 suite_labels.append(label)
-                count = {'test_preview_*packaging.py': 55, 'test_preview_update.py': 24, 'test_ci.py': 1}[argv[-1]]
+                count = {'test_preview_*packaging.py': 55, 'test_preview_update.py': 24, 'test_ci.py': 1, 'test_record_readonly_save.py': 2}[argv[-1]]
                 stderr = ('Ran %d tests in 0.001s\n\nOK\n' % count).encode()
             (directory / 'stdout.raw').write_bytes(stdout); (directory / 'stderr.raw').write_bytes(stderr)
             return directory
@@ -226,7 +226,7 @@ class CiGates(unittest.TestCase):
         args = argparse.Namespace(cmake='fixture', ctest='fixture', ninja='fixture', preset='core-msvc-debug')
         with mock.patch.object(ci, 'tool', return_value='fixture'), mock.patch.object(ci, 'ctest', return_value={'fileFixtureOnly': True}):
             self.assertEqual(ci.source(run, args), 'SourceVerified')
-        self.assertEqual(suite_labels, ['packaging-units', 'update-units', 'ci-units'])
+        self.assertEqual(suite_labels, ['packaging-units', 'update-units', 'ci-units', 'readonly-owner-units'])
         self.assertTrue(all(path.is_dir() for path in directories))
 
 

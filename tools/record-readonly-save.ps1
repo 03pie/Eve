@@ -142,8 +142,9 @@ function Test-D10Inside([string]$Path,
     [StringComparison]::OrdinalIgnoreCase)
 }
 function Assert-D10SourceSnapshot($Snapshot,$Manifest){
+    $payload=@($Manifest.files)
     if($Manifest.schema -cne 'cordis.preview.package/1' -or
-       @($Manifest.files).Count -ne 137 -or $Snapshot.Count -ne 139){
+       $payload.Count -eq 0 -or $Snapshot.Count -ne ($payload.Count+2)){
         throw 'D10 source package schema/file count differs.'
     }
     $paths=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -297,6 +298,10 @@ function Start-D10Child([string]$Label,
         exitCode=$null;
         timedOut=$false;
         processTerminated=$false;
+        logsIncomplete=$false;
+        logError=$null;
+        discardFallback=@();
+        drainErrors=@();
         stdoutPath=(Join-Path $script:evidence ($Label+'.stdout.log'));
         stderrPath=(Join-Path $script:evidence ($Label+'.stderr.log'))
     }
@@ -304,6 +309,8 @@ function Start-D10Child([string]$Label,
         label=$Label;
         process=$process;
         readers=@();
+        readerOwned=@{stdout=$false;stderr=$false};
+        discardTasks=@();
         finished=$false;
         record=$record
     }
@@ -320,15 +327,38 @@ function Start-D10Child([string]$Label,
     }
     $record.started=$true;
     $record.pid=$process.Id
-    # Force acquisition now; do not replace this object by PID lookup later.
-    $handle=('0x{0:x}' -f $process.Handle.ToInt64())
-    $child.readers+=New-PreviewLogReader $process.StandardOutput.BaseStream (Join-Path $script:evidence ($Label+'.stdout.log'))
-    $child.readers+=New-PreviewLogReader $process.StandardError.BaseStream (Join-Path $script:evidence ($Label+'.stderr.log'))
-    $record.processHandle=$handle;
-    $record.creationFileTime=$process.StartTime.ToUniversalTime().ToFileTimeUtc().ToString([Globalization.CultureInfo]::InvariantCulture)
-    Write-D10Json (Join-Path $script:evidence ($Label+'-started.json')) $child.record
-    $record['commandPath']=Join-Path $script:evidence ($Label+'-started.json');
-    $record['commandSha256']=Get-D10Sha $record.commandPath
+    try{
+        # Force acquisition now; do not replace this object by PID lookup later.
+        $handle=('0x{0:x}' -f $process.Handle.ToInt64())
+        $record.processHandle=$handle;
+        $record.creationFileTime=$process.StartTime.ToUniversalTime().ToFileTimeUtc().ToString([Globalization.CultureInfo]::InvariantCulture)
+        $child.readers+=New-PreviewLogReader $process.StandardOutput.BaseStream (Join-Path $script:evidence ($Label+'.stdout.log'))
+        $child.readerOwned.stdout=$true
+        $child.readers+=New-PreviewLogReader $process.StandardError.BaseStream (Join-Path $script:evidence ($Label+'.stderr.log'))
+        $child.readerOwned.stderr=$true
+        Write-D10Json (Join-Path $script:evidence ($Label+'-started.json')) $child.record
+        $record['commandPath']=Join-Path $script:evidence ($Label+'-started.json');
+        $record['commandSha256']=Get-D10Sha $record.commandPath
+    }catch{
+        $firstError=$_;
+        $record.logsIncomplete=$true;
+        $record.logError=$firstError.Exception.Message
+        # As in the reviewed offline owner, never leave an unowned redirected
+        # pipe after reader/evidence construction fails. Retain each discard
+        # task until natural process exit and EOF, without claiming capture.
+        foreach($name in @('stdout','stderr')){
+            if(-not $child.readerOwned[$name]){
+                $record.discardFallback+=,$name
+                try{
+                    $stream=if($name -ceq 'stdout'){$process.StandardOutput.BaseStream}else{$process.StandardError.BaseStream}
+                    $child.discardTasks+=,[pscustomobject]@{name=$name;stream=$stream;task=$stream.CopyToAsync([IO.Stream]::Null)}
+                }catch{
+                    $record.drainErrors+=,$_.Exception.Message
+                }
+            }
+        }
+        throw $firstError
+    }
     return $child
 }
 function Finish-D10Child($Child){
@@ -345,6 +375,15 @@ function Finish-D10Child($Child){
     $Child.process.WaitForExit();
     $Child.record.exitCode=$Child.process.ExitCode;
     $Child.record['exitedUtc']=[DateTime]::UtcNow.ToString('o')
+    foreach($discard in $Child.discardTasks){
+        try{
+            $discard.task.GetAwaiter().GetResult()
+        }catch{
+            $Child.record.logsIncomplete=$true;
+            $Child.record.drainErrors+=,$_.Exception.Message
+            if(-not $Child.record.logError){$Child.record.logError=$_.Exception.Message}
+        }
+    }
     $clock=[Diagnostics.Stopwatch]::StartNew()
     while(@($Child.readers|Where-Object {
         -not $_.eof
@@ -364,8 +403,12 @@ function Finish-D10Child($Child){
             truncated=$_.truncated
         }
     })
-    $Child.record['stdoutSha256']=Get-D10Sha $Child.record.stdoutPath;
-    $Child.record['stderrSha256']=Get-D10Sha $Child.record.stderrPath
+    $Child.record['streamCaptureOwned']=$Child.readerOwned
+    if(@($Child.readers|Where-Object {$_.truncated -or -not $_.eof}).Count){
+        $Child.record.logsIncomplete=$true
+    }
+    $Child.record['stdoutSha256']=if($Child.readerOwned.stdout){Get-D10Sha $Child.record.stdoutPath}else{$null}
+    $Child.record['stderrSha256']=if($Child.readerOwned.stderr){Get-D10Sha $Child.record.stderrPath}else{$null}
     $Child.finished=$true;
     Write-D10Json (Join-Path $script:evidence ($Child.label+'-exit.json')) $Child.record
     return $Child.record
@@ -1047,7 +1090,7 @@ try{
         throw 'D10 actual process exits/restoration are incomplete.'
     }
     foreach($child in $script:children){
-        if(@($child.record.logs|Where-Object {
+        if($child.record.logsIncomplete -or @($child.record.logs|Where-Object {
             $_.truncated -or
             -not $_.eof
         }).Count){
@@ -1162,7 +1205,9 @@ try{
             try{
                 [void](Finish-D10Child $child)
             }catch{
-                $report['childFinalizationError']=$_.Exception.Message
+                $report['childFinalizationError']=$_.Exception.Message;
+                $report.recording_complete=$false
+                if(-not $report.error){$report.error=$_.Exception.Message}
             };
             if($child.record.started){
                 if($child.label -eq 'product'){
@@ -1174,6 +1219,10 @@ try{
                 }
             };
             $child.process.Dispose()
+        }
+        if(@($script:children|Where-Object {$_.record.logsIncomplete}).Count){
+            $report.recording_complete=$false
+            if(-not $report.error){$report.error='D10 log capture is incomplete.'}
         }
         $report.restoreResponsibilityUnresolved=$script:responsible;
         $report['finishedUtc']=[DateTime]::UtcNow.ToString('o')
