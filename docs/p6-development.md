@@ -1,10 +1,10 @@
 # P6 发布与交付工作单
 
-建立：2026-11-19；更新：2026-11-23。目标：完成[后续路线](post-p5-roadmap.md)定义的 P6，而非只在本机产生一个 ZIP。原 P5 基线 1f79cba，实现 fdf099c；SDK 0.1.5。合同见[ADR-0057](adr/0057-portable-preview-delivery.md)，逐要求出口见[P6验收表](../tests/acceptance/p6-delivery.md)。
+建立：2026-11-19；更新：2026-11-24。目标：完成[后续路线](post-p5-roadmap.md)定义的 P6，而非只在本机产生一个 ZIP。原 P5 基线 1f79cba，实现 fdf099c；SDK 0.1.5。合同见[ADR-0057](adr/0057-portable-preview-delivery.md)，逐要求出口见[P6验收表](../tests/acceptance/p6-delivery.md)。
 
 ## 当前状态
 
-P6-0 已以 dbe8add、P6-1 已以 9af5d4d、P6-2 已以 `37d1cf4878966d3d007572fb29b04160257a4d9a` 审查提交同步并核 clean。P6-3按[ADR-0059](adr/0059-fresh-qualification-and-offline-recovery.md)完成新资格、明确采用、完整矩阵及准确新包，离线演练及最终closed经独审并由根采用，D12/D13通过；P6-3已以56c47c1提交同步并核clean，独立总包和包外关闭回执已归档。P6-4分层CI四层技术验收通过，独立归档和最终提交闭环中；P6-5尚未实施，P6未完成。用户确认19份关键历史资格原件没有备份，目前无法恢复，要求重新采证；旧SHA继续标缺，新证据不回填旧报告或自动扩大Native批准。范围仍为内部技术预览、暂不公开发布；物理机或独立Windows虚拟机均可承载验收，当前证明仅覆盖已记录的具体环境与准确候选包。
+P6-0 已以 dbe8add、P6-1 已以 9af5d4d、P6-2 已以 `37d1cf4878966d3d007572fb29b04160257a4d9a` 审查提交同步并核 clean。P6-3按[ADR-0059](adr/0059-fresh-qualification-and-offline-recovery.md)完成新资格、明确采用、完整矩阵及准确新包，离线演练及最终closed经独审并由根采用，D12/D13通过；P6-3已以56c47c1提交同步并核clean，独立总包和包外关闭回执已归档。P6-4已以0e215ea提交同步并核clean，a3f27证据包和ec096回执已保存；P6-5 的最终包实测见本页 11 月 24 日记录。最终归档 SHA、提交、远端匹配和工作区状态以交付目录的 `Cordis-P6-final-acceptance-20261124-1.closure/p6-complete.json` 为准。用户确认19份关键历史资格原件没有备份，目前无法恢复，要求重新采证；旧SHA继续标缺，新证据不回填旧报告或自动扩大Native批准。范围仍为内部技术预览、暂不公开发布；物理机或独立Windows虚拟机均可承载验收，当前证明仅覆盖已记录的具体环境与准确候选包。
 
 | 小阶段 | 状态 | 当前证据/剩余工作 |
 |---|---|---|
@@ -12,8 +12,8 @@ P6-0 已以 dbe8add、P6-1 已以 9af5d4d、P6-2 已以 `37d1cf4878966d3d007572f
 | P6-1 同字节运行包 | 已完成 | 9af5d4d；134 文件/16.64 MB、24+9 工具测试、独立实际验包和整段审计；运行闭包证据见 P6-2 |
 | P6-2 包级验收 | 已完成 | 37d1cf4；客体四流程、人工第五进程、拒写恢复及accepted QA13件五失败保护通过，独审/独立总包/同步clean已核 |
 | P6-3 更新恢复 | 已完成 | 56c47c1；D12/D13、新资格/5904矩阵/41cd包、68b独立总包及be8e关闭回执，提交同步clean已核 |
-| P6-4 分层 CI | 技术验收通过，阶段闭环待核 | 最终963/dde四层已实跑和独审；独立总包、最终文档提交同步clean待核 |
-| P6-5 最终交付 | 未开始 | 待最终包/原件归档、独立干净环境人工验收与整体审查 |
+| P6-4 分层 CI | 已完成 | 0e215ea；四层实际执行、a3f27证据包和ec096关闭回执，提交同步clean已核 |
+| P6-5 最终交付 | 最终包实测已完成 | `preview.3` 四流程、人工体验、同进程拒写恢复和五项启动故障均已实测。独立证据总包与包外完成回执共同记录交付结果。 |
 
 ## 2026-11-23 P6-2 提交收口与P6-3启动
 
@@ -76,6 +76,44 @@ P6-3关闭后按[ADR-0060](adr/0060-layered-ci-and-artifact-promotion.md)实施�
 初步CI提交 `8ebfe9672c6f610369d1fe90129a29050078a8a7` 实际推送、远端同且clean，触发[真实源码run45172242089](https://github.com/03pie/Eve/actions/runs/45172242089)，job137684433373及全部五步success。实际Windows2022/MSVC19.44.35230.0/x64、Python3.12.10、CMake/CTest3.31.6、Ninja1.13.2；全构建175步、源码CTest459项及Python55/24/18各通过。此MSVC版本只支持本次NoQt源码回归，不扩大原19.44.35222/Qt5.15.2的Native资格。候选采集源仍是其实际前驱56c47，不回写为后续提交。
 
 [最终D14技术独审](../build/p6-ci-source-independent-review-20261123-1/review.json) SHA `ce8084ae4be6c17649e93e965b6453d6a8d7f28c7e9bfc00560f16342744f312` 通过：官方API成功、唯一无label前缀的外层SourceVerified、10个实际子命令0、459逐名一致及真实55/24/18，四层均使用最终963/dde；根[明确采用](../build/p6-ci-d14-root-adoption-20261123-1/review.json) SHA `7fe7d2f3df68531692f411f268caec89f0da32ec740f40cd209f69b0b9e475ab`。保存的是官方connector decoded日志，不声称下载或逐SHA核对runner原raw/编译文件；报告内这些SHA仅按CI声明保留。各层、首GCC失败及旧/新源快照分开保存，不混入5904矩阵或最终GUI。D14技术通过，独立总包及最终文档提交同步clean待闭环，P6-5未实施、P6未完成。
+
+## 2026-11-23 P6-4 归档与提交关闭
+
+内部证据包 `D:/WorkSpace/delivery/Cordis-P6-4-acceptance-20261123-1.zip`，174,469,939字节、3556文件，SHA `a3f27ec22acee49e4ebbb939aa36abf1b774b363cff06e22b84699ae91c4da07`；3556=3549显式原件+7元文件，完整展开/清单/SHA、旧963ee与最终963dde两套源码及内嵌41cd的138文件均独审通过。归档器复用此前已实证的校验函数，并修正Windows元文件大小写别名及CreateNew边界；不扩大其它raw ZIP内部验证范围。最终5文档源码/提交审与成品独审均通过。
+
+最终文档提交 `0e215eaec4dfef501779438b1e3bcb411847be05`（前驱8eb）实际推送，远端同且clean；5个提交blob同受审索引，963dde及CI Envelope仍与已测8eb一致。docs-only提交不要求重跑同一源码job。外部[阶段关闭回执](../../../../delivery/Cordis-P6-4-acceptance-20261123-1.closure/phase4-complete.json) SHA `ec096077e309ddaafe748939a474fbcd7bb63b728b00129e8acd0522b44a379f`记P6Stage4Complete=true、P6Complete=false，163件关闭原件已逐SHA复核。上节与归档内提交前false保留为生成时事实。
+
+## 2026-11-23 P6-5 最终包验收启动
+
+先按[ADR-0061](adr/0061-final-preview-vm-acceptance.md)分析职责与资源所有权，再实施验收。最终运行包保持41cd/fdff/138，沿用原stock recorder、ACL和完整preview_ui，以新普通QA scope采集四流程及独立第五人工窗口；启动时尚未执行，实际结果见 11 月 24 日记录。有限只读刷新仅证明QA Explorer仍在及无产品/Python，实际InputDesktop仍Unknown，须在本轮工具中刷新后才允许输入。
+
+拒写collector现有137/139硬库存和reader半初始化缺口属于QA工具的真实维护需求：修改现有唯一owner按外锚manifest核库存并修复管道接管，旧字节留在既有归档，不增加第二套永久owner或包版本分支。其新源码图另记，不回填原961/963，也不触碰运行包及固定447 Native批准。新四流程、人工、拒写和五启动失败实际通过后，才归档最终材料、逐D01–D16审查并收口P6。
+
+### 2026-11-24 最终验收工具和源码工作流
+
+拒写采证器按外部摘要锚定的 manifest 动态核完整文件集合，并在第二个日志读取器初始化失败时接管子进程剩余输出。宿主两项回归覆盖138和139件真实文件、16个篡改情形，以及自有子进程自然退出后的管道和句柄释放。代码提交 `f8efef47f829797c775e9193699ceef97d7f3fd5` 将两项回归加入源码工作流。首次远端运行45338275773因测试进程继承 PowerShell 7 的模块搜索环境，无法解析 Windows PowerShell 的 `Get-FileHash`，该次失败留档。
+
+测试环境隔离修正 `e98e60aa8cfec520f65a90d8aeab6056b4760e12` 已同步远端。成功的官方 Windows 源码运行45340802804完成459个 C++ 测试及55、24、18、2四组 Python 测试。官方解码日志与实际命令、退出和964项源码输入逐项核对，最终源图 SHA `476b8bbd6fc303689df75e24bab3d43ad4ad5ab64c72baaeddb51cae58f856c8`。这些记录属于QA工具源码，产品包41cd继续沿用已验明的原资格和构建来源。见[官方工作流](https://github.com/03pie/Eve/actions/runs/45340802804)、[此次日志审查](../build/p6-5-ci-stock-powershell-fix-20261124-1/review.json)和[964项源码快照](../build/p6-5-qa-source-snapshot-20261124-1/receipt.json)。
+
+### 2026-11-24 访客运行与业务续作边界
+
+最终41cd包及独立工具在客体逐摘要核138和47文件，读取权限与验收数据目录分开。受限QA实际session2、Medium 8192，处于Active/Default输入桌面，观察到1688×1275虚拟显示。实际探测的开发工具路径及指定安装目录未发现VS/Qt开发套件，结论限于观测范围。首个只读观察脚本的哈希函数名与 PowerShell 内置别名冲突，保留失败回执，重命名后同一已完成的探测任务原件读取成功。
+
+配置首次、重开两个驱动均正常结束。业务PID1632的原驱动完成五次真实Applied及Written R2至R6，最终受理A/A/B。在Notebook B升级后的第二次搜索导航中，原驱动观察到搜索框失去焦点，留存Unknown并停止输入。首段审核逐项核验了五次操作及保存原件。续作只允许绑定同一活进程，先核实升级后的草稿，再完成B命令、输出按钮、版本检查和正常退出，随后由原记录器观察新业务进程重开。原驱动非零退出、封闭驱动复制诊断的比较失败及原协调器状态均保留。见[原业务首段独审](../build/p6-5-business-prefix-independent-review-20261124-1/review.json)。
+
+实际续作保留原Notebook A草稿直至Notebook B页面打开，先核原草稿，再完成新贡献身份 `[11,1]` 下的命令和按钮输出。原业务进程正常退出，新PID3448从原会话和store重开，两个续作驱动均退出0。配置5380/1636、业务1632/3448的原始记录器四个退出码均为0。闭合传输逐项核1487文件与147目录的复制前后状态。原协调器的Unknown与包权限恢复尚未执行的原件保持，后续在产品和驱动均闭合后由独立任务执行ACL恢复及第五窗口人工体验。见[闭合导出回执](../build/p6-5-vm-final-20261123-1/export-20261124-072453-555-f413306c/receipt.json)。
+
+四个进程退出后，独立任务恢复应用目录权限，197 个对象的身份、安全描述符和实际访问结果通过核对。普通 QA 用户使用本轮 A/A/B 配置和 store 打开最终包第五个窗口，业务进程 PID 为 3804。用户确认“本次显示与操作正常，已关闭 preview.3 窗口”。原句柄记录该进程自然退出，退出码为 0，记录任务也正常结束。独审对照用户原话、进程创建时间及导出的 1512 个文件、149 个目录，复核源包 138 个文件前后一致。见[四流程审查](../build/p6-5-technical-composition-independent-review-20261124-1/review.json)、[用户回执](../build/p6-5-human-user-experience-20261124-1/user-response.json)和[人工体验独审](../build/p6-5-final-human-independent-review-20261124-1/review.json)。
+
+最终包的五个启动失败场景均用本轮 A/A/B 业务数据副本实测，退出码为 1、1、1、1、`0xC0000135`。原包 138 个文件和原业务数据 13 个文件的摘要前后一致。五条短进程模块枚举错误留存，正常进程加载位置见四流程记录。[五个启动失败场景复核](../build/p6-5-five-startup-independent-review-20261124-1/review.json)。
+
+人工进程关闭后，配置工作台 PID 2612 在普通用户权限下只应用一次，修订为 R1。禁写时 Windows 探针返回访问拒绝（5），界面保存失败，磁盘仍为原 C0。恢复三个对象的权限后，原进程直接保存同一 R1，所得配置为 129 字节，SHA-256 为 `a6069c741fcce5eaf166fe1872bf32ed03cca3b6eb6c9d81a8354d6157c13a52`。产品和 UI 驱动退出码均为 0。原始控制阶段、保存文件和进程退出记录已随 1799 个文件导出。[拒写与恢复记录](../build/p6-5-vm-final-20261123-1/export-20261124-085459-699-a9aceb03/data/qa-output/readonly-case/evidence/result.json)。
+
+### 最终交付材料的核对方式
+
+在交付目录核对 `Cordis-P6-final-acceptance-20261124-1.zip` 和同名 `.zip.sha256`，再解压。总包内的 `runtime/` 放置准确运行 ZIP 和中文验收说明，`evidence-family/` 放置 P6-2、P6-3、P6-4 的原证据包与阶段关闭记录。查找单项证据时，从根目录的 `PORTABLE-INDEX.json` 读取相对路径、长度和 SHA-256。`final-requirements` 审查索引逐项对应 D01–D16。整个总包可按 `MANIFEST.json` 和 `SHA256SUMS.txt` 核对。
+
+总包保留提交前的审查状态。与 ZIP 并列的 `Cordis-P6-final-acceptance-20261124-1.closure/p6-complete.json` 记录最终提交、远端分支、工作区状态及总包摘要。归档器和后续关闭记录分别保留各自产生时的事实。
 
 ## 2026-11-23 P6-2 分项验收收口
 

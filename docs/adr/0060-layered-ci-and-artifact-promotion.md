@@ -1,6 +1,6 @@
 # ADR-0060：分层CI与产物晋升
 
-日期：2026-11-23。状态：P6-4实施设计。前驱P6-3已由56c47c1b98ee2d37ce992e753e2a65322fd20fb3提交、同步并核clean；本ADR不改变已关闭的960/961源码快照、固定447批准源或41cd运行包。
+日期：2026-11-23。状态：已采纳并实施，P6-4已由0e215ea提交同步与独立关闭回执ec096收口。前驱P6-3已由56c47c1b98ee2d37ce992e753e2a65322fd20fb3提交、同步并核clean；本ADR不改变已关闭的960/961源码快照、固定447批准源或41cd运行包。
 
 ## 问题与职责
 
@@ -29,4 +29,6 @@ PendingReview只表示候选命令执行成功，并非批准；PendingEnvironme
 
 新增单一workflow，仅push master与workflow_dispatch，Windows2022源码job；checkout固定3d3c42e5aac5ba805825da76410c181273ba90b1，contents:read且persist-credentials:false。通过预装vswhere选择VS2022 VC x64，在同cmd子进程call VsDevCmd后启动Python入口。优先使用预装CMake/Ninja/Python，实际版本写原件；不得宣称托管环境等同本机19.44/Qt5.15.2。
 
-仅源码验证日志可进入公开job日志，不上传artifact、运行包、DLL或资格二进制；根通过REST保存原日志。Native候选/受审产品/发行静态核各自作用域独立，真实本地执行同样满足D14。P6-4关闭仍需独立审查、真实各层状态/失败原件及精确提交同步clean；P6-5最终准确包人工体验和整体交付另行完成。
+公开工作流仅保留源码验证日志。Native 候选、受审产品、发行静态核验分别在本地执行。P6-4 的独立审查、失败记录、阶段提交及远端同步记录已收入阶段归档。
+
+P6-5 在同一源码入口加入拒写采证器的两项回归。提交 `e98e60a` 的 Windows x64 工作流实际通过 459 项 C++ 测试和四组 Python 测试（55、24、18、2 项）。该运行绑定当时的 964 项源码快照及当时的 ADR 文本。随后本 ADR 更新验收状态，测试记录沿用运行时的摘要。见[工作流原始运行](https://github.com/03pie/Eve/actions/runs/45340802804)及[源码与日志复核](../../build/p6-5-ci-stock-powershell-fix-20261124-1/review.json)。
