@@ -19,6 +19,7 @@ class ReadonlySaveOwner(unittest.TestCase):
         script = r'''
 $ErrorActionPreference='Stop';Set-StrictMode -Version 2.0
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1')
 function Parse([string]$Path){
     $tokens=$null;$errors=$null
     $result=[Management.Automation.Language.Parser]::ParseFile($Path,[ref]$tokens,[ref]$errors)
@@ -33,8 +34,12 @@ $owner=Parse '__OWNER__';$windows=Parse '__WINDOWS__'
             '__WINDOWS__', str(WINDOWS).replace("'", "''")) + body
         encoded = base64.b64encode(script.encode('utf-16le')).decode('ascii')
         powershell = Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
+        # The hosted workflow enters through pwsh. Keep its module search path
+        # out of the stock Windows PowerShell process used by this fixture.
+        environment = {key: value for key, value in os.environ.items() if key.upper() != 'PSMODULEPATH'}
+        environment['PSModulePath'] = str(powershell.parent / 'Modules')
         result = subprocess.run([str(powershell), '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
-                                capture_output=True, timeout=90, check=False)
+                                env=environment, capture_output=True, timeout=90, check=False)
         self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8-sig', errors='replace'))
         facts = json.loads(result.stdout.decode('utf-8-sig'))
         print(json.dumps({'scope': 'host-only-readonly-owner-regression', 'facts': facts}, sort_keys=True))
