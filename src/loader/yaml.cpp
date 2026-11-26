@@ -1,6 +1,7 @@
 /** @file yaml.cpp
  * @brief 从 LibYAML 事件构造有界配置树，拒绝引用/标记并生成确定性的 JSON/YAML 文本。
  */
+#include "configuration_limits_p.hpp"
 #include "replacement_target_p.hpp"
 #include <algorithm>
 #include <charconv>
@@ -13,6 +14,14 @@
 
 namespace cordis::loader {
 namespace {
+/** @brief 解析外部文本前核对输入长度和所有事件树预算，结构约束在完整文档入口检查。 */
+bool withinYamlInputBudget(std::size_t bytes, const YamlLimits& limits) noexcept
+{
+    return limits.maximumInputBytes > 0 && bytes <= limits.maximumInputBytes && limits.maximumNodes > 0 &&
+           detail::validDepthLimit(limits.maximumDepth) && limits.maximumScalarBytes > 0 &&
+           limits.maximumNormalizedBytes > 0;
+}
+
 /** @brief 只用于内部展开错误；跨公共入口转为 ErrorInfo。 */
 struct ParseFailure { ErrorInfo error; };
 /** @brief 统一生成带位置及可选条目路径的文本错误。 */
@@ -391,10 +400,9 @@ EntrySpec entry(const Node& node, const std::string& parent, std::size_t depth, 
 Result<ParsedConfiguration> parseConfiguration(const std::string& text, YamlLimits limits)
 {
     try {
-        if (!limits.maximumInputBytes || text.size() > limits.maximumInputBytes || !limits.maximumNodes ||
-            !limits.maximumDepth || limits.maximumDepth > 128 || !limits.maximumScalarBytes || !limits.maximumNormalizedBytes)
+        if (!withinYamlInputBudget(text.size(), limits))
             fail("invalid YAML limits or input byte limit exceeded", {});
-        if (!limits.structure.maximumEntries || !limits.structure.maximumDepth || limits.structure.maximumDepth > 128 || !limits.structure.maximumBytes)
+        if (!detail::validStructureLimits(limits.structure))
             fail("invalid structure limits", {});
         auto root = readTree(text, limits);
         fields(*root, {"formatVersion", "modules", "plugins"});
@@ -463,9 +471,7 @@ Result<ParsedConfiguration> changeEntryConfiguration(const ParsedConfiguration& 
         return Result<ParsedConfiguration>::failure(
             makeError(ErrorCode::InvalidArgument, "unknown configuration path"));
     try {
-        if (!limits.maximumInputBytes || configuration.size() > limits.maximumInputBytes || !limits.maximumNodes ||
-            !limits.maximumDepth || limits.maximumDepth > 128 || !limits.maximumScalarBytes ||
-            !limits.maximumNormalizedBytes)
+        if (!withinYamlInputBudget(configuration.size(), limits))
             fail("configuration fragment exceeds input budget", {}, path);
         auto payload = readTree(configuration, limits);
         limits.maximumInputBytes = limits.maximumNormalizedBytes;
@@ -549,9 +555,7 @@ Result<ParsedConfiguration> setModuleManifest(const ParsedConfiguration& source,
     if (!source.isValid() || alias == "builtin" || !source.structure().modules().count(alias))
         return Result<ParsedConfiguration>::failure(makeError(ErrorCode::InvalidArgument, "unknown external module"));
     try {
-        if (!limits.maximumInputBytes || manifest.size() > limits.maximumInputBytes || !limits.maximumNodes ||
-            !limits.maximumDepth || limits.maximumDepth > 128 || !limits.maximumScalarBytes ||
-            !limits.maximumNormalizedBytes)
+        if (!withinYamlInputBudget(manifest.size(), limits))
             fail("module manifest exceeds input budget", {});
         limits.maximumInputBytes = limits.maximumNormalizedBytes;
         if (source.normalizedYaml().size() > limits.maximumInputBytes)

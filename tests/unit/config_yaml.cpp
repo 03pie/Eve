@@ -96,9 +96,44 @@ void types()
     rejected(document("  realms: {store: null}\n"));
     rejected("formatVersion: 1\nmodules: {m: {manifest: a.json, unknown: 1}}\nplugins: []\n");
 }
+/** @brief 解析、条目编辑和清单编辑均遵守事件树与条目树各自的深度预算。 */
+void depthLimits()
+{
+    const std::string text = "formatVersion: 1\nmodules: {m: {manifest: a}}\nplugins: [{id: notes, plugin: org.notes}]\n";
+    const auto source = parseConfiguration(text).value();
+    for (std::size_t depth : {0u, 128u, 129u}) {
+        YamlLimits events, entries;
+        events.maximumDepth = depth;
+        entries.structure.maximumDepth = depth;
+        for (const auto& policy : {events, entries}) {
+            const auto verify = [depth](const Result<ParsedConfiguration>& result) {
+                CHECK(result.hasValue() == (depth == 128));
+                if (!result.hasValue()) {
+                    CHECK(result.error().code == ErrorCode::ConfigInvalid);
+                    CHECK(result.error().phase == "loader.yaml");
+                }
+            };
+            verify(parseConfiguration(text, policy));
+            verify(setEntryConfiguration(source, "notes", "{}", policy));
+            verify(addConfigurationEntry(source, "extra", "org.notes", "{}", policy));
+            verify(setEntryEnabled(source, "notes", false, policy));
+            verify(setModuleManifest(source, "m", "next.json", policy));
+        }
+    }
+
+    // 根映射、条目列表和条目映射占三层。再嵌套 124 层列表时，最深标量在第 128 层。
+    const auto payload = std::string(124, '[') + "0" + std::string(124, ']');
+    YamlLimits policy;
+    policy.maximumDepth = 128;
+    CHECK(parseConfiguration(document("  config: " + payload + "\n"), policy).hasValue());
+    CHECK(!parseConfiguration(document("  config: [" + payload + "]\n"), policy).hasValue());
+    CHECK(setEntryConfiguration(source, "notes", payload, policy).hasValue());
+    CHECK(!setEntryConfiguration(source, "notes", "[" + payload + "]", policy).hasValue());
+}
 /** @brief 每种独立预算在超限时拒绝，在精确输入边界仍成功。 */
 void limits()
 {
+    depthLimits();
     const std::string text = "formatVersion: 1\nplugins: []\n";
     auto policy = YamlLimits{};
     policy.maximumInputBytes = text.size();
@@ -111,9 +146,6 @@ void limits()
     policy = {};
     policy.maximumDepth = 2;
     CHECK(!parseConfiguration(document("  config: [[[]]]\n"), policy).hasValue());
-    policy = {};
-    policy.maximumDepth = 129;
-    CHECK(!parseConfiguration(text, policy).hasValue());
     policy = {};
     policy.maximumScalarBytes = 2;
     CHECK(!parseConfiguration(text, policy).hasValue());
@@ -299,8 +331,6 @@ void moduleManifestLimits()
     policy.maximumDepth = 4;
     CHECK(setModuleManifest(source, "m", manifest, policy).hasValue());
     policy.maximumDepth = 3;
-    CHECK(!setModuleManifest(source, "m", manifest, policy).hasValue());
-    policy.maximumDepth = 129;
     CHECK(!setModuleManifest(source, "m", manifest, policy).hasValue());
     policy = {};
     policy.structure.maximumBytes = 1 + manifest.size();

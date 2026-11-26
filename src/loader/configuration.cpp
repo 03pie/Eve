@@ -1,6 +1,7 @@
 /** @file configuration.cpp
  * @brief 以有界结构校验和稳定 EntryPath 比较构建配置预览，保持与内核和 Qt 隔离。
  */
+#include "configuration_limits_p.hpp"
 #include <cordis/loader/configuration.hpp>
 #include <algorithm>
 #include <set>
@@ -79,7 +80,7 @@ bool ancestorRebuilt(const std::set<std::string>& rebuilt, const std::string& pa
 Result<DocumentCandidate> validateDocument(const Document& document, ConfigurationLimits limits)
 {
     if (document.formatVersion != 1) return invalid("unsupported formatVersion");
-    if (!limits.maximumEntries || !limits.maximumDepth || limits.maximumDepth > 128 || !limits.maximumBytes)
+    if (!detail::validStructureLimits(limits))
         return invalid("invalid configuration limits (maximumDepth must be 1..128)");
     if (document.modules.size() > limits.maximumModules || document.plugins.size() > limits.maximumEntries)
         return invalid("configuration count limit exceeded");
