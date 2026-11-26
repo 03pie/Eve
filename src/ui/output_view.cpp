@@ -218,9 +218,10 @@ void OutputControl::renderText(bool preserve, bool rebuild, const std::vector<Lo
         }
     }
     const auto cursorLocation = [&](int position) {
+        // 多行记录可能只保留后半段，距记录末尾的偏移在裁剪后仍然有效。
         for (const auto& row : visibleRecords)
             if (row.start <= position && position <= row.end)
-                return std::make_pair(row.sequence, position - row.start);
+                return std::make_pair(row.sequence, row.end - position);
         return std::make_pair(std::uint64_t{0}, 0);
     };
     const auto oldAnchor = cursorLocation(editor->textCursor().anchor());
@@ -256,7 +257,7 @@ void OutputControl::renderText(bool preserve, bool rebuild, const std::vector<Lo
         const auto locate = [&](const auto& loc) {
             for (const auto& row : visibleRecords)
                 if (row.sequence == loc.first)
-                    return std::min(row.end, row.start + loc.second);
+                    return std::max(row.start, row.end - loc.second);
             return 0;
         };
         cur = editor->textCursor();

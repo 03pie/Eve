@@ -31,6 +31,7 @@
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QTabWidget>
 #include <QTableView>
 #include <QTest>
@@ -235,12 +236,44 @@ void outputHistory()
     s.find<QAction>("CordisCopyOutput")->trigger();
     const auto copied = QApplication::clipboard()->text();
     CHECK(copied.contains("retained-line-0\n") && copied.contains("retained-line-599"));
-    std::string multiline;
-    for (int i = 0; i < 3000; ++i) multiline += '\n';
-    for (int i = 0; i < 3; ++i) s.shell.writeOutput(multiline).value();
+    auto* editor = s.find<QPlainTextEdit>("CordisWorkbenchOutput");
+    auto* panel = s.find<QTabWidget>("CordisWorkbenchPanel");
+    panel->setCurrentWidget(editor);
+    panel->show();
+    until([&] { return editor->blockCount() == 600; });
+    s.shell.writeOutput(std::string(2199, '\n') + "middle").value();
+    s.shell.writeOutput(std::string(2198, '\n') + "tail").value();
+    until([&] { return editor->blockCount() == 4999; });
+    CHECK(editor->maximumBlockCount() == 5000);
+
+    s.find<QToolButton>("CordisOutputFollow")->setChecked(false);
+    const auto selection = editor->document()->find("retained-line-300");
+    CHECK(!selection.isNull());
+    editor->setTextCursor(selection);
+    auto* scroll = editor->verticalScrollBar();
+    scroll->setValue(290);
+    CHECK(scroll->value() == 290 && scroll->maximum() > 290);
+    s.shell.writeOutput("at-limit").value();
+    until([&] { return editor->blockCount() == 5000; });
+    CHECK(editor->toPlainText().contains("retained-line-0\n"));
+    CHECK(editor->textCursor().selectedText() == "retained-line-300" && scroll->value() == 290);
+
+    s.shell.writeOutput("over-limit").value();
+    until([&] { return editor->toPlainText().endsWith("over-limit"); });
+    CHECK(editor->blockCount() == 5000);
+    CHECK(!editor->toPlainText().contains("retained-line-0\n"));
+    CHECK(editor->toPlainText().contains("retained-line-1\n"));
+    CHECK(editor->textCursor().selectedText() == "retained-line-300" && scroll->value() == 290);
+
+    // 头部恰好截进一条多行记录时，同一条记录中的剩余文字仍应保持选中。
+    const auto multilineSelection = editor->document()->find("middle");
+    CHECK(!multilineSelection.isNull());
+    editor->setTextCursor(multilineSelection);
+    s.shell.writeOutput(std::string(600, '\n') + "partial-record").value();
+    until([&] { return editor->toPlainText().endsWith("partial-record"); });
+    CHECK(editor->blockCount() == 5000 && editor->textCursor().selectedText() == "middle");
     s.find<QAction>("CordisCopyOutput")->trigger();
     CHECK(QApplication::clipboard()->text().contains("retained-line-0\n"));
-    CHECK(s.find<QPlainTextEdit>("CordisWorkbenchOutput")->document()->blockCount() <= 5000);
     s.close();
 }
 /** @brief 可变宿主配置源用于验证同一路径错误更新，不执行伪造的 Core 操作。 */

@@ -62,10 +62,13 @@ QString formatLogText(const LogRecord& row);
 
 class LogQuery {
 public:
+    /** 在线查询借用归档，调用者须保证归档存活。离线查询只持有工作区路径。 */
     explicit LogQuery(const RuntimeLogArchive& archive) : archive_(&archive) {}
     explicit LogQuery(QString workspace) : workspace_(std::move(workspace)) {}
+    /** 固定当前运行的事件上界，后续分页和导出共享同一快照。 */
     LogCursor begin(const QString& run, const LogFilter& filter = {}, quint64 before = 0) const;
     std::vector<LogRun> runs() const;
+    /** 已解码的来源和扫描告警可同时返回；调用者据此区分完整目录和部分目录。 */
     LogSourceResult sources(const QString& run) const;
     LogQueryPage page(const LogCursor& cursor, int limit = defaultLogPageSize) const;
     LogLookup locate(const QString& run, quint64 eventId) const;

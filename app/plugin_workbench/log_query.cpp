@@ -1,3 +1,6 @@
+/** @file log_query.cpp
+ * @brief 离线查询工作区运行日志。标准输出承载查询结果，标准错误和退出码报告归档或查询异常。
+ */
 #include "runtime_log_query_p.hpp"
 #include <QCommandLineParser>
 #include <QCoreApplication>
