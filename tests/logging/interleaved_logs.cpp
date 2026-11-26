@@ -95,8 +95,8 @@ void run(const QString& dll, const QDir& evidence)
         wait(instance.ready());
         const auto state = take(instance.snapshot());
         check(state.state == InstanceState::Active, "missing active plugin");
-        identities[id] = QJsonObject{{"runtime", QString::number(state.runtime.value())},
-                                     {"instance", QString::number(state.instance.value())}, {"epoch", QString::number(state.epoch)}};
+        identities[id] = QJsonObject{{"instance", QString::number(state.instance.value())},
+                                     {"epoch", QString::number(state.epoch)}};
     }
     check(identities[ids[0]].toObject()["instance"] != identities[ids[1]].toObject()["instance"], "duplicate instance");
     ElaWindow* window = nullptr;
@@ -115,7 +115,7 @@ void run(const QString& dll, const QDir& evidence)
     check(selector->findData("plugin/test.logs.alpha") < 0 && selector->findData("plugin/test.logs.bravo") < 0, "silent source visible");
     for (const auto& marker : markers) {
         control<QAction>(window, "CordisOpenCommands")->trigger();
-        commandFilter->setText("Publish interleaved log " + marker.left(1));
+        commandFilter->setText("Write sample log " + marker.left(1));
         until([&] { return commandFilter->isVisible() && list->model()->rowCount() == 1; }, "no unique plugin command");
         check(list->currentIndex().data().toString().contains(commandFilter->text()), "wrong palette command");
         control<QPushButton>(window, "CordisRunCommand")->click();

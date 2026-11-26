@@ -19,7 +19,7 @@ public:
         if (!output.hasValue()) return failedTask(output.error());
         std::optional<Task<void>> ready;
         const auto registered = commands.value().withService([&](CommandService& service) {
-            auto command = service.add(context, {"write", "Publish interleaved log " + marker_, [this, context, output = output.value()] {
+            auto command = service.add(context, {"write", "Write sample log " + marker_, [this, context, output = output.value()] {
                 std::optional<ErrorInfo> error;
                 auto accessed = output.withService([&](OutputService& log) {
                     auto event = log.write(context, "shared", "Interleaved log " + marker_ + std::to_string(count_ + 1));
