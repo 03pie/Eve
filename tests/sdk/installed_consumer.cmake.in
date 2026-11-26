@@ -1,0 +1,40 @@
+cmake_minimum_required(VERSION 3.21)
+file(REAL_PATH "@CMAKE_CURRENT_BINARY_DIR@" test_dir)
+string(RANDOM LENGTH 12 ALPHABET 0123456789abcdef suffix)
+set(scratch "${test_dir}/consumer-${suffix}")
+set(sdk "${scratch}/sdk")
+set(build "${scratch}/build")
+set(cordis_dir "${sdk}/@CMAKE_INSTALL_LIBDIR@/cmake/Cordis")
+set(template "${sdk}/@CMAKE_INSTALL_DATADIR@/Cordis/templates/qt-ui-plugin")
+foreach(directory IN ITEMS "@CMAKE_INSTALL_BINDIR@" "@CMAKE_INSTALL_LIBDIR@" "@CMAKE_INSTALL_INCLUDEDIR@" "@CMAKE_INSTALL_DATADIR@")
+    cmake_path(APPEND sdk "${directory}" OUTPUT_VARIABLE destination)
+    cmake_path(IS_PREFIX sdk "${destination}" NORMALIZE private_install)
+    if(IS_ABSOLUTE "${directory}" OR NOT private_install)
+        message(FATAL_ERROR "The SDK consumer test requires install paths inside its private SDK prefix.")
+    endif()
+endforeach()
+if(EXISTS "${scratch}")
+    message(FATAL_ERROR "The SDK consumer test directory already exists: ${scratch}")
+endif()
+message(STATUS "SDK consumer test directory: ${scratch}")
+
+execute_process(COMMAND "${CMAKE_COMMAND}" --install "${HOST_BUILD}" --config "${HOST_CONFIG}"
+    --prefix "${sdk}" COMMAND_ERROR_IS_FATAL ANY)
+if(NOT EXISTS "${cordis_dir}/CordisConfig.cmake" OR NOT EXISTS "${template}/CMakeLists.txt")
+    message(FATAL_ERROR "The staged SDK is missing its package config or Qt plugin template.")
+endif()
+
+execute_process(COMMAND "${CMAKE_COMMAND}" -S "${template}" -B "${build}" -G "${HOST_GENERATOR}"
+    "-DCMAKE_MAKE_PROGRAM=${HOST_MAKE_PROGRAM}" "-DCMAKE_CXX_COMPILER=${HOST_CXX_COMPILER}"
+    "-DCMAKE_BUILD_TYPE=${HOST_CONFIG}" "-DQt5_DIR=${HOST_QT_DIR}" "-DCordis_DIR=${cordis_dir}"
+    COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND "${CMAKE_COMMAND}" --build "${build}" --config "${HOST_CONFIG}"
+    COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND "${TEST_EXE}" "${build}/module/external_page/module.json" "${scratch}/workspace"
+    COMMAND_ERROR_IS_FATAL ANY)
+
+file(REAL_PATH "${scratch}" actual_scratch)
+if(NOT actual_scratch STREQUAL scratch)
+    message(FATAL_ERROR "The SDK consumer test directory moved: ${scratch}")
+endif()
+file(REMOVE_RECURSE "${scratch}")

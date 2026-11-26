@@ -71,10 +71,10 @@ void Workspace::initialize(const QString& root, const QString& store, const QStr
         pluginRoot_ = QDir(store).absolutePath().toUtf8().toStdString();
         const auto sourceRoot = QDir(root).absolutePath().toUtf8().toStdString();
         const auto artifacts = detail::businessArtifacts(sourceRoot);
-        if (mode == SourceMode::Qualification)
-            for (const auto& artifact : artifacts)
-                if (artifact.identity.loader == ModuleLoader::CAbi)
-                    approvals_.push_back({artifact.identity.moduleId, artifact.identity.sha256});
+        // 资格测试使用本次构建的固定夹具生成批准。
+        for (const auto& artifact : artifacts)
+            if (artifact.identity.loader == ModuleLoader::CAbi)
+                approvals_.push_back({artifact.identity.moduleId, artifact.identity.sha256});
         std::map<std::string, std::string> locators;
         if (baseline.version.exists) {
             initial = baseline.text;

@@ -43,12 +43,9 @@ System.String。返回 CMake 可执行文件的完整路径。
 function Find-CMake {
     $taskFound = Get-Command cmake -ErrorAction SilentlyContinue
     if ($taskFound) { return $taskFound.Source }
-    $taskCandidates = @()
     if ($env:CORDIS_CMAKE_BIN) {
-        $taskCandidates += Join-Path $env:CORDIS_CMAKE_BIN 'cmake.exe'
-    }
-    $taskCandidates += @('D:\Qt\Tools\CMake_64\bin\cmake.exe', 'C:\Qt\Tools\CMake_64\bin\cmake.exe', 'C:\Program Files\CMake\bin\cmake.exe')
-    foreach ($taskCandidate in $taskCandidates) {
+        $taskExecutableName = if ($IsLinux -or $IsMacOS) { 'cmake' } else { 'cmake.exe' }
+        $taskCandidate = Join-Path $env:CORDIS_CMAKE_BIN $taskExecutableName
         if (Test-Path -LiteralPath $taskCandidate -PathType Leaf) { return $taskCandidate }
     }
     throw 'CMake was not found. Add CMake to PATH or set CORDIS_CMAKE_BIN to its bin directory.'

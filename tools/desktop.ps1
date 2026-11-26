@@ -2,20 +2,22 @@
 .SYNOPSIS
 在普通 PowerShell 中加载本地 MSVC/Qt 环境并运行桌面构建或工作台。
 .DESCRIPTION
-自动发现 VS2022 x64 工具链，默认使用 build/Qt 中的 Qt 5.15.2。
+自动发现 VS2022 x64 工具链，使用显式指定的 Qt 5.15.2。
 环境变量只在本次调用中生效，退出时恢复；依赖安装独立进行。
 .PARAMETER Action
-doctor、configure、build、test、verify 或 run；run 启动配置工作台。
+doctor、configure、build、test、verify 或 run。run 默认启动平台工作台。
 .PARAMETER Preset
 Qt/Ela 的 MSVC Debug 或 Release 预设。
 .PARAMETER QtRoot
 Qt kit 路径，优先采用显式参数及 CORDIS_QT5152_ROOT。
 .PARAMETER ConfigurationFile
-run 时传给工作台的可选配置文件，适合使用独立验收文件。
+仅传给 configuration 示例的可选配置文件。
 .PARAMETER Workbench
-run 的固定入口：configuration 为原配置工作台，business 为三模块业务工作台。
-.PARAMETER StoreRoot
-business run 的可选插件存储目录；指定时同时提供 ConfigurationFile。
+platform 为平台入口，configuration 为配置示例。
+.PARAMETER Workspace
+平台工作台的可选工作区目录。
+.PARAMETER ModuleManifest
+平台工作台启动时可选的受信 Qt 模块清单。
 .PARAMETER DeveloperChild
 内部执行标记；公开入口始终在独立 PowerShell 进程中加载开发环境。
 #>
@@ -27,15 +29,19 @@ param(
     [string]$Preset = 'ela-msvc-debug',
     [string]$QtRoot = $env:CORDIS_QT5152_ROOT,
     [string]$ConfigurationFile,
-    [ValidateSet('configuration', 'business')]
-    [string]$Workbench = 'configuration',
-    [string]$StoreRoot,
+    [ValidateSet('platform', 'configuration')]
+    [string]$Workbench = 'platform',
+    [string]$Workspace,
+    [string]$ModuleManifest,
     [switch]$DeveloperChild
 )
 
 $ErrorActionPreference = 'Stop'
-if ($StoreRoot -and ($Action -ne 'run' -or $Workbench -ne 'business' -or -not $ConfigurationFile)) {
-    throw 'StoreRoot requires business run and an explicit ConfigurationFile.'
+if (($Workspace -or $ModuleManifest) -and ($Action -ne 'run' -or $Workbench -ne 'platform')) {
+    throw 'Workspace and ModuleManifest require platform run.'
+}
+if ($ConfigurationFile -and ($Action -ne 'run' -or $Workbench -ne 'configuration')) {
+    throw 'ConfigurationFile requires configuration run.'
 }
 if (-not $DeveloperChild) {
     # VS 开发环境加载器也会重写空环境变量；用子进程隔离其全部环境及模块副作用。
@@ -44,7 +50,8 @@ if (-not $DeveloperChild) {
     $taskChildArguments += @('-Workbench', $Workbench)
     if ($QtRoot) { $taskChildArguments += @('-QtRoot', $QtRoot) }
     if ($ConfigurationFile) { $taskChildArguments += @('-ConfigurationFile', $ConfigurationFile) }
-    if ($StoreRoot) { $taskChildArguments += @('-StoreRoot', $StoreRoot) }
+    if ($Workspace) { $taskChildArguments += @('-Workspace', $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Workspace)) }
+    if ($ModuleManifest) { $taskChildArguments += @('-ModuleManifest', (Resolve-Path -LiteralPath $ModuleManifest).Path) }
     $ErrorActionPreference = 'Continue'
     & (Join-Path $PSHOME $taskShellName) @taskChildArguments
     $taskChildExitCode = $LASTEXITCODE
@@ -54,7 +61,7 @@ if (-not $DeveloperChild) {
 $taskRoot = Split-Path -Parent $PSScriptRoot
 Push-Location -LiteralPath $taskRoot
 try {
-    if (-not $QtRoot) { $QtRoot = Join-Path $taskRoot 'build/Qt/5.15.2/msvc2019_64' }
+    if (-not $QtRoot) { throw 'Set -QtRoot or CORDIS_QT5152_ROOT to the Qt 5.15.2 MSVC x64 kit.' }
     $QtRoot = (Resolve-Path -LiteralPath $QtRoot).Path
     $taskQmake = Join-Path $QtRoot 'bin/qmake.exe'
     if (-not (Test-Path -LiteralPath $taskQmake -PathType Leaf)) { throw 'QtRoot must contain bin/qmake.exe.' }
@@ -89,15 +96,14 @@ try {
 
     if ($Action -eq 'run') {
         if (-not $Preset.StartsWith('ela-')) { throw 'The workbench requires an Ela preset.' }
-        $taskName = if ($Workbench -eq 'business') { 'cordis_platform_workbench_demo.exe' } else { 'cordis_config_workbench.exe' }
+        $taskName = if ($Workbench -eq 'configuration') { 'cordis_config_workbench.exe' } else { 'cordis_plugin_workbench.exe' }
         $taskExecutable = Join-Path $taskRoot "build/$Preset/bin/$taskName"
         if (-not (Test-Path -LiteralPath $taskExecutable)) { throw 'Build the selected Ela preset before running it.' }
         $env:QT_QPA_PLATFORM = 'windows'
         $taskArguments = @()
-        if ($ConfigurationFile) {
-            $taskArguments = if ($Workbench -eq 'business') { @($ConfigurationFile) } else { @('--file', $ConfigurationFile) }
-        }
-        if ($StoreRoot) { $taskArguments += $StoreRoot }
+        if ($ConfigurationFile) { $taskArguments += @('--file', $ConfigurationFile) }
+        if ($Workspace) { $taskArguments += @('--workspace', $Workspace) }
+        if ($ModuleManifest) { $taskArguments += @('--module', $ModuleManifest) }
         $ErrorActionPreference = 'Continue'
         & $taskExecutable @taskArguments
         $taskRunExitCode = $LASTEXITCODE

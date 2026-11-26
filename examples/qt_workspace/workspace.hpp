@@ -113,11 +113,6 @@ public:
     static cordis::Result<std::shared_ptr<Workspace>>
     openQualification(const QString& sourceBin, const QString& storeRoot, const QString& file,
                       std::shared_ptr<cordis::qt::QtScheduler> scheduler);
-    /** @brief 产品宿主传入嵌入的精确批准纯值；装配后不从候选或配置扩充名单。 */
-    static cordis::Result<std::shared_ptr<Workspace>> openPlatform(const QString& sourceBin, const QString& storeRoot,
-                                                                   const QString& file,
-                                                                   std::shared_ptr<cordis::qt::QtScheduler> scheduler,
-                                                                   cordis::module::NativeUnloadWhitelist approvals);
     Workspace(const Workspace&) = delete;
     Workspace& operator=(const Workspace&) = delete;
     cordis::Result<cordis::GenerationId> generation();
@@ -158,13 +153,12 @@ public:
 
 private:
     friend struct detail::WorkspaceUpgradeExecution;
-    enum class SourceMode { Notebook, Qualification, Platform };
+    enum class SourceMode { Notebook, Qualification };
     explicit Workspace(std::shared_ptr<cordis::qt::QtScheduler> target);
     static cordis::Result<std::shared_ptr<Workspace>> create(const QString& root, const QString& store,
                                                              const QString& file,
                                                              std::shared_ptr<cordis::qt::QtScheduler> scheduler,
-                                                             SourceMode mode,
-                                                             cordis::module::NativeUnloadWhitelist approvals);
+                                                             SourceMode mode);
     void initialize(const QString& root, const QString& store, const QString& file, SourceMode mode);
     void publishUi();
     cordis::loader::ConfiguredPlugin openNotebook(const cordis::loader::PluginModule& source, bool stateful);

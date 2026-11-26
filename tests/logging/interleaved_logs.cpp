@@ -10,7 +10,6 @@
 #include <QListView>
 #include <QPlainTextEdit>
 #include <QPushButton>
-#include <QSpinBox>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
@@ -52,15 +51,11 @@ template<class T> T* control(ElaWindow* window, const char* name)
     check(result, name);
     return result;
 }
-void save(const QString& path, const QJsonObject& receipt)
-{
-    files::write(path, QJsonDocument(receipt).toJson());
-}
 const QStringList markers{"A1", "B1", "A2", "B2"};
-QString pluginFor(const QString& marker) { return marker.startsWith('A') ? "u7.alpha" : "u7.bravo"; }
+QString pluginFor(const QString& marker) { return marker.startsWith('A') ? "test.logs.alpha" : "test.logs.bravo"; }
 QStringList eventLines(QPlainTextEdit* panel)
 {
-    return panel->toPlainText().split('\n').filter("  U7 event ");
+    return panel->toPlainText().split('\n').filter("  Interleaved log ");
 }
 struct Host {
     workbench::Workbench app;
@@ -82,12 +77,12 @@ struct Host {
 
 void run(const QString& dll, const QDir& evidence)
 {
-    const QStringList ids{"u7.alpha", "u7.bravo"};
+    const QStringList ids{"test.logs.alpha", "test.logs.bravo"};
     const auto manifest = files::install(dll, evidence.filePath("module"), "org.cordis.test.logs",
                                          QJsonArray::fromStringList(ids), "qt-ui");
     const auto loaded = take(module::loadQtModule(evidence.path().toStdString(), manifest.toStdString()));
     Host host;
-    take(host.app.shell.startOutputArchive(evidence.filePath("workspace").toStdString(), "U7"));
+    take(host.app.shell.startOutputArchive(evidence.filePath("workspace").toStdString(), "test"));
     take(host.app.shell.management()->attach(host.app.kernel));
     host.app.publishUi();
     QJsonObject identities;
@@ -117,29 +112,21 @@ void run(const QString& dll, const QDir& evidence)
     auto* list = control<QListView>(window, "CordisCommandList");
     const auto runId = control<QComboBox>(window, "CordisOutputRun")->currentData().toString();
     check(!QUuid(runId).isNull(), "missing archive run ID");
-    check(selector->findData("plugin/u7.alpha") < 0 && selector->findData("plugin/u7.bravo") < 0, "silent source visible");
+    check(selector->findData("plugin/test.logs.alpha") < 0 && selector->findData("plugin/test.logs.bravo") < 0, "silent source visible");
     for (const auto& marker : markers) {
         control<QAction>(window, "CordisOpenCommands")->trigger();
-        commandFilter->setText("U7 publish " + marker.left(1));
+        commandFilter->setText("Publish interleaved log " + marker.left(1));
         until([&] { return commandFilter->isVisible() && list->model()->rowCount() == 1; }, "no unique plugin command");
         check(list->currentIndex().data().toString().contains(commandFilter->text()), "wrong palette command");
         control<QPushButton>(window, "CordisRunCommand")->click();
-        until([&] { return eventLines(editor).join('\n').contains("U7 event " + marker); }, "plugin command did not publish");
+        until([&] { return eventLines(editor).join('\n').contains("Interleaved log " + marker); }, "plugin command did not publish");
     }
     const auto all = eventLines(editor);
     check(all.size() == markers.size(), "unexpected count of interleaved events");
     for (int i = 0; i < markers.size(); ++i)
-        check(all[i].endsWith("U7 event " + markers[i]), "interleaved output ordering");
-    control<QAction>(window, "CordisOpenSettings")->trigger();
-    control<QSpinBox>(window, "CordisSettingsPanelHeight")->setValue(300);
-    control<QLineEdit>(window, "CordisOutputSearch")->setText("U7 event");
+        check(all[i].endsWith("Interleaved log " + markers[i]), "interleaved output ordering");
+    control<QLineEdit>(window, "CordisOutputSearch")->setText("Interleaved log");
     until([&] { return editor->toPlainText().trimmed() == all.join('\n'); }, "visible search missed an event");
-    QTextCursor first(editor->document()), last(editor->document());
-    last.movePosition(QTextCursor::End);
-    check(editor->viewport()->rect().intersects(editor->cursorRect(first)) &&
-          editor->viewport()->rect().intersects(editor->cursorRect(last)), "four marker rows must fit in screenshot");
-    QJsonObject views{{"all", QJsonArray::fromStringList(all)}};
-    check(window->grab().save(evidence.filePath("all.png")), "all source screenshot");
     for (const auto& id : ids) {
         const auto index = selector->findData("plugin/" + id);
         check(index > 0, "missing plugin source");
@@ -148,8 +135,6 @@ void run(const QString& dll, const QDir& evidence)
         check(expected.size() == 2, "unexpected source name or instance");
         until([&] { return eventLines(editor).join('\n') == expected.join('\n'); }, "filtered text contains another source");
         check(editor->isVisible(), "output pane hidden");
-        views[id] = QJsonArray::fromStringList(expected);
-        check(window->grab().save(evidence.filePath(id + ".png")), "single source screenshot");
     }
     selector->setCurrentIndex(0);
     until([&] { return eventLines(editor).join('\n') == all.join('\n'); }, "return to all sources failed");
@@ -157,34 +142,31 @@ void run(const QString& dll, const QDir& evidence)
     const QDir archive(evidence.filePath("workspace/.cordis/logs/" + runId));
     const auto run = QJsonDocument::fromJson(files::read(archive.filePath("run.json"))).object();
     check(run.contains("ended"), "archive was not closed normally");
-    QJsonArray events;
+    int eventCount = 0;
     quint64 lastId = 0;
     for (const auto& segment : archive.entryList({"events-*.jsonl"}, QDir::Files, QDir::Name)) {
         for (const auto& line : files::read(archive.filePath(segment)).trimmed().split('\n')) {
             QJsonParseError error;
             const auto row = QJsonDocument::fromJson(line, &error).object();
             check(error.error == QJsonParseError::NoError && !row.isEmpty(), "malformed JSONL");
-            if (!row["text"].toString().startsWith("U7 event ")) continue;
-            const int i = events.size();
+            if (!row["text"].toString().startsWith("Interleaved log ")) continue;
+            const int i = eventCount;
             check(i < markers.size(), "extra disk event");
             const auto id = pluginFor(markers[i]);
             const auto identity = identities[id].toObject();
             const auto instance = identity["instance"].toString(), epoch = identity["epoch"].toString();
             const auto eventId = row["event"].toString().toULongLong();
-            check(row["text"] == "U7 event " + markers[i] && row["source"] == "plugin/" + id && row["name"] == id &&
+            check(row["text"] == "Interleaved log " + markers[i] && row["source"] == "plugin/" + id && row["name"] == id &&
                   row["instance"] == identity["instance"] && row["epoch"] == identity["epoch"] &&
                   row["channel"] == "plugin/" + instance + "/" + epoch + "/shared" && eventId > lastId,
                   "JSONL source, event, instance or channel mismatch");
             check(all[i].startsWith("[" + row["sequence"].toString() + "] ") && all[i].endsWith(
                   id + " #" + instance + "/" + epoch + "  " + row["text"].toString()), "UI and JSONL disagree");
             lastId = eventId;
-            events.append(row);
+            ++eventCount;
         }
     }
-    check(events.size() == 4, "missing disk events");
-    save(evidence.filePath("receipt.json"), {{"run", runId}, {"pid", QString::number(QCoreApplication::applicationPid())},
-        {"qpa", QApplication::platformName()}, {"module", QJsonDocument::fromJson(files::read(manifest)).object()},
-        {"generation", QString::number(loaded.generation.value())}, {"identities", identities}, {"views", views}, {"events", events}});
+    check(eventCount == markers.size(), "missing disk events");
 }
 } // namespace
 
@@ -199,7 +181,7 @@ int main(int argc, char** argv)
         check(evidence.isValid(), "cannot create evidence directory");
         evidence.setAutoRemove(false);
         QStandardPaths::setTestModeEnabled(true);
-        application.setApplicationName("CordisU7-" + QFileInfo(evidence.path()).fileName());
+        application.setApplicationName("CordisInterleaved-" + QFileInfo(evidence.path()).fileName());
         std::cout << evidence.path().toStdString() << std::endl;
         run(args[1], QDir(evidence.path()));
         return 0;

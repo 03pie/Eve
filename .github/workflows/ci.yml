@@ -2,19 +2,34 @@ name: Source verification
 
 on:
   push:
-    branches: [master]
-    paths-ignore:
-      - 'docs/**'
-      - 'tests/acceptance/**'
+    branches: [dev/11-26]
+  pull_request:
+    branches: [dev/11-26]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  source:
+  core-gcc:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Configure Core
+        run: cmake --preset core-gcc-debug
+      - name: Build Core
+        run: cmake --build --preset core-gcc-debug
+      - name: Test Core
+        run: ctest --preset core-gcc-debug
+
+  core-msvc:
     runs-on: windows-2022
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -37,25 +52,15 @@ jobs:
           if (-not (Test-Path -LiteralPath $devCmd -PathType Leaf)) {
             throw 'The selected installation does not provide VsDevCmd.bat.'
           }
-          $python = (Get-Command python.exe -CommandType Application -ErrorAction Stop).Source
-          $cmake = (Get-Command cmake.exe -CommandType Application -ErrorAction Stop).Source
-          $ctest = (Get-Command ctest.exe -CommandType Application -ErrorAction Stop).Source
-          $ninja = (Get-Command ninja.exe -CommandType Application -ErrorAction Stop).Source
-          $script = Join-Path $env:RUNNER_TEMP 'cordis-ci-source.cmd'
-          foreach ($path in @($devCmd, $python, $cmake, $ctest, $ninja, $script)) {
-            if ($path -match '[\r\n"%!]' -or $path -match '[^\x20-\x7e]') {
-              throw 'A runner tool path cannot be represented in the fixed command script.'
-            }
-          }
-          $lines = @(
-            '@echo off'
-            'setlocal DisableDelayedExpansion'
-            ('call "{0}" -no_logo -arch=x64 -host_arch=x64' -f $devCmd)
-            'if errorlevel 1 exit /b %errorlevel%'
-            ('"{0}" tools\ci.py source --preset core-msvc-debug --output build/ci-source --cmake "{1}" --ctest "{2}" --ninja "{3}"' -f $python, $cmake, $ctest, $ninja)
-            'exit /b %errorlevel%'
-          )
-          [System.IO.File]::WriteAllLines($script, $lines, [System.Text.Encoding]::ASCII)
+          $env:CORDIS_VS_DEV_CMD = $devCmd
+          $script = Join-Path $env:RUNNER_TEMP 'cordis-core-msvc.cmd'
+          @'
+          @echo off
+          call "%CORDIS_VS_DEV_CMD%" -no_logo -arch=x64 -host_arch=x64 || exit /b 1
+          cmake --preset core-msvc-debug || exit /b 1
+          cmake --build --preset core-msvc-debug || exit /b 1
+          ctest --preset core-msvc-debug
+          '@ | Set-Content -LiteralPath $script -Encoding ascii
           & $env:ComSpec /d /c "call `"$script`""
           if ($LASTEXITCODE -ne 0) {
             throw "Source verification exited with code $LASTEXITCODE."

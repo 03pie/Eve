@@ -19,10 +19,10 @@ public:
         if (!output.hasValue()) return failedTask(output.error());
         std::optional<Task<void>> ready;
         const auto registered = commands.value().withService([&](CommandService& service) {
-            auto command = service.add(context, {"write", "U7 publish " + marker_, [this, context, output = output.value()] {
+            auto command = service.add(context, {"write", "Publish interleaved log " + marker_, [this, context, output = output.value()] {
                 std::optional<ErrorInfo> error;
                 auto accessed = output.withService([&](OutputService& log) {
-                    auto event = log.write(context, "shared", "U7 event " + marker_ + std::to_string(count_ + 1));
+                    auto event = log.write(context, "shared", "Interleaved log " + marker_ + std::to_string(count_ + 1));
                     if (event.hasValue()) ++count_;
                     else error = event.error();
                 });
@@ -40,15 +40,15 @@ private:
 
 class LogFactory final : public QObject, public module::IQtPluginV1 {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID "org.cordis.IQtPluginV1/1.0" FILE "u7_metadata.json")
+    Q_PLUGIN_METADATA(IID "org.cordis.IQtPluginV1/1.0" FILE "interleaved_metadata.json")
     Q_INTERFACES(cordis::module::IQtPluginV1)
 public:
-    QStringList pluginIds() const override { return {"u7.alpha", "u7.bravo"}; }
+    QStringList pluginIds() const override { return {"test.logs.alpha", "test.logs.bravo"}; }
     QObject* create(const QString& id) override
     {
-        if (id == "u7.alpha") return new LogInstance("A");
-        if (id == "u7.bravo") return new LogInstance("B");
+        if (id == "test.logs.alpha") return new LogInstance("A");
+        if (id == "test.logs.bravo") return new LogInstance("B");
         return nullptr;
     }
 };
-#include "log_fixture.moc"
+#include "interleaved_fixture.moc"

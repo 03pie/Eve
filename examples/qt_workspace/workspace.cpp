@@ -18,24 +18,16 @@ Workspace::Workspace(std::shared_ptr<qt::QtScheduler> target)
 Result<std::shared_ptr<Workspace>> Workspace::open(const QString& root, const QString& file,
                                                    std::shared_ptr<qt::QtScheduler> scheduler)
 {
-    return create(root, {}, file, std::move(scheduler), SourceMode::Notebook, {});
+    return create(root, {}, file, std::move(scheduler), SourceMode::Notebook);
 }
 Result<std::shared_ptr<Workspace>> Workspace::openQualification(const QString& sourceBin, const QString& storeRoot,
                                                                 const QString& file,
                                                                 std::shared_ptr<qt::QtScheduler> scheduler)
 {
-    return create(sourceBin, storeRoot, file, std::move(scheduler), SourceMode::Qualification, {});
-}
-Result<std::shared_ptr<Workspace>> Workspace::openPlatform(const QString& sourceBin, const QString& storeRoot,
-                                                           const QString& file,
-                                                           std::shared_ptr<qt::QtScheduler> scheduler,
-                                                           module::NativeUnloadWhitelist approvals)
-{
-    return create(sourceBin, storeRoot, file, std::move(scheduler), SourceMode::Platform, std::move(approvals));
+    return create(sourceBin, storeRoot, file, std::move(scheduler), SourceMode::Qualification);
 }
 Result<std::shared_ptr<Workspace>> Workspace::create(const QString& root, const QString& store, const QString& file,
-                                                     std::shared_ptr<qt::QtScheduler> scheduler, SourceMode mode,
-                                                     module::NativeUnloadWhitelist approvals)
+                                                     std::shared_ptr<qt::QtScheduler> scheduler, SourceMode mode)
 {
     using Output = Result<std::shared_ptr<Workspace>>;
     auto* app = qobject_cast<QApplication*>(QCoreApplication::instance());
@@ -49,7 +41,6 @@ Result<std::shared_ptr<Workspace>> Workspace::create(const QString& root, const 
     try {
         // UI 对象只在全部 caller/应用准入通过后构造。
         self = std::shared_ptr<Workspace>(new Workspace(std::move(scheduler)));
-        self->approvals_ = std::move(approvals);
         self->initialize(root, store, file, mode);
         return Output::success(self);
     } catch (const detail::InitializationFailure& failure) {

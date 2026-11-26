@@ -86,3 +86,20 @@ cordis_target_defaults(cordis_platform_startup_tests)
 add_test(NAME platform.empty_workbench COMMAND cordis_platform_startup_tests)
 set_tests_properties(platform.empty_workbench PROPERTIES LABELS "platform;qt;ui" TIMEOUT 35
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+file(GENERATE OUTPUT "${logging_generated}/interleaved_metadata.json"
+    CONTENT "{\"moduleId\":\"org.cordis.test.logs\",\"moduleVersion\":\"1.0.0\",\"plugins\":[\"test.logs.alpha\",\"test.logs.bravo\"],\"toolchain\":${logging_toolchain}}")
+add_library(cordis_interleaved_logging_fixture MODULE interleaved_fixture.cpp)
+target_include_directories(cordis_interleaved_logging_fixture PRIVATE "${logging_generated}")
+target_link_libraries(cordis_interleaved_logging_fixture PRIVATE Cordis::QtUiPluginSdk)
+set_target_properties(cordis_interleaved_logging_fixture PROPERTIES AUTOMOC ON PREFIX "")
+cordis_target_defaults(cordis_interleaved_logging_fixture)
+
+add_executable(cordis_interleaved_logging_tests interleaved_logs.cpp)
+target_link_libraries(cordis_interleaved_logging_tests PRIVATE cordis_external_workbench Qt5::Test Ela::WidgetTools)
+cordis_target_defaults(cordis_interleaved_logging_tests)
+add_dependencies(cordis_interleaved_logging_tests cordis_interleaved_logging_fixture)
+add_test(NAME logging.interleaved_sources COMMAND cordis_interleaved_logging_tests
+    "$<TARGET_FILE:cordis_interleaved_logging_fixture>" "${CMAKE_CURRENT_BINARY_DIR}/artifacts")
+set_tests_properties(logging.interleaved_sources PROPERTIES LABELS "logging;module;qt;ui" TIMEOUT 45
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
