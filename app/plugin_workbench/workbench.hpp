@@ -6,6 +6,7 @@
 #include <cordis/loader/session.hpp>
 #include <cordis/ui/configuration.hpp>
 #include <cordis/ui/ela_shell.hpp>
+#include <optional>
 #include <stdexcept>
 
 namespace cordis::workbench {
@@ -21,7 +22,7 @@ private:
 class Workbench final {
 public:
     Workbench();
-    void open(const QString& manifestPath, const QString& workspaceDir);
+    void open(const std::optional<QString>& manifestPath, const QString& workspaceDir);
     void publishUi();
     loader::AcceptedTarget applyInitial();
     Task<void> close();

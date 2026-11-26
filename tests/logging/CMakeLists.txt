@@ -78,3 +78,11 @@ target_link_libraries(cordis_logging_query PRIVATE Cordis::Ui)
 cordis_target_defaults(cordis_logging_query)
 add_test(NAME logging.l6_query COMMAND cordis_logging_query "${CMAKE_CURRENT_BINARY_DIR}/artifacts")
 set_tests_properties(logging.l6_query PROPERTIES LABELS "logging;qt" TIMEOUT 30)
+
+add_executable(cordis_platform_startup_tests platform_startup.cpp)
+target_include_directories(cordis_platform_startup_tests PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
+target_link_libraries(cordis_platform_startup_tests PRIVATE cordis_external_workbench Qt5::Test)
+cordis_target_defaults(cordis_platform_startup_tests)
+add_test(NAME platform.empty_workbench COMMAND cordis_platform_startup_tests)
+set_tests_properties(platform.empty_workbench PROPERTIES LABELS "platform;qt;ui" TIMEOUT 35
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

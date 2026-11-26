@@ -29,12 +29,19 @@ int main(int argc, char** argv)
     QCommandLineParser cli;
     cli.setApplicationDescription("Cordis Qt UI plugin workbench");
     cli.addHelpOption();
-    cli.addOption({{"m", "module"}, "Trusted external Qt UI module manifest.", "module.json",
-                   QDir(application.applicationDirPath()).filePath("plugins/current/module.json")});
-    cli.addOption({{"w", "workspace"}, "Writable session and plugin data directory.", "directory",
-                   QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)});
+    cli.addOption({{"m", "module"}, "Optional trusted external Qt UI module manifest.", "module.json"});
+    cli.addOption({{"w", "workspace"}, "Writable workbench data directory.", "directory"});
     cli.process(application);
     if (!cli.positionalArguments().isEmpty()) cli.showHelp(1);
+    const auto bundled = QDir(application.applicationDirPath()).filePath("plugins/current/module.json");
+    std::optional<QString> manifest;
+    if (cli.isSet("module"))
+        manifest = cli.value("module");
+    else if (QFileInfo::exists(bundled))
+        manifest = bundled;
+    const auto data = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    const auto workspace = cli.isSet("workspace") ? cli.value("workspace")
+        : manifest ? data : QDir(data).filePath("platform-workspace");
     workbench::Workbench host;
     int status = EXIT_SUCCESS;
     auto close = [&] {
@@ -56,7 +63,7 @@ int main(int argc, char** argv)
         });
     };
     try {
-        host.open(cli.value("module"), cli.value("workspace"));
+        host.open(manifest, workspace);
         host.publishUi();
         const auto applied = host.applyInitial();
         applied.settled.thenOn(host.scheduler, [&](const Result<loader::PlanReport>& result) {

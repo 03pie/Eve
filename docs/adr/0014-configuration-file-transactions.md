@@ -35,3 +35,11 @@ readConfigurationFile 同步返回磁盘原文及 ConfigurationFileVersion；com
 QSaveFile 提供文件替换机制，不等于任意外部编辑器之间的文件系统 CAS。两次 hash 检查会缩小非协作编辑窗口，但最后一次检查与重命名之间仍有竞争；未覆盖恶意目录替换、路径别名/硬链接、网络文件系统、断电或磁盘耗尽专项故障。这些边界不能被协作锁测试替代。
 
 本轮未维护 desiredRevision/persistedRevision、dirty、写队列、watcher 或退出刷新，也未接入配置 UI、运行树或实例。后续 Q4d2 接完整 Store 状态与串行提交、Q4d3 接 watcher；Q4c2 的原生桌面验收前置条件继续保留。
+
+## 2026-11-26 Windows 短时文件占用
+
+并行回归偶发收到 `loader.file.commit`。在本机隔离目录保持目标只读句柄即可稳定复现替换失败。原生探针中，即使句柄允许删除共享，本机对仍打开目标执行 `MoveFileExW` 的覆盖替换仍返回错误 5。监听器和保存任务在受影响的 UI 用例中共用串行 I/O，原偶发占用者尚无法由失败摘要确定。[Qt Windows 替换实现](https://github.com/qt/qtbase/blob/v5.15.2/src/corelib/io/qfilesystemengine_win.cpp)
+
+读取方式沿用原实现。Windows 写入持有同一协作锁，只有 `QSaveFile` 返回 `RenameError` 才安排最多三次重试，退避为 25、50、100 毫秒。等待不运行事件循环。其他失败阶段仍原样返回。Qt 会销毁失败的临时文件，每次重试先复核原基线，再写新的同目录临时文件，并在提交前再次比较。重试时发现变化则保留实际冲突原文。全程保留原 API、写入配额和禁止直接覆盖的规则。[Qt 原子替换实现](https://github.com/qt/qtbase/blob/v5.15.2/src/corelib/io/qsavefile.cpp)
+
+两项新增测试先让真实 Windows 文件句柄阻止替换，再用目录通知等待第一次失败的临时文件删除。此时释放句柄，或先修改磁盘原文再释放。修复前两项均失败，修复后分别成功保存和返回冲突，持续占用用例仍返回失败并保留原文件。Debug 下配置文件、后台 I/O、Store 和配置 UI 合计 41/41。两项新增用例和原偶发 UI 用例分别连续通过 100 次。原件见 `build/design-tools/config-replace-baseline-tests.log`、`config-replace-debug-tests.log`、`config-replace-repeat.log` 与 `config-replace-win32-probe.json`。

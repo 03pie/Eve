@@ -47,6 +47,8 @@ Result<void> validateConfiguration(const std::string& text)
 
 const char* preflightDiagnostic(const ErrorInfo& error)
 {
+    if (error.phase == "workbench.module.required")
+        return "WORKBENCH_MODULE_REQUIRED: 该工作区引用外部模块。请使用 --module 指定清单，或通过 --workspace 打开另一个工作区。";
     if (error.phase == "module.manifest.read")
         return "QT_MANIFEST_READ_FAILED: 无法读取或完整校验模块清单。";
     if (error.code == ErrorCode::AbiMismatch)
@@ -54,6 +56,51 @@ const char* preflightDiagnostic(const ErrorInfo& error)
     if (error.phase == "module.manifest")
         return "QT_MANIFEST_INVALID: 模块清单格式或字段校验失败。";
     return "QT_MODULE_PREFLIGHT_FAILED: 模块产物或元数据未通过预检。";
+}
+
+struct ModuleInput {
+    std::string root;
+    std::string plugin;
+};
+
+ModuleInput inspectConfiguredModule(const QString& path)
+{
+    const QFileInfo source(path);
+    if (source.fileName() != "module.json")
+        throw std::runtime_error("Select a module.json manifest for --module.");
+    auto root = source.absolutePath().toUtf8().toStdString();
+    const auto inspected = module::inspectQtModule(root, "module.json");
+    if (!inspected.hasValue())
+        throw ModulePreflightError(inspected.error());
+    const auto& manifest = inspected.value().artifact.manifest();
+    if (manifest.plugins.size() != 1 || manifest.loader != module::ModuleLoader::QtUi ||
+        manifest.unloadPolicy != module::ModuleUnloadPolicy::Resident)
+        throw std::runtime_error("This workbench accepts a resident Qt UI module declaring one plugin.");
+    return {std::move(root), manifest.plugins.front()};
+}
+
+loader::ConfiguredPlugin configureModule(const ModuleInput& input, Kernel& kernel, const ui::ElaShell& shell,
+                                         const std::shared_ptr<qt::QtScheduler>& scheduler)
+{
+    const auto generation = checked(module::loadQtModule(input.root, "module.json")).generation;
+    auto runtime = checked(module::qtRuntime(generation, {input.plugin,
+        {ServiceRequirement::of<ui::UiPagesService>({"ui.pages"}),
+         ServiceRequirement::of<ui::CommandService>({"ui.commands"}),
+         ServiceRequirement::of<ui::OutputService>({"ui.output"}),
+         ServiceRequirement::of<std::shared_ptr<qt::QtScheduler>>({"qt.scheduler"})}, {}}, scheduler));
+    const auto registered = checked(kernel.registerRuntime(input.plugin, runtime));
+    const module::ModuleManager modules;
+    const auto origin = checked(modules.runtimeOrigin(registered.id()));
+    const auto actual = checked(modules.snapshot());
+    const auto loaded = std::find_if(actual.begin(), actual.end(),
+                                     [generation](const auto& row) { return row.generation == generation; });
+    if (!origin || origin->generation != generation || loaded == actual.end())
+        throw std::logic_error("Qt runtime could not be matched to its loaded generation.");
+    checked(shell.registerQtOutputRuntime(registered.id(), generation, origin->moduleId,
+                                          loaded->manifest.moduleVersion, origin->pluginId));
+    return {{input.plugin, {{"ui.pages"}, {"ui.commands"}, {"ui.output"}, {"qt.scheduler"}},
+             validateConfiguration, {"extension", "module.json"}},
+            std::move(runtime), {}, {}};
 }
 } // namespace
 
@@ -69,49 +116,40 @@ Workbench::Workbench()
 {
 }
 
-void Workbench::open(const QString& manifestPath, const QString& workspaceDir)
+void Workbench::open(const std::optional<QString>& manifestPath, const QString& workspaceDir)
 {
     using namespace loader;
+    if (session)
+        throw std::logic_error("This workbench already owns a workspace.");
     checked(shell.startOutputArchive(workspaceDir.toStdString(), CORDIS_PRODUCT_VERSION));
-    const QFileInfo source(manifestPath);
-    if (source.fileName() != "module.json" || session)
-        throw std::runtime_error("Select a module.json manifest for a new workbench.");
-    const auto root = source.absolutePath().toUtf8().toStdString();
-    const auto inspected = module::inspectQtModule(root, "module.json");
-    if (!inspected.hasValue())
-        throw ModulePreflightError(inspected.error());
-    const auto& manifest = inspected.value().artifact.manifest();
-    if (manifest.plugins.size() != 1 || manifest.loader != module::ModuleLoader::QtUi ||
-        manifest.unloadPolicy != module::ModuleUnloadPolicy::Resident)
-        throw std::runtime_error("This workbench accepts a resident Qt UI module declaring one plugin.");
-    const auto id = manifest.plugins.front();
+    const auto selected = manifestPath ? std::optional{inspectConfiguredModule(*manifestPath)} : std::nullopt;
     const QDir directory(workspaceDir);
     if (!directory.mkpath("."))
         throw std::runtime_error("Cannot create the selected workspace directory.");
     const auto file = directory.absoluteFilePath("session.yaml");
     auto disk = checked(readConfigurationFile(file));
-    initial_ = disk.version.exists ? disk.text : initialConfiguration(id, directory.absolutePath());
-    const auto generation = checked(module::loadQtModule(root, "module.json")).generation;
-    auto runtime = checked(module::qtRuntime(generation, {id,
-        {ServiceRequirement::of<ui::UiPagesService>({"ui.pages"}),
-         ServiceRequirement::of<ui::CommandService>({"ui.commands"}),
-         ServiceRequirement::of<ui::OutputService>({"ui.output"}),
-         ServiceRequirement::of<std::shared_ptr<qt::QtScheduler>>({"qt.scheduler"})}, {}}, scheduler));
-    const auto registered = checked(kernel->registerRuntime(id, runtime));
-    const module::ModuleManager modules;
-    const auto origin = checked(modules.runtimeOrigin(registered.id()));
-    const auto actual = checked(modules.snapshot());
-    const auto loaded = std::find_if(actual.begin(), actual.end(),
-                                     [generation](const auto& row) { return row.generation == generation; });
-    if (!origin || origin->generation != generation || loaded == actual.end())
-        throw std::logic_error("Qt runtime could not be matched to its loaded generation.");
-    checked(shell.registerQtOutputRuntime(registered.id(), generation, origin->moduleId,
-                                          loaded->manifest.moduleVersion, origin->pluginId));
-    ConfiguredPlugin plugin{{id, {{"ui.pages"}, {"ui.commands"}, {"ui.output"}, {"qt.scheduler"}},
-                             validateConfiguration, {"extension", "module.json"}},
-                            runtime, {}, {}};
-    auto definitions = checked(ConfigurationDefinitions::create({std::move(plugin)}));
-    checked(definitions->validate(checked(parseConfiguration(initial_))));
+    if (disk.version.exists)
+        initial_ = disk.text;
+    else if (selected)
+        initial_ = initialConfiguration(selected->plugin, directory.absolutePath());
+    else
+        initial_ = "formatVersion: 1\nplugins: []\n";
+
+    const auto target = checked(parseConfiguration(initial_));
+    if (!selected && (!target.structure().modules().empty() || !target.structure().entries().empty())) {
+        auto error = makeError(ErrorCode::DependencyMissing,
+            "该工作区引用外部模块。请使用 --module 指定清单，或通过 --workspace 打开另一个工作区。");
+        error.phase = "workbench.module.required";
+        throw ModulePreflightError(error);
+    }
+    std::vector<RuntimeId> protectedRuntimes;
+    std::vector<ConfiguredPlugin> plugins;
+    if (selected) {
+        plugins.push_back(configureModule(*selected, *kernel, shell, scheduler));
+        protectedRuntimes.push_back(plugins.back().runtime.id());
+    }
+    auto definitions = checked(ConfigurationDefinitions::create(std::move(plugins)));
+    checked(definitions->validate(target));
     auto driver = KernelReconcileDriver::configured(scheduler, kernel, definitions);
     session = std::make_shared<ConfigurationSession>(scheduler, driver, std::make_shared<QtConfigurationWriter>(file),
                                                      std::move(disk));
@@ -135,7 +173,8 @@ void Workbench::open(const QString& manifestPath, const QString& workspaceDir)
         return configPage_->ready();
     }));
     checked(kernel->mount(configuration));
-    checked(shell.management()->attachConfiguration(management_, {registered.id(), configuration.id()}));
+    protectedRuntimes.push_back(configuration.id());
+    checked(shell.management()->attachConfiguration(management_, std::move(protectedRuntimes)));
     checked(shell.onConfigurationRequested([this] {
         return configPage_ ? configPage_->navigate() :
             Result<void>::failure(makeError(ErrorCode::ContextClosing, "Configuration page unavailable."));

@@ -13,6 +13,7 @@
 #include <qt_windows.h>
 #endif
 #include <cstdlib>
+#include <array>
 #include <future>
 #include <iostream>
 #include <limits>
@@ -235,6 +236,112 @@ void concurrent()
     }
 }
 #ifdef Q_OS_WIN
+struct WinHandle {
+    HANDLE value;
+    explicit WinHandle(HANDLE handle) : value(handle) {}
+    ~WinHandle() { close(); }
+    WinHandle(const WinHandle&) = delete;
+    WinHandle& operator=(const WinHandle&) = delete;
+    void close()
+    {
+        if (value && value != INVALID_HANDLE_VALUE)
+            CloseHandle(std::exchange(value, INVALID_HANDLE_VALUE));
+    }
+};
+
+WinHandle denyFileReplacement(const QString& path)
+{
+    return WinHandle(CreateFileW(reinterpret_cast<const wchar_t*>(path.utf16()), GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+}
+
+/** @brief 等待 NTFS 报告失败的 QSaveFile 临时文件已删除，避免按猜测延时释放句柄。 */
+class TemporaryFileRemoval {
+public:
+    explicit TemporaryFileRemoval(const QString& directory)
+        : directory_(CreateFileW(reinterpret_cast<const wchar_t*>(directory.utf16()), FILE_LIST_DIRECTORY,
+              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+              FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, nullptr)),
+          event_(CreateEventW(nullptr, TRUE, FALSE, nullptr))
+    {
+        CHECK(directory_.value != INVALID_HANDLE_VALUE && event_.value);
+        overlap_.hEvent = event_.value;
+        arm();
+    }
+    ~TemporaryFileRemoval()
+    {
+        if (!armed_)
+            return;
+        CancelIoEx(directory_.value, &overlap_);
+        DWORD ignored = 0;
+        GetOverlappedResult(directory_.value, &overlap_, &ignored, TRUE);
+    }
+    bool wait(const QString& prefix)
+    {
+        const auto deadline = GetTickCount64() + 2000;
+        for (auto now = GetTickCount64(); now < deadline; now = GetTickCount64()) {
+            if (WaitForSingleObject(event_.value, static_cast<DWORD>(deadline - now)) != WAIT_OBJECT_0)
+                return false;
+            DWORD received = 0;
+            const auto completed = GetOverlappedResult(directory_.value, &overlap_, &received, FALSE);
+            armed_ = false;
+            CHECK(completed && received);
+            const auto* next = buffer_.data();
+            for (;;) {
+                const auto* entry = reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(next);
+                const auto name = QString::fromWCharArray(entry->FileName, static_cast<int>(entry->FileNameLength / sizeof(wchar_t)));
+                if (entry->Action == FILE_ACTION_REMOVED && name.startsWith(prefix) && name.size() == prefix.size() + 6)
+                    return true;
+                if (!entry->NextEntryOffset)
+                    break;
+                next += entry->NextEntryOffset;
+            }
+            arm();
+        }
+        return false;
+    }
+private:
+    void arm()
+    {
+        CHECK(ResetEvent(event_.value));
+        armed_ = ReadDirectoryChangesW(directory_.value, buffer_.data(), static_cast<DWORD>(buffer_.size()), FALSE,
+            FILE_NOTIFY_CHANGE_FILE_NAME, nullptr, &overlap_, nullptr);
+        CHECK(armed_);
+    }
+    WinHandle directory_, event_;
+    OVERLAPPED overlap_{};
+    alignas(FILE_NOTIFY_INFORMATION) std::array<char, 4096> buffer_{};
+    bool armed_ = false;
+};
+
+void retryCommit(bool externalEdit)
+{
+    FileCase scene;
+    const auto desired = target();
+    externalWrite(scene.path, "original");
+    const auto baseline = readConfigurationFile(scene.path).value();
+    auto blocker = denyFileReplacement(scene.path);
+    CHECK(blocker.value != INVALID_HANDLE_VALUE);
+    TemporaryFileRemoval removal(scene.directory.path());
+    auto future = std::async(std::launch::async, [&] { return commitConfigurationFile(scene.path, desired, baseline.version); });
+    CHECK(removal.wait(QFileInfo(scene.path).fileName() + QLatin1Char('.')));
+    CHECK(QFile::exists(scene.path + QStringLiteral(".cordis.lock")));
+    if (externalEdit)
+        externalWrite(scene.path, "# changed while replacement was blocked\n");
+    blocker.close();
+    const auto saved = future.get();
+    CHECK(saved.hasValue());
+    if (externalEdit) {
+        CHECK(saved.value().outcome == FileCommitOutcome::Conflict && saved.value().error->code == ErrorCode::ConfigConflict);
+        CHECK(saved.value().disk.text == "# changed while replacement was blocked\n");
+    } else {
+        CHECK(saved.value().outcome == FileCommitOutcome::Committed);
+        CHECK(saved.value().disk.text == desired.source().normalizedYaml());
+    }
+    CHECK(readConfigurationFile(scene.path).value().text == saved.value().disk.text);
+    scene.onlyTarget();
+}
+
 /** @brief Windows 拒绝重命名的真实句柄使 commit 失败，旧内容及可重试基线必须保留。 */
 void commitFailure()
 {
@@ -243,13 +350,7 @@ void commitFailure()
     externalWrite(scene.path, "original");
     auto baseline = readConfigurationFile(scene.path).value();
     {
-        /** @brief 故障句柄只锁本测试临时文件，离开作用域总会释放。 */
-        struct Handle {
-            HANDLE value;
-            /** @brief 关闭后允许后续事务重新提交。 */
-            ~Handle() { if (value != INVALID_HANDLE_VALUE) CloseHandle(value); }
-        } handle{CreateFileW(reinterpret_cast<const wchar_t*>(scene.path.utf16()), GENERIC_READ,
-            FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr)};
+        auto handle = denyFileReplacement(scene.path);
         CHECK(handle.value != INVALID_HANDLE_VALUE);
         auto failed = commitConfigurationFile(scene.path, desired, baseline.version);
         CHECK(!failed.hasValue() && failed.error().code == ErrorCode::ConfigIo && failed.error().phase == "loader.file.commit");
@@ -280,6 +381,8 @@ int main(int argc, char** argv)
         else if (name == "concurrent") concurrent();
 #ifdef Q_OS_WIN
         else if (name == "commit_failure") commitFailure();
+        else if (name == "commit_retry") retryCommit(false);
+        else if (name == "commit_retry_conflict") retryCommit(true);
 #endif
         else return EXIT_FAILURE;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return EXIT_FAILURE; }

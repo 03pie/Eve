@@ -11,6 +11,10 @@
 #include <QSaveFile>
 #include <algorithm>
 #include <array>
+#ifdef Q_OS_WIN
+#include <chrono>
+#include <thread>
+#endif
 #include <filesystem>
 #include <limits>
 #include <string>
@@ -164,27 +168,46 @@ Result<ConfigurationFileCommit> commitConfigurationFile(const QString& path, con
     // 提交后只移动已准备的值，避免提交成功后才复制整份配置和分配报告。
     ConfigurationFileCommit saved{FileCommitOutcome::Committed,
         {{nativePath, true, QCryptographicHash::hash(QByteArray::fromRawData(text.data(), static_cast<int>(text.size())), QCryptographicHash::Sha256).toHex().toStdString()}, text}, {}};
-    QSaveFile output(destination);
-    output.setDirectWriteFallback(false);
-    if (!output.open(QIODevice::WriteOnly))
-        return Result<ConfigurationFileCommit>::failure(fileError(ErrorCode::ConfigIo, "loader.file.write", "cannot create configuration temporary file"));
-    std::size_t written = 0;
-    while (written < text.size()) {
-        const auto count = output.write(text.data() + written, static_cast<qint64>(text.size() - written));
-        if (count <= 0) {
-            output.cancelWriting();
-            return Result<ConfigurationFileCommit>::failure(fileError(ErrorCode::ConfigIo, "loader.file.write", "cannot write complete configuration"));
+#ifdef Q_OS_WIN
+    constexpr std::array<int, 3> retryDelayMs{25, 50, 100};
+    std::size_t retry = 0;
+#endif
+    for (;;) {
+#ifdef Q_OS_WIN
+        if (retry) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(retryDelayMs[retry - 1]));
+            auto latest = read(destination, limits);
+            if (!latest.hasValue()) return Result<ConfigurationFileCommit>::failure(latest.error());
+            if (!sameVersion(expected, latest.value().version)) return conflict(std::move(latest).value());
         }
-        written += static_cast<std::size_t>(count);
-    }
-    auto beforeCommit = read(destination, limits);
-    if (!beforeCommit.hasValue()) return Result<ConfigurationFileCommit>::failure(beforeCommit.error());
-    if (!sameVersion(expected, beforeCommit.value().version)) {
-        output.cancelWriting();
-        return conflict(std::move(beforeCommit).value());
-    }
-    if (!output.commit())
+#endif
+        QSaveFile output(destination);
+        output.setDirectWriteFallback(false);
+        if (!output.open(QIODevice::WriteOnly))
+            return Result<ConfigurationFileCommit>::failure(fileError(ErrorCode::ConfigIo, "loader.file.write", "cannot create configuration temporary file"));
+        std::size_t written = 0;
+        while (written < text.size()) {
+            const auto count = output.write(text.data() + written, static_cast<qint64>(text.size() - written));
+            if (count <= 0) {
+                output.cancelWriting();
+                return Result<ConfigurationFileCommit>::failure(fileError(ErrorCode::ConfigIo, "loader.file.write", "cannot write complete configuration"));
+            }
+            written += static_cast<std::size_t>(count);
+        }
+        auto beforeCommit = read(destination, limits);
+        if (!beforeCommit.hasValue()) return Result<ConfigurationFileCommit>::failure(beforeCommit.error());
+        if (!sameVersion(expected, beforeCommit.value().version)) {
+            output.cancelWriting();
+            return conflict(std::move(beforeCommit).value());
+        }
+        if (output.commit()) return Result<ConfigurationFileCommit>::success(std::move(saved));
+#ifdef Q_OS_WIN
+        if (output.error() == QFileDevice::RenameError && retry < retryDelayMs.size()) {
+            ++retry;
+            continue;
+        }
+#endif
         return Result<ConfigurationFileCommit>::failure(fileError(ErrorCode::ConfigIo, "loader.file.commit", "configuration temporary file commit failed"));
-    return Result<ConfigurationFileCommit>::success(std::move(saved));
+    }
 }
 } // namespace cordis::loader
