@@ -1,0 +1,16 @@
+include_guard(GLOBAL)
+
+# 生成端与宿主 parseManifest 的 V1 契约一致，标识符和版本都只允许 ASCII。
+function(cordis_validate_module_identity MODULE_ID PLUGIN_ID MODULE_VERSION)
+    foreach(field IN ITEMS MODULE_ID PLUGIN_ID)
+        set(value "${${field}}")
+        string(LENGTH "${value}" length)
+        if(length GREATER 128 OR NOT value MATCHES "^[A-Za-z][A-Za-z0-9_-]*([.][A-Za-z0-9_-]+)*$")
+            message(FATAL_ERROR "${field} must be an ASCII identifier of at most 128 characters, starting with a letter and containing no empty dot-separated segments")
+        endif()
+    endforeach()
+    string(LENGTH "${MODULE_VERSION}" length)
+    if(length GREATER 64 OR NOT MODULE_VERSION MATCHES "^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$")
+        message(FATAL_ERROR "MODULE_VERSION must contain three canonical decimal components and fit within 64 characters")
+    endif()
+endfunction()

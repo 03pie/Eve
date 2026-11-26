@@ -1,6 +1,6 @@
 # Cordis 仓库外插件 SDK
 
-当前交付面向 Windows x64、匹配 MSVC、动态 CRT 与 Qt 5.15.2 的共享 C++ 插件。SDK 版本为 0.1.5；此版本号不代表任意 C++ 二进制 ABI 稳定。SDK producer、插件和实际宿主必须使用兼容的同一组 Core/Qt/Ui 共享库，Qt loader 仍检查实际 Core 身份和 metadata。
+当前交付面向 Windows x64、匹配 MSVC、动态 CRT 与 Qt 5.15.2 的共享 C++ 插件。安装模板的 CMakeLists 指定生产该 SDK 的精确版本。插件和实际宿主使用兼容的同一组 Core/Qt/Ui 共享库，Qt 加载器检查实际 Core 身份和 metadata。
 
 第一方代码的公开许可证待确定。随源码使用的第三方依赖及其来源见[第三方声明](../THIRD_PARTY_NOTICES.md)。
 
@@ -19,7 +19,7 @@ cmake --install build/ela-msvc-release --prefix $sdkPrefix
 
 ## 外部消费
 
-复制 `share/Cordis/templates/qt-ui-plugin` 到仓库外目录，使用 `find_package(Cordis 0.1.5 EXACT CONFIG REQUIRED COMPONENTS QtUiPluginSdk)` 及 `cordis_add_qt_ui_plugin`。接口目标为 `Cordis::Core`、`Cordis::Qt`、`Cordis::Ui`、`Cordis::QtPluginSdk` 与 `Cordis::QtUiPluginSdk`；插件通常只链接最后一个目标。ModuleHost、Session、Replacement 及工作台内部头不是此安装组件，不应为方便调用把宿主实现静态链入插件。
+复制安装前缀中的 `share/Cordis/templates/qt-ui-plugin` 到仓库外目录。模板用 `find_package` 的 `EXACT` 模式加载生产者版本并调用 `cordis_add_qt_ui_plugin`。安装包导出 `Cordis::Core`、`Cordis::Qt`、`Cordis::Ui`、`Cordis::QtPluginSdk` 和 `Cordis::QtUiPluginSdk`，常规 UI 插件链接最后一个目标。安装树保留完整的 SDK 头目录以兼容已有消费者。可见的 Loader、ModuleHost 和 Replacement 宿主声明由宿主装配使用，插件的受支持链接接口以导出目标为准。
 
 构建模板后，在新工作区加载生成的 `module.json`。将 `$moduleManifest` 设置为生成文件的绝对路径，再从平台仓库运行。
 
@@ -38,7 +38,7 @@ cordis_add_qt_ui_plugin(my_plugin
     SOURCES implementation.cpp contract.hpp)
 ```
 
-`SOURCE` 内含 QObject factory、`Q_PLUGIN_METADATA` 及 `<source-stem>.moc`。metadata 文件名固定为 `cordis_plugin_metadata.json`；helper 用安装 SDK 版本而不是消费者项目版本填入工具链记录，使用原 manifest writer 在链接完成后生成 `module.json`。输出为本 target 独立的 `module/<target>` 目录，`qt-ui` loader 与 `resident` 策略固定。
+`SOURCE` 包含 QObject 工厂、`Q_PLUGIN_METADATA` 和 `<source-stem>.moc`。修改模板的 `PLUGIN_ID` 即可同步生成工厂使用的目标私有字符串宏 `CORDIS_QT_UI_PLUGIN_ID`、Qt metadata 与模块清单。两个 ID 都以 ASCII 字母开头，点分段至少一个字符，段内可使用 ASCII 字母、数字、下划线和连字符，最长 128 个字符。metadata 文件名为 `cordis_plugin_metadata.json`。助手用 SDK 版本填入工具链记录，链接完成后按实际 DLL 生成 `module.json`。输出位于本目标独立的 `module/<target>` 目录，加载器为 `qt-ui`，驻留策略为 `resident`。
 
 ## 契约与资源
 

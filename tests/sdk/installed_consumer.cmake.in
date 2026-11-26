@@ -5,7 +5,8 @@ set(scratch "${test_dir}/consumer-${suffix}")
 set(sdk "${scratch}/sdk")
 set(build "${scratch}/build")
 set(cordis_dir "${sdk}/@CMAKE_INSTALL_LIBDIR@/cmake/Cordis")
-set(template "${sdk}/@CMAKE_INSTALL_DATADIR@/Cordis/templates/qt-ui-plugin")
+set(share "${sdk}/@CMAKE_INSTALL_DATADIR@/Cordis")
+set(template "${share}/templates/qt-ui-plugin")
 foreach(directory IN ITEMS "@CMAKE_INSTALL_BINDIR@" "@CMAKE_INSTALL_LIBDIR@" "@CMAKE_INSTALL_INCLUDEDIR@" "@CMAKE_INSTALL_DATADIR@")
     cmake_path(APPEND sdk "${directory}" OUTPUT_VARIABLE destination)
     cmake_path(IS_PREFIX sdk "${destination}" NORMALIZE private_install)
@@ -24,13 +25,42 @@ if(NOT EXISTS "${cordis_dir}/CordisConfig.cmake" OR NOT EXISTS "${template}/CMak
     message(FATAL_ERROR "The staged SDK is missing its package config or Qt plugin template.")
 endif()
 
-execute_process(COMMAND "${CMAKE_COMMAND}" -S "${template}" -B "${build}" -G "${HOST_GENERATOR}"
+foreach(document IN ITEMS sdk-consumer.md docs/sdk-consumer.md THIRD_PARTY_NOTICES.md third_party/ela/UPSTREAM.md)
+    file(READ "${share}/${document}" content)
+    get_filename_component(parent "${share}/${document}" DIRECTORY)
+    while(content MATCHES "\\]\\(([^)\n]+)\\)")
+        set(link "${CMAKE_MATCH_0}")
+        set(destination "${CMAKE_MATCH_1}")
+        if(NOT destination MATCHES "^https?://" AND NOT EXISTS "${parent}/${destination}")
+            message(FATAL_ERROR "${document} has a missing installed link: ${destination}")
+        endif()
+        string(REPLACE "${link}" "" content "${content}")
+    endwhile()
+endforeach()
+
+# 只修改外部工程中的构建声明，检查边界长度和 CMake 布尔文字均能传到真实工厂。
+set(consumer "${scratch}/consumer")
+file(COPY "${template}/" DESTINATION "${consumer}")
+file(READ "${consumer}/CMakeLists.txt" project)
+string(REPEAT "x" 127 tail)
+set(module_id "A${tail}")
+string(REPLACE "MODULE_ID org.example.cordis.page" "MODULE_ID ${module_id}" project "${project}")
+string(REPLACE "PLUGIN_ID example.page" "PLUGIN_ID OFF" project "${project}")
+file(WRITE "${consumer}/CMakeLists.txt" "${project}")
+execute_process(COMMAND "${CMAKE_COMMAND}" -S "${consumer}" -B "${build}" -G "${HOST_GENERATOR}"
     "-DCMAKE_MAKE_PROGRAM=${HOST_MAKE_PROGRAM}" "-DCMAKE_CXX_COMPILER=${HOST_CXX_COMPILER}"
     "-DCMAKE_BUILD_TYPE=${HOST_CONFIG}" "-DQt5_DIR=${HOST_QT_DIR}" "-DCordis_DIR=${cordis_dir}"
     COMMAND_ERROR_IS_FATAL ANY)
 execute_process(COMMAND "${CMAKE_COMMAND}" --build "${build}" --config "${HOST_CONFIG}"
     COMMAND_ERROR_IS_FATAL ANY)
-execute_process(COMMAND "${TEST_EXE}" "${build}/module/external_page/module.json" "${scratch}/workspace"
+set(manifest "${build}/module/external_page/module.json")
+file(READ "${manifest}" json)
+string(JSON actual_module GET "${json}" moduleId)
+string(JSON actual_plugin GET "${json}" plugins 0)
+if(NOT actual_module STREQUAL module_id OR NOT actual_plugin STREQUAL "OFF")
+    message(FATAL_ERROR "Consumer-specified IDs did not reach the module manifest.")
+endif()
+execute_process(COMMAND "${TEST_EXE}" "${manifest}" "${scratch}/workspace"
     COMMAND_ERROR_IS_FATAL ANY)
 
 file(REAL_PATH "${scratch}" actual_scratch)

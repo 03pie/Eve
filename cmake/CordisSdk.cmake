@@ -42,6 +42,25 @@ write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/CordisConfigVersio
     VERSION "${PROJECT_VERSION}" COMPATIBILITY ExactVersion)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/CordisConfig.cmake" "${CMAKE_CURRENT_BINARY_DIR}/CordisConfigVersion.cmake"
     "${CMAKE_CURRENT_LIST_DIR}/CordisPlugin.cmake" "${CMAKE_CURRENT_LIST_DIR}/QtPluginContract.cmake"
+    "${CMAKE_CURRENT_LIST_DIR}/ModuleIdentity.cmake"
     "${CMAKE_CURRENT_LIST_DIR}/WriteModuleManifest.cmake" DESTINATION "${cordis_sdk_cmake_dir}")
-install(DIRECTORY "${PROJECT_SOURCE_DIR}/sdk/templates/qt-ui-plugin" DESTINATION "${CMAKE_INSTALL_DATADIR}/Cordis/templates")
-install(FILES "${PROJECT_SOURCE_DIR}/docs/sdk-consumer.md" DESTINATION "${CMAKE_INSTALL_DATADIR}/Cordis")
+set(cordis_sdk_share "${CMAKE_INSTALL_DATADIR}/Cordis")
+set(cordis_template "${PROJECT_SOURCE_DIR}/sdk/templates/qt-ui-plugin")
+configure_file("${cordis_template}/CMakeLists.txt.in" "sdk-template/CMakeLists.txt" @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/sdk-template/CMakeLists.txt" "${cordis_template}/plugin.cpp"
+    "${cordis_template}/README.md" DESTINATION "${cordis_sdk_share}/templates/qt-ui-plugin")
+
+# 延续原有指南入口，同时让指南与声明中的相对链接在安装前缀内可以离线阅读。
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/sdk-consumer.md" CONTENT
+    "# Cordis Qt 插件 SDK\n\n[外部插件开发指南](docs/sdk-consumer.md) · [第三方声明](THIRD_PARTY_NOTICES.md)\n")
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/sdk-consumer.md" "${PROJECT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
+    DESTINATION "${cordis_sdk_share}")
+install(FILES "${PROJECT_SOURCE_DIR}/docs/sdk-consumer.md" DESTINATION "${cordis_sdk_share}/docs")
+foreach(component IN ITEMS ela libyaml)
+    install(FILES "${PROJECT_SOURCE_DIR}/third_party/${component}/LICENSE" "${PROJECT_SOURCE_DIR}/third_party/${component}/UPSTREAM.md"
+        DESTINATION "${cordis_sdk_share}/third_party/${component}")
+endforeach()
+install(FILES "${PROJECT_SOURCE_DIR}/third_party/ela/RESOURCE-PROVENANCE.txt" "${PROJECT_SOURCE_DIR}/third_party/ela/UPSTREAM-RESOURCES.qrc.txt"
+    DESTINATION "${cordis_sdk_share}/third_party/ela")
+install(FILES "${PROJECT_SOURCE_DIR}/app/shell/resources/README.md" "${PROJECT_SOURCE_DIR}/app/shell/resources/provenance.json"
+    DESTINATION "${cordis_sdk_share}/app/shell/resources")

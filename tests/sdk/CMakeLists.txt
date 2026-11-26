@@ -2,6 +2,10 @@ add_executable(cordis_sdk_consumer_tests installed_consumer.cpp)
 target_link_libraries(cordis_sdk_consumer_tests PRIVATE cordis_external_workbench Qt5::Test)
 cordis_target_defaults(cordis_sdk_consumer_tests)
 
+add_test(NAME sdk.manifest_identity COMMAND "${CMAKE_COMMAND}"
+    "-DCORDIS_CMAKE_DIR=${PROJECT_SOURCE_DIR}/cmake" -P "${CMAKE_CURRENT_SOURCE_DIR}/manifest_identity.cmake")
+set_tests_properties(sdk.manifest_identity PROPERTIES LABELS sdk)
+
 add_test(NAME sdk.installed_qt_consumer COMMAND "${CMAKE_COMMAND}"
     "-DHOST_BUILD=${CMAKE_BINARY_DIR}"
     "-DHOST_GENERATOR=${CMAKE_GENERATOR}"

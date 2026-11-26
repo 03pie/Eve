@@ -1,4 +1,7 @@
-# Generate the digest only after linking the actual DLL, including Debug/ASan builds.
+cmake_minimum_required(VERSION 3.21)
+include("${CMAKE_CURRENT_LIST_DIR}/ModuleIdentity.cmake")
+
+# 链接完成后按实际 DLL 计算摘要，Debug 和 ASan 也沿用同一规则。
 foreach(required LIBRARY MODULE_ID PLUGIN_ID)
     if(NOT DEFINED ${required} OR "${${required}}" STREQUAL "")
         message(FATAL_ERROR "Missing ${required}")
@@ -13,10 +16,7 @@ endif()
 if(NOT DEFINED UNLOAD_POLICY)
     set(UNLOAD_POLICY "resident")
 endif()
-string(LENGTH "${MODULE_VERSION}" version_length)
-if(version_length GREATER 64 OR NOT MODULE_VERSION MATCHES "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")
-    message(FATAL_ERROR "MODULE_VERSION must contain three canonical decimal components")
-endif()
+cordis_validate_module_identity("${MODULE_ID}" "${PLUGIN_ID}" "${MODULE_VERSION}")
 if(NOT UNLOAD_POLICY STREQUAL "resident" AND NOT UNLOAD_POLICY STREQUAL "explicit")
     message(FATAL_ERROR "UNLOAD_POLICY must be resident or explicit")
 endif()
