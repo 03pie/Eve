@@ -1,10 +1,12 @@
 /** @file host_services.cpp
  * @brief 原生服务的真实 Core 注册、旧绑定租约、异步调用与逆序退出桥。
  */
+#include "../core/replacement_inspect_p.hpp"
 #include "../core/service_p.hpp"
 #include "host_resources_p.hpp"
 #include "host_services_p.hpp"
 #include "json_p.hpp"
+#include "replacement_commit_p.hpp"
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonValue>
@@ -12,6 +14,30 @@
 #include <set>
 
 namespace cordis::module::detail {
+Result<std::optional<ModuleInputSource>> nativeInputSource(const cordis::detail::ReplacementInputBinding& binding)
+{
+    using Output = Result<std::optional<ModuleInputSource>>;
+    if (binding.type != typeid(NativeServiceEndpoint))
+        return Output::success(std::nullopt);
+    const auto endpoint = std::static_pointer_cast<NativeServiceEndpoint>(binding.object);
+    const auto provider = endpoint->owner.lock();
+    if (!provider)
+        return Output::failure(hostError(ErrorCode::ConfigConflict, "native input owner expired"));
+    {
+        std::lock_guard<std::mutex> member(provider->mutex);
+        if (provider->managed || provider->instance != binding.provider || provider->uncertain || provider->closing ||
+            provider->state != NativeInstanceState::Started)
+            return Output::failure(hostError(ErrorCode::ConfigConflict, "native input is not actual active raw business"));
+    }
+    {
+        std::lock_guard<std::mutex> root(provider->root->mutex);
+        if (provider->root->closing || provider->root->closed || provider->root->faulted)
+            return Output::failure(hostError(ErrorCode::ConfigConflict, "native input module unavailable"));
+    }
+    return Output::success(ModuleInputSource{
+        provider->root->source.generation, provider->instance, provider->epoch, {}, binding.candidate, binding.recovery});
+}
+
 CordisStatus statusOf(const ErrorInfo& error)
 {
     switch (error.code) {

@@ -1,7 +1,6 @@
 /** @file sources.cpp
  * @brief 宿主合成并兑现纯工厂来源；实际代次权限仍由 Module 预约持有。
  */
-#include "../module/host_services_p.hpp"
 #include "operation_p.hpp"
 namespace cordis::detail {
 Result<void> ReplacementOperationControl::borrowInputs()
@@ -23,31 +22,11 @@ Result<void> ReplacementOperationControl::borrowInputs()
     if (!bindings.hasValue())
         return Result<void>::failure(bindings.error());
     for (const auto& binding : bindings.value()) {
-        if (binding.type != typeid(module::detail::NativeServiceEndpoint))
-            continue;
-        const auto endpoint = std::static_pointer_cast<module::detail::NativeServiceEndpoint>(binding.object);
-        const auto provider = endpoint->owner.lock();
-        if (!provider)
-            return Result<void>::failure(replacementError(ErrorCode::ConfigConflict, "native input owner expired"));
-        {
-            std::lock_guard<std::mutex> member(provider->mutex);
-            if (provider->managed || provider->instance != binding.provider || provider->uncertain ||
-                provider->closing || provider->state != module::NativeInstanceState::Started)
-                return Result<void>::failure(
-                    replacementError(ErrorCode::ConfigConflict, "native input is not actual active raw business"));
-        }
-        {
-            std::lock_guard<std::mutex> root(provider->root->mutex);
-            if (provider->root->closing || provider->root->closed || provider->root->faulted)
-                return Result<void>::failure(
-                    replacementError(ErrorCode::ConfigConflict, "native input module unavailable"));
-        }
-        sources.push_back({provider->root->source.generation,
-                           provider->instance,
-                           provider->epoch,
-                           {},
-                           binding.candidate,
-                           binding.recovery});
+        auto source = module::detail::nativeInputSource(binding);
+        if (!source.hasValue())
+            return Result<void>::failure(replacementError(source.error().code, source.error().message.c_str()));
+        if (source.value())
+            sources.push_back(*source.value());
     }
     return module::detail::ReplacementAccess::borrowInputs(work.reservation, *work.scope, sources);
 }

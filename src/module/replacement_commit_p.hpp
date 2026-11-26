@@ -7,6 +7,10 @@
 #include <cordis/task.hpp>
 #include <optional>
 
+namespace cordis::detail {
+struct ReplacementInputBinding;
+}
+
 namespace cordis::module::detail {
 struct PreparedModuleCommitControl;
 /** @brief 操作短期持有生产者；原预约只持弱槽，不在驻留代次累积订阅。 */
@@ -20,6 +24,8 @@ struct ModuleInputSource {
     std::optional<RuntimeId> runtime;
     bool candidate, recovery;
 };
+/** @brief ModuleHost 检查已封存的绑定。普通服务返回空，Native 端点必须仍属于活跃的原提供者。 */
+Result<std::optional<ModuleInputSource>> nativeInputSource(const cordis::detail::ReplacementInputBinding& binding);
 /** @brief owner 线程的同步准备窗口，持目录/代次/错误信号锁。
  * scope 必须由宿主事务持有到窗口结束；不得跨异步边界或在窗口内调用外部代码。
  * publish 后仍持锁，宿主可继续执行已准备的配置元数据无异常交换，再退出窗口。
