@@ -8,6 +8,9 @@
 #include <utility>
 
 namespace cordis::loader {
+/** @brief 首次创建工作区或追加首个实例时采用的空配置文档。 */
+inline constexpr char emptyWorkspaceYaml[] = "formatVersion: 1\nplugins: []\n";
+
 class ConfigurationDefinitions;
 namespace detail {
 struct DefinitionIdentity;

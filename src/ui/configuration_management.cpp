@@ -16,7 +16,7 @@ class ConfigurationManagement final : public IConfigurationManagement, public de
 public:
     Result<void> validatePayload(const std::string& text) const override
     {
-        static const auto empty = loader::parseConfiguration("formatVersion: 1\nplugins: []\n");
+        static const auto empty = loader::parseConfiguration(loader::emptyWorkspaceYaml);
         if (!empty.hasValue())
             return Result<void>::failure(empty.error());
         const auto parsed = loader::addConfigurationEntry(empty.value(), "draft", "plugin", text);
@@ -192,7 +192,7 @@ private:
             return convert(session->addInstance(id, plugin, json, expected));
         auto source = snapshot.value().coordinator.desired
                           ? Result<loader::ParsedConfiguration>::success(snapshot.value().coordinator.desired->source())
-                          : loader::parseConfiguration("formatVersion: 1\nplugins: []\n");
+                          : loader::parseConfiguration(loader::emptyWorkspaceYaml);
         if (!source.hasValue())
             return fail(source.error());
         auto parsed = loader::setEntryConfiguration(source.value(), path, json);

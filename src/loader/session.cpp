@@ -536,7 +536,7 @@ Result<AcceptedTarget> ConfigurationSession::addInstance(const std::string& id, 
     if (!module.hasValue())
         return Result<AcceptedTarget>::failure(module.error());
     auto source = current.desired ? Result<ParsedConfiguration>::success(current.desired->source())
-                                  : parseConfiguration("formatVersion: 1\nplugins: []\n", state->limits);
+                                  : parseConfiguration(emptyWorkspaceYaml, state->limits);
     if (!source.hasValue())
         return Result<AcceptedTarget>::failure(source.error());
     auto parsed = addConfigurationEntry(source.value(), id, plugin, configuration, state->limits, module.value());

@@ -1,3 +1,6 @@
+/** @file main.cpp
+ * @brief 选择桌面工作区，驱动宿主启动、关闭和 Qt 事件循环。
+ */
 #include "workbench.hpp"
 #include <QApplication>
 #include <QCommandLineParser>
@@ -11,6 +14,7 @@
 using namespace cordis;
 
 namespace {
+/** @brief 将平台错误码和可用的操作标识附到对应日志事件。 */
 void recordFailure(const ui::ElaShell& shell, const ErrorInfo& error, const char* summary, const char* code)
 {
     ui::OutputDiagnostic diagnostic{{}, code};
@@ -21,6 +25,7 @@ void recordFailure(const ui::ElaShell& shell, const ErrorInfo& error, const char
 }
 }
 
+/** @brief 按命令行和随附清单选择模块，若关闭时保存失败则维持事件循环以便重试。 */
 int main(int argc, char** argv)
 {
     QApplication application(argc, argv);

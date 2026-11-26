@@ -1,3 +1,6 @@
+/** @file installed_consumer.cpp
+ * @brief 使用真实宿主启动外部 SDK 模块，检查工作区配置经保存和重开后的内容。
+ */
 #include "workbench.hpp"
 #include <QApplication>
 #include <QElapsedTimer>
@@ -8,6 +11,10 @@
 #include <iostream>
 
 namespace {
+// 使用旧工作区的绝对目录及插件自有的嵌套字段，数字超过双精度浮点数的精确整数范围。
+constexpr char savedConfig[] = R"({"custom":{"nested":[true,{"sequence":9007199254740993}]},"dataRoot":"C:/legacy/library"})";
+
+/** @brief 泵送应用线程的事件，直到条件满足或测试超时。 */
 template<class Predicate>
 void until(Predicate ready, const char* failure)
 {
@@ -20,6 +27,7 @@ void until(Predicate ready, const char* failure)
     }
 }
 
+/** @brief 等待异步结果并在失败时保留真实的宿主诊断。 */
 template<class T>
 auto await(const cordis::Task<T>& task)
 {
@@ -30,6 +38,7 @@ auto await(const cordis::Task<T>& task)
     return result;
 }
 
+/** @brief 等待宿主释放资源后关闭调度器，检查线程队列和会话均已清空。 */
 void close(cordis::workbench::Workbench& host)
 {
     await(host.close());
@@ -39,7 +48,31 @@ void close(cordis::workbench::Workbench& host)
         throw std::runtime_error("The workbench retained live resources after closing.");
 }
 
-void verifyInstalledConsumer(const QString& manifest, const QString& workspace)
+/** @brief 应用插件自有配置，并显式保存接受的修订以供下个进程读取。 */
+void savePluginConfiguration(cordis::workbench::Workbench& host, const cordis::loader::ParsedConfiguration& source)
+{
+    using namespace cordis::loader;
+    const auto preview = [&](const char* config) {
+        const auto changed = setEntryConfiguration(source, "main", config).value();
+        return host.session->preview(changed.normalizedYaml());
+    };
+    const auto invalid = preview("[]");
+    if (invalid.hasValue() || invalid.error().phase != "loader.schema")
+        throw std::runtime_error("The workbench must require an object for external module configuration.");
+    if (!preview(R"({"dataRoot":{"relative":["content"]}})").hasValue())
+        throw std::runtime_error("The workbench imposed a schema on plugin-owned fields.");
+    const auto draft = preview(savedConfig).value();
+    const auto accepted = host.session->apply(draft).value();
+    const auto result = await(accepted.settled);
+    if (result->value().outcome != PlanOutcome::Applied || !result->value().errors.empty())
+        throw std::runtime_error("The workbench could not apply the plugin configuration.");
+    const auto saved = await(host.session->save(accepted.revision).value());
+    if (saved->value().outcome != SaveOutcome::Written)
+        throw std::runtime_error("The workbench did not write the plugin configuration.");
+}
+
+/** @brief 新建时检查空配置，冷启动时核对从磁盘恢复的历史字段和数值原文。 */
+void verifyInstalledConsumer(const QString& manifest, const QString& workspace, bool reopen)
 {
     cordis::workbench::Workbench host;
     try {
@@ -54,6 +87,12 @@ void verifyInstalledConsumer(const QString& manifest, const QString& workspace)
                 return page.id == "external-page" && page.widgetAlive && page.navigationPresent;
             });
         }, "The installed SDK template did not contribute its page.");
+        const auto session = host.session->snapshot().value();
+        const auto& source = session.coordinator.desired->source();
+        if (source.structure().entries().at("main").config != (reopen ? savedConfig : "{}"))
+            throw std::runtime_error("Unexpected configuration of the active external module.");
+        if (!reopen)
+            savePluginConfiguration(host, source);
     } catch (...) {
         try {
             close(host);
@@ -66,18 +105,20 @@ void verifyInstalledConsumer(const QString& manifest, const QString& workspace)
 }
 } // namespace
 
+/** @brief 每次启动单独加载驻留模块，可在同一工作区验证首次创建或冷启动。 */
 int main(int argc, char** argv)
 {
     QApplication application(argc, argv);
     const auto args = application.arguments();
-    if (args.size() != 3) {
-        std::cerr << "Usage: cordis_sdk_consumer_tests module.json workspace\n";
+    if (args.size() < 3 || args.size() > 4 ||
+        (args.size() == 4 && args[3] != "create" && args[3] != "reopen")) {
+        std::cerr << "Usage: cordis_sdk_consumer_tests module.json workspace [create|reopen]\n";
         return 1;
     }
     QStandardPaths::setTestModeEnabled(true);
     application.setApplicationName("CordisSdkConsumer-" + QFileInfo(QFileInfo(args[2]).absolutePath()).fileName());
     try {
-        verifyInstalledConsumer(args[1], args[2]);
+        verifyInstalledConsumer(args[1], args[2], args.value(3) == "reopen");
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

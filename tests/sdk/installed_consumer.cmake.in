@@ -60,8 +60,10 @@ string(JSON actual_plugin GET "${json}" plugins 0)
 if(NOT actual_module STREQUAL module_id OR NOT actual_plugin STREQUAL "OFF")
     message(FATAL_ERROR "Consumer-specified IDs did not reach the module manifest.")
 endif()
-execute_process(COMMAND "${TEST_EXE}" "${manifest}" "${scratch}/workspace"
-    COMMAND_ERROR_IS_FATAL ANY)
+foreach(mode IN ITEMS create reopen)
+    execute_process(COMMAND "${TEST_EXE}" "${manifest}" "${scratch}/workspace" "${mode}"
+        COMMAND_ERROR_IS_FATAL ANY)
+endforeach()
 
 file(REAL_PATH "${scratch}" actual_scratch)
 if(NOT actual_scratch STREQUAL scratch)

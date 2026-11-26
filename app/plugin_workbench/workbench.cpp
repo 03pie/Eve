@@ -1,50 +1,55 @@
+/** @file workbench.cpp
+ * @brief 装配工作区的模块、配置会话与 UI 服务，协调保存和关闭。
+ */
 #include "workbench.hpp"
-#include <QStandardPaths>
 #include <QDir>
 #include <QFileInfo>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
+#include <QStandardPaths>
 #include <QWidget>
+#include <algorithm>
 #include <cordis/loader/qt_store.hpp>
+#include <cordis/loader/yaml.hpp>
 #include <cordis/module/qt_manifest.hpp>
 #include <cordis/module/qt_module.hpp>
-#include <algorithm>
 
 namespace cordis::workbench {
 namespace {
+constexpr char pagesService[] = "ui.pages";
+constexpr char commandsService[] = "ui.commands";
+constexpr char outputService[] = "ui.output";
+constexpr char schedulerService[] = "qt.scheduler";
+
+/** @brief 装配失败时将诊断交给应用入口，成功时取走已创建的宿主值。 */
 template<class T> T checked(Result<T> result)
 {
     if (!result.hasValue())
         throw std::runtime_error(result.error().message);
     return std::move(result).value();
 }
+/** @brief 将无返回值的装配失败交给应用入口。 */
 void checked(Result<void> result)
 {
     if (!result.hasValue())
         throw std::runtime_error(result.error().message);
 }
 
-std::string initialConfiguration(const std::string& plugin, const QString& workspace)
+/** @brief 首次选择外部模块时创建主实例，插件自行解释配置对象中的字段。 */
+std::string initialConfiguration(const std::string& plugin)
 {
-    const QJsonObject config{{"dataRoot", QDir(workspace).absoluteFilePath("library")}};
-    const QJsonObject instance{{"id", "main"}, {"plugin", QString::fromStdString(plugin)},
-                               {"module", "extension"}, {"config", config}};
-    const QJsonObject modules{{"extension", QJsonObject{{"manifest", "module.json"}}}};
-    const QJsonObject document{{"formatVersion", 1}, {"modules", modules}, {"plugins", QJsonArray{instance}}};
-    return QJsonDocument(document).toJson(QJsonDocument::Compact).toStdString();
+    const auto empty = checked(loader::parseConfiguration(loader::emptyWorkspaceYaml));
+    const auto initial = checked(loader::addConfigurationEntry(
+        empty, "main", plugin, "{}", {}, {"extension", "module.json"}));
+    return initial.normalizedYaml();
 }
+/** @brief Loader 已将值编码为规范 JSON，此处只检查顶层类型，保留插件字段和数字原文。 */
 Result<void> validateConfiguration(const std::string& text)
 {
-    const auto value = QJsonDocument::fromJson(QByteArray::fromStdString(text));
-    if (!value.isObject())
+    if (text.empty() || text.front() != '{')
         return Result<void>::failure(makeError(ErrorCode::ConfigInvalid, "External UI plugin config must be an object."));
-    const auto root = value.object().value("dataRoot");
-    if (!root.isUndefined() && (!root.isString() || !QDir::isAbsolutePath(root.toString())))
-        return Result<void>::failure(makeError(ErrorCode::ConfigInvalid, "Plugin dataRoot must be an absolute directory."));
     return Result<void>::success();
 }
 
+/** @brief 按预检阶段选择面向用户的诊断，便于从启动日志定位失败原因。 */
 const char* preflightDiagnostic(const ErrorInfo& error)
 {
     if (error.phase == "workbench.module.required")
@@ -58,11 +63,13 @@ const char* preflightDiagnostic(const ErrorInfo& error)
     return "QT_MODULE_PREFLIGHT_FAILED: 模块产物或元数据未通过预检。";
 }
 
+/** @brief 预检后交给宿主的实际模块目录和清单声明的唯一插件标识。 */
 struct ModuleInput {
     std::string root;
     std::string plugin;
 };
 
+/** @brief 在创建运行代之前核对清单类型、驻留策略和插件数目。 */
 ModuleInput inspectConfiguredModule(const QString& path)
 {
     const QFileInfo source(path);
@@ -79,15 +86,16 @@ ModuleInput inspectConfiguredModule(const QString& path)
     return {std::move(root), manifest.plugins.front()};
 }
 
+/** @brief 将同一加载代登记到内核和输出来源目录，配置依赖与 Runtime 共用服务名。 */
 loader::ConfiguredPlugin configureModule(const ModuleInput& input, Kernel& kernel, const ui::ElaShell& shell,
                                          const std::shared_ptr<qt::QtScheduler>& scheduler)
 {
     const auto generation = checked(module::loadQtModule(input.root, "module.json")).generation;
     auto runtime = checked(module::qtRuntime(generation, {input.plugin,
-        {ServiceRequirement::of<ui::UiPagesService>({"ui.pages"}),
-         ServiceRequirement::of<ui::CommandService>({"ui.commands"}),
-         ServiceRequirement::of<ui::OutputService>({"ui.output"}),
-         ServiceRequirement::of<std::shared_ptr<qt::QtScheduler>>({"qt.scheduler"})}, {}}, scheduler));
+        {ServiceRequirement::of<ui::UiPagesService>({pagesService}),
+         ServiceRequirement::of<ui::CommandService>({commandsService}),
+         ServiceRequirement::of<ui::OutputService>({outputService}),
+         ServiceRequirement::of<std::shared_ptr<qt::QtScheduler>>({schedulerService})}, {}}, scheduler));
     const auto registered = checked(kernel.registerRuntime(input.plugin, runtime));
     const module::ModuleManager modules;
     const auto origin = checked(modules.runtimeOrigin(registered.id()));
@@ -98,7 +106,7 @@ loader::ConfiguredPlugin configureModule(const ModuleInput& input, Kernel& kerne
         throw std::logic_error("Qt runtime could not be matched to its loaded generation.");
     checked(shell.registerQtOutputRuntime(registered.id(), generation, origin->moduleId,
                                           loaded->manifest.moduleVersion, origin->pluginId));
-    return {{input.plugin, {{"ui.pages"}, {"ui.commands"}, {"ui.output"}, {"qt.scheduler"}},
+    return {{input.plugin, {{pagesService}, {commandsService}, {outputService}, {schedulerService}},
              validateConfiguration, {"extension", "module.json"}},
             std::move(runtime), {}, {}};
 }
@@ -131,9 +139,9 @@ void Workbench::open(const std::optional<QString>& manifestPath, const QString& 
     if (disk.version.exists)
         initial_ = disk.text;
     else if (selected)
-        initial_ = initialConfiguration(selected->plugin, directory.absolutePath());
+        initial_ = initialConfiguration(selected->plugin);
     else
-        initial_ = "formatVersion: 1\nplugins: []\n";
+        initial_ = emptyWorkspaceYaml;
 
     const auto target = checked(parseConfiguration(initial_));
     if (!selected && (!target.structure().modules().empty() || !target.structure().entries().empty())) {
@@ -190,11 +198,11 @@ void Workbench::publishUi()
         providers_.push_back(checked(kernel->services().stage({name}, service)));
         checked(providers_.back().publish());
     };
-    publish("ui.pages", shell.pages());
-    publish("ui.commands", shell.commands());
-    publish("ui.output", shell.output());
+    publish(pagesService, shell.pages());
+    publish(commandsService, shell.commands());
+    publish(outputService, shell.output());
     publish("ui.notifications", shell.notifications());
-    publish("qt.scheduler", std::make_shared<std::shared_ptr<qt::QtScheduler>>(scheduler));
+    publish(schedulerService, std::make_shared<std::shared_ptr<qt::QtScheduler>>(scheduler));
     published_ = true;
 }
 
