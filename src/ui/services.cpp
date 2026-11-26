@@ -3,6 +3,7 @@
  */
 #include "notifications_p.hpp"
 #include "services_p.hpp"
+#include "panel_p.hpp"
 #include <QAction>
 #include <QLabel>
 #include <QLineEdit>
@@ -299,6 +300,9 @@ void ServicesControl::activate(const QModelIndex& index)
         }
         const auto title = action->text();
         const auto execution = ++commandSequence;
+        dismissCommandPanel(commands);
+        if (!open || !action)
+            return;
         action->trigger();
         if (!open) return;
         if (logs) (void)appendOutput(logs, {}, "platform", (QString::fromUtf8("已调用平台命令：") + title).toStdString());
@@ -314,6 +318,9 @@ void ServicesControl::activate(const QModelIndex& index)
     const auto identity = record->owner;
     const auto title = record->spec.title;
     const auto execution = ++commandSequence;
+    dismissCommandPanel(commands);
+    if (!open)
+        return;
     commandStatus(QString::fromUtf8("运行中：") + QString::fromStdString(title));
     if (logs) (void)appendOutput(logs, identity, "命令", "开始执行：" + title);
     std::weak_ptr<ServicesControl> weak = shared_from_this();
@@ -367,6 +374,23 @@ std::shared_ptr<ServicesControl> createUiServices(std::shared_ptr<qt::QtSchedule
         if (auto owner = weak.lock()) owner->activate(index);
     });
     return state;
+}
+void configureNotificationCenter(const std::shared_ptr<ServicesControl>& state, QWidget* window,
+                                 std::function<QString(InstanceId)> sourceName)
+{
+    installNotificationCenter(state->notifications, window, std::move(sourceName));
+}
+Result<void> showNotificationCenter(const std::shared_ptr<ServicesControl>& state, QWidget* origin)
+{
+    return toggleNotificationCenter(state->notifications, origin);
+}
+void setNotificationArchive(const std::shared_ptr<ServicesControl>& state, std::shared_ptr<RuntimeLogArchive> archive)
+{
+    watchNotificationArchive(state->notifications, std::move(archive));
+}
+void setNotificationMuted(const std::shared_ptr<ServicesControl>& state, bool muted)
+{
+    muteNotifications(state->notifications, muted);
 }
 void configureCommandPanel(const std::shared_ptr<ServicesControl>& state, QWidget* page,
     const std::vector<QAction*>& actions, std::shared_ptr<OutputControl> output, WindowAccess access)

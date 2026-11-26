@@ -1,4 +1,5 @@
 #include "workbench.hpp"
+#include <QStandardPaths>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -43,16 +44,20 @@ Result<void> validateConfiguration(const std::string& text)
         return Result<void>::failure(makeError(ErrorCode::ConfigInvalid, "Plugin dataRoot must be an absolute directory."));
     return Result<void>::success();
 }
+
 } // namespace
 
 Workbench::Workbench()
-    : scheduler(std::make_shared<qt::QtScheduler>()), kernel(std::make_shared<Kernel>(scheduler)), shell(scheduler)
+    : scheduler(std::make_shared<qt::QtScheduler>()), kernel(std::make_shared<Kernel>(scheduler)),
+      shell(scheduler, QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
+                           .filePath("preferences/workbench.json").toUtf8().toStdString())
 {
 }
 
 void Workbench::open(const QString& manifestPath, const QString& workspaceDir)
 {
     using namespace loader;
+    checked(shell.startOutputArchive(workspaceDir.toStdString(), CORDIS_PRODUCT_VERSION));
     const QFileInfo source(manifestPath);
     if (source.fileName() != "module.json" || session)
         throw std::runtime_error("Select a module.json manifest for a new workbench.");
@@ -88,7 +93,16 @@ void Workbench::open(const QString& manifestPath, const QString& workspaceDir)
     checked(shell.management()->attach(kernel));
     auto configuration = checked(kernel->registerPlugin("host.configuration", [this](Context ctx) {
         auto page = shell.pages()->add(ctx, {"configuration", "工作区配置", "host.configuration",
-            [this] { return ui::createConfigurationPage(session, initial_); }, ui::PagePresentation::Dialog});
+            [this] {
+                auto widget = ui::createConfigurationPage(session, initial_);
+                ui::bindConfigurationFeedback(widget.get(),
+                    [this](std::string message, ui::OutputLevel level) {
+                        auto result = shell.writeOutput(std::move(message), level);
+                        return result.hasValue() ? result.value() : std::uint64_t{};
+                    },
+                    [this](std::uint64_t event, QWidget* origin) { (void)shell.showOutputEvent(event, origin); });
+                return widget;
+            }, ui::PagePresentation::Dialog});
         if (!page.hasValue())
             return failedTask(page.error());
         configPage_.emplace(std::move(page).value());
@@ -114,6 +128,7 @@ void Workbench::publishUi()
     publish("ui.pages", shell.pages());
     publish("ui.commands", shell.commands());
     publish("ui.output", shell.output());
+    publish("ui.notifications", shell.notifications());
     publish("qt.scheduler", std::make_shared<std::shared_ptr<qt::QtScheduler>>(scheduler));
     published_ = true;
 }

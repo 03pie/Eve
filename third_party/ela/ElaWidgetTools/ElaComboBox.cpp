@@ -47,7 +47,7 @@ ElaComboBox::ElaComboBox(QWidget* parent)
         QLayout* layout = container->layout();
         while (layout->count())
         {
-            layout->takeAt(0);
+            delete layout->takeAt(0);
         }
         layout->addWidget(view());
         layout->setContentsMargins(6, 0, 6, 6);
@@ -64,7 +64,9 @@ ElaComboBox::ElaComboBox(QWidget* parent)
 ElaComboBox::~ElaComboBox()
 {
     Q_D(ElaComboBox);
-    delete d->_comboBoxStyle;
+    // The popup, its list and an optional editor all borrow this style during destruction.
+    // Adopt it last, after those children exist, so Qt releases every borrower before the style.
+    d->_comboBoxStyle->setParent(this);
 }
 
 void ElaComboBox::setEditable(bool editable)

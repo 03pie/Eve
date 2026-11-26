@@ -56,13 +56,13 @@ void abortFailure()
     CHECK(wait(instance.ready(), scene.scheduler)->hasValue());
     CHECK(take(scene.kernel->services().snapshot()).empty());
     values(scene, "abort-failure", 0);
-    CHECK(label->text() == before && scene.find<QComboBox>("CordisOutputTarget")->count() == 1);
+    CHECK(label->text() == before && scene.find<QComboBox>("CordisOutputTarget")->count() == 2);
     take(group.abort());
     CHECK(take(group.snapshot()).state == PublicationState::Aborted);
     const auto stopped = wait(instance.stop(), scene.scheduler);
     CHECK(stopped->hasValue() && !stopped->value().quiescent && !stopped->value().errors.empty());
     values(scene, "abort-failure", 0);
-    CHECK(label->text() == before && scene.find<QComboBox>("CordisOutputTarget")->count() == 1);
+    CHECK(label->text() == before && scene.find<QComboBox>("CordisOutputTarget")->count() == 2);
     CHECK(take(scene.kernel->services().snapshot()).empty());
     const auto closed = wait(scene.kernel->close(), scene.scheduler);
     CHECK(closed->hasValue() && !closed->value().quiescent);

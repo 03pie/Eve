@@ -5,6 +5,7 @@
 #include <ElaTheme.h>
 #include <QAbstractItemModel>
 #include <QApplication>
+#include <QComboBox>
 #include <QEventLoop>
 #include <QFile>
 #include <QFontDatabase>
@@ -14,6 +15,7 @@
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
+#include <QSplitter>
 #include <QTableView>
 #include <QTemporaryDir>
 #include <QTest>
@@ -120,7 +122,7 @@ struct Scene {
             io = std::make_shared<QtConfigurationIo>(scheduler, path());
             auto initialDisk = io->read();
             wait(initialDisk);
-            watcher = std::make_shared<QtConfigurationWatcher>(scheduler, io, initialDisk.tryResult()->value(), 0);
+            watcher = std::make_shared<QtConfigurationWatcher>(scheduler, io, initialDisk.tryResult()->value());
             writer = io;
         }
         session = std::make_shared<ConfigurationSession>(
@@ -199,9 +201,18 @@ void workflow()
     scene.close();
 }
 /** @brief 外部原文保留供审阅，只有显式采用基线并保存才覆盖。 */
-void conflict()
+void conflict(bool speechReview = false)
 {
     Scene scene;
+    std::vector<std::pair<std::string, OutputLevel>> records;
+    std::uint64_t selected = 0;
+    bindConfigurationFeedback(
+        scene.page,
+        [&](std::string text, OutputLevel level) {
+            records.emplace_back(std::move(text), level);
+            return records.size();
+        },
+        [&](std::uint64_t seq, QWidget*) { selected = seq; });
     scene.apply();
     QFile file(scene.path());
     CHECK(file.open(QIODevice::WriteOnly));
@@ -212,6 +223,24 @@ void conflict()
     CHECK(scene.session->snapshot().value().store.dirty);
     until([&] { return scene.child<QPushButton>("CordisConfigRebase")->isEnabled(); });
     CHECK(scene.child<QPlainTextEdit>("CordisConfigDetails")->toPlainText().contains("external: true"));
+    until([&] { return !records.empty() && records.back().second == OutputLevel::Error; });
+    if (speechReview) {
+        CHECK(QApplication::platformName() == "windows");
+        scene.page->raise();
+        scene.page->activateWindow();
+        CHECK(QTest::qWaitForWindowActive(scene.page));
+        const auto details = scene.child<QPlainTextEdit>("CordisConfigDetails");
+        details->setFocus();
+        details->selectAll();
+        QTest::qWait(1500);
+        scene.child<QPushButton>("CordisConfigOpenLog")->setFocus();
+        QTest::qWait(1500);
+        scene.child<QPushButton>("CordisConfigRebase")->setFocus();
+        QTest::qWait(1800);
+    }
+    scene.child<QPushButton>("CordisConfigOpenLog")->click();
+    CHECK(selected == records.size() && records.back().first.find("external: true") == std::string::npos);
+    CHECK(scene.page->grab().save(QCoreApplication::applicationDirPath() + "/ui-special-configuration-conflict.png"));
     scene.child<QPushButton>("CordisConfigRebase")->click();
     CHECK(!scene.session->snapshot().value().store.external && scene.activations == 2);
     until([&] { return scene.child<QPushButton>("CordisConfigSave")->isEnabled(); });
@@ -221,6 +250,7 @@ void conflict()
     CHECK(file.readAll().toStdString() ==
           scene.session->snapshot().value().coordinator.desired->source().normalizedYaml());
     file.close();
+    until([&] { return records.back().first.find("配置已保存") != std::string::npos; });
     scene.close();
 }
 /** @brief 编辑失效候选，外部目标变化使旧候选 CAS 失效，刷新不覆盖编辑内容。 */
@@ -286,6 +316,9 @@ void layout()
             CHECK(editor->height() >= 100 && details->height() >= 80 && editor->width() >= 150);
             const auto pixels = scene.page->grab().toImage();
             const auto ratio = scene.page->devicePixelRatioF();
+            const auto divider = scene.child<QSplitter>("CordisConfigSplitter")->handle(1);
+            const auto dividerColor = pixels.pixelColor(divider->mapTo(scene.page, divider->rect().center()) * ratio);
+            CHECK(theme == ElaThemeType::Dark ? dividerColor.lightness() < 120 : dividerColor.lightness() > 160);
             for (auto view : {editor, details}) {
                 const auto point = view->viewport()->mapTo(scene.page, QPoint(20, view->viewport()->height() - 20));
                 const auto background = pixels.pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio));
@@ -299,6 +332,32 @@ void layout()
         const auto suffix = theme == ElaThemeType::Light ? "light" : "dark";
         CHECK(scene.page->grab().save(QCoreApplication::applicationDirPath() + "/configuration-panel-" + suffix +
                                       ".png"));
+        const auto text = scene.child<QPlainTextEdit>("CordisConfigEditor")->toPlainText();
+        for (int width : {759, 760, 1079, 1080}) {
+            scene.page->resize(width, 720);
+            QCoreApplication::processEvents();
+            auto region = scene.child<QComboBox>("CordisConfigRegion");
+            CHECK(region->isVisible() == (scene.page->width() < 760));
+            if (region->isVisible()) {
+                for (int section : {1, 2, 0}) {
+                    region->setCurrentIndex(section);
+                    QCoreApplication::processEvents();
+                    CHECK(scene.child<QPlainTextEdit>("CordisConfigEditor")->isVisible() == (section == 0));
+                    CHECK(scene.child<QTableView>("CordisConfigEntries")->isVisible() == (section == 1));
+                    QWidget* shown =
+                        section == 2   ? static_cast<QWidget*>(scene.child<QPlainTextEdit>("CordisConfigDetails"))
+                        : section == 1 ? static_cast<QWidget*>(scene.child<QTableView>("CordisConfigEntries"))
+                                       : scene.child<QPlainTextEdit>("CordisConfigEditor");
+                    CHECK(shown->width() >= 180 && shown->height() >= 90);
+                    const auto center = shown->rect().center();
+                    CHECK(shown->visibleRegion().contains(center));
+                    CHECK(scene.page->rect().contains(shown->mapTo(scene.page, center)));
+                }
+                CHECK(scene.page->grab().save(QCoreApplication::applicationDirPath() +
+                                              "/ui-special-configuration-narrow-" + suffix + ".png"));
+            }
+            CHECK(scene.child<QPlainTextEdit>("CordisConfigEditor")->toPlainText() == text);
+        }
     }
     scene.close();
 }
@@ -350,13 +409,21 @@ void diskChanges()
     CHECK(editor->toPlainText() == "external invalid yaml");
     CHECK(scene.session->snapshot().value().coordinator.desiredRevision == 1 &&
           !scene.child<QPushButton>("CordisConfigApply")->isEnabled());
-    scene.child<QPushButton>("CordisConfigSave")->click();
-    until([&] { return scene.session->snapshot().value().store.external != nullptr; });
+    auto save = scene.child<QPushButton>("CordisConfigSave");
+    auto rebase = scene.child<QPushButton>("CordisConfigRebase");
+    save->click();
+    until([&] { return rebase->isEnabled() && save->isEnabled(); });
+    CHECK(scene.session->snapshot().value().store.external);
     CHECK(scene.session->snapshot().value().store.external->text == "external invalid yaml");
-    scene.session->rebaseExternal(1).value();
-    auto saved = scene.session->save(1).value();
-    wait(saved);
-    CHECK(!scene.session->snapshot().value().store.dirty && editor->toPlainText() == "external invalid yaml");
+    rebase->click();
+    CHECK(!scene.session->snapshot().value().store.external && scene.session->snapshot().value().store.dirty);
+    save->click();
+    until([&] { return save->isEnabled(); });
+    const auto store = scene.session->snapshot().value().store;
+    if (store.lastError)
+        throw std::runtime_error(store.lastError->phase + ": " + store.lastError->message);
+    CHECK(!store.dirty && store.persistedRevision == 1);
+    CHECK(editor->toPlainText() == "external invalid yaml");
     CHECK(scene.page->grab().save(QCoreApplication::applicationDirPath() + "/configuration-disk-change.png"));
     scene.close();
 }
@@ -459,6 +526,8 @@ int main(int argc, char** argv)
             workflow();
         else if (name == "conflict")
             conflict();
+        else if (name == "conflict_speech")
+            conflict(true);
         else if (name == "stale")
             stale();
         else if (name == "reentry")

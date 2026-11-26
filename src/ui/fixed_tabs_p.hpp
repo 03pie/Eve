@@ -7,6 +7,7 @@
 #include <QTabBar>
 #include <QMouseEvent>
 #include <QPalette>
+#include "theme_palette_p.hpp"
 namespace cordis::ui::detail {
 /** @brief 固定诊断标签归宿主窗口所有，禁止 Ela 默认的拖出独立窗口行为。 */
 class FixedDiagnosticsTabs final : public ElaTabWidget {
@@ -31,11 +32,7 @@ private:
     /** @brief Qt 标签容器的调色板同步 Ela 主题，避免透明编辑器叠在原生白底上。 */
     void applyTheme(ElaThemeType::ThemeMode mode)
     {
-        auto colors = palette();
-        colors.setColor(QPalette::Window, eTheme->getThemeColor(mode, ElaThemeType::WindowBase));
-        colors.setColor(QPalette::Base, eTheme->getThemeColor(mode, ElaThemeType::WindowBase));
-        colors.setColor(QPalette::Text, eTheme->getThemeColor(mode, ElaThemeType::BasicText));
-        setPalette(colors);
+        setPalette(workbenchPalette(palette(), mode));
         tabBar()->setStyleSheet(QStringLiteral(
             "QTabBar::tab{background:%1;color:%2;border:0;border-bottom:2px solid transparent;"
             "height:24px;padding:4px 10px;}QTabBar::tab:selected{background:transparent;border-bottom:2px solid %3;}")

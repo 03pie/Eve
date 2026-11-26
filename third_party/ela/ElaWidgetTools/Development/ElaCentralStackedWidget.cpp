@@ -8,7 +8,6 @@
 #include <QPainterPath>
 #include <QPointer>
 #include <QPropertyAnimation>
-#include <QTimer>
 #include <cmath>
 #include <cstdint>
 namespace {
@@ -172,41 +171,37 @@ void ElaCentralStackedWidget::doWindowStackSwitch(ElaWindowType::StackSwitchMode
     }
     case ElaWindowType::Popup:
     {
-        QTimer::singleShot(180, this, [=]() {
+        const QPointer<QWidget> targetWidget(stableTarget);
+        _containerStackedWidget->setCurrentWidget(stableTarget);
+        if (!valid())
+            return;
+        _getTargetStackPix();
+        if (!valid())
+            return;
+        targetWidget->setVisible(false);
+        if (!valid())
+            return;
+        QPropertyAnimation* popupAnimation = new QPropertyAnimation(this, "pPopupAnimationYOffset", this);
+        connect(popupAnimation, &QPropertyAnimation::valueChanged, this, [=]() {
             if (!valid())
                 return;
-            const QPointer<QWidget> targetWidget(stableTarget);
-            _containerStackedWidget->setCurrentWidget(stableTarget);
-            if (!valid())
-                return;
-            _getTargetStackPix();
-            if (!valid())
-                return;
-            targetWidget->setVisible(false);
-            if (!valid())
-                return;
-            QPropertyAnimation* popupAnimation = new QPropertyAnimation(this, "pPopupAnimationYOffset", this);
-            connect(popupAnimation, &QPropertyAnimation::valueChanged, this, [=]() {
-                if (!valid())
-                    return;
-                update();
-            });
-            connect(popupAnimation, &QPropertyAnimation::finished, this, [=]() {
-                if (!valid())
-                    return;
-                _targetStackPix = QPixmap();
-                targetWidget->setVisible(true);
-                if (!valid())
-                    return;
-            });
-            popupAnimation->setEasingCurve(QEasingCurve::OutCubic);
-            popupAnimation->setDuration(300);
-            int targetWidgetY = _containerStackedWidget->mapToParent(QPoint(0, 0)).y();
-            popupAnimation->setEndValue(targetWidgetY);
-            targetWidgetY += 80;
-            popupAnimation->setStartValue(targetWidgetY);
-            popupAnimation->start(QAbstractAnimation::DeleteWhenStopped);
+            update();
         });
+        connect(popupAnimation, &QPropertyAnimation::finished, this, [=]() {
+            if (!valid())
+                return;
+            _targetStackPix = QPixmap();
+            targetWidget->setVisible(true);
+            if (!valid())
+                return;
+        });
+        popupAnimation->setEasingCurve(QEasingCurve::OutCubic);
+        popupAnimation->setDuration(300);
+        int targetWidgetY = _containerStackedWidget->mapToParent(QPoint(0, 0)).y();
+        popupAnimation->setEndValue(targetWidgetY);
+        targetWidgetY += 80;
+        popupAnimation->setStartValue(targetWidgetY);
+        popupAnimation->start(QAbstractAnimation::DeleteWhenStopped);
         break;
     }
     case ElaWindowType::Scale:

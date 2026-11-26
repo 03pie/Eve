@@ -11,7 +11,7 @@ ElaListView::ElaListView(QWidget* parent)
     Q_D(ElaListView);
     d->q_ptr = this;
     setObjectName("ElaListView");
-    setStyleSheet("#ElaListView{background-color:transparent;}");
+    setStyleSheet("ElaListView{background-color:transparent;}");
     d->_listViewStyle = new ElaListViewStyle(style());
     setStyle(d->_listViewStyle);
     setMouseTracking(true);
@@ -26,7 +26,7 @@ ElaListView::ElaListView(QWidget* parent)
 ElaListView::~ElaListView()
 {
     Q_D(ElaListView);
-    delete d->_listViewStyle;
+    d->_listViewStyle->setParent(this);
 }
 
 void ElaListView::setItemHeight(int itemHeight)

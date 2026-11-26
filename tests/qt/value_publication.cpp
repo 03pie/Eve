@@ -63,13 +63,13 @@ void held()
     barrier(scene.scheduler);
     CHECK(take(scene.shell.output()->snapshot()).size() == before.size());
     CHECK(take(scene.shell.notifications()->snapshot()).empty());
-    CHECK(targets->count() == 1 && targets->currentData() == selection && changed == 0);
+    CHECK(targets->count() == 2 && targets->currentData() == selection && changed == 0);
     CHECK(label->text() == status && label->toolTip() == tooltip);
     take(group.commit());
     // 只读结算不触 Qt；已复制的原观察作业仍须随后刷新 dirty 投影。
     CHECK(outputCount(scene, "held-output") == 1);
     CHECK(take(scene.shell.notifications()->snapshot()).front().sequence == noticeSequence);
-    CHECK(targets->count() == 1 && label->text() == status);
+    CHECK(targets->count() == 2 && label->text() == status);
     barrier(scene.scheduler);
     CHECK(targets->count() == 3 && targets->currentData() == selection);
     CHECK(label->text().contains("held-notice") && outputCount(scene, "held-notice") == 1);
@@ -183,10 +183,11 @@ void clear()
         std::find_if(history.begin(), history.end(), [&](const auto& entry) { return entry.sequence == later; });
     CHECK(row != history.end());
     auto* targets = scene.find<QComboBox>("CordisOutputTarget");
-    targets->setCurrentIndex(targets->findData(QString::fromStdString(row->channel)));
+    targets->setCurrentIndex(0);
     scene.find<QAction>("CordisClearOutput")->trigger();
     barrier(scene.scheduler);
-    CHECK(outputCount(scene, "before-commit") == 0 && outputCount(scene, "after-commit") == 0);
+    CHECK(outputCount(scene, "before-commit") == 1 && outputCount(scene, "after-commit") == 1);
+    CHECK(scene.find<QPlainTextEdit>("CordisWorkbenchOutput")->toPlainText().isEmpty());
     CHECK(write(scene, caller, "after-clear") == later + 1);
     auto future = take(scene.kernel->holdPublication());
     auto futureCaller = owner(scene, &future);
@@ -286,10 +287,12 @@ void targets()
         last = write(scene, index % 2 ? first : second, "target-pending", std::to_string(index));
     CHECK(!scene.shell.output()->write(**first.context, "extra-target", "overflow").hasValue());
     CHECK(write(scene, first, "existing-target", "1") == last + 1);
-    CHECK(scene.find<QComboBox>("CordisOutputTarget")->count() == 1);
+    CHECK(scene.find<QComboBox>("CordisOutputTarget")->count() == 2);
     take(group.commit());
     barrier(scene.scheduler);
-    CHECK(scene.find<QComboBox>("CordisOutputTarget")->count() == static_cast<int>(OutputService::channelLimit));
+    // The two published owners each contribute a source even when both choose the same channel labels.
+    auto targets=scene.find<QComboBox>("CordisOutputTarget");
+    CHECK(targets->count()==4 && targets->findData("platform")>=0);
     CHECK(outputCount(scene, "existing-target") == 1);
     scene.close();
 }

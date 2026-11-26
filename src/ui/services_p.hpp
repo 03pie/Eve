@@ -14,6 +14,12 @@ class QAction;
 class QWidget;
 namespace cordis::ui::detail {
 struct ServicesControl;
+void configureNotificationCenter(const std::shared_ptr<ServicesControl>& control, QWidget* window,
+                                 std::function<QString(InstanceId)> sourceName = {});
+Result<void> showNotificationCenter(const std::shared_ptr<ServicesControl>& control, QWidget* origin = nullptr);
+void setNotificationMuted(const std::shared_ptr<ServicesControl>& control, bool muted);
+void setNotificationArchive(const std::shared_ptr<ServicesControl>& control,
+                            std::shared_ptr<RuntimeLogArchive> archive);
 /** @brief 接入宿主持有的展示控件；控件信号只捕获宿主弱记录。 */
 std::shared_ptr<ServicesControl> createUiServices(std::shared_ptr<qt::QtScheduler> scheduler, QListView* commands,
                                                   QLabel* notification);

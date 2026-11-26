@@ -1,25 +1,19 @@
 /** @file output.cpp
- * @brief 输出准备、原发布组候选值、纯历史接纳与可重入呈现各自承担单一职责。
+ * @brief 对外输出服务、发布接纳与有界实时记录。
  */
-#include "output_p.hpp"
-#include "pending_values_p.hpp"
+#include "output_state_p.hpp"
 #include <ElaComboBox.h>
 #include <ElaToolButton.h>
-#include <QHBoxLayout>
+#include <QDateTime>
 #include <QPlainTextEdit>
-#include <QPointer>
-#include <QScrollBar>
-#include <QSignalBlocker>
-#include <QStringList>
-#include <QTabWidget>
+#include <QTimer>
 #include <algorithm>
-#include <deque>
 #include <limits>
-#include <map>
 #include <utility>
-
-namespace cordis::ui::detail {
-namespace {
+namespace cordis::ui::detail
+{
+namespace
+{
 /** @brief 平台截断和插件严格长度共用一次值校验；不登记目标或消耗序号。 */
 Result<OutputEntry> prepareOutput(std::optional<ContextIdentity> owner, std::string channel, std::string text,
                                   OutputLevel level, bool strict)
@@ -53,96 +47,70 @@ Result<OutputEntry> prepareOutput(std::optional<ContextIdentity> owner, std::str
     return Output::success({0, owner, std::move(id), title.toStdString(), std::move(text), level});
 }
 } // namespace
-struct OutputControl {
-    std::shared_ptr<qt::QtScheduler> scheduler;
-    QPointer<QPlainTextEdit> editor;
-    QPointer<ElaComboBox> targets;
-    QPointer<ElaToolButton> follow;
-    WindowAccess access;
-    std::deque<OutputEntry> entries;
-    std::map<std::string, QString> channels{{"platform", QString::fromUtf8("平台")}};
-    PendingValues<OutputEntry> pending{OutputService::pendingCountLimit, OutputService::pendingByteLimit,
-                                       OutputService::pendingTargetLimit};
-    std::string selected = "platform";
-    std::uint64_t sequence = 0;
-    bool open = true, presenting = false, channelsDirty = false, textDirty = false, preserveText = true;
-    /** @brief 所有来源共用纯历史内核；晚到值保留原号，淘汰不进入控件或业务回调。 */
-    void admit(OutputEntry entry)
-    {
-        const auto id = entry.channel;
-        const auto title = QString::fromStdString(entry.title);
-        const auto at =
-            std::lower_bound(entries.begin(), entries.end(), entry.sequence,
-                             [](const auto& row, std::uint64_t sequence) { return row.sequence < sequence; });
-        entries.insert(at, std::move(entry));
-        if (!channels.count(id)) {
-            channels.emplace(id, title);
-            channelsDirty = true;
+bool outputMatches(const LogRecord& row, const LogFilter& filter)
+{
+    const auto& e = row.entry;
+    return (filter.sourceId.isEmpty() || filter.sourceId == row.sourceId) && e.level >= filter.minimumLevel &&
+           (!filter.instance || (e.owner && e.owner->instance == *filter.instance)) &&
+           (!filter.epoch || (e.owner && e.owner->epoch == *filter.epoch)) &&
+           (filter.text.isEmpty() || QString::fromStdString(e.text).contains(filter.text, Qt::CaseInsensitive));
+}
+void OutputControl::admit(OutputEntry entry, std::optional<OperationId> notification)
+{
+    QString name;
+    if (entry.owner) {
+        const auto known = publishedOwners.find(entry.owner->instance);
+        if (known != publishedOwners.end())
+            name = known->second;
+        else if (resolve) {
+            name = resolve(entry.owner->instance);
+            if (!name.isEmpty())
+                publishedOwners[entry.owner->instance] = name;
         }
-        if (selected == id)
+    }
+    const QString source = !entry.owner     ? QStringLiteral("platform")
+                           : name.isEmpty() ? QString("instance/%1").arg(entry.owner->instance.value())
+                                            : "plugin/" + name;
+    if (name.isEmpty())
+        name = entry.owner ? QString::fromStdString(entry.channel).section('/', 3) : QString::fromUtf8("平台");
+    LogRecord row{std::move(entry), source, name, QDateTime::currentMSecsSinceEpoch(), 0, notification};
+    row.eventId = archive ? archive->append(row.entry, source, name, row.utcMs,notification) : row.entry.sequence;
+    if (!retainedChannels.count(row.entry.channel))
+        channelsDirty = true;
+    if (!archive)
+        collectLogSource(liveSources, row);
+    if (live() && !browsingOlder && outputMatches(row, filter)) {
+        if (!textDirty && appended.size() < OutputService::historyLimit &&
+            (entries.empty() || row.entry.sequence > entries.back().entry.sequence))
+            appended.push_back(row);
+        else
             textDirty = true;
-        while (channels.size() > OutputService::channelLimit) {
-            const auto oldest =
-                std::find_if(entries.begin(), entries.end(), [](const auto& row) { return row.channel != "platform"; });
-            const auto fallback =
-                std::find_if(channels.begin(), channels.end(), [](const auto& row) { return row.first != "platform"; });
-            const auto victim = oldest == entries.end() ? fallback->first : oldest->channel;
-            channels.erase(victim);
-            entries.erase(
-                std::remove_if(entries.begin(), entries.end(), [&](const auto& row) { return row.channel == victim; }),
-                entries.end());
-            if (selected == victim) {
-                selected = "platform";
-                textDirty = true;
-            }
+        if (follow && !follow->isChecked())
+            ++unread;
+    }
+    ++retainedChannels[row.entry.channel];
+    const auto at = std::lower_bound(entries.begin(), entries.end(), row.entry.sequence,
+                                     [](const auto& item, auto seq) { return item.entry.sequence < seq; });
+    entries.insert(at, std::move(row));
+    while (entries.size() > OutputService::historyLimit || retainedChannels.size() > OutputService::channelLimit) {
+        const auto& oldest = entries.front();
+        liveLines.erase(oldest.entry.sequence);
+        if (live() && !browsingOlder && outputMatches(oldest, filter))
+            textDirty = true;
+        if (!--retainedChannels[oldest.entry.channel]) {
+            retainedChannels.erase(oldest.entry.channel);
             channelsDirty = true;
         }
-        while (entries.size() > OutputService::historyLimit) {
-            if (entries.front().channel == selected)
-                textDirty = true;
-            entries.pop_front();
-        }
+        entries.pop_front();
     }
-    /** @brief 完整文本用于复制，记录由 historyLimit/textLimit 限定总大小。 */
-    QString text() const
-    {
-        QStringList lines;
-        for (const auto& entry : entries) if (entry.channel == selected) {
-            const auto level = entry.level == OutputLevel::Error ? "ERROR" : entry.level == OutputLevel::Warning ? "WARN" : "INFO";
-            lines.push_back(QString("[%1] [%2] %3").arg(entry.sequence).arg(QString::fromLatin1(level), QString::fromStdString(entry.text)));
-        }
-        return lines.join('\n');
-    }
-    /** @brief 仅由刷新窗口访问栈调用；不跨同步信号借用历史容器元素。 */
-    void renderText(bool preserve)
-    {
-        if (!open || !editor) return;
-        auto visible = text();
-        int offset = visible.size();
-        for (int line = 0; line < 5000; ++line) {
-            offset = visible.lastIndexOf('\n', offset - 1);
-            if (offset < 0) break;
-        }
-        if (offset >= 0) visible = visible.mid(offset + 1);
-        const auto previous = editor->verticalScrollBar()->value();
-        const auto position = editor->textCursor().position(), anchor = editor->textCursor().anchor();
-        const bool scroll = !follow || follow->isChecked();
-        editor->setPlainText(visible);
-        if (open && editor && preserve && !scroll) {
-            auto cursor = editor->textCursor();
-            cursor.setPosition(std::min(anchor, visible.size()));
-            cursor.setPosition(std::min(position, visible.size()), QTextCursor::KeepAnchor);
-            editor->setTextCursor(cursor);
-        }
-        if (open && editor)
-            editor->verticalScrollBar()->setValue(scroll ? editor->verticalScrollBar()->maximum() : previous);
-    }
-};
-std::shared_ptr<OutputControl> createOutput(std::shared_ptr<qt::QtScheduler> scheduler,
-                                           QPlainTextEdit* editor, WindowAccess access)
+}
+std::shared_ptr<OutputControl> createOutput(std::shared_ptr<qt::QtScheduler> scheduler, QPlainTextEdit* editor,
+                                            WindowAccess access)
 {
     auto result = std::make_shared<OutputControl>();
-    result->scheduler = std::move(scheduler); result->editor = editor; result->access = std::move(access);
+    result->scheduler = std::move(scheduler);
+    result->editor = editor;
+    result->access = std::move(access);
     editor->setPlaceholderText(QString::fromUtf8("当前目标暂无输出。运行命令或插件操作后会在这里显示真实记录。"));
     return result;
 }
@@ -151,34 +119,20 @@ void refreshOutput(const std::shared_ptr<OutputControl>& self)
     if (!self || !self->scheduler->isCurrentThread() || !self->open || !self->access || self->presenting)
         return;
     self->presenting = true;
-    while (self->open && (self->channelsDirty || self->textDirty)) {
+    while (self->open && (self->channelsDirty || self->textDirty || !self->appended.empty())) {
         const bool updateChannels = std::exchange(self->channelsDirty, false);
         const bool updateText = std::exchange(self->textDirty, false);
         const bool preserve = std::exchange(self->preserveText, true);
+        auto added = std::exchange(self->appended, {});
         // 模型/text 信号可重入接纳；只跨信号保留本次复制的投影。
-        const auto channels = updateChannels ? self->channels : std::map<std::string, QString>{};
-        const auto selected = self->selected;
         auto access = self->access;
-        access([self, updateChannels, updateText, preserve, channels, selected] {
+        access([self, updateChannels, updateText, preserve, &added] {
             if (!self->open)
                 return;
-            if (updateChannels && self->targets) {
-                QSignalBlocker blocker(self->targets);
-                self->targets->clear();
-                if (!self->open || !self->targets)
-                    return;
-                self->targets->addItem(QString::fromUtf8("平台"), "platform");
-                for (const auto& channel : channels) {
-                    if (!self->open || !self->targets)
-                        return;
-                    if (channel.first != "platform")
-                        self->targets->addItem(channel.second, QString::fromStdString(channel.first));
-                }
-                if (self->open && self->targets)
-                    self->targets->setCurrentIndex(self->targets->findData(QString::fromStdString(selected)));
-            }
-            if (self->open && updateText)
-                self->renderText(preserve);
+            if (updateChannels && self->targets)
+                self->syncSources();
+            if (self->open && (updateText || !added.empty()))
+                self->renderText(preserve, updateText, added);
         });
     }
     self->presenting = false;
@@ -193,12 +147,36 @@ void settleOutput(const std::shared_ptr<OutputControl>& self, bool render)
     if (render)
         refreshOutput(self);
 }
+namespace
+{
+void presentIncoming(const std::shared_ptr<OutputControl>& state)
+{
+    if (!state->open || !state->editor)
+        return;
+    // Command feedback stays synchronous. A burst only paints one further bounded projection at the event-loop
+    // boundary.
+    if (!state->rendersThisTurn) {
+        std::weak_ptr<OutputControl> weak = state;
+        QTimer::singleShot(0, state->editor, [weak] {
+            if (const auto s = weak.lock(); s && s->open) {
+                s->rendersThisTurn = 0;
+                refreshOutput(s);
+            }
+        });
+    }
+    if (++state->rendersThisTurn <= 8)
+        refreshOutput(state);
+}
+} // namespace
 Result<std::uint64_t> appendOutput(const std::shared_ptr<OutputControl>& self, std::optional<ContextIdentity> owner,
-                                   std::string channel, std::string text, OutputLevel level, bool render)
+                                   std::string channel, std::string text, OutputLevel level, bool render,
+                                   std::optional<OperationId> notification)
 {
     using Output = Result<std::uint64_t>;
-    if (!self->scheduler->isCurrentThread()) return Output::failure(makeError(ErrorCode::WrongThread, "output requires owner thread"));
-    if (!self->open || !self->scheduler->isOpen()) return Output::failure(makeError(ErrorCode::ContextClosing, "output closed"));
+    if (!self->scheduler->isCurrentThread())
+        return Output::failure(makeError(ErrorCode::WrongThread, "output requires owner thread"));
+    if (!self->open || !self->scheduler->isOpen())
+        return Output::failure(makeError(ErrorCode::ContextClosing, "output closed"));
     settleOutput(self, false);
     auto prepared = prepareOutput(owner, std::move(channel), std::move(text), level, false);
     if (!prepared.hasValue())
@@ -207,68 +185,11 @@ Result<std::uint64_t> appendOutput(const std::shared_ptr<OutputControl>& self, s
         return Output::failure(makeError(ErrorCode::InvalidArgument, "output sequence exhausted"));
     const auto sequence = self->sequence + 1;
     prepared.value().sequence = sequence;
-    self->admit(std::move(prepared).value());
+    self->admit(std::move(prepared).value(),notification);
     self->sequence = sequence;
     if (render)
-        refreshOutput(self);
+        presentIncoming(self);
     return Output::success(sequence);
-}
-void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* panel)
-{
-    auto tools = panel->findChild<QWidget*>("CordisPanelTools");
-    auto layout = tools ? qobject_cast<QHBoxLayout*>(tools->layout()) : nullptr;
-    if (!layout) return;
-    auto target = new ElaComboBox(tools); self->targets = target;
-    target->setObjectName("CordisOutputTarget"); target->setAccessibleName(QString::fromUtf8("输出目标"));
-    target->setFixedWidth(220); target->setFixedHeight(28); target->addItem(QString::fromUtf8("平台"), "platform");
-    layout->insertWidget(0, target);
-    auto follow = new ElaToolButton(tools); self->follow = follow;
-    follow->setObjectName("CordisOutputFollow"); follow->setElaIcon(ElaIconType::ArrowDown);
-    follow->setCheckable(true); follow->setChecked(true); follow->setFixedSize(28, 28);
-    follow->setToolTip(QString::fromUtf8("自动滚动到最新输出")); follow->setAccessibleName(follow->toolTip());
-    layout->insertWidget(1, follow);
-    std::weak_ptr<OutputControl> weak = self;
-    QObject::connect(target, QOverload<int>::of(&QComboBox::currentIndexChanged), target, [weak](int) {
-        if (auto state = weak.lock(); state && state->open && state->targets) {
-            const auto requested = state->targets->currentData().toString().toStdString();
-            settleOutput(state, false);
-            state->selected = state->channels.count(requested) ? requested : "platform";
-            state->textDirty = true;
-            state->preserveText = false;
-            refreshOutput(state);
-        }
-    });
-    QObject::connect(follow, &QToolButton::toggled, follow, [weak](bool on) {
-        if (auto state = weak.lock(); on && state) {
-            settleOutput(state, false);
-            state->textDirty = true;
-            refreshOutput(state);
-        }
-    });
-    const auto visible = [weak, panel](int) {
-        if (auto state = weak.lock(); state && state->open) {
-            const bool show = panel->currentWidget() == state->editor;
-            if (state->targets) state->targets->setVisible(show);
-            if (state->follow) state->follow->setVisible(show);
-        }
-    };
-    QObject::connect(panel, &QTabWidget::currentChanged, target, visible); visible(panel->currentIndex());
-}
-QString currentOutputText(const std::shared_ptr<OutputControl>& self)
-{
-    if (!self || !self->scheduler->isCurrentThread() || !self->open) return {};
-    settleOutput(self, false);
-    return self->text();
-}
-void clearOutput(const std::shared_ptr<OutputControl>& self)
-{
-    if (!self || !self->scheduler->isCurrentThread() || !self->open) return;
-    const auto selected = self->selected;
-    settleOutput(self, false);
-    self->entries.erase(std::remove_if(self->entries.begin(), self->entries.end(), [&](const auto& entry) { return entry.channel == selected; }), self->entries.end());
-    self->textDirty = true;
-    self->preserveText = false;
-    refreshOutput(self);
 }
 void closeOutput(const std::shared_ptr<OutputControl>& self)
 {
@@ -281,8 +202,10 @@ void closeOutput(const std::shared_ptr<OutputControl>& self)
 }
 } // namespace cordis::ui::detail
 
-namespace cordis::ui {
-Result<std::uint64_t> OutputService::write(const Context& owner, std::string channel, std::string text, OutputLevel level) const
+namespace cordis::ui
+{
+Result<std::uint64_t> OutputService::write(const Context& owner, std::string channel, std::string text,
+                                           OutputLevel level) const
 {
     using Output = Result<std::uint64_t>;
     auto state = control_.lock();
@@ -337,7 +260,7 @@ Result<std::uint64_t> OutputService::write(const Context& owner, std::string cha
     else
         return Output::failure(makeError(ErrorCode::ContextClosing, "output publication aborted"));
     state->sequence = sequence;
-    detail::refreshOutput(state);
+    detail::presentIncoming(state);
     return Output::success(sequence);
 }
 Result<std::vector<OutputEntry>> OutputService::snapshot() const
@@ -354,6 +277,9 @@ Result<std::vector<OutputEntry>> OutputService::snapshot() const
         if (!available.hasValue())
             return Output::failure(available.error());
     }
-    return Output::success({state->entries.begin(), state->entries.end()});
+    std::vector<OutputEntry> snapshot;
+    for (const auto& row : state->entries)
+        snapshot.push_back(row.entry);
+    return Output::success(std::move(snapshot));
 }
 } // namespace cordis::ui

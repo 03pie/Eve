@@ -331,7 +331,7 @@ void notifications()
         if (auto found = window->findChild<QPlainTextEdit*>("CordisWorkbenchOutput")) output = found;
     CHECK(output);
     for (auto window : QApplication::topLevelWidgets())
-        if (auto target = window->findChild<QComboBox*>("CordisOutputTarget")) target->setCurrentIndex(1);
+        if (auto target = window->findChild<QComboBox*>("CordisOutputTarget")) target->setCurrentIndex(0);
     std::optional<Result<std::uint64_t>> nested;
     bool entered = false;
     auto connection = QObject::connect(output, &QPlainTextEdit::textChanged, output, [&] {

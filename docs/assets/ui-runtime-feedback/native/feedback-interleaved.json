@@ -1,0 +1,110 @@
+{
+    "events": [
+        {
+            "channel": "plugin/1/1/shared",
+            "epoch": "1",
+            "event": "3",
+            "instance": "1",
+            "level": 0,
+            "name": "u7.alpha",
+            "sequence": "3",
+            "source": "plugin/u7.alpha",
+            "text": "U7 event A1",
+            "title": "shared · 实例 #1 / 代 1",
+            "utcMs": "1795597717120",
+            "v": 1
+        },
+        {
+            "channel": "plugin/2/1/shared",
+            "epoch": "1",
+            "event": "5",
+            "instance": "2",
+            "level": 0,
+            "name": "u7.bravo",
+            "sequence": "5",
+            "source": "plugin/u7.bravo",
+            "text": "U7 event B1",
+            "title": "shared · 实例 #2 / 代 1",
+            "utcMs": "1795597717147",
+            "v": 1
+        },
+        {
+            "channel": "plugin/1/1/shared",
+            "epoch": "1",
+            "event": "9",
+            "instance": "1",
+            "level": 0,
+            "name": "u7.alpha",
+            "sequence": "9",
+            "source": "plugin/u7.alpha",
+            "text": "U7 event A2",
+            "title": "shared · 实例 #1 / 代 1",
+            "utcMs": "1795597717153",
+            "v": 1
+        },
+        {
+            "channel": "plugin/2/1/shared",
+            "epoch": "1",
+            "event": "12",
+            "instance": "2",
+            "level": 0,
+            "name": "u7.bravo",
+            "sequence": "12",
+            "source": "plugin/u7.bravo",
+            "text": "U7 event B2",
+            "title": "shared · 实例 #2 / 代 1",
+            "utcMs": "1795597717161",
+            "v": 1
+        }
+    ],
+    "generation": "1",
+    "identities": {
+        "u7.alpha": {
+            "epoch": "1",
+            "instance": "1",
+            "runtime": "1"
+        },
+        "u7.bravo": {
+            "epoch": "1",
+            "instance": "2",
+            "runtime": "2"
+        }
+    },
+    "module": {
+        "abi": {
+            "major": 1,
+            "minor": 0
+        },
+        "library": "module.dll",
+        "loader": "qt-ui",
+        "manifestVersion": 1,
+        "moduleId": "org.cordis.test.logs",
+        "moduleVersion": "1.0.0",
+        "platform": "windows-x64",
+        "plugins": [
+            "u7.alpha",
+            "u7.bravo"
+        ],
+        "sha256": "11209740d18d6c45a2283d10c1522fd60e54dacf549f49bc22c867b2d2350a2d",
+        "unloadPolicy": "resident"
+    },
+    "pid": "18716",
+    "qpa": "windows",
+    "run": "7709b539-a024-4846-995f-a1c3502219fa",
+    "views": {
+        "all": [
+            "[3] 17:08:37.120 [INFO] u7.alpha #1/1  U7 event A1",
+            "[5] 17:08:37.147 [INFO] u7.bravo #2/1  U7 event B1",
+            "[9] 17:08:37.153 [INFO] u7.alpha #1/1  U7 event A2",
+            "[12] 17:08:37.161 [INFO] u7.bravo #2/1  U7 event B2"
+        ],
+        "u7.alpha": [
+            "[3] 17:08:37.120 [INFO] u7.alpha #1/1  U7 event A1",
+            "[9] 17:08:37.153 [INFO] u7.alpha #1/1  U7 event A2"
+        ],
+        "u7.bravo": [
+            "[5] 17:08:37.147 [INFO] u7.bravo #2/1  U7 event B1",
+            "[12] 17:08:37.161 [INFO] u7.bravo #2/1  U7 event B2"
+        ]
+    }
+}

@@ -74,7 +74,7 @@ public:
         if (!commandAccess.hasValue()) return failedTask(commandAccess.error());
         if (commandFailure) return failedTask(*commandFailure);
         auto write = output.value().withService([&](ui::OutputService& service) {
-            (void)service.write(context, "literature-reader", "Literature reader 1.1.0: " + dataRoot.toStdString());
+            (void)service.write(context, "literature-reader", "Literature reader 1.1.0: library opened.");
         });
         if (!write.hasValue()) return failedTask(write.error());
         return page_->ready();

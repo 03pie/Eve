@@ -28,6 +28,7 @@ struct HomePlugin {
     QString identity{};
     bool configuration = false;
     StatusPresentation status{};
+    bool running = false, needsAttention = false;
 };
 /** @brief 一次刷新使用的宿主值目录，遍历页面时不再执行权限回调。 */
 struct HomeCatalogue {
@@ -55,8 +56,6 @@ struct WorkbenchActions {
     std::function<Result<void>()> modules{};
     std::function<bool()> hasModules{};
 };
-/** @brief 创建 Example 风格滚动首页，入口在工作台构造时连接。 */
-QWidget* createWelcomePage();
 /** @brief 构造宿主菜单/搜索/历史与设置页，已有页签和底部面板继续由外壳拥有。 */
 std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* tabs, QTabWidget* panel,
                                                   QPlainTextEdit* output, QToolButton* togglePanel,

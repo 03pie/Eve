@@ -2,6 +2,7 @@
  * @brief 可选配置适配器；普通 UI 不包含 Loader，所有动作经过 Session 的 CAS。
  */
 #include <algorithm>
+#include "management_p.hpp"
 #include <cordis/ui/configuration.hpp>
 #include <map>
 #include <stdexcept>
@@ -10,8 +11,17 @@
 namespace cordis::ui {
 namespace {
 /** @brief 回执只包含值，不保留插件对象或配置页。 */
-class ConfigurationManagement final : public IConfigurationManagement {
+class ConfigurationManagement final : public IConfigurationManagement, public detail::ConfigurationPayloadValidator
+{
 public:
+    Result<void> validatePayload(const std::string& text) const override
+    {
+        static const auto empty = loader::parseConfiguration("formatVersion: 1\nplugins: []\n");
+        if (!empty.hasValue())
+            return Result<void>::failure(empty.error());
+        const auto parsed = loader::addConfigurationEntry(empty.value(), "draft", "plugin", text);
+        return parsed.hasValue() ? Result<void>::success() : Result<void>::failure(parsed.error());
+    }
     /** @brief 固定 scheduler，避免把回执交给另一个生命周期的执行器。 */
     ConfigurationManagement(std::weak_ptr<loader::ConfigurationSession> session, std::shared_ptr<IScheduler> scheduler)
         : session_(std::move(session)), scheduler_(std::move(scheduler))

@@ -28,7 +28,38 @@
 #include <QtMath>
 #include <utility>
 ELA_PROPERTY_Q_CPP(ElaWindow, int, ThemeChangeTime)
-ELA_PROPERTY_Q_CPP(ElaWindow, ElaWindowType::StackSwitchMode, StackSwitchMode)
+void ElaWindow::setStackSwitchMode(const ElaWindowType::StackSwitchMode& mode)
+{
+    Q_D(ElaWindow);
+    if (d->_pStackSwitchMode == mode)
+        return;
+    d->_pStackSwitchMode = mode;
+    const QPointer<ElaWindow> alive(this);
+    if (mode == ElaWindowType::None && d->_navigationCenterStackedWidget) {
+        auto stack = d->_navigationCenterStackedWidget;
+        stack->cancelWindowStackSwitch();
+        if (!alive) return;
+        if (auto current = stack->getContainerStackedWidget()->currentWidget())
+            current->show();
+    }
+    if (alive) Q_EMIT pStackSwitchModeChanged();
+}
+const ElaWindowType::StackSwitchMode& ElaWindow::getStackSwitchMode() const
+{
+    Q_D(const ElaWindow);
+    return d->_pStackSwitchMode;
+}
+void ElaWindow::previewStackSwitch()
+{
+    Q_D(ElaWindow);
+    auto stack = d->_navigationCenterStackedWidget;
+    auto pages = stack->getContainerStackedWidget();
+    auto key = getCurrentNavigationPageKey();
+    if (key.isEmpty() || d->_pStackSwitchMode == ElaWindowType::None || d->_navigationBar->nodeUsesPresentation(key))
+        return;
+    stack->setLastTargetIndex(-1);
+    stack->doWindowStackSwitch(d->_pStackSwitchMode, pages->currentIndex(), false);
+}
 Q_TAKEOVER_NATIVEEVENT_CPP(ElaWindow, d_func()->_appBar);
 ElaWindow::ElaWindow(QWidget* parent)
     : QMainWindow{parent}, d_ptr(new ElaWindowPrivate())
@@ -103,7 +134,9 @@ ElaWindow::ElaWindow(QWidget* parent)
     setCentralWidget(d->_centerStackedWidget);
     setObjectName("ElaWindow");
     setStyleSheet("#ElaWindow{background-color:transparent;}");
-    setStyle(new ElaWindowStyle(style()));
+    auto windowStyle = new ElaWindowStyle(style());
+    windowStyle->setParent(this);
+    setStyle(windowStyle);
 
     eApp->syncWindowDisplayMode(this);
     d->_windowDisplayMode = eApp->getWindowDisplayMode();
@@ -123,7 +156,8 @@ ElaWindow::~ElaWindow()
 {
     Q_D(ElaWindow);
     eApp->syncWindowDisplayMode(this, false);
-    delete this->style();
+    // style() can return Qt's shared stylesheet proxy, not the style installed above.
+    setStyle(nullptr);
     delete d->_lightWindowPix;
     delete d->_darkWindowPix;
 }

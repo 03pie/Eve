@@ -1,13 +1,18 @@
 #include "workbench.hpp"
+#include <ElaToggleSwitch.h>
 #include <ElaWindow.h>
 #include <QApplication>
+#include <QAction>
 #include <QAbstractButton>
 #include <QComboBox>
 #include <QCryptographicHash>
+#include <QDateTime>
 #include <QDir>
 #include <QEventLoop>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
+#include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -21,10 +26,12 @@
 #include <QPointer>
 #include <QProcess>
 #include <QSpinBox>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTabWidget>
 #include <QTest>
 #include <QTimer>
+#include <QTreeWidget>
 #include <algorithm>
 #include <functional>
 #include <iostream>
@@ -333,9 +340,194 @@ void child(const QString& mode, const QString& manifest, const QString& workspac
     P7_REQUIRE(process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0);
 }
 
+void feedbackSession(bool reopen, const QString& manifest, const QString& workspace, const QString& artifact)
+{
+    QCoreApplication::setApplicationName(QStringLiteral("CordisFeedback-") + sha(workspace.toUtf8()).left(16));
+    QStandardPaths::setTestModeEnabled(true);
+    QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+    Scene scene;
+    scene.open(manifest, workspace);
+    P7_REQUIRE(scene.workbench.shell.show().hasValue());
+    until([] { return !pages().isEmpty(); });
+    auto* window = qobject_cast<ElaWindow*>(pages().front()->window());
+    P7_REQUIRE(window);
+    auto action = [&](const char* name) { control<QAction>(window,name)->trigger(); };
+    auto* runs = control<QComboBox>(window,"CordisOutputRun");
+    auto* sources = control<QComboBox>(window,"CordisOutputTarget");
+    auto* instances = control<QComboBox>(window,"CordisOutputInstance");
+    auto* output = control<QPlainTextEdit>(window,"CordisWorkbenchOutput");
+    const QString thisRun = runs->currentData().toString();
+    const QString receipt = QDir(artifact).filePath("feedback-live.json");
+    const QString fail = QStringLiteral("保存配置失败"), recovered = QStringLiteral("配置已保存");
+    const QString plugin = QStringLiteral("Literature reader");
+    const QString pluginSource = "plugin/" + json(manifest)["plugins"].toArray().first().toString();
+    const QString imagePath = QDir(artifact).filePath("preferences-wallpaper.png");
+    action("CordisOpenSettings");
+    auto* theme = control<QComboBox>(window, "CordisSettingsTheme");
+    auto* navWidth = control<QSpinBox>(window, "CordisSettingsNavigationWidth");
+    auto* dnd = control<ElaToggleSwitch>(window, "CordisSettingsDoNotDisturb");
+    auto* userCard = control<ElaToggleSwitch>(window, "CordisSettingsUserCard");
+    auto* material = control<QComboBox>(window, "CordisSettingsMaterial");
+    auto* transition = control<QComboBox>(window, "CordisSettingsTransition");
+    if (!reopen) {
+        theme->setCurrentIndex(1);
+        navWidth->setValue(286);
+        dnd->setIsToggled(true);
+        userCard->setIsToggled(false);
+        material->setCurrentIndex(1);
+        transition->setCurrentIndex(2);
+        QImage image(240, 160, QImage::Format_RGB32);
+        image.fill(QColor("#335779"));
+        P7_REQUIRE(image.save(imagePath));
+        click(window, "CordisBackgroundPicker");
+        auto* picker = control<QWidget>(window, "CordisSettingsPage")->findChild<QFileDialog*>();
+        P7_REQUIRE(picker);
+        picker->selectFile(imagePath);
+        P7_REQUIRE(QMetaObject::invokeMethod(picker, "accept"));
+    }
+    P7_REQUIRE(theme->currentIndex() == 1 && navWidth->value() == 286);
+    P7_REQUIRE(dnd->getIsToggled() && window->property("CordisDoNotDisturb").toBool());
+    P7_REQUIRE(!userCard->getIsToggled());
+    P7_REQUIRE(material->currentIndex() == 1 && transition->currentIndex() == 2);
+    P7_REQUIRE(window->getWindowPixmap(ElaThemeType::Dark).size() == QSize(240, 160));
+    P7_REQUIRE(control<QTabWidget>(window, "CordisWorkbenchPanel")->isHidden());
+    QJsonObject lines;
+    auto displayed = [&](const QString& marker, const QString& key) {
+        until([&]{ return output->toPlainText().contains(marker); },5000);
+        for (const auto& line : output->toPlainText().split('\n'))
+            if (line.contains(marker)) { lines.insert(key,line); return; }
+    };
+    auto instancesDisplayed = [&](const QJsonArray& expected) {
+        const int source = sources->findData(pluginSource);
+        P7_REQUIRE(source > 0);
+        sources->setCurrentIndex(source);
+        P7_REQUIRE(expected.size() == 2);
+        for (const auto& value : expected) {
+            const auto id = value.toString();
+            const auto index = instances->findData(id);
+            P7_REQUIRE(index > 0);
+            instances->setCurrentIndex(index);
+            displayed(plugin, QStringLiteral("reader/") + id);
+            P7_REQUIRE(output->toPlainText().count(plugin) == 1);
+            P7_REQUIRE(output->toPlainText().contains(QStringLiteral(" #%1/").arg(id)));
+        }
+        instances->setCurrentIndex(0);
+        P7_REQUIRE(output->toPlainText().count(plugin) == 2);
+    };
+    if (!reopen) {
+        action("CordisConfigurationFile");
+        QWidget* config = nullptr;
+        until([&]{
+            for (auto* w : QApplication::allWidgets())
+                if (w->objectName()=="CordisConfigurationPage" && w->isVisible()) config=w;
+            return config!=nullptr;
+        });
+        QFile conflicting(QDir(workspace).filePath("session.yaml"));
+        P7_REQUIRE(conflicting.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        conflicting.write("# external edit for optimistic save test\n");
+        conflicting.close();
+        click(config,"CordisConfigSave");
+        until([&]{ return control<QAbstractButton>(config,"CordisConfigRebase")->isEnabled() &&
+                          control<QAbstractButton>(config,"CordisConfigOpenLog")->isVisible(); });
+        auto* currentProblems = control<QTreeWidget>(window, "CordisProblemsTree");
+        until([&]{ return currentProblems->topLevelItemCount() > 0; }, 5000);
+        click(config,"CordisConfigOpenLog");
+        displayed(fail, fail);
+        QTest::keyClick(output,Qt::Key_Escape);
+        click(config,"CordisConfigRebase");
+        click(config,"CordisConfigSave");
+        until([&]{return !take(scene.workbench.session->snapshot()).store.dirty;});
+        until([&]{return currentProblems->topLevelItemCount() == 0;}, 5000);
+        config->window()->close();
+        action("CordisOpenOutput");
+        displayed(recovered, recovered);
+        action("CordisAddPlugin");
+        auto* dialog = control<QWidget>(window, "CordisAddPluginDialog");
+        P7_REQUIRE(dialog->isVisible());
+        control<QLineEdit>(dialog, "CordisAddPluginId")->setText("second");
+        control<QPlainTextEdit>(dialog, "CordisAddPluginConfiguration")->setPlainText(
+            QString::fromUtf8(QJsonDocument(QJsonObject{{"dataRoot", QDir(workspace).filePath("second-library")}})
+                                 .toJson(QJsonDocument::Compact)));
+        click(dialog, "CordisAddPluginSubmit");
+        until([&]{ return dialog->isHidden() && pages().size() == 2; });
+        QJsonArray owners;
+        for (auto* page : pages())
+            owners.append(QString::number(page->property("cordis.instance").toULongLong()));
+        P7_REQUIRE(owners[0] != owners[1]);
+        action("CordisOpenOutput");
+        instancesDisplayed(owners);
+        writeJson(receipt,{{"run",thisRun},{"pid",QString::number(QCoreApplication::applicationPid())},
+                           {"lines",lines},{"pluginSource",sources->currentData().toString()},{"instances",owners}});
+    } else {
+        const auto previous = json(receipt);
+        P7_REQUIRE(thisRun!=previous["run"].toString());
+        P7_REQUIRE(sources->currentData().toString() == pluginSource);
+        action("CordisPreviousOutput");
+        P7_REQUIRE(runs->currentData().toString()==previous["run"].toString());
+        sources->setCurrentIndex(sources->findData(QStringLiteral("platform")));
+        displayed(fail, fail);
+        displayed(recovered, recovered);
+        instancesDisplayed(previous["instances"].toArray());
+        P7_REQUIRE(lines==previous["lines"].toObject());
+        P7_REQUIRE(window->grab().save(QDir(artifact).filePath("feedback-history.png")));
+        writeJson(QDir(artifact).filePath("feedback-reopened.json"),
+                  {{"run",thisRun},{"pid",QString::number(QCoreApplication::applicationPid())},
+                   {"priorRun",previous["run"]},{"lines",lines}});
+    }
+    scene.close();
+    const auto preferences = json(QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
+                                  .filePath("preferences/workbench.json"));
+    P7_REQUIRE(preferences.value("theme").toInt() == 1 && preferences.value("navigationWidth").toInt() == 286);
+    P7_REQUIRE(preferences.value("material").toInt() == 1 && preferences.value("transition").toInt() == 2);
+    P7_REQUIRE(preferences.value("doNotDisturb").toBool() && !preferences.value("userCardVisible").toBool(true));
+    P7_REQUIRE(preferences.value("background").toString() == imagePath &&
+               preferences.value("outputSource").toString() == pluginSource);
+    writeJson(QDir(artifact).filePath(reopen ? "preferences-reopened.json" : "preferences-live.json"), preferences);
+}
+
 void run(const QString& mode, const QString& v1, const QString& v2, const QString& artifact, const QString& paper = {})
 {
     const auto workspace = QDir(artifact).filePath(QString::fromUtf8(u8"工作区 𠮷"));
+    if (mode == "feedback") {
+        child("feedback-live",v2,workspace,{},artifact);
+        child("feedback-reopen",v2,workspace,{},artifact);
+        const auto live=json(QDir(artifact).filePath("feedback-live.json"));
+        const auto past=json(QDir(artifact).filePath("feedback-reopened.json"));
+        P7_REQUIRE(live["pid"]!=past["pid"] && live["run"]==past["priorRun"]);
+        const QDir archive(QDir(workspace).filePath(".cordis/logs/"+live["run"].toString()));
+        P7_REQUIRE(json(archive.filePath("run.json")).contains("ended"));
+        const auto expected=live["lines"].toObject();
+        QJsonObject events;
+        for (const auto& part : archive.entryList({"events-*.jsonl"},QDir::Files)) {
+            for (const auto& raw : read(archive.filePath(part)).trimmed().split('\n')) {
+                const auto row=QJsonDocument::fromJson(raw).object();
+                const auto text=row["text"].toString();
+                for(auto it=expected.begin();it!=expected.end();++it) {
+                    const auto line = it.value().toString();
+                    const auto timestamp = QDateTime::fromMSecsSinceEpoch(row["utcMs"].toString().toLongLong())
+                                               .toString("HH:mm:ss.zzz");
+                    const auto prefix = QStringLiteral("[%1] %2 ").arg(row["sequence"].toString(), timestamp);
+                    if (text.isEmpty() || !line.endsWith(text) || !line.startsWith(prefix))
+                        continue;
+                    if (it.key().startsWith("reader/")) {
+                        const auto instance = it.key().section('/', 1);
+                        const auto expectedChannel = QStringLiteral("plugin/%1/%2/literature-reader")
+                                                         .arg(instance, row["epoch"].toString());
+                        P7_REQUIRE(row["source"] == live["pluginSource"] && row["channel"] == expectedChannel);
+                        P7_REQUIRE(row["instance"].toString() == instance);
+                    } else {
+                        P7_REQUIRE(row["source"] == "platform" && text.contains(it.key()));
+                    }
+                    P7_REQUIRE(row["event"].toString().toULongLong()>0);
+                    P7_REQUIRE(!events.contains(it.key()));
+                    events.insert(it.key(),row["event"]);
+                }
+            }
+        }
+        P7_REQUIRE(events.size()==expected.size() && events.size()==4);
+        writeJson(QDir(artifact).filePath("feedback-events.json"),events);
+        return;
+    }
     const auto fixture = paper.isEmpty() ? QDir(artifact).filePath("paper.pdf") : paper;
     if (paper.isEmpty()) pdf(fixture);
     if (mode == "persistence" || mode == "upgrade" || mode == "paper") {
@@ -439,12 +631,16 @@ int main(int argc, char** argv)
     const auto args = app.arguments();
     try {
         if (args.size() == 7 && args[1] == "--child") {
+            if (args[2]=="feedback-live" || args[2]=="feedback-reopen") {
+                feedbackSession(args[2]=="feedback-reopen",args[3],args[4],args[6]);
+                return 0;
+            }
             P7_REQUIRE(QStringList({"seed", "reopen", "upgrade-reopen", "upgrade-verify", "paper-seed", "paper-reopen"}).contains(args[2]));
             readerSession(args[2], args[3], args[4], args[5], args[6]);
             return 0;
         }
         P7_REQUIRE(args.size() == 5 || (args.size() == 6 && args[1] == "paper"));
-        P7_REQUIRE(QStringList({"waiting", "multi", "diagnostics", "template", "persistence", "upgrade", "close_busy", "paper"}).contains(args[1]));
+        P7_REQUIRE(QStringList({"waiting", "multi", "diagnostics", "template", "persistence", "upgrade", "close_busy", "paper","feedback"}).contains(args[1]));
         P7_REQUIRE(QDir().mkpath(args[4]));
         QTemporaryDir scratch(QDir(args[4]).filePath(args[1] + "-XXXXXX"));
         P7_REQUIRE(scratch.isValid());

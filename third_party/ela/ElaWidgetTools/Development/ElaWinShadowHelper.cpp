@@ -193,6 +193,7 @@ void ElaWinShadowHelper::setWindowDisplayMode(QWidget* widget, ElaApplicationTyp
     }
     }
 
+    bool accepted = displayMode == ElaApplicationType::Normal || displayMode == ElaApplicationType::ElaMica;
     switch (displayMode)
     {
     case ElaApplicationType::Mica:
@@ -205,12 +206,12 @@ void ElaWinShadowHelper::setWindowDisplayMode(QWidget* widget, ElaApplicationTyp
         if (compareWindowsVersion(Win11_22H2))
         {
             const _DWM_SYSTEMBACKDROP_TYPE backdropType = _DWMSBT_MAINWINDOW;
-            _dwmSetWindowAttribute(winHwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType));
+            accepted = SUCCEEDED(_dwmSetWindowAttribute(winHwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType)));
         }
         else
         {
             const BOOL enable = TRUE;
-            _dwmSetWindowAttribute(winHwnd, _DWMWA_MICA_EFFECT, &enable, sizeof(enable));
+            accepted = SUCCEEDED(_dwmSetWindowAttribute(winHwnd, _DWMWA_MICA_EFFECT, &enable, sizeof(enable)));
         }
         break;
     }
@@ -222,7 +223,7 @@ void ElaWinShadowHelper::setWindowDisplayMode(QWidget* widget, ElaApplicationTyp
         }
         _externWindowMargins(winHwnd);
         const _DWM_SYSTEMBACKDROP_TYPE backdropType = _DWMSBT_TABBEDWINDOW;
-        _dwmSetWindowAttribute(winHwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType));
+        accepted = SUCCEEDED(_dwmSetWindowAttribute(winHwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType)));
         break;
     }
     case ElaApplicationType::Acrylic:
@@ -233,7 +234,7 @@ void ElaWinShadowHelper::setWindowDisplayMode(QWidget* widget, ElaApplicationTyp
         }
         _externWindowMargins(winHwnd);
         const _DWM_SYSTEMBACKDROP_TYPE backdropType = _DWMSBT_TRANSIENTWINDOW;
-        _dwmSetWindowAttribute(winHwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType));
+        accepted = SUCCEEDED(_dwmSetWindowAttribute(winHwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType)));
         break;
     }
     case ElaApplicationType::DWMBlur:
@@ -249,14 +250,14 @@ void ElaWinShadowHelper::setWindowDisplayMode(QWidget* widget, ElaApplicationTyp
             wcad.Attrib = _WCA_ACCENT_POLICY;
             wcad.pvData = &policy;
             wcad.cbData = sizeof(policy);
-            _setWindowCompositionAttribute(winHwnd, &wcad);
+            accepted = _setWindowCompositionAttribute && _setWindowCompositionAttribute(winHwnd, &wcad);
         }
         else
         {
             DWM_BLURBEHIND bb{};
             bb.fEnable = TRUE;
             bb.dwFlags = DWM_BB_ENABLE;
-            _dwmEnableBlurBehindWindow(winHwnd, &bb);
+            accepted = SUCCEEDED(_dwmEnableBlurBehindWindow(winHwnd, &bb));
         }
         break;
     }
@@ -265,6 +266,7 @@ void ElaWinShadowHelper::setWindowDisplayMode(QWidget* widget, ElaApplicationTyp
         break;
     }
     }
+    widget->setProperty("ElaWindowMaterialApplied", accepted);
 }
 
 bool ElaWinShadowHelper::getIsCompositionEnabled() const

@@ -3,6 +3,9 @@
  */
 #include "appearance_p.hpp"
 #include "status_p.hpp"
+#include "theme_palette_p.hpp"
+#include <ElaComboBox.h>
+#include <ElaFlowLayout.h>
 #include <ElaPlainTextEdit.h>
 #include <ElaPushButton.h>
 #include <ElaTableView.h>
@@ -16,7 +19,6 @@
 #include <QHeaderView>
 #include <QItemSelectionModel>
 #include <QMetaObject>
-#include <QPalette>
 #include <QPointer>
 #include <QSignalBlocker>
 #include <QSplitter>
@@ -40,9 +42,13 @@ QString describe(const ErrorInfo& error, unsigned depth = 0)
     auto text = QString::fromStdString(error.message);
     if (error.entryPath)
         text += " [" + QString::fromStdString(*error.entryPath) + "]";
+    const auto summary = text;
     if (depth < 4)
-        for (std::size_t i = 0; i < error.causes.size() && i < 8; ++i)
-            text += "\n  " + describe(error.causes[i], depth + 1);
+        for (std::size_t i = 0; i < error.causes.size() && i < 8; ++i) {
+            const auto cause = describe(error.causes[i], depth + 1);
+            if (cause != summary)
+                text += "\n  " + cause;
+        }
     return text;
 }
 /** @brief 显示实际状态，等待父代由单独字段区分。 */
@@ -94,15 +100,6 @@ public:
         : session_(session), watcher_(watcher)
     {
         setObjectName("CordisConfigurationPage");
-        setAutoFillBackground(true);
-        const auto applyTheme = [this](ElaThemeType::ThemeMode mode) {
-            Frame frame(*this);
-            auto colors = palette();
-            colors.setColor(QPalette::Window, eTheme->getThemeColor(mode, ElaThemeType::WindowBase));
-            setPalette(colors);
-        };
-        applyTheme(eTheme->getThemeMode());
-        QObject::connect(eTheme, &ElaTheme::themeModeChanged, this, applyTheme);
         auto layout = new QVBoxLayout(this);
         layout->setContentsMargins(24, 20, 24, 16);
         layout->setSpacing(8);
@@ -135,8 +132,8 @@ public:
             states->addWidget(statusLabel, 1);
         }
         layout->addLayout(states);
-        auto buttons = new QHBoxLayout;
-        buttons->setSpacing(8);
+        auto buttons = new ElaFlowLayout(0, 8, 4);
+        buttons->setIsAnimation(false);
         preview_ = new detail::ActionButton(QString::fromUtf8("检查差异"), this);
         preview_->setObjectName("CordisConfigPreview");
         apply_ = new detail::ActionButton(QString::fromUtf8("应用"), this);
@@ -155,7 +152,15 @@ public:
             button->setMinimumHeight(32);
             buttons->addWidget(button);
         }
-        buttons->addStretch();
+        viewLog_ = new detail::ActionButton(QStringLiteral("查看相关日志"), this);
+        viewLog_->setObjectName("CordisConfigOpenLog");
+        viewLog_->hide();
+        buttons->addWidget(viewLog_);
+        QObject::connect(viewLog_, &QPushButton::clicked, this, [this] {
+            Frame frame(*this);
+            if (locate_ && eventId_)
+                locate_(eventId_, viewLog_);
+        });
         for (auto button : {reset_, rebase_}) {
             button->setMinimumHeight(32);
             buttons->addWidget(button);
@@ -198,9 +203,26 @@ public:
                 message_ = QString::fromUtf8("磁盘原文已载入编辑区；尚未预览或应用，保存基线未改变。");
             });
         });
+        region_ = new ElaComboBox(this);
+        region_->setObjectName("CordisConfigRegion");
+        region_->setAccessibleName(QStringLiteral("配置区域"));
+        region_->addItems(
+            {QStringLiteral("配置源文件"), QStringLiteral("期望与运行状态"), QStringLiteral("差异与执行结果")});
+        layout->addWidget(region_);
         auto split = new QSplitter(Qt::Horizontal, this);
+        split->setObjectName("CordisConfigSplitter");
+        split_ = split;
         split->setChildrenCollapsible(false);
         split->setHandleWidth(8);
+        const auto applyTheme = [this, split](ElaThemeType::ThemeMode mode) {
+            setPalette(detail::workbenchPalette(palette(), mode));
+            // Keep the full hit target transparent over the backdrop and draw only its dividing edge.
+            split->setStyleSheet(QStringLiteral("QSplitter#CordisConfigSplitter::handle:horizontal {"
+                                                "background: transparent; border-left: 1px solid %1; }")
+                                     .arg(eTheme->getThemeColor(mode, ElaThemeType::BasicBorder).name(QColor::HexArgb)));
+        };
+        applyTheme(eTheme->getThemeMode());
+        QObject::connect(eTheme, &ElaTheme::themeModeChanged, this, applyTheme);
         layout->addWidget(split, 3);
         auto source = new QWidget(split);
         auto sourceLayout = new QVBoxLayout(source);
@@ -219,7 +241,6 @@ public:
         sourceLayout->addWidget(filePath_);
         editor_ = new ElaPlainTextEdit(source);
         editor_->setObjectName("CordisConfigEditor");
-        editor_->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}");
         auto textFont = QApplication::font();
         textFont.setPixelSize(14);
         editor_->setFont(textFont);
@@ -271,17 +292,20 @@ public:
         split->setStretchFactor(0, 2);
         split->setStretchFactor(1, 3);
         auto resultTitle = new ElaText(QString::fromUtf8("差异与执行结果"), 14, this);
+        resultTitle_ = resultTitle;
         resultTitle->setIsBold(true);
         layout->addWidget(resultTitle);
         details_ = new ElaPlainTextEdit(this);
         details_->setObjectName("CordisConfigDetails");
-        details_->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}");
         details_->setFont(textFont);
         details_->setReadOnly(true);
         details_->setPlaceholderText(
             QString::fromUtf8("检查差异后在此查看变更；应用、保存及磁盘冲突的结果也会显示在这里。"));
         details_->setMinimumHeight(90);
         layout->addWidget(details_, 1);
+        QObject::connect(region_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+                         [this] { arrangeRegions(); });
+        arrangeRegions();
         auto snapshot = session->snapshot().value();
         if (text.empty() && snapshot.coordinator.desired) {
             text = snapshot.coordinator.desired->source().normalizedYaml();
@@ -307,9 +331,11 @@ public:
                 if (!result.hasValue()) {
                     draft_.reset();
                     message_ = describe(result.error());
+                    record(QStringLiteral("检查配置失败"), displayedRevision_, &result.error());
                     return;
                 }
                 draft_.emplace(std::move(result).value());
+                record(QStringLiteral("已检查配置"), displayedRevision_);
                 message_ = QString::fromUtf8("检查通过；可审阅下方差异后应用。无配置变化时，应用仍可重试失败项。");
             });
         });
@@ -322,9 +348,11 @@ public:
                 auto result = session.apply(draft);
                 if (!result.hasValue()) {
                     message_ = describe(result.error());
+                    record(QStringLiteral("应用配置失败"), displayedRevision_, &result.error());
                     return;
                 }
                 editorRevision_ = result.value().revision;
+                record(QStringLiteral("已应用配置目标"), editorRevision_);
                 matches_ = editor_->toPlainText() == text;
                 draft_.reset();
                 message_ = matches_ ? QString::fromUtf8("目标已接受；运行结果和保存状态分别显示。")
@@ -336,6 +364,7 @@ public:
                 auto result = session.save(displayedRevision_);
                 if (!result.hasValue()) {
                     message_ = describe(result.error());
+                    record(QStringLiteral("保存配置失败"), displayedRevision_, &result.error());
                     return;
                 }
                 saving_.emplace(result.value());
@@ -347,6 +376,8 @@ public:
         QObject::connect(rebase_, &QPushButton::clicked, this, [this] {
             action([&](ConfigurationSession& session) {
                 auto result = session.rebaseExternal(displayedRevision_);
+                record(result.hasValue() ? QStringLiteral("已采用磁盘冲突基线") : QStringLiteral("采用冲突基线失败"),
+                       displayedRevision_, result.hasValue() ? nullptr : &result.error());
                 message_ =
                     result.hasValue() ? QString::fromUtf8("基线已更新；当前目标尚未保存。") : describe(result.error());
             });
@@ -403,7 +434,21 @@ public:
         refresh();
     }
 
+    void bindFeedback(std::function<std::uint64_t(std::string, OutputLevel)> publish,
+                      std::function<void(std::uint64_t, QWidget*)> locate)
+    {
+        publish_ = std::move(publish);
+        locate_ = std::move(locate);
+        viewLog_->setVisible(eventId_ && locate_);
+    }
+
 protected:
+    void resizeEvent(QResizeEvent* e) override
+    {
+        QWidget::resizeEvent(e);
+        if (details_)
+            arrangeRegions();
+    }
     /** @brief 资源清理可嵌套泵送事件，当前 UI 写入栈退出后才允许 DeferredDelete。 */
     bool event(QEvent* event) override
     {
@@ -415,6 +460,28 @@ protected:
     }
 
 private:
+    void arrangeRegions()
+    {
+        const bool narrow = width() < 760;
+        const int section = region_->currentIndex();
+        region_->setVisible(narrow);
+        split_->setVisible(!narrow || section != 2);
+        for (int i = 0; i < split_->count(); ++i)
+            split_->widget(i)->setVisible(!narrow || section == i);
+        resultTitle_->setVisible(!narrow || section == 2);
+        details_->setVisible(!narrow || section == 2);
+    }
+    void record(const QString& summary, std::uint64_t revision, const ErrorInfo* error = nullptr,
+                OutputLevel level = OutputLevel::Info)
+    {
+        if (!publish_)
+            return;
+        auto text = summary + QStringLiteral(" · 修订 %1").arg(revision);
+        if (error)
+            text += QStringLiteral(" · 错误码 %1").arg(static_cast<int>(error->code));
+        eventId_ = publish_(text.toStdString(), error ? OutputLevel::Error : level);
+        viewLog_->setVisible(eventId_ && locate_);
+    }
     /** @brief 模型信号或 EnabledChange 重入关闭时不销毁当前页面栈。 */
     struct Frame {
         ConfigurationPanel& panel;
@@ -501,13 +568,19 @@ private:
             matches_ = false;
         if (saving_)
             if (auto saved = saving_->tryResult()) {
-                message_ = saved->hasValue() && (saved->value().outcome == SaveOutcome::Written ||
-                                                 saved->value().outcome == SaveOutcome::Unchanged)
-                               ? QString::fromUtf8("已保存修订 %1。").arg(saved->value().revision)
+                const bool written = saved->hasValue() && (saved->value().outcome == SaveOutcome::Written ||
+                                                           saved->value().outcome == SaveOutcome::Unchanged);
+                const auto error = saved->hasValue() ? saved->value().error : std::optional<ErrorInfo>(saved->error());
+                message_ = written ? QString::fromUtf8("已保存修订 %1。").arg(saved->value().revision)
+                           : state.store.external
+                               ? QStringLiteral("磁盘文件已被外部修改。请审阅下方磁盘原文，采用冲突基线后再保存。")
                            : saved->hasValue() && saved->value().error ? describe(*saved->value().error)
                            : saved->hasValue()                         ? QString::fromUtf8("保存未完成。")
                                                                        : describe(saved->error());
                 saving_.reset();
+                record(written ? QStringLiteral("配置已保存") : QStringLiteral("保存配置失败"),
+                       saved->hasValue() ? saved->value().revision : displayedRevision_, error ? &*error : nullptr,
+                       written ? OutputLevel::Info : OutputLevel::Error);
             }
         editStatus_->setText(matches_ && state.coordinator.desired ? QString::fromUtf8("编辑：已应用")
                              : draft_ && draft_->baseRevision() == displayedRevision_
@@ -633,8 +706,11 @@ private:
             detail += "\n" + describe(*state.coordinator.runningError);
         if (auto found = running.find(path_); found != running.end() && found->second.failure)
             detail += "\n" + describe(*found->second.failure);
-        if (state.store.lastError)
-            detail += "\n" + describe(*state.store.lastError);
+        if (state.store.lastError) {
+            const auto error = describe(*state.store.lastError);
+            if (error != message_)
+                detail += "\n" + error;
+        }
         if (state.store.external)
             detail += QString::fromUtf8("\n磁盘冲突原文（保留当前目标，不自动采用）：\n") +
                       QString::fromStdString(state.store.external->text);
@@ -693,7 +769,14 @@ private:
     std::uint64_t displayedDiskSequence_ = 0;
     ElaText *summary_, *selected_, *filePath_, *editStatus_, *saveStatus_;
     ElaPushButton *preview_, *apply_, *save_, *reset_, *rebase_;
-    ElaPlainTextEdit *editor_, *details_;
+    ElaPushButton* viewLog_;
+    ElaComboBox* region_;
+    ElaText* resultTitle_;
+    QSplitter* split_;
+    std::uint64_t eventId_ = 0;
+    std::function<std::uint64_t(std::string, OutputLevel)> publish_;
+    std::function<void(std::uint64_t, QWidget*)> locate_;
+    ElaPlainTextEdit *editor_, *details_ = nullptr;
     ElaTableView* table_;
     QStandardItemModel* model_;
     ElaToggleSwitch* enabled_;
@@ -707,6 +790,12 @@ private:
     bool deferred_ = false, refreshing_ = false, matches_ = false, togglePending_ = false;
 };
 } // namespace
+void bindConfigurationFeedback(QWidget* page, std::function<std::uint64_t(std::string, OutputLevel)> publish,
+                               std::function<void(std::uint64_t, QWidget*)> locate)
+{
+    if (auto panel = dynamic_cast<ConfigurationPanel*>(page))
+        panel->bindFeedback(std::move(publish), std::move(locate));
+}
 /** @brief 工厂本身不接受目标，返回页面交由已有页面 effect 的完整销毁屏障托管。 */
 std::unique_ptr<QWidget> createConfigurationPage(const std::shared_ptr<loader::ConfigurationSession>& session,
                                                  std::string text,

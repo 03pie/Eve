@@ -16,7 +16,7 @@ namespace cordis::ui::detail {
 class KeyboardToggleSwitch final : public ElaToggleSwitch {
 public:
     /** @brief 可以通过 Tab 进入，但刷新真实开关状态不会移动焦点。 */
-    explicit KeyboardToggleSwitch(QWidget* parent) : ElaToggleSwitch(parent) { setFocusPolicy(Qt::StrongFocus); }
+    explicit KeyboardToggleSwitch(QWidget* parent);
 
 protected:
     /** @brief 一次按键只提交一次操作，自动重复不触发额外管理请求。 */
@@ -63,6 +63,33 @@ protected:
         }
     }
 };
+
+/** @brief 状态栏绘制一行省略文本，读屏和提示仍使用完整内容。 */
+class StatusBarText final : public ElaText {
+public:
+    StatusBarText(const QString& value, QWidget* parent) : ElaText(value, 13, parent)
+    {
+        auto typeface = font();
+        typeface.setLetterSpacing(QFont::PercentageSpacing, 100);
+        setFont(typeface);
+        setTextFormat(Qt::PlainText);
+        setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        setWordWrap(false);
+        setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    }
+
+    QSize minimumSizeHint() const override { return {0, sizeHint().height()}; }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        const auto visible = fontMetrics().elidedText(text().simplified(), Qt::ElideRight, contentsRect().width());
+        QPainter painter(this);
+        painter.setPen(eTheme->getThemeColor(eTheme->getThemeMode(), ElaThemeType::BasicText));
+        painter.drawText(contentsRect(), int(alignment()) | Qt::TextSingleLine, visible);
+    }
+};
+
 /** @brief 次级说明随 Ela 明暗主题更新，避免依赖固定灰色或降低整个控件的不透明度。 */
 inline void secondaryText(ElaText* text)
 {

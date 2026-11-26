@@ -202,8 +202,9 @@ if(BUILD_TESTING)
     endif()
     add_executable(cordis_modules_view_tests
         "${PROJECT_SOURCE_DIR}/tests/qt/modules_view.cpp"
+        "${PROJECT_SOURCE_DIR}/tests/qt/owned_appearance.cpp"
         "${PROJECT_SOURCE_DIR}/tests/qt/modules_view_close.cpp")
-    target_link_libraries(cordis_modules_view_tests PRIVATE cordis_platform_workspace_support)
+    target_link_libraries(cordis_modules_view_tests PRIVATE cordis_platform_workspace_support Qt5::Test)
     set_target_properties(cordis_modules_view_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     cordis_target_defaults(cordis_modules_view_tests)
     add_dependencies(cordis_modules_view_tests cordis_example_counter_a cordis_example_counter_b

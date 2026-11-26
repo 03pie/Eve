@@ -34,6 +34,10 @@ public:
     std::shared_ptr<OutputService> output() const;
     /** @brief 仅宿主写入平台输出；插件使用带 Context 的 OutputService。 */
     Result<std::uint64_t> writeOutput(std::string text, OutputLevel level = OutputLevel::Info) const;
+    /** @brief 宿主在工作区确定后开启本次运行的归档；原有嵌入式宿主可沿用会话输出。 */
+    Result<void> startOutputArchive(const std::string& workspace, const std::string& version) const;
+    /** @brief 从平台操作定位本次运行的已接纳输出，关闭面板时返回原控件。 */
+    Result<void> showOutputEvent(std::uint64_t sequence, QWidget* origin) const;
     /** @brief 获取仅宿主持有的管理入口；绑定 Kernel 后可刷新、停止和重试实例。 */
     std::shared_ptr<ManagementController> management() const;
     /** @brief 获取可注册为 diagnostics/v1 的只读值快照服务。 */

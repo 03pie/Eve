@@ -1,0 +1,39 @@
+{
+    "afterRejectedImport": {
+        "documents": 0,
+        "notifications": 0,
+        "outputRecords": 2,
+        "readerOutput": "[2] [INFO] Literature reader 1.1.0: D:/WorkSpace/code/cpp/Eve/build/ui-logging-design-review/observed-2/workspace/library",
+        "status": "操作失败：PDF header is missing; source was not modified."
+    },
+    "beforeRejectedImport": {
+        "documents": 0,
+        "notifications": 0,
+        "outputRecords": 2,
+        "readerOutput": "[2] [INFO] Literature reader 1.1.0: D:/WorkSpace/code/cpp/Eve/build/ui-logging-design-review/observed-2/workspace/library",
+        "status": "书库已保存 · 0 篇文献 · 修订 0"
+    },
+    "host": "C++ Qt observer linking production Workbench",
+    "moduleManifestSha256": "fd150e2b3ed9f5b92b10cfdcd01b51e927b8ab37b7db5ddf92a795a137ec2841",
+    "normalClose": true,
+    "notificationCallCount": 1,
+    "notificationFixtureSource": "observer.notification (test only)",
+    "pid": "6240",
+    "platformText": "[1] [INFO] 工作台已初始化。",
+    "problemsStatus": "当前没有问题",
+    "qpa": "windows",
+    "readerText": "[2] [INFO] Literature reader 1.1.0: D:/WorkSpace/code/cpp/Eve/build/ui-logging-design-review/observed-2/workspace/library",
+    "targetsBeforeFixture": [
+        "平台",
+        "literature-reader · 实例 #2 / 代 1"
+    ],
+    "viewMenuActions": [
+        "展开 / 收起插件导航",
+        "显示 / 隐藏底部工作区",
+        "打开命令面板",
+        "清空输出",
+        "复制全部输出",
+        "切换明暗主题",
+        "刷新插件状态"
+    ]
+}

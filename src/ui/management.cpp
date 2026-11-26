@@ -6,6 +6,7 @@
 #include "management_p.hpp"
 #include "management_protection_p.hpp"
 #include "status_p.hpp"
+#include "workbench_dialog_p.hpp"
 #include <ElaComboBox.h>
 #include <ElaDialog.h>
 #include <ElaLineEdit.h>
@@ -13,6 +14,8 @@
 #include <ElaPushButton.h>
 #include <ElaTableView.h>
 #include <ElaText.h>
+#include <QAction>
+#include <QRegularExpression>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QItemSelectionModel>
@@ -178,7 +181,10 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
     QStandardItemModel* model = nullptr;
     QPointer<QPlainTextEdit> details;
     QPointer<QPlainTextEdit> services;
-    QPointer<QPlainTextEdit> notices;
+    QPointer<QPushButton> logButton;
+    QPointer<QPushButton> notificationButton;
+    std::function<void(InstanceId, const std::string&, QWidget*)> openLog;
+    std::function<void(const QString&)> addedInstance;
     QPointer<QPlainTextEdit> operationsView;
     QPointer<QLabel> summary;
     QPointer<ElaText> heading;
@@ -219,6 +225,8 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
     QPointer<ElaPlainTextEdit> addConfiguration;
     QPointer<QPushButton> addSubmit;
     QPointer<ElaText> addStatus;
+    QPointer<ElaText> addIdError, addPayloadError;
+    bool validateAddOnEdit = false;
     std::uint64_t addRevision = 0;
     /** @brief 仅绑定配置入口时创建第五个标签，未绑定的手动管理界面保持原结构。 */
     void createConfigurationTab()
@@ -273,7 +281,6 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         actions->addStretch();
         layout->addLayout(actions);
         auto editor = new ElaPlainTextEdit(panel);
-        editor->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}");
         configurationEditor = editor;
         editor->setObjectName("CordisPluginConfigurationEditor");
         editor->setPlaceholderText(QString::fromUtf8("当前插件的 YAML / JSON 配置；应用后仍需显式保存。"));
@@ -314,17 +321,18 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
                 self->refreshFromSignal();
             }
         });
-        QObject::connect(
-            configTable->selectionModel(), &QItemSelectionModel::currentChanged, panel,
-            [weak](const QModelIndex& index) {
-                if (auto self = weak.lock()) {
-                    self->configurationSelected =
-                        index.isValid()
-                            ? self->configurationModel->index(index.row(), 0).data().toString().toStdString()
-                            : std::string{};
-                    self->refreshFromSignal();
-                }
-            });
+        QObject::connect(configTable->selectionModel(), &QItemSelectionModel::currentChanged, panel,
+                         [weak](const QModelIndex& index) {
+                             if (auto self = weak.lock(); self && self->open) {
+                                 ViewAccess access(*self);
+                                 const auto next = index.sibling(index.row(), 0).data().toString().toStdString();
+                                 if (next == self->configurationSelected)
+                                     return;
+                                 if (self->allowConfigurationSwitch().hasValue())
+                                     self->configurationSelected = next;
+                                 self->refreshFromSignal();
+                             }
+                         });
         auto request = [weak](std::optional<bool> enabled) {
             if (auto self = weak.lock()) {
                 ViewAccess access(*self);
@@ -356,8 +364,25 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         /** @brief 方法调用方须持有控制块直到本 guard 析构。 */
         explicit ViewAccess(ManagementControl& control) : owner(control) { ++owner.viewAccesses; }
         /** @brief 最后一个界面写入栈返回后，才能发布 UI 静止。 */
-        ~ViewAccess() { if (--owner.viewAccesses == 0 && !owner.open) owner.uiClosed.resolve(); }
+        ~ViewAccess()
+        {
+            if (--owner.viewAccesses == 0 && !owner.open)
+                owner.uiClosed.resolve();
+        }
     };
+    Result<void> allowConfigurationSwitch()
+    {
+        if (!editorDirty && !formPending)
+            return Result<void>::success();
+        const auto message = formPending ? QStringLiteral("当前配置正在提交，请稍后切换管理对象。")
+                             : configurationSelected.empty()
+                                 ? QStringLiteral("原对象已移除。请复制需要保留的内容或放弃草稿，再切换对象。")
+                                 : QStringLiteral("当前对象有草稿。请继续编辑，应用或重新载入后再切换。");
+        status->setText(message);
+        if (open && configurationEditor && configurationEditor->isVisible())
+            configurationEditor->setFocus();
+        return Result<void>::failure(makeError(ErrorCode::ConfigConflict, message.toStdString()));
+    }
     /** @brief 编辑草稿不会被定时刷新覆盖；修订变化交给 CAS 或显式重载处理。 */
     void renderEditor()
     {
@@ -374,6 +399,10 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             editorRevision = source->revision;
             const QSignalBlocker blocker(configurationEditor);
             configurationEditor->setPlainText(QString::fromStdString(entry->configuration));
+        } else if (!entry && !editorDirty && !configurationEditor->toPlainText().isEmpty()) {
+            const QSignalBlocker blocker(configurationEditor);
+            configurationEditor->clear();
+            editorPath.clear();
         }
         if (!open)
             return;
@@ -382,7 +411,9 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         configurationEditor->setReadOnly(!usable);
         configurationApply->setEnabled(usable && editorDirty && editorPath == configurationSelected);
         configurationSave->setEnabled(usable && source->dirty && !source->writing && !editorDirty);
-        configurationReload->setEnabled(entry && !formPending);
+        configurationReload->setText(!entry && editorDirty ? QStringLiteral("放弃已移除对象的草稿")
+                                                           : QStringLiteral("重新载入当前配置"));
+        configurationReload->setEnabled((entry || editorDirty) && !formPending);
         configurationApply->setToolTip(
             QString::fromUtf8("校验并应用此条目的配置；其他条目和子树保持。修订变化时请重新载入。"));
         configurationSave->setToolTip(QString::fromUtf8("保存整个当前配置目标；尚未应用的编辑不会写入磁盘。"));
@@ -398,8 +429,7 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
                 handler(*self, result);
                 if (!self->open)
                     return;
-                if (self->addSubmit)
-                    self->addSubmit->setEnabled(true);
+                self->setAddPending(false);
                 self->refreshFromSignal();
             }
         });
@@ -408,6 +438,46 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
                 if (auto self = weak.lock())
                     self->formDeliveryBlocked.store(true);
         });
+    }
+    void setAddPending(bool value)
+    {
+        if (!addSubmit)
+            return;
+        addSubmit->setEnabled(!value);
+        addId->setReadOnly(value);
+        addType->setEnabled(!value);
+        addConfiguration->setReadOnly(value);
+    }
+    bool validateAddFields(bool focus)
+    {
+        if (!addDialog || !open)
+            return false;
+        const auto id = addId->text().toStdString();
+        QString idError, payloadError;
+        if (id.empty())
+            idError = QStringLiteral("请输入实例标识。");
+        else if (lastConfiguration && std::any_of(lastConfiguration->entries.begin(), lastConfiguration->entries.end(),
+                                                  [&](const auto& row) { return row.path == id; }))
+            idError = QStringLiteral("此实例标识已存在。");
+        static const QRegularExpression token(QStringLiteral("^[a-zA-Z0-9_.-]{1,256}$"));
+        if (idError.isEmpty() && (id == "." || id == ".." || !token.match(addId->text()).hasMatch()))
+            idError = QStringLiteral("标识可使用字母、数字、短横线、下划线和点，最长 256 字节。");
+        if (auto validator = std::dynamic_pointer_cast<ConfigurationPayloadValidator>(configuration.lock())) {
+            auto result = validator->validatePayload(addConfiguration->toPlainText().toStdString());
+            if (!result.hasValue())
+                payloadError = errorText(result.error());
+        }
+        addIdError->setText(idError);
+        addIdError->setVisible(!idError.isEmpty());
+        addId->setAccessibleDescription(idError);
+        addPayloadError->setText(payloadError);
+        addPayloadError->setVisible(!payloadError.isEmpty());
+        addConfiguration->setAccessibleDescription(payloadError);
+        if (focus && !idError.isEmpty())
+            addId->setFocus();
+        else if (focus && !payloadError.isEmpty())
+            addConfiguration->setFocus();
+        return idError.isEmpty() && payloadError.isEmpty();
     }
     /** @brief 固定草稿与 CAS 修订；配置变更和保存始终是两项明确操作。 */
     void editConfiguration(bool adding)
@@ -419,14 +489,18 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         auto target = kernel.lock();
         if (!provider || !target || target->snapshot().value().closing)
             return;
+        if (adding) {
+            validateAddOnEdit = true;
+            if (!validateAddFields(true))
+                return;
+        }
         const auto path = configurationSelected;
         const auto text = (adding ? addConfiguration : configurationEditor)->toPlainText().toStdString();
         const auto revision = adding ? addRevision : editorRevision;
         const auto id = adding ? addId->text().toStdString() : std::string{};
         const auto plugin = adding ? addType->currentText().toStdString() : std::string{};
         formPending = true;
-        if (addSubmit)
-            addSubmit->setEnabled(false);
+        setAddPending(true);
         renderEditor();
         if (!open)
             return;
@@ -446,43 +520,46 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             auto label = adding ? addStatus : QPointer<ElaText>(qobject_cast<ElaText*>(status.data()));
             if (label)
                 label->setText(errorText(accepted.error()));
-            if (open && addSubmit)
-                addSubmit->setEnabled(true);
+            if (open) setAddPending(false);
             if (open)
                 renderEditor();
             return;
         }
-        observeForm(
-            accepted.value(), [adding, path](ManagementControl& self, const Result<ConfigurationActionReport>& result) {
-                const bool accepted = result.hasValue();
-                auto label = adding ? self.addStatus : QPointer<ElaText>(qobject_cast<ElaText*>(self.status.data()));
-                QString message = !accepted ? errorText(result.error())
-                                            : QString::fromUtf8("配置目标已接受，运行状态见插件卡片；尚未保存。");
-                if (accepted) {
-                    if (result.value().outcome == ConfigurationOutcome::Failed)
-                        message = QString::fromUtf8("目标已接受，但运行失败；请从卡片查看原因或重试。");
-                    else if (result.value().outcome == ConfigurationOutcome::Superseded)
-                        message = QString::fromUtf8("本次协调已被更新的配置目标替代，请查看当前卡片状态。");
-                    else if (result.value().outcome == ConfigurationOutcome::Cancelled)
-                        message = QString::fromUtf8("当前协调已取消，请查看最新配置目标和运行状态。");
-                    if (result.value().error)
-                        message += "\n" + errorText(*result.value().error);
+        observeForm(accepted.value(), [adding, path, id](ManagementControl& self,
+                                                         const Result<ConfigurationActionReport>& result) {
+            const bool accepted = result.hasValue();
+            auto label = adding ? self.addStatus : QPointer<ElaText>(qobject_cast<ElaText*>(self.status.data()));
+            QString message = !accepted ? errorText(result.error())
+                                        : QString::fromUtf8("配置目标已接受，运行状态见插件卡片；尚未保存。");
+            if (accepted) {
+                if (result.value().outcome == ConfigurationOutcome::Failed)
+                    message = QString::fromUtf8("目标已接受，但运行失败；请从卡片查看原因或重试。");
+                else if (result.value().outcome == ConfigurationOutcome::Superseded)
+                    message = QString::fromUtf8("本次协调已被更新的配置目标替代，请查看当前卡片状态。");
+                else if (result.value().outcome == ConfigurationOutcome::Cancelled)
+                    message = QString::fromUtf8("当前协调已取消，请查看最新配置目标和运行状态。");
+                if (result.value().error)
+                    message += "\n" + errorText(*result.value().error);
+            }
+            if (label)
+                label->setText(message);
+            if (!self.open)
+                return;
+            if (accepted && !adding && self.configurationSelected == path) {
+                self.editorDirty = false;
+                self.editorRevision = result.value().revision;
+            }
+            if (accepted && adding) {
+                self.addRevision = result.value().revision;
+                if (!result.value().error && (result.value().outcome == ConfigurationOutcome::Applied ||
+                                              result.value().outcome == ConfigurationOutcome::Pending)) {
+                    const bool returnToCard = self.addDialog->isVisible() && self.addDialog->isActiveWindow();
+                    self.addDialog->hide();
+                    if (auto action = self.addedInstance; self.open && returnToCard && action)
+                        action(QString::fromStdString(id));
                 }
-                if (label)
-                    label->setText(message);
-                if (!self.open)
-                    return;
-                if (accepted && !adding && self.configurationSelected == path) {
-                    self.editorDirty = false;
-                    self.editorRevision = result.value().revision;
-                }
-                if (accepted && adding) {
-                    self.addRevision = result.value().revision;
-                    if (!result.value().error && (result.value().outcome == ConfigurationOutcome::Applied ||
-                                                  result.value().outcome == ConfigurationOutcome::Pending))
-                        self.addDialog->hide();
-                }
-            });
+            }
+        });
     }
     /** @brief 保存失败原样反馈，窗口继续保留草稿及冲突恢复入口。 */
     void saveConfiguration()
@@ -819,13 +896,31 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         auto item = model->item(rows.front().row(), 0);
         return item ? InstanceId(item->data(Qt::UserRole).toULongLong()) : InstanceId{};
     }
+    std::pair<InstanceId, std::string> logTarget() const
+    {
+        if (focusedCard.startsWith("configuration:"))
+            return {focusedInstance, focusedCard.mid(14).toStdString()};
+        if (!focusedCard.isEmpty() || !configurationTab || tabs->currentWidget() != configurationTab)
+            return {selected(), {}};
+        if (displayed && displayed->configuration) {
+            const auto& entries = displayed->configuration->entries;
+            const auto found = std::find_if(entries.begin(), entries.end(),
+                                            [&](const auto& row) { return row.path == configurationSelected; });
+            if (found != entries.end())
+                return {found->instance, found->path};
+        }
+        return {};
+    }
     /** @brief 只渲染已复制详情；所有文字控件均使用纯文本。 */
     void renderSelection()
     {
-        if (!open || !widget) return;
+        if (!open || !widget)
+            return;
         ViewAccess access(*this);
         // setEnabled 等 Qt 调用可重入刷新；详情使用独立值副本，不借用 displayed 的迭代器。
         const auto local = displayed;
+        const auto log = logTarget();
+        logButton->setEnabled(openLog && (log.first.valid() || !log.second.empty()));
         stopButton->setEnabled(false);
         retryButton->setEnabled(false);
         stopButton->setToolTip(QString::fromUtf8("请选择可停止的实例；操作中或清理受阻时不能重复提交。"));
@@ -849,8 +944,10 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
                         if (row.error)
                             text += "\n" + errorText(*row.error);
                     }
-            details->setPlainText(
-                text.isEmpty() ? QString::fromUtf8("此实例已离开当前运行目录，请从 Home 打开最新卡片。") : text);
+            if (text.isEmpty())
+                text = QStringLiteral("此实例已离开当前运行目录，请从概览打开最新卡片。");
+            if (details->toPlainText() != text)
+                details->setPlainText(text);
             return;
         }
         stopButton->setEnabled(found->canStop);
@@ -894,29 +991,8 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         }
         text += QString::fromUtf8("\n管理操作\n");
         for (const auto& operation : local->operations) if (operation.instance == id) text += operationText(operation);
-        details->setPlainText(text);
-    }
-    /** @brief 通知来自独立的宿主服务，无 Kernel 快照也能查看已保留历史。 */
-    void renderNotifications()
-    {
-        if (!open || !notices)
-            return;
-        const auto values = notifications->snapshot();
-        QString text;
-        if (!values.hasValue())
-            text = errorText(values.error());
-        else
-            for (const auto& entry : values.value()) {
-                const auto level = entry.notification.level == NotificationLevel::Error     ? QString::fromUtf8("错误")
-                                   : entry.notification.level == NotificationLevel::Warning ? QString::fromUtf8("提示")
-                                                                                            : QString::fromUtf8("消息");
-                text += QString("#%1 ").arg(entry.sequence) + level + " · " +
-                        QString::fromStdString(entry.notification.text) + "\n";
-            }
-        if (text.isEmpty())
-            text = QString::fromUtf8("暂无通知。插件消息会保留在这里，收到通知不会自动展开底部工作区。");
-        if (notices->toPlainText() != text)
-            notices->setPlainText(text);
+        if (details->toPlainText() != text)
+            details->setPlainText(text);
     }
     /** @brief 刷新持有 UI 访问屏障，避免模型信号内重入关闭时删除当前调用栈上的控件。 */
     Result<void> refresh()
@@ -937,7 +1013,6 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
             details->clear();
             services->clear();
             operationsView->clear();
-            renderNotifications();
             summary->setText(QString::fromUtf8("管理页未连接可用内核"));
             status->setText(errorText(data.error()));
             if (configurationTab) {
@@ -982,6 +1057,7 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         const bool manualActions =
             manualVisible || (!focusedCard.isEmpty() && !focusedCard.startsWith("configuration:"));
         stopButton->setVisible(manualActions);
+        notificationButton->setVisible(focusedCard.isEmpty());
         retryButton->setVisible(manualActions);
         if (!open)
             return Result<void>::failure(makeError(ErrorCode::ContextClosing, "management closed during layout"));
@@ -1003,8 +1079,8 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         serviceText += QString::fromUtf8("\n命令贡献\n");
         for (const auto& command : view.commands) serviceText += QString::fromStdString(command.id) + QString::fromUtf8("  实例=%1 代次=%2 调用保留=%3 撤销=%4 投递受阻=%5\n")
             .arg(command.owner.instance.value()).arg(command.owner.epoch).arg(command.activeCalls).arg(command.retiring).arg(command.deliveryBlocked);
-        services->setPlainText(serviceText);
-        renderNotifications();
+        if (services->toPlainText() != serviceText)
+            services->setPlainText(serviceText);
         QString operationHistory;
         for (const auto& operation : view.operations) {
             if (!focusedCard.isEmpty() && operation.instance != focusedInstance &&
@@ -1012,7 +1088,8 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
                 continue;
             operationHistory += operationText(operation) + "\n";
         }
-        operationsView->setPlainText(operationHistory);
+        if (operationsView->toPlainText() != operationHistory)
+            operationsView->setPlainText(operationHistory);
         renderSelection();
         renderConfiguration(view);
         renderEditor();
@@ -1393,11 +1470,12 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
 };
 /** @brief 接入永久宿主页；控件和刷新计时器均是宿主资源，不存插件回调。 */
 std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared_ptr<qt::QtScheduler> scheduler,
-    std::shared_ptr<UiPagesService> pages, std::shared_ptr<CommandService> commands, std::shared_ptr<NotificationService> notifications)
+    std::shared_ptr<UiPagesService> pages, std::shared_ptr<CommandService> commands, std::shared_ptr<NotificationService> notifications,
+    std::function<void(QWidget*)> openNotifications)
 {
     auto state = std::make_shared<ManagementControl>();
     state->scheduler = std::move(scheduler); state->pages = std::move(pages); state->commands = std::move(commands); state->notifications = std::move(notifications);
-    auto root = new ElaDialog(parent);
+    auto root = createWorkbenchDialog(parent);
     root->setIsStayTop(false);
     root->setWindowTitle(QString::fromUtf8("插件管理"));
     root->resize(1000, 740);
@@ -1442,19 +1520,44 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
     retry->setEnabled(false);
     actions->addWidget(retry);
     state->retryButton = retry;
+    auto logButton = new ActionButton(QStringLiteral("查看日志"), root);
+    logButton->setObjectName("CordisManagementOpenLog");
+    logButton->setEnabled(false);
+    actions->addWidget(logButton);
+    state->logButton = logButton;
+    auto centerButton = new ActionButton(QStringLiteral("通知中心"), root);
+    centerButton->setObjectName("CordisManagementOpenNotifications");
+    state->notificationButton = centerButton;
+    actions->addWidget(centerButton);
+    QObject::connect(centerButton, &QPushButton::clicked, root,
+                     [centerButton, open = std::move(openNotifications)] { open(centerButton); });
     actions->addStretch(); layout->addLayout(actions);
     auto tabs = new FixedDiagnosticsTabs(root);
     state->tabs = tabs;
     tabs->setObjectName("CordisManagementTabs");
     layout->addWidget(tabs, 3);
-    auto details = new ElaPlainTextEdit(tabs); details->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}"); details->setObjectName("CordisManagementDetails"); details->setReadOnly(true); tabs->addTab(details, QString::fromUtf8("实例详情")); state->details = details;
-    auto services = new ElaPlainTextEdit(tabs); services->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}"); services->setObjectName("CordisManagementServices"); services->setReadOnly(true); tabs->addTab(services, QString::fromUtf8("服务与界面")); state->services = services;
-    auto notices = new ElaPlainTextEdit(tabs); notices->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}"); notices->setObjectName("CordisManagementNotices"); notices->setReadOnly(true); tabs->addTab(notices, QString::fromUtf8("通知")); state->notices = notices;
-    auto operations = new ElaPlainTextEdit(tabs); operations->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}"); operations->setObjectName("CordisManagementOperations"); operations->setReadOnly(true); tabs->addTab(operations, QString::fromUtf8("操作记录")); state->operationsView = operations;
+    auto details = new ElaPlainTextEdit(tabs); details->setObjectName("CordisManagementDetails"); details->setReadOnly(true); tabs->addTab(details, QString::fromUtf8("实例详情")); state->details = details;
+    auto services = new ElaPlainTextEdit(tabs); services->setObjectName("CordisManagementServices"); services->setReadOnly(true); tabs->addTab(services, QString::fromUtf8("服务与界面")); state->services = services;
+    auto operations = new ElaPlainTextEdit(tabs); operations->setObjectName("CordisManagementOperations"); operations->setReadOnly(true); tabs->addTab(operations, QString::fromUtf8("操作记录")); state->operationsView = operations;
     auto status = new ElaText(root); status->setTextPixelSize(14); status->setObjectName("CordisManagementStatus"); status->setTextFormat(Qt::PlainText); status->setWordWrap(true); layout->addWidget(status); state->status = status;
     auto timer = new QTimer(root); timer->setInterval(250); state->timer = timer;
     std::weak_ptr<ManagementControl> weak = state;
-    QObject::connect(timer, &QTimer::timeout, root, [weak] { if (auto owner = weak.lock()) owner->refreshFromSignal(); });
+    QObject::connect(logButton, &QPushButton::clicked, root, [weak] {
+        auto owner = weak.lock();
+        if (!owner || !owner->open || !owner->openLog)
+            return;
+        const auto [instance, path] = owner->logTarget();
+        if (instance.valid() || !path.empty())
+            owner->openLog(instance, path, owner->logButton.data());
+    });
+    QObject::connect(timer, &QTimer::timeout, root, [weak] {
+        if (auto owner = weak.lock())
+            owner->refreshFromSignal();
+    });
+    QObject::connect(tabs, &QTabWidget::currentChanged, root, [weak] {
+        if (auto owner = weak.lock(); owner && owner->open)
+            owner->renderSelection();
+    });
     QObject::connect(eTheme, &ElaTheme::themeModeChanged, root, [weak] {
         if (auto owner = weak.lock(); owner && owner->open)
             owner->refreshFromSignal();
@@ -1473,6 +1576,35 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
 }
 /** @brief 页面所有权始终属于外壳的 Qt 对象树。 */
 QWidget* managementWidget(const std::shared_ptr<ManagementControl>& control) { return control->widget; }
+QString outputPluginName(const std::shared_ptr<ManagementControl>& control, InstanceId instance)
+{
+    if (!control || !control->open || !control->scheduler->isCurrentThread())
+        return {};
+    const auto kernel = control->kernel.lock();
+    if (!kernel)
+        return {};
+    const auto snapshot = kernel->snapshot();
+    if (!snapshot.hasValue())
+        return {};
+    const auto& core = snapshot.value();
+    const auto found = std::find_if(core.instances.begin(), core.instances.end(),
+                                    [&](const auto& item) { return item.instance == instance; });
+    if (found == core.instances.end())
+        return {};
+    const auto runtime =
+        std::find_if(core.names.begin(), core.names.end(), [&](const auto& name) { return name.id == found->runtime; });
+    return runtime == core.names.end() ? QString{} : QString::fromStdString(runtime->name);
+}
+void setManagementLogAction(const std::shared_ptr<ManagementControl>& control,
+                            std::function<void(InstanceId, const std::string&, QWidget*)> action)
+{
+    control->openLog = std::move(action);
+}
+void setAddedInstanceAction(const std::shared_ptr<ManagementControl>& control,
+                            std::function<void(const QString&)> action)
+{
+    control->addedInstance = std::move(action);
+}
 /** @brief 卡片身份先检查真实快照；无中央页签、副本内核或独立生命周期。 */
 Result<void> showManagementDialog(const std::shared_ptr<ManagementControl>& control, const QString& id,
                                   bool configuration)
@@ -1483,10 +1615,13 @@ Result<void> showManagementDialog(const std::shared_ptr<ManagementControl>& cont
     if (!control->open || !control->widget)
         return Result<void>::failure(makeError(ErrorCode::ContextClosing, "management closed"));
     ManagementControl::ViewAccess access(*control);
-    if (control->focusedCard != id && (control->editorDirty || control->formPending)) {
-        control->widget->show();
-        return Result<void>::failure(
-            makeError(ErrorCode::ConfigConflict, "请先应用或重新载入当前配置草稿，再切换管理对象。"));
+    if (control->focusedCard != id) {
+        const auto allowed = control->allowConfigurationSwitch();
+        if (!allowed.hasValue()) {
+            if (control->open)
+                control->widget->show();
+            return allowed;
+        }
     }
     auto data = control->capture();
     if (!data.hasValue() && !id.isEmpty())
@@ -1562,10 +1697,10 @@ Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& contr
         return Result<void>::failure(makeError(ErrorCode::ConfigConflict, "配置操作仍在处理中"));
     control->addRevision = data.value().configuration->revision;
     if (!control->addDialog) {
-        auto dialog = new ElaDialog(control->widget->parentWidget());
+        auto dialog = createWorkbenchDialog(control->widget->parentWidget());
         control->addDialog = dialog;
         dialog->setObjectName("CordisAddPluginDialog");
-        dialog->setWindowTitle(QString::fromUtf8("添加插件配置"));
+        dialog->setWindowTitle(QStringLiteral("添加插件实例"));
         dialog->setIsStayTop(false);
         dialog->resize(620, 550);
         auto layout = new QVBoxLayout(dialog);
@@ -1588,12 +1723,23 @@ Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& contr
         control->addId->setObjectName("CordisAddPluginId");
         control->addId->setAccessibleName(QString::fromUtf8("插件配置实例标识"));
         layout->addWidget(control->addId);
+        auto fieldError = [dialog, layout](const char* name) {
+            auto label = new ElaText(dialog);
+            label->setObjectName(name);
+            label->setWordWrap(true);
+            label->setTextFormat(Qt::PlainText);
+            layout->addWidget(label);
+            label->hide();
+            return label;
+        };
+        control->addIdError = fieldError("CordisAddPluginIdError");
         layout->addWidget(new ElaText(QString::fromUtf8("插件配置 · YAML / JSON"), 14, dialog));
         control->addConfiguration = new ElaPlainTextEdit(dialog);
-        control->addConfiguration->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}");
         control->addConfiguration->setObjectName("CordisAddPluginConfiguration");
+        control->addConfiguration->setAccessibleName(QStringLiteral("插件配置 YAML 或 JSON"));
         control->addConfiguration->setPlainText("{}");
         layout->addWidget(control->addConfiguration, 1);
+        control->addPayloadError = fieldError("CordisAddPluginConfigurationError");
         control->addStatus = new ElaText(dialog);
         control->addStatus->setTextPixelSize(13);
         control->addStatus->setTextFormat(Qt::PlainText);
@@ -1608,6 +1754,12 @@ Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& contr
         control->addSubmit->setObjectName("CordisAddPluginSubmit");
         layout->addWidget(control->addSubmit);
         std::weak_ptr<ManagementControl> weak = control;
+        const auto revalidate = [weak] {
+            if (auto self = weak.lock(); self && self->validateAddOnEdit)
+                self->validateAddFields(false);
+        };
+        QObject::connect(control->addId, &QLineEdit::textChanged, dialog, revalidate);
+        QObject::connect(control->addConfiguration, &QPlainTextEdit::textChanged, dialog, revalidate);
         QObject::connect(control->addSubmit, &QPushButton::clicked, dialog, [weak] {
             if (auto self = weak.lock())
                 self->editConfiguration(true);
@@ -1632,29 +1784,6 @@ Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& contr
 }
 /** @brief 保留调用控制块，管理视图访问屏障处理信号重入。 */
 Result<void> refreshManagement(const std::shared_ptr<ManagementControl>& control) { return control->refresh(); }
-/** @brief 根窗口访问由调用方保留，管理页同时保留自己的视图写入栈。 */
-Result<void> showManagementNotifications(const std::shared_ptr<ManagementControl>& control)
-{
-    if (!control->open || !control->widget)
-        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "notification view closed"));
-    ManagementControl::ViewAccess access(*control);
-    control->renderNotifications();
-    if (!control->open || !control->tabs || !control->notices)
-        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "notification view closed during render"));
-    control->tabs->setTabVisible(control->tabs->indexOf(control->notices), true);
-    control->tabs->setCurrentWidget(control->notices);
-    if (!control->open)
-        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "notification view closed during selection"));
-    control->widget->setWindowTitle(QString::fromUtf8("通知历史"));
-    control->widget->show();
-    if (control->open) {
-        control->widget->raise();
-        control->widget->activateWindow();
-    }
-    return control->open
-               ? Result<void>::success()
-               : Result<void>::failure(makeError(ErrorCode::ContextClosing, "notification view closed while showing"));
-}
 /** @brief 单图标入口仍经过管理请求的线程、排队、实例忙及关闭门禁。 */
 Result<void> setManagementEnabled(const std::shared_ptr<ManagementControl>& control, InstanceId instance, bool enabled)
 {

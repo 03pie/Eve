@@ -5,6 +5,7 @@
 #include <cordis/ui/ela_shell.hpp>
 
 #include <ElaMenu.h>
+#include <ElaMenuBar.h>
 #include <ElaPopularCard.h>
 #include <ElaScrollPageArea.h>
 #include <ElaSuggestBox.h>
@@ -15,8 +16,10 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QComboBox>
+#include <QDir>
 #include <QEventLoop>
 #include <QFontDatabase>
+#include <QLabel>
 #include <QLayout>
 #include <QLineEdit>
 #include <QListView>
@@ -26,6 +29,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QStackedWidget>
+#include <QStatusBar>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTest>
@@ -232,12 +236,77 @@ void search()
     scene.close();
 }
 
+/** @brief 检查缩窄和长标题下，状态正文与右侧入口仍各自在可用区域内。 */
+void statusBarLayout()
+{
+    Scene scene;
+    auto* bar = scene.find<QStatusBar>("CordisStatusBar");
+    auto* summary = scene.find<QLabel>("CordisNotification");
+    auto* location = scene.find<QLabel>("CordisCurrentPage");
+    auto* bell = scene.find<QToolButton>("CordisShowNotifications");
+    const auto title = QStringLiteral("包含多段内容的较长插件页面标题 ").repeated(12).trimmed();
+    const auto message = QStringLiteral("需要处理的工作区提示。").repeated(24);
+    location->setText(title);
+    location->setToolTip(title);
+    summary->setText(message);
+    CHECK(!bar->isSizeGripEnabled());
+    const QDir evidence(qEnvironmentVariable("CORDIS_STATUS_EVIDENCE"));
+    for (auto theme : {ElaThemeType::Light, ElaThemeType::Dark}) {
+        eTheme->setThemeMode(theme);
+        for (const auto width : {700, 1180}) {
+            scene.window->resize(width, 620);
+            QCoreApplication::processEvents();
+            const auto rect = [bar](const QWidget* widget) {
+                return QRect(widget->mapTo(bar, QPoint{}), widget->size());
+            };
+            const auto left = rect(summary);
+            const auto center = rect(location);
+            const auto right = rect(bell);
+            CHECK(summary->isVisible() && location->isVisible() && bell->isVisible());
+            CHECK(bar->rect().contains(left) && bar->rect().contains(center) && bar->rect().contains(right));
+            CHECK(left.right() < center.left() && right.left() - center.right() >= 9);
+            CHECK(qAbs(left.center().y() - right.center().y()) <= 1);
+            CHECK(qAbs(center.center().y() - right.center().y()) <= 1);
+            CHECK(summary->text() == message && location->text() == title && location->toolTip() == title);
+            CHECK(location->width() <= 220 && location->fontMetrics().horizontalAdvance(title) > location->width());
+            CHECK(!bell->accessibleName().isEmpty() && bell->focusPolicy() != Qt::NoFocus);
+            if (qEnvironmentVariableIsSet("CORDIS_STATUS_EVIDENCE")) {
+                CHECK(evidence.mkpath("."));
+                const auto name = QString("status-%1-%2-%3.png")
+                    .arg(theme == ElaThemeType::Dark ? "dark" : "light")
+                    .arg(width).arg(qRound(bar->devicePixelRatioF() * 100));
+                CHECK(scene.window->grab().save(evidence.filePath(name)));
+            }
+        }
+    }
+    bar->showMessage(QStringLiteral("已更新工作区"), 1000);
+    CHECK(!summary->isVisible() && location->isVisible() && bell->isVisible());
+    bar->clearMessage();
+    CHECK(summary->isVisible());
+    scene.close();
+}
+
 /** @brief 设置与菜单使用真实主题、显隐和输出，关闭后动作不再执行。 */
 void menus()
 {
     Scene scene;
     CHECK(!scene.window->findChild<QWidget*>("CordisResourceExplorer"));
     CHECK(!scene.window->findChild<QWidget*>("CordisWorkbenchSidebar"));
+    auto menuBar = scene.find<ElaMenuBar>("CordisMenuBar");
+    const auto initialPage = scene.window->getCurrentNavigationPageKey();
+    const auto headers = menuBar->actions();
+    CHECK(headers.size() == 4);
+    for (auto* header : headers) {
+        auto* popup = qobject_cast<ElaMenu*>(header->menu());
+        CHECK(popup);
+        const auto anchor = menuBar->actionGeometry(header);
+        QTest::mouseClick(menuBar, Qt::LeftButton, {}, anchor.center());
+        until([&] { return QApplication::activePopupWidget() == popup && popup->isVisible(); });
+        CHECK(qAbs(popup->frameGeometry().left() - menuBar->mapToGlobal(anchor.topLeft()).x()) <= 12);
+        QTest::keyClick(popup, Qt::Key_Escape);
+        until([&] { return !popup->isVisible(); });
+        CHECK(scene.window->getCurrentNavigationPageKey() == initialPage);
+    }
     scene.action("CordisOpenSettings");
     scene.action("CordisViewNavigation");
     CHECK(scene.window->getNavigationBarDisplayMode() == ElaNavigationType::Maximal);
@@ -255,7 +324,11 @@ void menus()
     scene.action("CordisViewPanel");
     CHECK(panel->isHidden());
     scene.action("CordisOpenCommands");
-    CHECK(!panel->isHidden() && panel->currentIndex() == 0);
+    CHECK(panel->isHidden() && scene.find<QWidget>("CordisCommandPanel")->isVisible());
+    CHECK(panel->count()==2 && panel->tabText(0)==QString::fromUtf8("输出"));
+    QTest::keyClick(scene.find<QLineEdit>("CordisCommandFilter"),Qt::Key_Escape);
+    scene.action("CordisOpenOutput");
+    CHECK(!panel->isHidden() && panel->currentIndex()==0);
     auto output = scene.find<QPlainTextEdit>("CordisWorkbenchOutput");
     scene.shell.writeOutput("<literal output>").value();
     scene.action("CordisCopyOutput");
@@ -711,6 +784,8 @@ int main(int argc, char** argv)
             search();
         else if (name == "menus")
             menus();
+        else if (name == "status")
+            statusBarLayout();
         else if (name == "isolation")
             isolation();
         else if (name == "navigation_reentry")

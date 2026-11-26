@@ -128,7 +128,7 @@ void diagnostics()
     CHECK(scene.diagnostics->snapshot().value().instances[0].name == "diagnostics");
     scene.management->refresh().value();
     CHECK(scene.widget<QTableView>("CordisInstanceTable")->model()->index(1, 1).data().toString() == QString::fromUtf8("<b>客户端</b>"));
-    CHECK(scene.widget<QPlainTextEdit>("CordisManagementNotices")->toPlainText().contains("<b>text</b>"));
+    CHECK(scene.shell.notifications()->snapshot().value().back().notification.text == "diagnostic <b>text</b>");
     scene.close();
 }
 /** @brief 通过真实按钮发起重试，重复请求被拒绝，记录新 OperationId 和真实失败结果。 */
@@ -390,7 +390,7 @@ void theme()
     QMouseEvent move(QEvent::MouseMove, QPointF(start.x(), -100), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(bar, &move);
     QTest::mouseRelease(bar, Qt::LeftButton, Qt::NoModifier, start);
-    CHECK(tabs->count() == 4 && tabs->widget(0) == details && QApplication::topLevelWidgets().size() == windows);
+    CHECK(tabs->count() == 3 && tabs->widget(0) == details && QApplication::topLevelWidgets().size() == windows);
     tabs->setCurrentIndex(1); CHECK(tabs->currentIndex() == 1);
     scene.close();
 }
@@ -420,7 +420,7 @@ void workbench()
     auto togglePanel = scene.widget<QToolButton>("CordisTogglePanel");
     CHECK(panel->isHidden());
     togglePanel->click(); CHECK(!panel->isHidden()); togglePanel->click(); CHECK(panel->isHidden());
-    scene.widget<QComboBox>("CordisOutputTarget")->setCurrentIndex(1);
+    scene.widget<QComboBox>("CordisOutputTarget")->setCurrentIndex(0);
     CHECK(scene.widget<QPlainTextEdit>("CordisWorkbenchOutput")->toPlainText().contains("<b>output</b>"));
     auto closed = instance.stop(); wait(closed, scene.scheduler);
     CHECK(tabs->count() == 1 && !page->snapshot().value().widgetAlive);

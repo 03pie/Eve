@@ -32,14 +32,11 @@ void ElaComboBoxStyle::drawPrimitive(PrimitiveElement element, const QStyleOptio
     {
     case QStyle::PE_Widget:
     case QStyle::PE_PanelLineEdit:
+    case QStyle::PE_PanelMenu:
     {
         return;
     }
 #ifndef Q_OS_WIN
-    case PE_PanelMenu:
-    {
-        return;
-    }
     case PE_IndicatorArrowDown:
     {
         return;

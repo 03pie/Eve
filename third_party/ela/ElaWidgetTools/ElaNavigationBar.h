@@ -97,6 +97,7 @@ protected:
 
 private:
     friend class ElaWindowPrivate;
+    friend class ElaWindow;
     bool nodeUsesPresentation(const QString& nodeKey) const;
 };
 

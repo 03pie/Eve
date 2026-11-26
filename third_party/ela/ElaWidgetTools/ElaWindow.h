@@ -44,6 +44,8 @@ public:
     void setNavigationBarDisplayMode(ElaNavigationType::NavigationDisplayMode navigationBarDisplayMode);
     Q_REQUIRED_RESULT ElaNavigationType::NavigationDisplayMode getNavigationBarDisplayMode() const;
     void setWindowPaintMode(ElaWindowType::PaintMode windowPaintMode);
+    /** Replay the current ordinary page transition without navigating or changing history. */
+    void previewStackSwitch();
     Q_REQUIRED_RESULT ElaWindowType::PaintMode getWindowPaintMode() const;
 
     void moveToCenter();

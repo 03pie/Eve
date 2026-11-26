@@ -1,0 +1,44 @@
+﻿{
+    "systemBefore":  true,
+    "systemAfter":  true,
+    "platform":  "qwindows",
+    "os":  "Microsoft Windows NT 10.0.26200.0",
+    "executableSHA256":  "96DD766B0492C26627F98A03B6A0966094510F39BCA74C2EA10DDFC449099AA0",
+    "status":  "passed",
+    "native":  {
+                   "after":  {
+                                 "effectiveTransition":  1,
+                                 "noticeCount":  3,
+                                 "previewEnabled":  true,
+                                 "previewPlaying":  false,
+                                 "savedTransition":  1,
+                                 "selectedTransition":  1,
+                                 "settingsVisible":  true,
+                                 "systemAnimation":  true,
+                                 "visibleNoticeBars":  1
+                             },
+                   "before":  {
+                                  "effectiveTransition":  1,
+                                  "noticeCount":  1,
+                                  "previewEnabled":  true,
+                                  "previewPlaying":  true,
+                                  "savedTransition":  1,
+                                  "selectedTransition":  1,
+                                  "settingsVisible":  false,
+                                  "systemAnimation":  true,
+                                  "visibleNoticeBars":  1
+                              },
+                   "during":  {
+                                  "effectiveTransition":  0,
+                                  "noticeCount":  2,
+                                  "previewEnabled":  false,
+                                  "previewPlaying":  false,
+                                  "savedTransition":  1,
+                                  "selectedTransition":  1,
+                                  "settingsVisible":  true,
+                                  "systemAnimation":  false,
+                                  "visibleNoticeBars":  0
+                              },
+                   "hwnd":  "2689490"
+               }
+}

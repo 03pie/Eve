@@ -3,6 +3,7 @@
  */
 #pragma once
 #include <QString>
+#include <functional>
 #include <cordis/qt/scheduler.hpp>
 #include <cordis/ui/management.hpp>
 #include <memory>
@@ -11,15 +12,24 @@
 class QWidget;
 namespace cordis::ui::detail {
 struct ManagementControl;
+// Optional host adapter. Validation is side-effect-free and uses the same payload grammar as submission.
+struct ConfigurationPayloadValidator {
+    virtual ~ConfigurationPayloadValidator() = default;
+    virtual Result<void> validatePayload(const std::string& text) const = 0;
+};
+QString outputPluginName(const std::shared_ptr<ManagementControl>& control, InstanceId instance);
+void setManagementLogAction(const std::shared_ptr<ManagementControl>& control,
+                            std::function<void(InstanceId, const std::string&, QWidget*)> action);
+void setAddedInstanceAction(const std::shared_ptr<ManagementControl>& control,
+                            std::function<void(const QString& path)> action);
 /** @brief 创建 permanent 宿主页及 owner 定时刷新，所有信号仅持宿主弱记录。 */
 std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared_ptr<qt::QtScheduler> scheduler,
-    std::shared_ptr<UiPagesService> pages, std::shared_ptr<CommandService> commands, std::shared_ptr<NotificationService> notifications);
+    std::shared_ptr<UiPagesService> pages, std::shared_ptr<CommandService> commands, std::shared_ptr<NotificationService> notifications,
+    std::function<void(QWidget*)> openNotifications);
 /** @brief 仅宿主用于接入页面堆栈；关闭后返回的 QWidget 由外壳完整删除。 */
 QWidget* managementWidget(const std::shared_ptr<ManagementControl>& control);
 /** @brief 工作台菜单刷新沿用管理页同一状态门禁。 */
 Result<void> refreshManagement(const std::shared_ptr<ManagementControl>& control);
-/** @brief 显式查看宿主通知历史，无 Kernel 时也不伪造运行快照。 */
-Result<void> showManagementNotifications(const std::shared_ptr<ManagementControl>& control);
 /** @brief 单个宿主 Ela 窗口按稳定卡片身份定位，关闭窗口只隐藏，不停止插件。 */
 Result<void> showManagementDialog(const std::shared_ptr<ManagementControl>& control, const QString& id = {},
                                   bool configuration = false);

@@ -19,6 +19,8 @@
 #include <QPainter>
 #include <QPen>
 #include <QPixmap>
+#include <QScrollArea>
+#include <QResizeEvent>
 #include <QSet>
 #include <QSignalBlocker>
 #include <QString>
@@ -86,48 +88,31 @@ HomePage::HomePage()
     hero->setObjectName("CordisHomeBanner");
     hero->setCardImage(banner());
     hero->setBorderRadius(14);
-    hero->setMinimumHeight(220);
+    hero->setMinimumHeight(116);
     hero->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
-    auto body = new QVBoxLayout(hero);
-    body->setContentsMargins(30, 24, 30, 24);
-    body->setSpacing(8);
-    auto eyebrow = new ElaText("CORDIS  /  PLUGIN WORKBENCH", 13, hero);
-    auto title = new ElaText(QString::fromUtf8("把灵感，连接成工作台。"), 30, hero);
+    bannerRow_ = new QBoxLayout(QBoxLayout::LeftToRight, hero);
+    bannerRow_->setContentsMargins(24, 16, 24, 16);
+    bannerRow_->setSpacing(12);
+    auto summary = new QVBoxLayout;
+    summary->setSpacing(4);
+    auto title = new ElaText(windowTitle(), 24, hero);
     title->setIsBold(true);
-    auto subtitle = new ElaText(QString::fromUtf8("你的插件、工具与创作空间，从这里出发。"), 15, hero);
-    for (auto text : {eyebrow, title, subtitle}) {
+    count_ = new ElaText(hero);
+    count_->setTextPixelSize(14);
+    count_->setObjectName("CordisInstanceSummary");
+    for (auto text : {title, count_.data()}) {
         text->setStyleSheet("color:white;background:transparent;");
-        body->addWidget(text);
+        summary->addWidget(text);
     }
-    body->addStretch();
-    auto actions = new QHBoxLayout;
-    actions->setSpacing(10);
-    for (const auto& entry :
-         {std::make_pair("CordisWelcomePlugins", "添加插件"), std::make_pair("CordisWelcomeSettings", "个性化设置"),
-          std::make_pair("CordisWelcomeCommands", "打开命令")}) {
-        auto button = new ActionButton(QString::fromUtf8(entry.second), hero);
-        button->setObjectName(QString::fromLatin1(entry.first));
-        button->setMinimumHeight(34);
-        if (button->objectName() == "CordisWelcomePlugins")
-            primaryButton(button);
-        actions->addWidget(button);
-    }
-    actions->addStretch();
-    body->addLayout(actions);
+    bannerRow_->addLayout(summary, 1);
+    add_ = new ActionButton(QString::fromUtf8("添加插件实例…"), hero);
+    add_->setObjectName("CordisWelcomePlugins");
+    primaryButton(add_);
+    bannerRow_->addWidget(add_, 0, Qt::AlignLeft | Qt::AlignVCenter);
     layout->addWidget(hero);
-    auto heading = new QHBoxLayout;
-    auto label = new ElaText(QString::fromUtf8("插件状态"), 20, content);
+    auto label = new ElaText(QString::fromUtf8("插件实例"), 20, content);
     label->setIsBold(true);
-    heading->addWidget(label);
-    heading->addStretch();
-    count_ = new ElaText(QString::fromUtf8("0 个插件"), 13, content);
-    secondaryText(count_);
-    heading->addWidget(count_);
-    layout->addLayout(heading);
-    auto help = new ElaText(
-        QString::fromUtf8("使用左右开关启停；从卡片打开管理与配置窗口。添加插件位于顶部“文件”菜单。"), 13, content);
-    secondaryText(help);
-    layout->addWidget(help);
+    layout->addWidget(label);
     error_ = new ElaText(content);
     error_->setObjectName("CordisHomeError");
     error_->setTextFormat(Qt::PlainText);
@@ -139,13 +124,37 @@ HomePage::HomePage()
     flow_ = new ElaFlowLayout(cards_, 0, 12, 12);
     flow_->setIsAnimation(false);
     layout->addWidget(cards_);
-    empty_ =
-        new ElaText(QString::fromUtf8("暂无插件。通过“文件 → 添加插件配置…”添加已注册插件的配置实例。"), 14, content);
-    empty_->setObjectName("CordisHomeEmpty");
-    secondaryText(empty_);
+    empty_ = new QWidget(content);
+    empty_->setObjectName("CordisEmptyInstances");
+    emptyRow_ = new QBoxLayout(QBoxLayout::LeftToRight, empty_);
+    emptyRow_->setContentsMargins(0, 0, 0, 0);
+    auto emptyText = new ElaText(QString::fromUtf8("暂无插件实例。"), 14, empty_);
+    emptyText->setObjectName("CordisHomeEmpty");
+    secondaryText(emptyText);
+    emptyRow_->addWidget(emptyText);
+    emptyRow_->addStretch();
     layout->addWidget(empty_);
     layout->addStretch();
     addCentralWidget(content);
+}
+
+void HomePage::focusInstance(const QString& key)
+{
+    if (auto card = items_.value(key)) {
+        if (auto manage = card->findChild<QPushButton*>("CordisPluginManage")) {
+            if (auto scroll = findChild<QScrollArea*>())
+                scroll->ensureWidgetVisible(manage);
+            manage->setFocus(Qt::OtherFocusReason);
+        }
+    }
+}
+
+void HomePage::resizeEvent(QResizeEvent* event)
+{
+    ElaScrollPage::resizeEvent(event);
+    const auto direction = width() < 560 ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight;
+    bannerRow_->setDirection(direction);
+    emptyRow_->setDirection(direction);
 }
 
 void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
@@ -338,7 +347,19 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
             item->deleteLater();
         }
     }
-    count_->setText(QString::fromUtf8("%1 个插件").arg(plugins.size()));
+    int running = 0, attention = 0;
+    for (const auto& plugin : plugins) {
+        running += plugin.running;
+        attention += plugin.needsAttention;
+    }
+    auto summary = QString::fromUtf8("%1 个实例 · %2 个运行中").arg(plugins.size()).arg(running);
+    if (attention)
+        summary += QString::fromUtf8(" · %1 个需处理").arg(attention);
+    count_->setText(summary);
+    if (plugins.empty() && emptyRow_->indexOf(add_) < 0)
+        emptyRow_->insertWidget(1, add_, 0, Qt::AlignLeft);
+    else if (!plugins.empty() && bannerRow_->indexOf(add_) < 0)
+        bannerRow_->addWidget(add_, 0, Qt::AlignLeft | Qt::AlignVCenter);
     empty_->setVisible(plugins.empty());
     if (layoutChanged) {
         flow_->invalidate();

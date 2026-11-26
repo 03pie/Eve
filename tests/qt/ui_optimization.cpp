@@ -14,19 +14,32 @@
 #include <ElaToggleSwitch.h>
 #include <ElaWindow.h>
 #include <QAction>
+#include <QAccessible>
 #include <QApplication>
 #include <QClipboard>
+#include <QCryptographicHash>
 #include <QEventLoop>
 #include <QFile>
 #include <QFontDatabase>
 #include <QIcon>
+#include <QFileDialog>
+#include <QImage>
+#include <QListView>
+#include <QScreen>
+#include <QGuiApplication>
+#include <ElaApplication.h>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeyEvent>
 #include <QPointer>
+#include <QProcess>
+#include <QPropertyAnimation>
 #include <QPushButton>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QStandardPaths>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTemporaryDir>
@@ -53,6 +66,9 @@ using namespace cordis::ui;
         if (!(x))                                                                                                      \
             throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__));                             \
     } while (false)
+#ifdef Q_OS_WIN
+#include "windows_ime.hpp"
+#endif
 
 /** @brief 超时为故障保护，等待条件来自任务和真实磁盘结果。 */
 void until(const std::function<bool()>& condition)
@@ -93,15 +109,18 @@ struct Scene {
     ElaShell shell;
     QPointer<ElaWindow> window;
     /** @brief 只挂载外壳，偏好恢复不能创建业务实例。 */
-    explicit Scene(const QString& path, bool attach = true) : shell(scheduler, path.toUtf8().toStdString())
+    explicit Scene(const QString& path, bool attach = true, bool background = false)
+        : shell(scheduler, path.toUtf8().toStdString())
     {
         if (attach)
             shell.management()->attach(kernel).value();
-        shell.show().value();
         for (auto widget : QApplication::topLevelWidgets())
             if (auto root = qobject_cast<ElaWindow*>(widget))
                 window = root;
         CHECK(window && kernel->snapshot().value().instances.empty());
+        if (background)
+            window->setAttribute(Qt::WA_ShowWithoutActivating);
+        shell.show().value();
     }
     /** @brief 使用宿主稳定名称查找实际 Ela 控件。 */
     template <class T> T* find(const char* name) const
@@ -263,11 +282,28 @@ void keyboard()
     auto toggle = scene.find<ElaToggleSwitch>("CordisSettingsPanel");
     auto panel = scene.find<QTabWidget>("CordisWorkbenchPanel");
     CHECK(toggle->focusPolicy() == Qt::StrongFocus && !toggle->accessibleName().isEmpty());
+    auto accessible = QAccessible::queryAccessibleInterface(toggle);
+    CHECK(accessible && accessible->role() == QAccessible::CheckBox && accessible->state().checkable);
+    CHECK(accessible->text(QAccessible::Name) == toggle->accessibleName());
+    auto actions = accessible->actionInterface();
+    CHECK(actions && actions->actionNames().contains(QAccessibleActionInterface::toggleAction()));
     toggle->setFocus(Qt::TabFocusReason);
     QTest::keyClick(toggle, Qt::Key_Space);
     until([&] { return !panel->isHidden(); });
+    CHECK(accessible->state().checked);
+    auto target = scene.find<QComboBox>("CordisOutputTarget");
+    auto source = QAccessible::queryAccessibleInterface(target);
+    CHECK(source && source->role() == QAccessible::ComboBox && !source->text(QAccessible::Name).isEmpty());
+    CHECK(source->text(QAccessible::Value) == target->currentText());
+    auto followButton = scene.find<QAbstractButton>("CordisOutputFollow");
+    auto follow = QAccessible::queryAccessibleInterface(followButton);
+    CHECK(follow && follow->state().checkable && follow->state().checked == followButton->isChecked());
+    CHECK(!follow->text(QAccessible::Name).isEmpty());
+    auto bell = QAccessible::queryAccessibleInterface(scene.find<QToolButton>("CordisShowNotifications"));
+    CHECK(bell && bell->role() == QAccessible::Button && bell->text(QAccessible::Name).contains(QStringLiteral("通知")));
     QTest::keyClick(toggle, Qt::Key_Return);
     until([&] { return panel->isHidden(); });
+    CHECK(!accessible->state().checked);
     QKeyEvent repeat(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier, " ", true);
     QApplication::sendEvent(toggle, &repeat);
     CHECK(panel->isHidden());
@@ -281,6 +317,8 @@ void keyboard()
     QTest::keyClick(nextFocus, Qt::Key_Backtab);
     CHECK(QApplication::focusWidget() == toggle);
     toggle->setEnabled(false);
+    CHECK(accessible->state().disabled);
+    actions->doAction(QAccessibleActionInterface::toggleAction());
     QTest::keyClick(toggle, Qt::Key_Space);
     CHECK(panel->isHidden());
     scene.close();
@@ -365,7 +403,7 @@ void states()
     scene.shell.management()->refresh().value();
     CHECK(scene.find<ElaText>("CordisNotification")->height() <= 24);
     CHECK(scene.window->statusBar()->height() <= 40);
-    scene.find<ElaComboBox>("CordisOutputTarget")->setCurrentIndex(1);
+    scene.find<ElaComboBox>("CordisOutputTarget")->setCurrentIndex(0);
     CHECK(
         scene.find<ElaPlainTextEdit>("CordisWorkbenchOutput")->toPlainText().contains(QString::fromStdString(notice)));
     CHECK(scene.find<QTabWidget>("CordisWorkbenchPanel")->isHidden());
@@ -424,13 +462,13 @@ void showcase()
         capture("settings-empty");
         CHECK(scene.find<QWidget>("CordisSettingsSearchEmpty")->isVisible());
         search->clear();
-        scene.find<QAction>("CordisOpenCommands")->trigger();
+        scene.find<QAction>("CordisOpenOutput")->trigger();
         auto panel = scene.find<QTabWidget>("CordisWorkbenchPanel");
         auto output = scene.find<ElaPlainTextEdit>("CordisWorkbenchOutput");
         output->setPlainText(QString::fromUtf8("工作台输出\n通知不会自动展开此面板。\n复制与清空仅作用于当前输出。"));
         panel->setCurrentWidget(output);
         capture("output-tools");
-        for (auto name : {"CordisCopyPanelOutput", "CordisClearPanelOutput", "CordisHidePanel"}) {
+        for (auto name : {"CordisOutputMore", "CordisHidePanel"}) {
             auto button = scene.find<QWidget>(name);
             CHECK(button->isVisible());
             CHECK(panel->rect().contains(QRect(button->mapTo(panel, QPoint()), button->size())));
@@ -568,13 +606,17 @@ void tabReentry()
 void panelTools()
 {
     Scene scene({});
+    scene.window->resize(1380,800);
     auto panel = scene.find<QTabWidget>("CordisWorkbenchPanel");
     auto output = scene.find<ElaPlainTextEdit>("CordisWorkbenchOutput");
     auto copy = scene.find<QToolButton>("CordisCopyPanelOutput");
     auto clear = scene.find<QToolButton>("CordisClearPanelOutput");
-    CHECK(panel->isHidden() && copy->isHidden() && clear->isHidden());
+    CHECK(panel->isHidden() && !copy->isVisible() && !clear->isVisible());
     scene.find<QAction>("CordisOpenCommands")->trigger();
-    CHECK(!panel->isHidden() && copy->isHidden());
+    CHECK(panel->isHidden() && !copy->isVisible());
+    CHECK(scene.find<QWidget>("CordisCommandPanel")->isVisible());
+    QTest::keyClick(scene.find<QLineEdit>("CordisCommandFilter"),Qt::Key_Escape);
+    scene.find<QAction>("CordisOpenOutput")->trigger();
     panel->setCurrentWidget(output);
     CHECK(!copy->isHidden() && !clear->isHidden());
     scene.shell.writeOutput("line one\nline two").value();
@@ -621,6 +663,181 @@ void settingsSearch()
     CHECK(scene.find<ElaSpinBox>("CordisSettingsNavigationWidth")->value() == width);
     scene.close();
     CHECK(!QFile::exists(path));
+}
+void captureSettingWindow(ElaWindow* window, const QString& name)
+{
+    if (!qEnvironmentVariableIsSet("CORDIS_SETTINGS_EVIDENCE")) return;
+    const QDir evidence(qEnvironmentVariable("CORDIS_SETTINGS_EVIDENCE"));
+    CHECK(QApplication::platformName()=="windows" && evidence.mkpath("."));
+    window->raise();
+    QTest::qWait(100);
+    auto screen=QGuiApplication::screenAt(window->frameGeometry().center());
+    CHECK(screen && screen->grabWindow(window->winId()).save(evidence.filePath(name)));
+}
+void settingsNavigation()
+{
+    Scene scene({});
+    auto page = scene.find<QWidget>("CordisSettingsPage");
+    auto nav = scene.find<QListView>("CordisSettingsNavigation");
+    auto content = page->findChild<QScrollArea*>();
+    auto search = scene.find<ElaLineEdit>("CordisSettingsSearch");
+    CHECK(content && nav->model()->rowCount() == 5);
+    CHECK(QTest::qWaitForWindowExposed(scene.window));
+    scene.window->raise();
+    scene.window->activateWindow();
+    CHECK(QTest::qWaitForWindowActive(scene.window));
+    CHECK(!page->isVisible());
+    QTest::keyClick(scene.window, Qt::Key_Comma, Qt::ControlModifier);
+    until([&] { return page->isVisible(); });
+    captureSettingWindow(scene.window, "navigation-wide.png");
+    CHECK(nav->accessibleName() == QString::fromUtf8("设置导航"));
+    nav->setFocus(Qt::TabFocusReason);
+    QTest::keyClick(nav, Qt::Key_Down);
+    CHECK(nav->currentIndex().row() == 1);
+    QTest::keyClick(nav, Qt::Key_Return);
+    CHECK(page->findChild<QWidget*>("CordisSettingsLayoutSection")->isAncestorOf(QApplication::focusWidget()));
+    const auto last = nav->model()->index(4, 0);
+    QTest::mouseClick(nav->viewport(), Qt::LeftButton, {}, nav->visualRect(last).center());
+    until([&]{ return content->verticalScrollBar()->value() > 0 && nav->currentIndex() == last; });
+    content->verticalScrollBar()->setValue(0);
+    CHECK(nav->currentIndex().row() == 0);
+    search->setText(QString::fromUtf8("面板高度"));
+    CHECK(!nav->isRowHidden(1) && nav->isRowHidden(0) && nav->isRowHidden(4));
+    search->setFocus();
+    until([&] { return QApplication::focusWidget()==search; });
+    QTest::keyClick(search, Qt::Key_Return);
+    CHECK(scene.find<ElaSpinBox>("CordisSettingsPanelHeight")->hasFocus() ||
+          scene.find<ElaSpinBox>("CordisSettingsPanelHeight")->isAncestorOf(QApplication::focusWidget()));
+    search->clear();
+    scene.window->resize(700, 640);
+    until([&]{ return nav->flow() == QListView::LeftToRight; });
+    nav->setCurrentIndex(nav->model()->index(2,0));
+    nav->setFocus(Qt::TabFocusReason);
+    QTest::keyClick(nav, Qt::Key_Right);
+    QTest::keyClick(nav, Qt::Key_Space);
+    CHECK(nav->currentIndex().row() == 3 && !nav->isRowHidden(3));
+    captureSettingWindow(scene.window, "navigation-narrow.png");
+    CHECK(page->findChild<QWidget*>("CordisSettingsDeveloperSection")->isAncestorOf(QApplication::focusWidget()));
+    scene.close();
+}
+#ifdef Q_OS_WIN
+void settingsNativeIme()
+{
+    Scene scene({});
+    scene.settings();
+    cordis::test::verifyNativePinyin(scene.find<QLineEdit>("CordisSettingsSearch"));
+    captureSettingWindow(scene.window, "settings-ime-commit.png");
+    scene.find<QAction>("CordisOpenCommands")->trigger();
+    auto commandPanel = scene.find<QWidget>("CordisCommandPanel");
+    CHECK(commandPanel->isVisible());
+    cordis::test::verifyNativePinyin(scene.find<QLineEdit>("CordisCommandFilter"));
+    CHECK(commandPanel->isVisible());
+    scene.close();
+}
+void outputSourceSpeech()
+{
+    CHECK(QApplication::platformName() == "windows");
+    Scene scene({});
+    scene.shell.writeOutput("native accessibility source", OutputLevel::Info).value();
+    scene.find<QAction>("CordisOpenOutput")->trigger();
+    const auto combo = scene.find<QComboBox>("CordisOutputTarget");
+    const int platform = combo->findText(QStringLiteral("平台"));
+    CHECK(platform >= 0);
+    scene.window->raise();
+    scene.window->activateWindow();
+    CHECK(QTest::qWaitForWindowActive(scene.window));
+    combo->setCurrentIndex(platform);
+    combo->setFocus();
+    QTest::qWait(1200);
+    combo->showPopup();
+    QTest::qWait(1500);
+    combo->hidePopup();
+    scene.close();
+}
+#endif
+void auditElaThemeSurfaces(ElaWindow& workbench);
+void settingsAppearance()
+{
+    QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+    QTemporaryDir dir;
+    const auto file = dir.filePath("ui.json"), picture = dir.filePath("壁纸.webp");
+    QImage sample(64,32,QImage::Format_RGB32);
+    for (int x=0; x<sample.width(); ++x)
+        for (int y=0; y<sample.height(); ++y)
+            sample.setPixelColor(x,y,QColor(35+3*x, 52+4*y, 225-2*x));
+    {
+        Scene scene(file);
+        scene.settings();
+        for (const auto& path : {dir.filePath("a.png"), dir.filePath("b.jpg"), picture}) {
+            CHECK(sample.save(path));
+            scene.find<QToolButton>("CordisBackgroundPicker")->click();
+            auto dialog = scene.window->findChild<QFileDialog*>();
+            CHECK(dialog);
+            QPointer<QFileDialog> lifetime(dialog);
+            dialog->selectFile(path);
+            CHECK(QMetaObject::invokeMethod(dialog, "accept"));
+            until([&] { return !lifetime; });
+            CHECK(!scene.window->getWindowPixmap(ElaThemeType::Light).isNull());
+        }
+        until([&]{ return !scene.find<QPushButton>("CordisResetBackground")->isHidden(); });
+        auto effects = scene.find<ElaComboBox>("CordisSettingsTransition");
+        const auto settingsKey = scene.window->getCurrentNavigationPageKey();
+        for(int mode : {0, 2, 3, 4, 1}) {
+            effects->setCurrentIndex(mode);
+            scene.find<QPushButton>("CordisSettingsTransitionPreview")->click();
+            scene.find<QAction>("CordisOpenAbout")->trigger();
+            CHECK(scene.window->getCurrentNavigationPageKey()!=settingsKey);
+            scene.settings();
+            CHECK(scene.window->getCurrentNavigationPageKey()==settingsKey);
+        }
+        scene.find<ElaToggleSwitch>("CordisSettingsUserCard")->setIsToggled(false);
+        scene.find<ElaToggleSwitch>("CordisSettingsDoNotDisturb")->setIsToggled(true);
+        for (int theme : {0, 1}) {
+            scene.find<ElaComboBox>("CordisSettingsTheme")->setCurrentIndex(theme);
+            for (int mode : {0, 1, 4, 3, 5, 2}) {
+                scene.find<ElaComboBox>("CordisSettingsMaterial")->setCurrentIndex(mode);
+                CHECK(scene.find<ElaComboBox>("CordisSettingsMaterial")->currentIndex()==mode);
+                CHECK(!scene.window->getWindowPixmap(theme ? ElaThemeType::Dark : ElaThemeType::Light).isNull());
+                const QDir evidence(qEnvironmentVariable("CORDIS_SETTINGS_EVIDENCE"));
+                if (qEnvironmentVariableIsSet("CORDIS_SETTINGS_EVIDENCE")) {
+                    CHECK(QApplication::platformName()=="windows" && evidence.mkpath("."));
+                    scene.window->raise();
+                    QTest::qWait(350);
+                    auto screen = QGuiApplication::screenAt(scene.window->frameGeometry().center());
+                    CHECK(screen);
+                    const auto image = screen->grabWindow(scene.window->winId());
+                    CHECK(!image.isNull() && image.save(evidence.filePath(QString("settings-%1-material-%2.png").arg(theme).arg(mode))));
+                    std::cout << "theme=" << theme << " requestedMaterial=" << mode
+                              << " appliedMaterial=" << static_cast<int>(eApp->getWindowDisplayMode())
+                              << " systemAccepted=" << scene.window->property("CordisRequestedMaterialAccepted").toBool()
+                              << " nativeSize=" << image.width() << "x" << image.height()
+                              << " dpr=" << image.devicePixelRatio() << std::endl;
+                }
+            }
+        }
+        CHECK(scene.find<ElaComboBox>("CordisSettingsMaterial")->currentIndex() == 2);
+        scene.close();
+    }
+    const auto saved = read(file);
+    CHECK(saved.value("background").toString() == picture && saved.value("material").toInt()==2);
+    CHECK(saved.value("transition").toInt()==1 && saved.value("userCardVisible").toBool(true)==false);
+    {
+        Scene scene(file);
+        scene.settings();
+        CHECK(!scene.find<ElaToggleSwitch>("CordisSettingsUserCard")->getIsToggled());
+        CHECK(!scene.find<QPushButton>("CordisResetBackground")->isHidden());
+        CHECK(scene.find<ElaComboBox>("CordisSettingsTransition")->currentIndex()==1);
+        scene.find<QPushButton>("CordisResetBackground")->click();
+        CHECK(scene.find<ElaComboBox>("CordisSettingsMaterial")->currentIndex()==2);
+        scene.find<QPushButton>("CordisSettingsReset")->click();
+        CHECK(scene.find<ElaComboBox>("CordisSettingsMaterial")->currentIndex()==0);
+        CHECK(scene.find<ElaToggleSwitch>("CordisSettingsUserCard")->getIsToggled());
+        CHECK(scene.find<ElaToggleSwitch>("CordisSettingsDoNotDisturb")->getIsToggled());
+        scene.find<QPushButton>("CordisSettingsOutput")->click();
+        CHECK(!scene.find<QTabWidget>("CordisWorkbenchPanel")->isHidden());
+        scene.close();
+    }
+    CHECK(!read(file).contains("background") && read(file).value("doNotDisturb").toBool());
 }
 /** @brief 检索的可见性回调修改输入后收敛；重入关闭等待当前卡片遍历结束。 */
 void settingsReentry()
@@ -670,14 +887,35 @@ void settingsReentry()
 void notifications()
 {
     Scene scene({}, false);
+    auto bell = scene.find<QToolButton>("CordisShowNotifications");
+    auto center = scene.find<QWidget>("CordisNotificationCenter");
+    auto list = scene.find<QListView>("CordisNotificationList");
+    auto empty = scene.find<QLabel>("CordisNotificationEmpty");
+    until([&] { return scene.window->isActiveWindow(); });
+    bell->click();
+    CHECK(empty->isVisible() && !list->isVisible() && list->model()->rowCount() == 0);
+    CHECK(!scene.find<QPushButton>("CordisNotificationMarkRead")->isEnabled() &&
+          !scene.find<QPushButton>("CordisNotificationOpenLog")->isEnabled());
+    until([&] { return scene.find<QPushButton>("CordisNotificationClose")->hasFocus(); });
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Escape);
+    CHECK(!center->isVisible());
+    scene.settings();
+    auto search = scene.find<QLineEdit>("CordisSettingsSearch");
+    search->setText(QStringLiteral("主题"));
+    search->setFocus();
+    search->selectAll();
+    const int pageCount = scene.find<QTabBar>("CordisPageTabs")->count();
+    std::optional<Context> activeOwner;
     auto runtime =
         scene.kernel
             ->registerPlugin(
                 "notifier",
                 [&](Context context) {
-                    scene.shell.notifications()
-                        ->post(context, {NotificationLevel::Warning, "literal <b>warning</b>", {}})
-                        .value();
+                    activeOwner = context;
+                    for (int i = 0; i < 10; ++i)
+                        scene.shell.notifications()
+                            ->post(context, {NotificationLevel::Warning, "literal <b>warning</b>", {}})
+                            .value();
                     scene.shell.notifications()->post(context, {NotificationLevel::Error, "second error", {}}).value();
                     return completedTask();
                 })
@@ -685,18 +923,293 @@ void notifications()
     auto instance = scene.kernel->mount(runtime).value();
     until([&] { return instance.ready().isReady(); });
     CHECK(scene.find<QTabWidget>("CordisWorkbenchPanel")->isHidden());
-    CHECK(scene.find<QTabBar>("CordisPageTabs")->count() == 1);
+    CHECK(scene.find<QTabBar>("CordisPageTabs")->count() == pageCount);
+    CHECK(search->hasFocus() && search->selectedText() == QStringLiteral("主题"));
     scene.find<QToolButton>("CordisShowNotifications")->click();
-    auto notices = scene.find<ElaPlainTextEdit>("CordisManagementNotices");
-    CHECK(scene.find<QTabWidget>("CordisManagementTabs")->currentWidget() == notices);
-    CHECK(notices->toPlainText().contains("literal <b>warning</b>") && notices->toPlainText().contains("second error"));
-    CHECK(notices->toPlainText().contains(QString::fromUtf8("错误")));
+    CHECK(center->isVisible() && !center->isWindow() && list->isVisible() && !empty->isVisible() &&
+          list->model()->rowCount() == 2);
+    for (auto mode : {ElaThemeType::Dark, ElaThemeType::Light}) {
+        eTheme->setThemeMode(mode);
+        const auto view = list->viewport();
+        const auto sample = view->mapTo(center, QPoint(view->width() / 2, view->height() - 10));
+        const auto image = center->grab();
+        const auto color = image.toImage().pixelColor(sample * image.devicePixelRatio());
+        CHECK(mode == ElaThemeType::Dark ? color.lightness() < 100 : color.lightness() > 180);
+    }
+    const auto warning = list->model()->index(1, 0).data().toString();
+    CHECK(warning.contains("literal <b>warning</b>") && warning.contains(QStringLiteral("×10")));
+    CHECK(list->model()->index(0, 0).data().toString().contains(QStringLiteral("错误")));
+    CHECK(scene.window->grab().save(QCoreApplication::applicationDirPath() + "/ui-special-notification-center.png"));
     CHECK(scene.find<QTabWidget>("CordisWorkbenchPanel")->isHidden());
-    QTest::qWait(300);
-    CHECK(notices->toPlainText().contains("second error"));
+    auto markRead = center->findChild<QPushButton*>("CordisNotificationMarkRead");
+    CHECK(markRead && markRead->isEnabled());
+    markRead->click();
+    CHECK(!markRead->isEnabled() && !list->model()->index(0, 0).data().toString().contains(QStringLiteral("未读")));
+    QTest::keyClick(list, Qt::Key_Escape);
+    CHECK(!center->isVisible() && search->hasFocus() && search->selectedText() == QStringLiteral("主题"));
+    scene.find<ElaToggleSwitch>("CordisSettingsDoNotDisturb")->setIsToggled(true);
+    const auto bars = scene.window->findChildren<QWidget*>("ElaMessageBar").size();
+    scene.shell.notifications()->post(*activeOwner, {NotificationLevel::Warning, "muted warning", {}}).value();
+    const auto status = scene.find<QLabel>("CordisNotification");
+    CHECK(status->toolTip() == status->text() && status->text().contains("muted warning"));
+    CHECK(scene.window->findChildren<QWidget*>("ElaMessageBar").size() == bars && !center->isVisible());
+    scene.find<QToolButton>("CordisShowNotifications")->click();
+    CHECK(list->model()->index(0, 0).data().toString().contains("muted warning"));
+    scene.find<QPushButton>("CordisNotificationOpenLog")->click();
+    CHECK(!center->isVisible() && scene.find<QTabWidget>("CordisWorkbenchPanel")->isVisible());
     scene.close();
 }
 
+void notificationArchiveWorker(const QString& workspace, bool seed)
+{
+    Scene scene(QDir(workspace).filePath(seed ? "seed-preferences.json" : "reader-preferences.json"));
+    scene.shell.startOutputArchive(workspace.toStdString(), "notification-qa").value();
+    if (seed) {
+        scene.settings();
+        scene.find<ElaToggleSwitch>("CordisSettingsDoNotDisturb")->setIsToggled(true);
+        const auto runtime =
+            scene.kernel
+                ->registerPlugin("history-notifier",
+                                 [&](Context ctx) {
+                                     scene.shell.notifications()
+                                         ->post(ctx, {NotificationLevel::Warning, "archived-read", OperationId{17}})
+                                         .value();
+                                     scene.shell.notifications()
+                                         ->post(ctx, {NotificationLevel::Error, "archived-unread", OperationId{18}})
+                                         .value();
+                                     scene.shell.output()
+                                         ->write(ctx, "通知", "channel-is-not-a-notification", OutputLevel::Error)
+                                         .value();
+                                     return completedTask();
+                                 })
+                .value();
+        auto instance = scene.kernel->mount(runtime).value();
+        until([&] { return instance.ready().isReady(); });
+    }
+    scene.find<QToolButton>("CordisShowNotifications")->click();
+    auto list = scene.find<QListView>("CordisNotificationList");
+    until([&] { return list->model()->rowCount() == 2; });
+    CHECK(list->model()->index(1, 0).data().toString().contains("archived-read"));
+    CHECK(list->model()->index(0, 0).data().toString().contains("archived-unread"));
+    if (!seed) {
+        CHECK(!list->model()->index(1, 0).data().toString().contains(QStringLiteral("未读")));
+        CHECK(list->model()->index(0, 0).data().toString().contains(QStringLiteral("未读")));
+        CHECK(scene.window->findChildren<QWidget*>("ElaMessageBar").isEmpty());
+        CHECK(scene.shell.notifications()->snapshot().value().empty());
+    }
+    list->setCurrentIndex(list->model()->index(seed ? 1 : 0, 0));
+    const auto run = list->currentIndex().data(Qt::UserRole + 3).toString();
+    scene.find<QPushButton>("CordisNotificationOpenLog")->click();
+    CHECK(scene.find<QComboBox>("CordisOutputRun")->currentData().toString() == run);
+    CHECK(scene.find<QPlainTextEdit>("CordisWorkbenchOutput")->textCursor().selectedText().contains(
+        seed ? "archived-read" : "archived-unread"));
+    if (!seed)
+        CHECK(scene.find<QComboBox>("CordisOutputRun")->currentIndex() != 0);
+    scene.close();
+}
+void notificationArchive()
+{
+    QTemporaryDir workspace;
+    CHECK(workspace.isValid());
+    auto env = QProcessEnvironment::systemEnvironment();
+    env.insert("CORDIS_QA_NOTICE_WORKSPACE", workspace.path());
+    for (const auto name : {"notification_archive_seed", "notification_archive_read"}) {
+        QProcess worker;
+        worker.setProcessEnvironment(env);
+        worker.setProcessChannelMode(QProcess::ForwardedChannels);
+        worker.start(QCoreApplication::applicationFilePath(), {QString::fromLatin1(name)});
+        CHECK(worker.waitForStarted() && worker.waitForFinished(30000) && worker.exitStatus() == QProcess::NormalExit &&
+              worker.exitCode() == 0);
+    }
+}
+void notificationArchiveFault()
+{
+    QTemporaryDir workspace;
+    CHECK(workspace.isValid());
+    QStandardPaths::setTestModeEnabled(true);
+    write(workspace.filePath(".cordis"), "test fixture blocks the project log directory");
+    const auto key =
+        QCryptographicHash::hash(QFileInfo(workspace.path()).absoluteFilePath().toUtf8(), QCryptographicHash::Sha256)
+            .toHex();
+    QDir logs(QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
+                  .filePath("logs/" + QString::fromLatin1(key)));
+    CHECK(!logs.exists());
+    Scene scene(workspace.filePath("preferences.json"));
+    scene.shell.startOutputArchive(workspace.path().toStdString(), "notification-qa").value();
+    const auto runs = logs.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    CHECK(runs.size() == 1);
+    scene.shell.writeOutput("trigger archive fault", OutputLevel::Info).value();
+    auto bell = scene.find<QToolButton>("CordisShowNotifications");
+    until([&] { return bell->accessibleName().contains(QStringLiteral("1 条未读")); });
+    auto bars = scene.window->findChildren<QWidget*>("ElaMessageBar");
+    CHECK(bars.size() == (scene.window->property("CordisReducedMotion").toBool() ? 0 : 1));
+    bell->click();
+    auto status = scene.find<QLabel>("CordisNotificationArchiveStatus");
+    CHECK(status->isVisible() && status->text().contains(QStringLiteral("已改存到")));
+    scene.find<QPushButton>("CordisNotificationMarkRead")->click();
+    CHECK(bell->accessibleName().contains(QStringLiteral("0 条未读")));
+    scene.shell.writeOutput("still usable", OutputLevel::Info).value();
+    QTest::qWait(550);
+    CHECK(status->isVisible() && bell->accessibleName().contains(QStringLiteral("0 条未读")));
+    CHECK(scene.window->findChildren<QWidget*>("ElaMessageBar").size() <= 1);
+    scene.close();
+    QDir run(logs.filePath(runs.first()));
+    for (const auto& entry : run.entryList(QDir::Files))
+        CHECK(run.remove(entry));
+    CHECK(logs.rmdir(runs.first()));
+    CHECK(QDir().rmdir(logs.absolutePath()));
+}
+#ifdef Q_OS_WIN
+bool systemAnimation()
+{
+    BOOL enabled = FALSE;
+    CHECK(SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0));
+    return enabled != FALSE;
+}
+// Manual Windows run only. Both the guard and the parent harness restore the session value.
+struct RestoreClientAnimation {
+    bool original = systemAnimation();
+    bool changed = false;
+    static bool set(bool enabled)
+    {
+        return SystemParametersInfoW(SPI_SETCLIENTAREAANIMATION, 0,
+                                     reinterpret_cast<void*>(static_cast<ULONG_PTR>(enabled)), 0) != FALSE;
+    }
+    void disable()
+    {
+        CHECK(original && set(false));
+        changed = true;
+        CHECK(!systemAnimation());
+    }
+    void restore()
+    {
+        CHECK(set(original) && systemAnimation() == original);
+        changed = false;
+    }
+    ~RestoreClientAnimation()
+    {
+        if (changed) {
+            BOOL restored = FALSE;
+            if (!set(original) || !SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &restored, 0) ||
+                (restored != FALSE) != original)
+                std::cerr << "Native cleanup could not confirm system animation recovery.\n";
+        }
+    }
+};
+void observeSystemSurfaces(ElaWindow& window, const QString& settingsPath, const QString& imagePath,
+                           const QString& isolatedRestriction);
+void settingsSystemSurfaces(const QString& isolatedRestriction = {})
+{
+    CHECK(QApplication::platformName() == "windows");
+    QTemporaryDir temporary;
+    CHECK(temporary.isValid());
+    QImage pattern(144, 96, QImage::Format_RGB32);
+    for (int y = 0; y < pattern.height(); ++y)
+        for (int x = 0; x < pattern.width(); ++x)
+            pattern.setPixel(x, y, ((x + y) / 32) % 2 ? qRgb(0, 74, 139) : qRgb(22, 174, 143));
+    const auto imagePath = temporary.filePath("surface-test.png");
+    CHECK(pattern.save(imagePath));
+    const auto path = temporary.filePath("preferences.json");
+    const QJsonObject values{{"version", 1}, {"theme", 0}, {"navigationMode", 2}, {"navigationWidth", 240},
+                             {"panelHeight", 160}, {"material", 2}, {"background", imagePath}};
+    write(path, QJsonDocument(values).toJson());
+    Scene scene(path, true, true);
+    scene.settings();
+    until([&] { return scene.find<QComboBox>("CordisSettingsMaterial")->isVisible(); });
+    observeSystemSurfaces(*scene.window, path, imagePath, isolatedRestriction);
+    scene.close();
+}
+void settingsSystemAnimation()
+{
+    CHECK(QApplication::platformName() == "windows");
+    RestoreClientAnimation system;
+    CHECK(system.original);
+    QTemporaryDir dir;
+    CHECK(dir.isValid());
+    const auto file = dir.filePath("preferences.json");
+    Scene scene(file, true, true);
+    scene.settings();
+    auto transition = scene.find<QComboBox>("CordisSettingsTransition");
+    auto preview = scene.find<QPushButton>("CordisSettingsTransitionPreview");
+    const auto hwnd = reinterpret_cast<HWND>(scene.window->winId());
+    const auto key = scene.window->getCurrentNavigationPageKey();
+    transition->setCurrentIndex(static_cast<int>(ElaWindowType::Popup));
+    until([&] { return read(file).value("transition").toInt() == ElaWindowType::Popup; });
+
+    std::optional<Context> owner;
+    const auto definition = scene.kernel
+                                ->registerPlugin("motion-test",
+                                                 [&](Context ctx) {
+                                                     owner = ctx;
+                                                     return completedTask();
+                                                 })
+                                .value();
+    auto instance = scene.kernel->mount(definition).value();
+    until([&] { return instance.ready().isReady(); });
+    const auto post = [&](const char* message) {
+        scene.shell.notifications()->post(*owner, {NotificationLevel::Warning, message, {}}).value();
+    };
+    const auto barCount = [&] {
+        int count = 0;
+        for (const auto bar : scene.window->findChildren<QWidget*>("ElaMessageBar", Qt::FindDirectChildrenOnly))
+            count += bar->isVisible();
+        return count;
+    };
+    const auto playing = [&] {
+        for (const auto animation : scene.window->findChildren<QPropertyAnimation*>())
+            if (animation->propertyName() == "pPopupAnimationYOffset" &&
+                animation->state() == QAbstractAnimation::Running)
+                return true;
+        return false;
+    };
+    const auto state = [&] {
+        return QJsonObject{{"systemAnimation", systemAnimation()},
+                           {"effectiveTransition", static_cast<int>(scene.window->getStackSwitchMode())},
+                           {"selectedTransition", transition->currentIndex()},
+                           {"savedTransition", read(file).value("transition")},
+                           {"previewEnabled", preview->isEnabled()},
+                           {"previewPlaying", playing()},
+                           {"settingsVisible", transition->isVisible()},
+                           {"visibleNoticeBars", barCount()},
+                           {"noticeCount", static_cast<int>(scene.shell.notifications()->snapshot().value().size())}};
+    };
+    const auto notifyWindow = [&] {
+        DWORD_PTR result = 0;
+        CHECK(SendMessageTimeoutW(hwnd, WM_SETTINGCHANGE, SPI_SETCLIENTAREAANIMATION, 0,
+                                  SMTO_ABORTIFHUNG, 2000, &result));
+    };
+    post("before");
+    CHECK(barCount() == 1 && preview->isEnabled());
+    preview->click();
+    CHECK(playing());
+    const auto before = state();
+    system.disable();
+    notifyWindow();
+    until([&] {
+        return scene.window->getStackSwitchMode() == ElaWindowType::None && !playing() && transition->isVisible() &&
+               !preview->isEnabled();
+    });
+    post("during");
+    CHECK(barCount() == 0 && scene.find<QLabel>("CordisNotification")->text().contains("during"));
+    CHECK(scene.window->getCurrentNavigationPageKey() == key && transition->currentIndex() == ElaWindowType::Popup);
+    const auto during = state();
+    system.restore();
+    notifyWindow();
+    until([&] { return scene.window->getStackSwitchMode() == ElaWindowType::Popup && preview->isEnabled(); });
+    post("after");
+    CHECK(barCount() == 1 && scene.window->getCurrentNavigationPageKey() == key);
+    const auto after = state();
+    CHECK(after.value("noticeCount").toInt() == 3 &&
+          during.value("savedTransition") == before.value("savedTransition") &&
+          after.value("savedTransition") == before.value("savedTransition"));
+    scene.close();
+    const QJsonObject result{{"hwnd", QString::number(reinterpret_cast<quintptr>(hwnd))},
+                             {"before", before},
+                             {"during", during},
+                             {"after", after}};
+    std::cout << QJsonDocument(result).toJson(QJsonDocument::Compact).constData() << std::endl;
+}
+#endif
 /** @brief 每个场景独立应用，字体来自同一 Ela 应用基线。 */
 int main(int argc, char** argv)
 {
@@ -737,8 +1250,40 @@ int main(int argc, char** argv)
             settingsSearch();
         else if (name == "settings_reentry")
             settingsReentry();
+        else if (name == "settings_navigation")
+            settingsNavigation();
+        else if (name == "settings_appearance")
+            settingsAppearance();
+        else if (name == "theme_surfaces") {
+            Scene scene({}, true, true);
+            scene.settings();
+            auditElaThemeSurfaces(*scene.window);
+            scene.close();
+        }
+#ifdef Q_OS_WIN
+        else if (name == "settings_native_ime")
+            settingsNativeIme();
+        else if (name == "output_source_speech")
+            outputSourceSpeech();
+        else if (name == "settings_system_animation")
+            settingsSystemAnimation();
+        else if (name == "settings_system_surfaces")
+            settingsSystemSurfaces();
+        else if (name == "settings_policy_contrast")
+            settingsSystemSurfaces(QStringLiteral("contrast"));
+        else if (name == "settings_policy_transparency")
+            settingsSystemSurfaces(QStringLiteral("transparency"));
+        else if (name == "settings_private_hive_transparency")
+            settingsSystemSurfaces(QStringLiteral("private-hive"));
+#endif
         else if (name == "notifications")
             notifications();
+        else if (name == "notification_archive")
+            notificationArchive();
+        else if (name == "notification_archive_fault")
+            notificationArchiveFault();
+        else if (name == "notification_archive_seed" || name == "notification_archive_read")
+            notificationArchiveWorker(qEnvironmentVariable("CORDIS_QA_NOTICE_WORKSPACE"),name=="notification_archive_seed");
 #ifdef Q_OS_WIN
         else if (name == "locked")
             locked();

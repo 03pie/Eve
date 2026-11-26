@@ -21,6 +21,7 @@
 namespace modules_view_test {
 using namespace platform_workspace_test;
 bool closeCase(const QString& name, const QString& sourceBin);
+void ownedAppearance(const QString& sourceBin);
 
 template <class T> T* find(const char* name)
 {
@@ -304,6 +305,8 @@ int main(int argc, char** argv)
         const auto name = application.arguments()[2];
         if (name == "menu")
             modules_view_test::menu(source);
+        else if (name == "appearance")
+            modules_view_test::ownedAppearance(source);
         else if (name == "catalogue")
             modules_view_test::catalogue(source);
         else if (name == "legacy")

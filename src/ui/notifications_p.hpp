@@ -9,6 +9,12 @@
 class QLabel;
 namespace cordis::ui::detail {
 struct NotificationControl;
+void installNotificationCenter(const std::shared_ptr<NotificationControl>& control, QWidget* window,
+                               std::function<QString(InstanceId)> sourceName);
+Result<void> toggleNotificationCenter(const std::shared_ptr<NotificationControl>& control, QWidget* origin);
+void muteNotifications(const std::shared_ptr<NotificationControl>& control, bool muted);
+void watchNotificationArchive(const std::shared_ptr<NotificationControl>& control,
+                              std::shared_ptr<RuntimeLogArchive> archive);
 /** @brief 状态栏控件由外壳拥有，通知历史和候选值由此后端拥有。 */
 std::shared_ptr<NotificationControl> createNotifications(std::shared_ptr<qt::QtScheduler> scheduler,
                                                          QLabel* notification);

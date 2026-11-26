@@ -5,9 +5,13 @@
 #include "fixed_tabs_p.hpp"
 #include "management_p.hpp"
 #include "output_p.hpp"
+#include "appearance_p.hpp"
+#include "home_p.hpp"
 #include "panel_p.hpp"
+#include "runtime_log_archive_p.hpp"
 #include "services_p.hpp"
 #include "workbench_p.hpp"
+#include "workbench_dialog_p.hpp"
 #include <ElaActionCommander.h>
 #include <ElaApplication.h>
 #include <ElaDialog.h>
@@ -25,8 +29,11 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QEvent>
+#include <QDynamicPropertyChangeEvent>
 #include <QHBoxLayout>
 #include <QItemSelectionModel>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QKeySequence>
 #include <QMouseEvent>
 #include <QPainter>
@@ -34,6 +41,7 @@
 #include <QScopedValueRollback>
 #include <QSignalBlocker>
 #include <QStackedWidget>
+#include <QStatusBar>
 #include <QTreeView>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -150,6 +158,7 @@ public:
     /** @brief 清理入口只在析构前使用，窗口消失后禁止再访问 Ela。 */
     ~HostWindow() override;
 protected:
+    bool event(QEvent* event) override;
     /** @brief 忽略同步关闭，交给宿主等待 Kernel 和页面清理。 */
     void closeEvent(QCloseEvent* event) override;
 private:
@@ -160,6 +169,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
     std::shared_ptr<qt::QtScheduler> scheduler;
     std::shared_ptr<ServicesControl> services;
     std::shared_ptr<OutputControl> output;
+    std::shared_ptr<RuntimeLogArchive> archive;
     std::shared_ptr<ManagementControl> management;
     QPointer<HostWindow> window;
     std::optional<qt::QObjectResource> windowResource;
@@ -296,11 +306,21 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
     {
         if (!closing || starting || failed || windowClosing || !servicesClosed || !managementClosed || navigationAccesses != 0 || waiting != 0 || !pages.empty()) return;
         windowClosing = true;
+        // Child dialogs are independent native windows. Hide them while the owner's
+        // style, focus chain and QWidget internals are still fully alive.
+        if (window) {
+            QVector<QPointer<QDialog>> dialogs;
+            for (auto dialog : window->findChildren<QDialog*>()) dialogs.append(dialog);
+            for (const auto& dialog : dialogs)
+                if (dialog && dialog->isVisible()) dialog->hide();
+            if (window) window->hide();
+        }
         closeHandler = {};
         configurationHandler = {};
         modulesHandler = {};
         auto self = shared_from_this();
         cordis::detail::TaskAccess::observe(windowResource->close(), [self](Task<void>::Snapshot result) {
+            if (self->archive) self->archive->finish(result->hasValue());
             if (result->hasValue()) self->closed.resolve();
             else self->closed.reject(result->error());
         });
@@ -409,9 +429,24 @@ private:
     std::weak_ptr<ShellControl> state_;
 };
 /** @brief QWidget 删除后 QPointer 自行失效，原生窗口不再承担页面导航入口。 */
-HostWindow::~HostWindow() { state_->open = false; state_->window = nullptr; }
+HostWindow::~HostWindow()
+{
+    state_->open = false;
+    state_->window = nullptr;
+    // Native child dialogs can still send style/focus events to their transient
+    // parent from QDialog's destructor, including dialogs never shown.
+    const auto dialogs = findChildren<ElaDialog*>(QString(), Qt::FindDirectChildrenOnly);
+    for (auto dialog : dialogs) delete dialog;
+}
 /** @brief Qt close 只触发宿主请求，不将隐藏窗口当成异步退出完成。 */
 void HostWindow::closeEvent(QCloseEvent* event) { event->ignore(); state_->requestClose(); }
+bool HostWindow::event(QEvent* event)
+{
+    if (event->type() == QEvent::DynamicPropertyChange && state_ && state_->services &&
+        static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName() == "CordisDoNotDisturb")
+        setNotificationMuted(state_->services, property("CordisDoNotDisturb").toBool());
+    return ElaWindow::event(event);
+}
 /** @brief 读取当前导航仅在窗口与贡献都存在时进行，安全页始终在窗口最后删除。 */
 PageSnapshot PageControl::snapshot() const
 {
@@ -576,7 +611,7 @@ Result<PageHandle> UiPagesService::add(const Context& owner, PageSpec spec) cons
         if (!allowed.hasValue()) return failedTask(allowed.error());
         if (!state->open) return failedTask(makeError(ErrorCode::ContextClosing, "shell closed during page creation"));
         if (page->spec.presentation == PagePresentation::Dialog) {
-            auto dialog = new ElaDialog(state->window);
+            auto dialog = detail::createWorkbenchDialog(state->window);
             page->dialog = dialog;
             dialog->setObjectName("CordisContributionDialog");
             dialog->setWindowTitle(QString::fromStdString(page->spec.title));
@@ -709,14 +744,19 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     window->setWindowButtonFlag(ElaAppBarType::RouteForwardButtonHint, false);
     window->setIsNavigationBarEnable(true);
     window->setNavigationBarWidth(240);
-    window->setUserInfoCardTitle(QString::fromUtf8("Cordis"));
-    window->setUserInfoCardSubTitle(QString::fromUtf8("插件工作台"));
-    window->setUserInfoCardPixmap(icon.pixmap(64, 64));
+    window->setUserInfoCardTitle(QString::fromUtf8("未登录"));
+    window->setUserInfoCardSubTitle(QString::fromUtf8("用户账户"));
+    const auto refreshAvatar = [root = window.get()](ElaThemeType::ThemeMode mode) {
+        const auto color = eTheme->getThemeColor(mode, ElaThemeType::BasicText);
+        root->setUserInfoCardPixmap(ElaIcon::getInstance()->getElaIcon(ElaIconType::CircleUser, 54, color).pixmap(64, 64));
+    };
+    refreshAvatar(eTheme->getThemeMode());
+    QObject::connect(eTheme, &ElaTheme::themeModeChanged, window.get(), refreshAvatar);
     control_->navigation = window->findChild<ElaNavigationBar*>();
     control_->navigationView = window->findChild<QTreeView*>("ElaNavigationView");
     if (!control_->navigation || !control_->navigationView) throw std::runtime_error("pinned Ela navigation unavailable");
     control_->navigation->setIsRouteHistoryEnabled(false);
-    auto safe = detail::createWelcomePage();
+    auto safe = new detail::HomePage;
     window->addPageNode(QString::fromUtf8("概览"), safe, ElaIconType::House);
     control_->safePage = safe;
     control_->safeKey = safe->property("ElaPageKey").toString();
@@ -725,9 +765,8 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     auto panel = new detail::FixedDiagnosticsTabs(nullptr);
     panel->setObjectName("CordisWorkbenchPanel"); panel->setMinimumHeight(110);
     QListView* commandList = nullptr;
-    auto commandPanel = detail::createCommandPanel(panel, commandList);
-    panel->addTab(commandPanel, QString::fromUtf8("命令"));
-    auto output = new ElaPlainTextEdit(panel);
+    auto commandPanel = detail::createCommandPanel(window.get(), commandList);
+    auto output = detail::createOutputEditor(panel);
     output->setObjectName("CordisWorkbenchOutput"); output->setReadOnly(true); output->setMaximumBlockCount(5000);
     output->setFrameShape(QFrame::NoFrame);
     output->setStyleSheet("ElaPlainTextEdit{background-color:transparent;border:0;}");
@@ -744,19 +783,25 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     togglePanel->setShortcut(QKeySequence("Ctrl+J"));
     togglePanel->setFixedSize(32, 30);
     togglePanel->setAccessibleName(QString::fromUtf8("切换底部工作区"));
-    togglePanel->setToolTip(QString::fromUtf8("切换命令与输出（Ctrl+J）"));
+    togglePanel->setToolTip(QString::fromUtf8("切换输出与问题面板（Ctrl+J）"));
     headerLayout->addWidget(togglePanel);
     window->setCentralCustomWidget(header);
     window->setWorkbenchWidgets(nullptr, panel);
     panel->hide();
     auto statusBar = new ElaStatusBar(window.get());
-    auto notification = new ElaText(QString::fromUtf8("就绪"), 12, statusBar);
+    statusBar->setObjectName("CordisStatusBar");
+    statusBar->setStyleSheet(QStringLiteral("#CordisStatusBar{background:transparent;}"));
+    statusBar->setSizeGripEnabled(false);
+    statusBar->setContentsMargins(10, 0, 8, 0);
+    const auto updateStatusPalette = [statusBar](ElaThemeType::ThemeMode mode) {
+        auto palette = statusBar->palette();
+        palette.setColor(QPalette::WindowText, eTheme->getThemeColor(mode, ElaThemeType::BasicText));
+        statusBar->setPalette(palette);
+    };
+    updateStatusPalette(eTheme->getThemeMode());
+    QObject::connect(eTheme, &ElaTheme::themeModeChanged, statusBar, updateStatusPalette);
+    auto notification = new detail::StatusBarText(QStringLiteral("就绪"), statusBar);
     notification->setObjectName("CordisNotification");
-    notification->setTextFormat(Qt::PlainText);
-    notification->setWordWrap(false);
-    notification->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    notification->setMinimumWidth(0);
-    notification->setMaximumHeight(24);
     statusBar->addWidget(notification, 1);
     window->setStatusBar(statusBar);
     control_->services = detail::createUiServices(control_->scheduler, commandList, notification);
@@ -773,10 +818,18 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     commands_ = std::shared_ptr<CommandService>(new CommandService(control_->services));
     notifications_ = std::shared_ptr<NotificationService>(new NotificationService(control_->services));
     control_->management =
-        detail::createManagement(window.get(), control_->scheduler, pages_, commands_, notifications_);
+        detail::createManagement(window.get(), control_->scheduler, pages_, commands_, notifications_,
+                                 [outputWeak](QWidget* origin) {
+                                     if (auto shell = outputWeak.lock(); shell && shell->open)
+                                         (void)detail::showNotificationCenter(shell->services, origin);
+                                 });
+    detail::setOutputSourceResolver(control_->output, [outputWeak](InstanceId id) {
+        const auto shell = outputWeak.lock();
+        return shell ? detail::outputPluginName(shell->management, id) : QString{};
+    });
     control_->managementPage = detail::managementWidget(control_->management);
     control_->managementKey = "cordis:management";
-    window->addFooterNode(QString::fromUtf8("命令与输出"), control_->commandsKey, 0, ElaIconType::Terminal);
+    window->addFooterNode(QString::fromUtf8("输出与问题"), control_->commandsKey, 0, ElaIconType::Terminal);
     management_ = std::shared_ptr<ManagementController>(new ManagementController(control_->management));
     diagnostics_ = std::shared_ptr<DiagnosticsService>(new DiagnosticsService(control_->management));
     ElaActionCommander::getInstance()->setIsMessageDisplayEnable(false);
@@ -845,6 +898,8 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
                  detail::HomePlugin item{QString::number(row.instance.instance.value()),
                                          QString::fromStdString(row.name), status};
                  item.status = detail::instanceStatus(row.instance.state, static_cast<bool>(row.instance.failure));
+                 item.running = row.instance.state == InstanceState::Active;
+                 item.needsAttention = row.instance.failure.has_value();
                  item.canStop = row.canStop && !row.canRetry;
                  item.canRetry = row.canRetry;
                  item.canLoad = row.canLoad;
@@ -852,13 +907,6 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
                  item.enabled = row.instance.state == InstanceState::Active ||
                                 row.instance.state == InstanceState::Pending ||
                                 row.instance.state == InstanceState::Loading;
-                 for (const auto& entry : state->pages) {
-                     const auto& page = entry.second;
-                     if (page->owner.instance != row.instance.instance || !page->navigation || !page->presentable())
-                         continue;
-                     item.title = QString::fromStdString(page->spec.title);
-                     break;
-                 }
                  plugins.push_back(std::move(item));
              }
              if (snapshot.configuration) {
@@ -869,11 +917,11 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
                          status = QString::fromUtf8("配置状态不可用");
                      else if (!row.hasActual && row.error)
                          status = QString::fromUtf8("状态不可用");
-                     else if (!row.enabled)
+                     else if (!row.hasActual && !row.enabled)
                          status = QString::fromUtf8("已停用");
-                     else if (!row.effectiveEnabled)
+                     else if (!row.hasActual && !row.effectiveEnabled)
                          status = QString::fromUtf8("父项停用");
-                     else if (row.waitingForParent)
+                     else if (!row.hasActual && row.waitingForParent)
                          status = QString::fromUtf8("等待父项");
                      else if (!row.hasActual)
                          status = QString::fromUtf8("等待执行");
@@ -898,11 +946,16 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
                              status = QString::fromUtf8("已停止");
                              break;
                          }
-                     detail::HomePlugin item{
-                         "configuration:" + QString::fromStdString(row.path),
-                         QString::fromStdString(row.plugin) + " · " + QString::fromStdString(row.path), status};
+                     const auto path = QString::fromStdString(row.path);
+                     auto name = QJsonDocument::fromJson(QByteArray::fromStdString(row.configuration))
+                                     .object().value(QStringLiteral("title")).toString().trimmed();
+                     if (name.isEmpty())
+                         name = path.section('/', -1);
+                     detail::HomePlugin item{"configuration:" + path, name, status};
+                     item.running = row.hasActual && row.state == InstanceState::Active;
+                     item.needsAttention = row.error.has_value() || (row.hasActual && row.state == InstanceState::Failed);
                      item.status = detail::instanceStatus(row.state, static_cast<bool>(row.error));
-                     if (!row.hasActual || !row.enabled || !row.effectiveEnabled || row.waitingForParent)
+                     if (!row.hasActual)
                          item.status.icon =
                              !row.enabled || !row.effectiveEnabled ? ElaIconType::CircleStop : ElaIconType::Hourglass;
                      if (snapshot.configurationError || (!row.hasActual && row.error))
@@ -914,8 +967,8 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
                      item.canStop = row.canSetEnabled && row.enabled;
                      item.canLoad = row.canSetEnabled && !row.enabled;
                      item.identity =
-                         QString::fromUtf8("路径 %1 · %2")
-                             .arg(QString::fromStdString(row.path))
+                         QString::fromUtf8("%1 · %2 · %3")
+                             .arg(QString::fromStdString(row.plugin), path)
                              .arg(row.instance.valid() ? QString::fromUtf8("实例 #%1").arg(row.instance.value())
                                                        : QString::fromUtf8("无实例"));
                      plugins.push_back(std::move(item));
@@ -948,7 +1001,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
              if (!state || !state->open)
                  return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closing"));
              detail::ShellControl::NavigationAccess access(*state);
-             return detail::showManagementNotifications(state->management);
+             return detail::showNotificationCenter(state->services);
          },
          [weak](const QString& id, bool configuration) {
              auto state = weak.lock();
@@ -1010,6 +1063,32 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
                              std::make_pair(control_->aboutKey, QString::fromUtf8("关于 Cordis"))})
         detail::registerWorkbenchPage(control_->workbench, entry.first, entry.second);
     detail::selectWorkbenchPage(control_->workbench, control_->safeKey);
+    detail::configureNotificationCenter(control_->services,window.get(),[weak](InstanceId id){
+        if (auto state=weak.lock(); state && state->open) return detail::outputPluginName(state->management,id);
+        return QString{};
+    });
+    detail::setNotificationMuted(control_->services,window->property("CordisDoNotDisturb").toBool());
+    detail::setAddedInstanceAction(control_->management, [weak, home = QPointer<detail::HomePage>(safe)](const QString& path) {
+        auto state = weak.lock();
+        if (!state || !state->open || !home)
+            return;
+        detail::ShellControl::NavigationAccess access(*state);
+        if (!state->selectKey(state->safeKey).hasValue())
+            return;
+        detail::refreshWorkbenchPresentation(state->workbench);
+        if (state->open && home) {
+            state->window->activateWindow();
+            if (state->open && home)
+                home->focusInstance("configuration:" + path);
+            if (state->open && state->window)
+                state->window->statusBar()->showMessage(
+                    QStringLiteral("已将「%1」加入运行目标。可在卡片的「配置」中保存到磁盘。").arg(path), 7000);
+        }
+    });
+    detail::setManagementLogAction(control_->management,[weak](InstanceId instance,const std::string& path,QWidget* origin){
+        if (auto state=weak.lock(); state && state->open)
+            detail::showOutput(state->output,{},instance,origin,{},QString::fromStdString(path));
+    });
     std::vector<QAction*> platformCommands;
     for (auto action : window->findChildren<QAction*>())
         if (action->objectName().startsWith("Cordis")) platformCommands.push_back(action);
@@ -1024,12 +1103,14 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
         return detail::showManagementDialog(state->management, QString::number(id.value()));
     });
     (void)detail::appendOutput(control_->output, {}, "platform", "工作台已初始化。");
-    QObject::connect(togglePanel, &ElaToolButton::clicked, window.get(), [panel] { panel->setVisible(panel->isHidden()); });
+    QObject::connect(togglePanel, &ElaToolButton::clicked, window.get(), [weak] {
+        if(const auto state=weak.lock()) detail::toggleOutputPanel(state->output);
+    });
     // ElaWindow 转发信号发生在堆栈切换之前；直接监听其后注册的原生信号，记录实际已切换页面。
     QObject::connect(control_->navigation.data(), &ElaNavigationBar::navigationNodeClicked, window.get(), [weak, panel](ElaNavigationType::NavigationNodeType, const QString& key, bool) {
         if (auto state = weak.lock()) {
             detail::ShellControl::NavigationAccess access(*state);
-            if (key == state->commandsKey) panel->setVisible(panel->isHidden());
+            if (key == state->commandsKey) detail::toggleOutputPanel(state->output);
             else state->syncSelection(key);
         }
     });
@@ -1076,6 +1157,24 @@ std::shared_ptr<OutputService> ElaShell::output() const { return output_; }
 Result<std::uint64_t> ElaShell::writeOutput(std::string text, OutputLevel level) const
 {
     return detail::appendOutput(control_->output, {}, "platform", std::move(text), level);
+}
+Result<void> ElaShell::startOutputArchive(const std::string& workspace,const std::string& version) const
+{
+    const auto& state=control_;
+    if (!state->scheduler->isCurrentThread()) return Result<void>::failure(makeError(ErrorCode::WrongThread,"archive requires shell owner"));
+    if (!state->open || state->archive || workspace.empty()) return Result<void>::failure(makeError(ErrorCode::InvalidArgument,"archive cannot be opened for this shell"));
+    state->archive=std::make_shared<detail::RuntimeLogArchive>(QString::fromStdString(workspace),QString::fromStdString(version));
+    detail::setOutputArchive(state->output,state->archive);
+    detail::setNotificationArchive(state->services,state->archive);
+    return Result<void>::success();
+}
+Result<void> ElaShell::showOutputEvent(std::uint64_t sequence,QWidget* origin) const
+{
+    if (!control_->scheduler->isCurrentThread()) return Result<void>::failure(makeError(ErrorCode::WrongThread,"output navigation requires shell owner"));
+    if (!control_->open) return Result<void>::failure(makeError(ErrorCode::ContextClosing,"shell closing"));
+    detail::ShellControl::NavigationAccess access(*control_);
+    detail::showOutput(control_->output,sequence,{},origin);
+    return Result<void>::success();
 }
 /** @brief 普通插件不获得管理控制器，宿主自行决定何时绑定 Kernel。 */
 std::shared_ptr<ManagementController> ElaShell::management() const { return management_; }

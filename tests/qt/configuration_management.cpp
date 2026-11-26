@@ -6,6 +6,7 @@
 #include <ElaToggleSwitch.h>
 #include <ElaWindow.h>
 #include <QAbstractItemModel>
+#include <QAccessible>
 #include <QAction>
 #include <QApplication>
 #include <QComboBox>
@@ -44,6 +45,9 @@ using namespace cordis::ui;
         if (!(x))                                                                                                      \
             throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__));                             \
     } while (false)
+#ifdef Q_OS_WIN
+#include "windows_ime.hpp"
+#endif
 /** @brief 完成来自可观察的真实状态，超时只报告失败。 */
 void until(const std::function<bool()>& condition)
 {
@@ -631,12 +635,28 @@ void cardWindows()
     scene.apply("formatVersion: 1\nplugins: []\n");
     CHECK(!scene.find<QPushButton>("CordisPluginConfigurationApply")->isEnabled());
     scene.find<QAction>("CordisOpenNotifications")->trigger();
+    CHECK(scene.find<QWidget>("CordisNotificationCenter")->isVisible());
     CHECK(scene.find<QTabWidget>("CordisManagementTabs")->currentWidget() ==
-          scene.find<QPlainTextEdit>("CordisManagementNotices"));
+          scene.find<QWidget>("CordisManagementConfiguration"));
     scene.close();
     CHECK(!dialog);
 }
 /** @brief 平台菜单从已注册目录创建配置实例，无中央导航、重复添加或隐式即时保存。 */
+#ifdef Q_OS_WIN
+void addInstanceNativeIme()
+{
+    Scene scene;
+    until([&] { return scene.find<QAction>("CordisAddPlugin")->isEnabled(); });
+    scene.find<QAction>("CordisAddPlugin")->trigger();
+    auto dialog = scene.find<ElaDialog>("CordisAddPluginDialog");
+    auto submit = scene.find<QPushButton>("CordisAddPluginSubmit");
+    int submissions = 0;
+    QObject::connect(submit, &QPushButton::clicked, dialog, [&] { ++submissions; });
+    cordis::test::verifyNativePinyin(scene.find<QLineEdit>("CordisAddPluginId"));
+    CHECK(dialog->isVisible() && submissions == 0);
+    scene.close();
+}
+#endif
 void addInstance()
 {
     Scene scene;
@@ -647,23 +667,57 @@ void addInstance()
     CHECK(dialog->isVisible());
     auto types = scene.find<QComboBox>("CordisAddPluginType");
     CHECK(types->count() == 1 && types->currentText() == "demo");
-    scene.find<QLineEdit>("CordisAddPluginId")->setText("added");
-    scene.find<QPlainTextEdit>("CordisAddPluginConfiguration")->setPlainText("{\"title\":\"added\"}");
+    auto id = scene.find<QLineEdit>("CordisAddPluginId");
+    auto yaml = scene.find<QPlainTextEdit>("CordisAddPluginConfiguration");
+    auto submit = scene.find<QPushButton>("CordisAddPluginSubmit");
+    submit->click();
+    CHECK(scene.find<QLabel>("CordisAddPluginIdError")->isVisible());
+    const auto idA11y = QAccessible::queryAccessibleInterface(id);
+    const auto yamlA11y = QAccessible::queryAccessibleInterface(yaml);
+    CHECK(idA11y && yamlA11y && !yamlA11y->text(QAccessible::Name).isEmpty());
+    CHECK(idA11y->text(QAccessible::Description) == scene.find<QLabel>("CordisAddPluginIdError")->text());
+    id->setText("added");
+    yaml->setPlainText("{invalid");
+    CHECK(!scene.find<QLabel>("CordisAddPluginIdError")->isVisible());
+    CHECK(scene.find<QLabel>("CordisAddPluginConfigurationError")->isVisible());
+    CHECK(yamlA11y->text(QAccessible::Description) == scene.find<QLabel>("CordisAddPluginConfigurationError")->text());
+    yaml->setPlainText("{still invalid");
+    CHECK(scene.find<QLabel>("CordisAddPluginConfigurationError")->isVisible());
+    yaml->setPlainText("{\"title\":\"added\"}");
+    CHECK(!scene.find<QLabel>("CordisAddPluginConfigurationError")->isVisible());
+    CHECK(yamlA11y->text(QAccessible::Description).isEmpty());
     for (auto theme : {ElaThemeType::Light, ElaThemeType::Dark}) {
         eTheme->setThemeMode(theme);
         QTest::qWait(30);
         const auto suffix = theme == ElaThemeType::Light ? "light" : "dark";
         CHECK(dialog->grab().save(QCoreApplication::applicationDirPath() + "/add-plugin-" + suffix + ".png"));
     }
-    scene.find<QPushButton>("CordisAddPluginSubmit")->click();
+    submit->click();
+    CHECK(!submit->isEnabled() && id->isReadOnly() && yaml->isReadOnly());
+    submit->click();
     until([&] { return dialog->isHidden(); });
     auto state = scene.route->snapshot().value();
     CHECK(state.revision == 1 && state.dirty && state.entries.size() == 1 && state.entries[0].path == "added");
     CHECK(!QFile::exists(scene.directory.filePath("cordis.yaml")));
     until([&] { return scene.card("added") != nullptr; });
+    auto addedManage = scene.card("added")->findChild<QPushButton*>("CordisPluginManage");
+    until([&] { return addedManage->hasFocus(); });
     CHECK(scene.find<QTabBar>("CordisPageTabs")->count() == 1);
+    scene.find<QAction>("CordisAddPlugin")->trigger();
+    id->setText("added");
+    submit->click();
+    CHECK(dialog->isVisible() && scene.find<QLabel>("CordisAddPluginIdError")->isVisible());
+    CHECK(yaml->toPlainText() == "{\"title\":\"added\"}" && scene.route->snapshot().value().entries.size() == 1);
+    id->setText("second");
+    CHECK(!scene.find<QLabel>("CordisAddPluginIdError")->isVisible());
     auto duplicate = scene.route->addInstance("added", "demo", "{}", state.revision);
     CHECK(!duplicate.hasValue() && scene.route->snapshot().value().revision == state.revision);
+    submit->click();
+    dialog->hide();
+    scene.window->activateWindow();
+    addedManage->setFocus();
+    until([&] { return scene.card("second") && scene.route->snapshot().value().revision == 2; });
+    CHECK(addedManage->hasFocus());
     scene.close();
     Scene baseline(false);
     wait(baseline.session->close());
@@ -707,6 +761,9 @@ void editInstance()
     scene.card()->findChild<QPushButton*>("CordisPluginConfigure")->click();
     auto editor = scene.find<QPlainTextEdit>("CordisPluginConfigurationEditor");
     editor->setPlainText("{\"draft\":true}");
+    scene.card("sibling")->findChild<QPushButton*>("CordisPluginConfigure")->click();
+    CHECK(editor->toPlainText() == "{\"draft\":true}" &&
+          scene.find<QLabel>("CordisManagementStatus")->text().contains(QStringLiteral("继续编辑")));
     auto change = scene.route->setEnabled("sibling", false, 2).value();
     wait(change);
     scene.find<QPushButton>("CordisPluginConfigurationApply")->click();
@@ -719,6 +776,37 @@ void editInstance()
     CHECK(scene.route->snapshot().value().revision == 4 && scene.route->snapshot().value().dirty);
     scene.find<QPushButton>("CordisPluginConfigurationSave")->click();
     until([&] { return !scene.route->snapshot().value().dirty; });
+    until([&] { return scene.find<QPushButton>("CordisPluginConfigurationReload")->isEnabled(); });
+    CHECK(scene.shell.showManagement().hasValue());
+    scene.find<QTabWidget>("CordisManagementTabs")
+        ->setCurrentWidget(scene.find<QWidget>("CordisManagementConfiguration"));
+    auto table = scene.find<QTableView>("CordisManagementConfigurationTable");
+    auto apply = scene.find<QPushButton>("CordisPluginConfigurationApply");
+    auto reload = scene.find<QPushButton>("CordisPluginConfigurationReload");
+    table->setCurrentIndex(table->model()->index(0, 0));
+    CHECK(table->currentIndex().data().toString() == "r");
+    editor->setPlainText("{\"owner\":\"A\"}");
+    table->setFocus();
+    QTest::keyClick(table, Qt::Key_Down);
+    CHECK(table->currentIndex().data().toString() == "r" && editor->toPlainText() == "{\"owner\":\"A\"}" &&
+          apply->isEnabled());
+    CHECK(scene.find<QLabel>("CordisManagementStatus")->text().contains(QStringLiteral("继续编辑")));
+    reload->click();
+    table->setCurrentIndex(table->model()->index(2, 0));
+    CHECK(table->currentIndex().data().toString() == "sibling" && editor->toPlainText().contains("9007199254740993"));
+    auto log = scene.find<QPushButton>("CordisManagementOpenLog");
+    CHECK(log->isEnabled());
+    log->click();
+    CHECK(scene.find<QComboBox>("CordisOutputTarget")->currentData().toString() == "configuration/sibling");
+    QTest::keyClick(scene.find<QComboBox>("CordisOutputTarget"), Qt::Key_Escape);
+    editor->setPlainText("{\"owner\":\"sibling\"}");
+    scene.apply("formatVersion: 1\nplugins: [{id: survivor, plugin: demo}]\n");
+    CHECK(editor->isReadOnly() && !apply->isEnabled() && editor->toPlainText() == "{\"owner\":\"sibling\"}");
+    table->setCurrentIndex(table->model()->index(0, 0));
+    CHECK(!table->currentIndex().isValid() && reload->text().contains(QStringLiteral("放弃")));
+    reload->click();
+    table->setCurrentIndex(table->model()->index(0, 0));
+    CHECK(table->currentIndex().data().toString() == "survivor" && editor->toPlainText() == "{}");
     scene.close();
 }
 /** @brief 保存冲突不回报成功，只有显式采用磁盘基线后才允许重新保存。 */
@@ -825,6 +913,10 @@ int main(int argc, char** argv)
             cardWindows();
         else if (name == "add_instance")
             addInstance();
+#ifdef Q_OS_WIN
+        else if (name == "add_instance_native_ime")
+            addInstanceNativeIme();
+#endif
         else if (name == "edit_instance")
             editInstance();
         else if (name == "save_conflict")
