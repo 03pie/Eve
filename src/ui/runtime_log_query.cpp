@@ -1,5 +1,5 @@
 /** @file runtime_log_query.cpp
- * @brief Query immutable bounds over the production archive's common decoder.
+ * @brief 按已接受事件的快照上界查询归档，复用读写两端的事件解码器。
  */
 #include "runtime_log_query_p.hpp"
 #include "runtime_log_retention_p.hpp"
@@ -119,13 +119,13 @@ std::vector<LogRun> LogQuery::runs() const
     return archive_ ? archive_->runs() : readSavedLogRuns(workspace_);
 }
 
-LogSourceCatalog LogQuery::sources(const QString& run) const
+LogSourceResult LogQuery::sources(const QString& run) const
 {
     if (archive_)
         return archive_->sourceCatalog(run);
-    LogSourceCatalog result;
-    scan(run, 0, [&](const LogRecord& row) {
-        collectLogSource(result, row);
+    LogSourceResult result;
+    result.warning = scan(run, 0, [&](const LogRecord& row) {
+        collectLogSource(result.sources, row);
         return true;
     });
     return result;
@@ -134,7 +134,7 @@ LogSourceCatalog LogQuery::sources(const QString& run) const
 LogQueryPage LogQuery::page(const LogCursor& cursor, int limit) const
 {
     LogQueryPage result;
-    const auto count = static_cast<std::size_t>(std::clamp(limit, 1, 1000));
+    const auto count = static_cast<std::size_t>(std::clamp(limit, 1, maxLogPageSize));
     const auto upper = cursor.before_ ? std::min(cursor.before_ - 1, cursor.through_) : cursor.through_;
     quint64 expected = upper;
     auto gap = [&](quint64 first, quint64 last) {
@@ -203,9 +203,9 @@ LogUpdate LogQuery::replay(const LogPosition& after, const LogFilter& filter, in
     LogUpdate result;
     result.resume = after;
     const auto through = acceptedThrough(after.run);
-    const auto count = static_cast<std::size_t>(std::clamp(limit, 1, 1000));
+    const auto count = static_cast<std::size_t>(std::clamp(limit, 1, maxLogPageSize));
     if (archive_ && after.run == archive_->currentRun()) {
-        result.sources = sources(after.run);
+        result.sources = sources(after.run).sources;
         result.persistence = archive_->persistence();
     }
     std::deque<LogRecord> earliest;

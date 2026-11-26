@@ -113,11 +113,15 @@ int main(int argc, char** argv)
         } else if (savedLogDirectory(workspace, run).isEmpty()) {
             throw std::invalid_argument("The specified run is unavailable.");
         } else if (parser.isSet("sources")) {
-            const auto sources = query.sources(run);
-            for (auto source = sources.cbegin(); source != sources.cend(); ++source)
+            const auto catalog = query.sources(run);
+            for (auto source = catalog.sources.cbegin(); source != catalog.sources.cend(); ++source)
                 if (!emitLine(output, source.key() + '\t' + source->name + '\t' +
                                           QString("%1-%2").arg(source->firstEvent).arg(source->lastEvent)))
                     return EXIT_FAILURE;
+            if (!catalog.warning.isEmpty()) {
+                std::fprintf(stderr, "%s\n", catalog.warning.toUtf8().constData());
+                return EXIT_FAILURE;
+            }
         } else if (parser.isSet("event")) {
             const auto event = query.locate(run, positiveId(parser, "event"));
             if (!event.record) {

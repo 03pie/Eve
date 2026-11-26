@@ -8,6 +8,9 @@ class QIODevice;
 
 namespace cordis::ui::detail
 {
+inline constexpr int defaultLogPageSize = 200;
+inline constexpr int maxLogPageSize = 1000;
+
 struct LogPosition {
     QString run;
     quint64 through = 0;
@@ -63,10 +66,10 @@ public:
     explicit LogQuery(QString workspace) : workspace_(std::move(workspace)) {}
     LogCursor begin(const QString& run, const LogFilter& filter = {}, quint64 before = 0) const;
     std::vector<LogRun> runs() const;
-    LogSourceCatalog sources(const QString& run) const;
-    LogQueryPage page(const LogCursor& cursor, int limit = 200) const;
+    LogSourceResult sources(const QString& run) const;
+    LogQueryPage page(const LogCursor& cursor, int limit = defaultLogPageSize) const;
     LogLookup locate(const QString& run, quint64 eventId) const;
-    LogUpdate replay(const LogPosition& after, const LogFilter& filter = {}, int limit = 200) const;
+    LogUpdate replay(const LogPosition& after, const LogFilter& filter = {}, int limit = defaultLogPageSize) const;
     bool exportText(const LogCursor& cursor, QIODevice& output, QString& error) const;
 
 private:
@@ -77,12 +80,12 @@ private:
     QString workspace_;
 };
 
-// On the subscriber's scheduler, poll from the last checkpoint. Cancelling retains no query, callbacks, or host objects.
+// 在订阅者的调度器上从上次游标续读。取消后没有需要释放的回调或宿主引用。
 class LogSubscription {
 public:
     explicit LogSubscription(LogPosition checkpoint, LogFilter filter = {})
         : checkpoint_(std::move(checkpoint)), filter_(std::move(filter)) {}
-    std::optional<LogUpdate> poll(const LogQuery& query, int limit = 200);
+    std::optional<LogUpdate> poll(const LogQuery& query, int limit = defaultLogPageSize);
     LogPosition checkpoint() const { return checkpoint_; }
     void cancel() { cancelled_ = true; }
 private:

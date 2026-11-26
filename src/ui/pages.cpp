@@ -743,7 +743,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     window->setWindowButtonFlag(ElaAppBarType::RouteBackButtonHint, false);
     window->setWindowButtonFlag(ElaAppBarType::RouteForwardButtonHint, false);
     window->setIsNavigationBarEnable(true);
-    window->setNavigationBarWidth(240);
+    window->setNavigationBarWidth(detail::navigationWidthPixels.initial);
     window->setUserInfoCardTitle(QString::fromUtf8("未登录"));
     window->setUserInfoCardSubTitle(QString::fromUtf8("用户账户"));
     const auto refreshAvatar = [root = window.get()](ElaThemeType::ThemeMode mode) {
@@ -767,7 +767,8 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     QListView* commandList = nullptr;
     auto commandPanel = detail::createCommandPanel(window.get(), commandList);
     auto output = detail::createOutputEditor(panel);
-    output->setObjectName("CordisWorkbenchOutput"); output->setReadOnly(true); output->setMaximumBlockCount(5000);
+    output->setObjectName("CordisWorkbenchOutput");
+    output->setReadOnly(true);
     output->setFrameShape(QFrame::NoFrame);
     output->setStyleSheet("ElaPlainTextEdit{background-color:transparent;border:0;}");
     panel->addTab(output, QString::fromUtf8("输出"));

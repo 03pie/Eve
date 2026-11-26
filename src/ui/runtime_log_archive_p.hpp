@@ -49,6 +49,10 @@ struct LogSource {
     quint64 firstEvent = 0, lastEvent = 0;
 };
 using LogSourceCatalog = QMap<QString, LogSource>;
+struct LogSourceResult {
+    LogSourceCatalog sources;
+    QString warning;  // 非空时仍可使用成功解码的来源。
+};
 void collectLogSource(LogSourceCatalog& catalog, const LogRecord& record);
 struct LogFilter {
     QString sourceId, text;
@@ -110,7 +114,7 @@ public:
                    std::optional<OperationId> notification = {});
     quint64 append(LogRecord record);
     std::vector<std::pair<QString, LogRecord>> recentNotifications(std::size_t limit) const;
-    LogSourceCatalog sourceCatalog(const QString& run) const;
+    LogSourceResult sourceCatalog(const QString& run) const;
     std::optional<LogRecord> locate(const QString& run, std::uint64_t sourceSequence) const;
     void finish(bool clean);
 

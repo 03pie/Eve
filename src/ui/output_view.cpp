@@ -37,11 +37,13 @@ namespace cordis::ui::detail
 {
 namespace
 {
-// Keep the output editor as the actual tab so existing panel navigation and its splitter remain stable.
+constexpr int maxVisibleOutputBlocks = 5000;
+
+// 编辑器本身作为页签页面，以保留面板导航和分隔条的位置。
 class OutputEditor final : public ElaPlainTextEdit
 {
   public:
-    explicit OutputEditor(QWidget* parent) : ElaPlainTextEdit(parent) {}
+    explicit OutputEditor(QWidget* parent) : ElaPlainTextEdit(parent) { setMaximumBlockCount(maxVisibleOutputBlocks); }
     QWidget* toolbar = nullptr;
     QWidget* run = nullptr;
     QWidget* search = nullptr;
@@ -190,7 +192,7 @@ void OutputControl::renderText(bool preserve, bool rebuild, const std::vector<Lo
             lines.push_back(lineFor(row, true));
             blocks += 1 + lines.back().count('\n');
         }
-        if (blocks <= 5000) {
+        if (blocks <= maxVisibleOutputBlocks) {
             const bool hasRows = !visibleRecords.empty();
             int position = hasRows ? visibleRecords.back().end + 1 : 0;
             for (int i = 0; i < lines.size(); ++i) {
@@ -225,9 +227,9 @@ void OutputControl::renderText(bool preserve, bool rebuild, const std::vector<Lo
     const auto oldPosition = cursorLocation(editor->textCursor().position());
     visibleRecords.clear();
     auto visible = text(&visibleRecords);
-    if (visible.count('\n') >= 5000) {
+    if (visible.count('\n') >= maxVisibleOutputBlocks) {
         const auto length = visible.size();
-        visible = visible.section('\n', -5000);
+        visible = visible.section('\n', -maxVisibleOutputBlocks);
         const auto offset = length - visible.size();
         visibleRecords.erase(std::remove_if(visibleRecords.begin(), visibleRecords.end(),
                                             [&](const auto& record) { return record.end < offset; }),
@@ -341,7 +343,7 @@ void returnFromOutput(OutputControl& state, bool returnToPanelPage)
 void OutputControl::syncSources()
 {
     Choices sources{{QString{}, QString::fromUtf8("全部来源")}};
-    const auto catalog = archive ? archive->sourceCatalog(run) : liveSources;
+    const auto catalog = archive ? archive->sourceCatalog(run).sources : liveSources;
     std::map<QString, QString> owners;
     for (auto it = catalog.cbegin(); it != catalog.cend(); ++it) {
         sources.emplace_back(it.key(), it->name);

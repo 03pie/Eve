@@ -76,7 +76,9 @@ add_executable(cordis_logging_query log_query.cpp)
 target_include_directories(cordis_logging_query PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
 target_link_libraries(cordis_logging_query PRIVATE Cordis::Ui)
 cordis_target_defaults(cordis_logging_query)
-add_test(NAME logging.l6_query COMMAND cordis_logging_query "${CMAKE_CURRENT_BINARY_DIR}/artifacts")
+add_dependencies(cordis_logging_query cordis_log_query)
+add_test(NAME logging.l6_query COMMAND cordis_logging_query "${CMAKE_CURRENT_BINARY_DIR}/artifacts"
+    "$<TARGET_FILE:cordis_log_query>")
 set_tests_properties(logging.l6_query PROPERTIES LABELS "logging;qt" TIMEOUT 30)
 
 add_executable(cordis_platform_startup_tests platform_startup.cpp)

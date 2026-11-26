@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QProcess>
 #include <QTemporaryDir>
 #include <iostream>
 #include <stdexcept>
@@ -143,7 +144,8 @@ void snapshotAndResume(const QString& workspace, bool preserveEvidence)
     const auto finished = offline.runs();
     CHECK(finished.size() == 1 && finished[0].state == LogRunState::Ended && finished[0].endedUtcMs &&
           *finished[0].endedUtcMs >= finished[0].startedUtcMs);
-    CHECK(offline.sources(run).contains("new-source"));
+    const auto catalog = offline.sources(run);
+    CHECK(catalog.warning.isEmpty() && catalog.sources.contains("new-source"));
     const auto located = offline.locate(run, 3);
     CHECK(located.status == LogLookupStatus::Found && located.record && located.record->sourceId == "beta");
     CHECK(located.neighborhood && ids(offline.page(*located.neighborhood).rows) == std::vector<quint64>{3});
@@ -239,7 +241,18 @@ void mergeTailAndSegments(const QString& workspace)
     CHECK(next == 0);
 }
 
-void truncatedAndGapped(const QString& workspace)
+void checkSourcesCli(const QString& executable, const QString& workspace, const QString& run,
+                     int expectedExit, const QByteArray& expectedOutput, const QByteArray& expectedWarning)
+{
+    QProcess query;
+    query.start(executable, {"--workspace", workspace, "--run", run, "--sources"});
+    CHECK(query.waitForFinished(8000));
+    CHECK(query.exitStatus() == QProcess::NormalExit && query.exitCode() == expectedExit);
+    CHECK(query.readAllStandardOutput().trimmed() == expectedOutput);
+    CHECK(query.readAllStandardError().trimmed() == expectedWarning);
+}
+
+void truncatedAndGapped(const QString& workspace, const QString& executable)
 {
     const QString run = "87f9eddb-9d82-4d07-bcdd-0a694c571515";
     const QDir directory(QDir(workspace).filePath(".cordis/logs/" + run));
@@ -252,8 +265,15 @@ void truncatedAndGapped(const QString& workspace)
                                         {"utcMs", "9111"}, {"source", "platform"}, {"level", 0},
                                         {"text", "fixture"}}).toJson(QJsonDocument::Compact) + '\n';
     };
-    write(directory.filePath("events-00000000000000000001.jsonl"), line(1) + line(3) + line(4) + "{\"v\":");
+    checkSourcesCli(executable, workspace, run, EXIT_SUCCESS, {}, {});
+    const auto segment = directory.filePath("events-00000000000000000001.jsonl");
+    write(segment, line(1));
+    checkSourcesCli(executable, workspace, run, EXIT_SUCCESS, "platform\t\t1-1", {});
+    write(segment, line(1) + line(3) + line(4) + "{\"v\":");
     const LogQuery query(workspace);
+    const auto catalog = query.sources(run);
+    CHECK(!catalog.warning.isEmpty() && catalog.sources.contains("platform"));
+    checkSourcesCli(executable, workspace, run, EXIT_FAILURE, "platform\t\t1-4", catalog.warning.toUtf8());
     const auto runs = query.runs();
     CHECK(runs.size() == 1 && runs[0].state == LogRunState::Unconfirmed && !runs[0].endedUtcMs);
     const auto cursor = query.begin(run);
@@ -278,8 +298,8 @@ int main(int argc, char** argv)
     const QCoreApplication app(argc, argv);
     try {
         const auto arguments = app.arguments();
-        CHECK(arguments.size() <= 2);
-        const bool preserveEvidence = arguments.size() == 2;
+        CHECK(arguments.size() <= 3);
+        const bool preserveEvidence = arguments.size() >= 2;
         const QDir artifactParent(preserveEvidence ? arguments.at(1) : QDir::tempPath());
         CHECK(artifactParent.mkpath("."));
         QTemporaryDir workspace(artifactParent.filePath("logging-l6-XXXXXX"));
@@ -289,7 +309,8 @@ int main(int argc, char** argv)
             std::cout << "L6 evidence: " << workspace.path().toUtf8().constData() << std::endl;
         snapshotAndResume(workspace.filePath("snapshot"), preserveEvidence);
         mergeTailAndSegments(workspace.filePath("merge"));
-        truncatedAndGapped(workspace.filePath("truncated"));
+        truncatedAndGapped(workspace.filePath("truncated"), arguments.value(
+            2, QDir(app.applicationDirPath()).filePath("cordis_log_query.exe")));
         structuredSource(workspace.filePath("sources"));
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {

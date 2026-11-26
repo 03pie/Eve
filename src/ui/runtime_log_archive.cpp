@@ -5,7 +5,6 @@
 #include "runtime_log_retention_p.hpp"
 #include <QCoreApplication>
 #include <QDateTime>
-#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
@@ -866,19 +865,19 @@ std::vector<std::pair<QString, LogRecord>> RuntimeLogArchive::recentNotification
     std::reverse(result.begin(), result.end());
     return result;
 }
-LogSourceCatalog RuntimeLogArchive::sourceCatalog(const QString& run) const
+LogSourceResult RuntimeLogArchive::sourceCatalog(const QString& run) const
 {
     auto& d = *impl_;
     {
         std::lock_guard<std::mutex> guard(d.mutex);
         if (run == d.id)
-            return d.currentSources;
+            return {d.currentSources, {}};
     }
     if (!validRun(run) || QFileInfo(d.root.filePath(run)).isSymLink())
-        return {};
+        return {{}, QString::fromUtf8("该运行的归档不可用。")};
     const QDir folder(d.root.filePath(run));
     if (!folder.exists())
-        return {};
+        return {{}, QString::fromUtf8("该运行的归档不可用。")};
     QFile meta(folder.filePath("run.json"));
     const bool complete = meta.open(QIODevice::ReadOnly) && meta.size() <= 8192 &&
                           QJsonDocument::fromJson(meta.readAll()).object().contains("ended");
@@ -894,7 +893,7 @@ LogSourceCatalog RuntimeLogArchive::sourceCatalog(const QString& run) const
     {
         std::lock_guard<std::mutex> guard(d.mutex);
         if (run == d.cachedRun && stamp == d.cachedTail)
-            return d.cachedSources;
+            return {d.cachedSources, {}};
     }
     LogSourceCatalog values;
     QString warning;
@@ -908,7 +907,7 @@ LogSourceCatalog RuntimeLogArchive::sourceCatalog(const QString& run) const
         d.cachedTail = stamp;
         d.cachedSources = values;
     }
-    return values;
+    return {std::move(values), std::move(warning)};
 }
 std::optional<LogRecord> RuntimeLogArchive::locate(const QString& run, std::uint64_t sourceSequence) const
 {
