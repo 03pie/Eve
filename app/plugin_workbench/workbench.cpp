@@ -9,7 +9,6 @@
 #include <cordis/loader/qt_store.hpp>
 #include <cordis/module/qt_manifest.hpp>
 #include <cordis/module/qt_module.hpp>
-#include <stdexcept>
 
 namespace cordis::workbench {
 namespace {
@@ -45,7 +44,22 @@ Result<void> validateConfiguration(const std::string& text)
     return Result<void>::success();
 }
 
+const char* preflightDiagnostic(const ErrorInfo& error)
+{
+    if (error.phase == "module.manifest.read")
+        return "QT_MANIFEST_READ_FAILED: 无法读取或完整校验模块清单。";
+    if (error.code == ErrorCode::AbiMismatch)
+        return "QT_MODULE_INCOMPATIBLE: 模块预检发现 ABI、加载器或工具链不兼容。";
+    if (error.phase == "module.manifest")
+        return "QT_MANIFEST_INVALID: 模块清单格式或字段校验失败。";
+    return "QT_MODULE_PREFLIGHT_FAILED: 模块产物或元数据未通过预检。";
+}
 } // namespace
+
+ModulePreflightError::ModulePreflightError(const ErrorInfo& error)
+    : std::runtime_error(error.message), diagnostic_(preflightDiagnostic(error))
+{
+}
 
 Workbench::Workbench()
     : scheduler(std::make_shared<qt::QtScheduler>()), kernel(std::make_shared<Kernel>(scheduler)),
@@ -62,8 +76,10 @@ void Workbench::open(const QString& manifestPath, const QString& workspaceDir)
     if (source.fileName() != "module.json" || session)
         throw std::runtime_error("Select a module.json manifest for a new workbench.");
     const auto root = source.absolutePath().toUtf8().toStdString();
-    const auto inspected = checked(module::inspectQtModule(root, "module.json"));
-    const auto& manifest = inspected.artifact.manifest();
+    const auto inspected = module::inspectQtModule(root, "module.json");
+    if (!inspected.hasValue())
+        throw ModulePreflightError(inspected.error());
+    const auto& manifest = inspected.value().artifact.manifest();
     if (manifest.plugins.size() != 1 || manifest.loader != module::ModuleLoader::QtUi ||
         manifest.unloadPolicy != module::ModuleUnloadPolicy::Resident)
         throw std::runtime_error("This workbench accepts a resident Qt UI module declaring one plugin.");
@@ -192,7 +208,10 @@ void Workbench::closeKernel()
         if (!result.hasValue()) closed_.reject(result.error());
         else if (!result.value().quiescent)
             closed_.reject(makeError(ErrorCode::CleanupFailed, "Plugin instances did not finish cleanup."));
-        else closeShell();
+        else {
+            (void)shell.writeOutput("WORKBENCH_CLEANUP_COMPLETE: 插件与内核资源已清理。");
+            closeShell();
+        }
     });
 }
 

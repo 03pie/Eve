@@ -56,7 +56,9 @@ int main(int argc, char** argv)
         host.shell.onCloseRequested(close).value();
         host.shell.show().value();
     } catch (const std::exception& error) {
-        (void)host.shell.writeOutput("工作台启动失败。请检查所选模块和工作区。",ui::OutputLevel::Error);
+        const auto* preflight = dynamic_cast<const workbench::ModulePreflightError*>(&error);
+        const auto* diagnostic = preflight ? preflight->diagnostic() : "工作台启动失败。请检查所选模块和工作区。";
+        (void)host.shell.writeOutput(diagnostic, ui::OutputLevel::Error);
         std::cerr << "Cordis: " << error.what() << '\n';
         if (application.arguments().size() == 1)
             QMessageBox::critical(nullptr, QString::fromUtf8("无法打开插件工作台"),

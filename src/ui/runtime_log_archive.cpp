@@ -17,6 +17,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <deque>
+#include <limits>
 #include <mutex>
 #include <thread>
 
@@ -31,6 +32,30 @@ bool validRun(const QString& id)
 {
     const QUuid uuid(id);
     return !uuid.isNull() && uuid.toString(QUuid::WithoutBraces) == id;
+}
+QString workspaceLogsPath(const QString& workspace)
+{
+    return QDir(workspace).absoluteFilePath(".cordis/logs");
+}
+QFileInfo runDirectory(const QDir& root, const QString& id)
+{
+    if (!validRun(id))
+        return {};
+    const QFileInfo folder(root.filePath(id));
+    return folder.isDir() && !folder.isSymLink() ? folder : QFileInfo{};
+}
+QJsonObject readRunMetadata(const QFileInfo& folder, const QString& id)
+{
+    if (folder.filePath().isEmpty())
+        return {};
+    const QFileInfo metadata(QDir(folder.absoluteFilePath()).filePath("run.json"));
+    if (metadata.isSymLink())
+        return {};
+    QFile file(metadata.absoluteFilePath());
+    if (!file.open(QIODevice::ReadOnly) || file.size() > 8192)
+        return {};
+    const auto object = QJsonDocument::fromJson(file.read(8193)).object();
+    return object.value("run").toString() == id && object.value("v").toInt() == 1 ? object : QJsonObject{};
 }
 QByteArray encode(const LogRecord& record)
 {
@@ -154,6 +179,34 @@ bool matches(const LogRecord& rec, const LogFilter& filter)
 }
 } // namespace
 
+std::optional<SavedLogRun> readSavedLogRun(const QString& workspace, const QString& run)
+{
+    if (workspace.isEmpty())
+        return {};
+    const auto folder = runDirectory(QDir(workspaceLogsPath(workspace)), run);
+    const auto metadata = readRunMetadata(folder, run);
+    if (metadata.isEmpty())
+        return {};
+    return SavedLogRun{metadata.value("version").toString(), metadata.contains("ended")};
+}
+std::optional<LogRecord> readSavedLogEvent(const QString& workspace, const QString& run, quint64 eventId)
+{
+    if (workspace.isEmpty() || !eventId)
+        return {};
+    const auto folder = runDirectory(QDir(workspaceLogsPath(workspace)), run);
+    if (readRunMetadata(folder, run).isEmpty())
+        return {};
+    std::optional<LogRecord> event;
+    QString warning;
+    const quint64 before = eventId == std::numeric_limits<quint64>::max() ? 0 : eventId + 1;
+    visitDisk(QDir(folder.absoluteFilePath()), before, warning, [&](const LogRecord& row) {
+        if (row.eventId == eventId)
+            event = row;
+        return false;
+    });
+    return event;
+}
+
 void collectLogSource(LogSourceCatalog& catalog, const LogRecord& row)
 {
     auto& source = catalog[row.sourceId];
@@ -259,8 +312,8 @@ struct RuntimeLogArchive::Impl {
             if (!recent.empty() && (!before || recent.front().eventId < before))
                 before = recent.front().eventId;
         }
-        const QFileInfo folder(root.filePath(requested));
-        if (!folder.isDir() || folder.isSymLink()) {
+        const auto folder = runDirectory(root, requested);
+        if (folder.filePath().isEmpty()) {
             warning = QString::fromUtf8("该运行的归档不可用。");
             return;
         }
@@ -272,7 +325,7 @@ RuntimeLogArchive::RuntimeLogArchive(const QString& workspace, const QString& ve
 {
     auto& d = *impl_;
     d.version = version;
-    if (!d.openDirectory(QDir(workspace).absoluteFilePath(".cordis/logs"))) {
+    if (!d.openDirectory(workspaceLogsPath(workspace))) {
         const auto key =
             QCryptographicHash::hash(QFileInfo(workspace).absoluteFilePath().toUtf8(), QCryptographicHash::Sha256)
                 .toHex();
@@ -348,11 +401,8 @@ std::vector<LogRun> RuntimeLogArchive::runs() const
         const auto key = dir.fileName();
         if (key == d.id || !validRun(key))
             continue;
-        QFile file(QDir(dir.absoluteFilePath()).filePath("run.json"));
-        if (!file.open(QIODevice::ReadOnly) || file.size() > 8192)
-            continue;
-        const auto meta = QJsonDocument::fromJson(file.readAll()).object();
-        if (meta.value("run").toString() != key || meta.value("v").toInt() != 1)
+        const auto meta = readRunMetadata(dir, key);
+        if (meta.isEmpty())
             continue;
         const auto start = meta.value("started").toString();
         const auto stamp =

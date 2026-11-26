@@ -14,6 +14,10 @@ namespace cordis::ui::detail
 struct LogRun {
     QString id, label;
 };
+struct SavedLogRun {
+    QString version;
+    bool ended = false;
+};
 struct LogRecord {
     OutputEntry entry;
     QString sourceId, sourceName;
@@ -39,6 +43,10 @@ struct LogPage {
     quint64 before = 0;
     QString warning;
 };
+// Read from a workspace without opening a writer or acquiring an activity lock.
+std::optional<SavedLogRun> readSavedLogRun(const QString& workspace, const QString& run);
+std::optional<LogRecord> readSavedLogEvent(const QString& workspace, const QString& run, quint64 eventId);
+
 class RuntimeLogArchive
 {
 public:

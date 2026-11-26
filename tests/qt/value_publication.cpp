@@ -5,8 +5,13 @@
 #include <QAbstractItemModel>
 #include <QAction>
 #include <QComboBox>
+#include <QDir>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QPlainTextEdit>
+#include <QTemporaryDir>
 #include <algorithm>
 #include <optional>
 #include <vector>
@@ -16,19 +21,21 @@ using namespace presentation_test;
 struct Owner {
     std::shared_ptr<std::optional<Context>> context;
     Instance instance;
+    QString source;
 };
 Owner owner(Scene& scene, const PublicationGroup* group = nullptr)
 {
     static unsigned next = 0;
     auto context = std::make_shared<std::optional<Context>>();
+    const auto plugin = "values." + std::to_string(++next);
     const auto definition =
-        take(scene.kernel->registerPlugin("values." + std::to_string(++next), [context](Context captured) {
+        take(scene.kernel->registerPlugin(plugin, [context](Context captured) {
             context->emplace(std::move(captured));
             return completedTask();
         }));
     auto instance = group ? take(scene.kernel->mountHeld(*group, definition)) : take(scene.kernel->mount(definition));
     CHECK(wait(instance.ready(), scene.scheduler)->hasValue() && *context);
-    return {std::move(context), std::move(instance)};
+    return {std::move(context), std::move(instance), QStringLiteral("plugin/") + QString::fromStdString(plugin)};
 }
 std::size_t outputCount(Scene& scene, const std::string& text)
 {
@@ -112,6 +119,151 @@ void order()
     CHECK(post(scene, ordinary, "after-notice-gap") == 4);
     CHECK(outputCount(scene, "aborted-output") == 0 && outputCount(scene, "aborted-notice") == 0);
     scene.close();
+}
+void archivePublication()
+{
+    QTemporaryDir workspace;
+    CHECK(workspace.isValid());
+    Scene scene;
+    take(scene.shell.startOutputArchive(workspace.path().toStdString(), "log-publication-test"));
+    const auto runId = scene.find<QComboBox>("CordisOutputRun")->currentData().toString();
+    CHECK(!runId.isEmpty());
+    const QDir archive(workspace.filePath(".cordis/logs/" + runId));
+    const auto archivedBytes = [&] {
+        const auto names = archive.entryList({"events-*.jsonl"}, QDir::Files);
+        CHECK(names.size() <= 1);
+        if (names.empty())
+            return QByteArray{};
+        QFile file(archive.filePath(names.front()));
+        return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray{};
+    };
+    const auto ordinary = owner(scene);
+    const auto noticeChannel = QStringLiteral("通知");
+    const auto immediate = write(scene, ordinary, "l2-immediate", noticeChannel.toStdString());
+    until([&] { return archivedBytes().contains("l2-immediate"); });
+
+    auto firstGroup = take(scene.kernel->holdPublication());
+    auto secondGroup = take(scene.kernel->holdPublication());
+    auto abandoned = take(scene.kernel->holdPublication());
+    const auto first = owner(scene, &firstGroup);
+    const auto second = owner(scene, &secondGroup);
+    const auto rejected = owner(scene, &abandoned);
+    const auto firstSequence = write(scene, first, "l2-first", "first");
+    const auto secondSequence = write(scene, second, "l2-second", "second");
+    CHECK(firstSequence < secondSequence);
+    CHECK(post(scene, first, "l2-first-notice") == 1);
+    CHECK(take(scene.shell.notifications()->post(**second.context,
+                                                {NotificationLevel::Warning, "l2-second-notice", OperationId{42}})) == 2);
+    const auto abandonedSequence = write(scene, rejected, "l2-abandoned", "abandoned-only");
+    CHECK(post(scene, rejected, "l2-abandoned-notice") == 3);
+
+    auto* targets = scene.find<QComboBox>("CordisOutputTarget");
+    auto* output = scene.find<QPlainTextEdit>("CordisWorkbenchOutput");
+    barrier(scene.scheduler);
+    CHECK(targets->findData(ordinary.source) >= 0);
+    CHECK(targets->findData(first.source) < 0 && targets->findData(second.source) < 0 &&
+          targets->findData(rejected.source) < 0);
+    CHECK(!output->toPlainText().contains("l2-first") && !output->toPlainText().contains("l2-second") &&
+          !output->toPlainText().contains("l2-abandoned"));
+    const auto heldBytes = archivedBytes();
+    CHECK(!heldBytes.contains("l2-first") && !heldBytes.contains("l2-second") && !heldBytes.contains("l2-abandoned"));
+    CHECK(take(scene.shell.notifications()->snapshot()).empty());
+
+    take(secondGroup.commit());
+    barrier(scene.scheduler);
+    until([&] { return archivedBytes().contains("l2-second-notice"); });
+    CHECK(targets->findData(second.source) >= 0 && targets->findData(first.source) < 0 &&
+          targets->findData(rejected.source) < 0);
+    const auto partiallyCommitted = archivedBytes();
+    CHECK(partiallyCommitted.contains("l2-second") && !partiallyCommitted.contains("l2-first") &&
+          !partiallyCommitted.contains("l2-abandoned"));
+    take(abandoned.abort());
+    take(firstGroup.commit());
+    barrier(scene.scheduler);
+    CHECK(targets->findData(first.source) >= 0 && targets->findData(rejected.source) < 0);
+    const auto afterAbort = write(scene, ordinary, "l2-after-abort");
+    CHECK(afterAbort > abandonedSequence);
+
+    struct ExpectedRow {
+        QString text;
+        QString source;
+        ContextIdentity owner;
+        QString channel;
+        std::uint64_t sequence;
+        OutputLevel level;
+        std::optional<QString> operation;
+    };
+    const auto admitted = take(scene.shell.output()->snapshot());
+    const auto mirroredSequence = [&](const char* marker) {
+        const auto row = std::find_if(admitted.begin(), admitted.end(), [&](const auto& value) {
+            return value.text == marker;
+        });
+        CHECK(row != admitted.end());
+        return row->sequence;
+    };
+    const auto ordinaryId = take((*ordinary.context)->identity());
+    const auto firstId = take((*first.context)->identity());
+    const auto secondId = take((*second.context)->identity());
+    const std::vector<ExpectedRow> expected{
+        {"l2-immediate", ordinary.source, ordinaryId, noticeChannel, immediate, OutputLevel::Info, {}},
+        {"l2-second", second.source, secondId, "second", secondSequence, OutputLevel::Info, {}},
+        {"l2-second-notice", second.source, secondId, noticeChannel, mirroredSequence("l2-second-notice"),
+         OutputLevel::Warning, QStringLiteral("42")},
+        {"l2-first", first.source, firstId, "first", firstSequence, OutputLevel::Info, {}},
+        {"l2-first-notice", first.source, firstId, noticeChannel, mirroredSequence("l2-first-notice"),
+         OutputLevel::Info, QStringLiteral("0")},
+        {"l2-after-abort", ordinary.source, ordinaryId, "log", afterAbort, OutputLevel::Info, {}},
+    };
+    scene.close();
+
+    QFile metadata(archive.filePath("run.json"));
+    CHECK(metadata.open(QIODevice::ReadOnly));
+    const auto run = QJsonDocument::fromJson(metadata.readAll()).object();
+    CHECK(run.value("run").toString() == runId && run.value("ended").isString() && run.value("hasNotifications").toBool());
+    const auto finalBytes = archivedBytes();
+    CHECK(!finalBytes.isEmpty() && finalBytes.endsWith('\n') && !finalBytes.contains("abandoned-only"));
+    CHECK(!QFile::exists(archive.filePath("active.lock")));
+    std::size_t index = 0;
+    quint64 lastEvent = 0;
+    for (const auto& line : finalBytes.chopped(1).split('\n')) {
+        QJsonParseError error;
+        const auto row = QJsonDocument::fromJson(line, &error).object();
+        CHECK(error.error == QJsonParseError::NoError && !row.isEmpty());
+        const auto text = row.value("text").toString();
+        if (!text.startsWith("l2-"))
+            continue;
+        CHECK(index < expected.size());
+        const auto& value = expected[index++];
+        const auto instance = QString::number(value.owner.instance.value());
+        const auto epoch = QString::number(value.owner.epoch);
+        const auto event = row.value("event").toString().toULongLong();
+        CHECK(text == value.text && event > lastEvent && row.value("sequence").toString().toULongLong() == value.sequence &&
+              row.value("source").toString() == value.source && row.value("instance").toString() == instance &&
+              row.value("epoch").toString() == epoch && row.value("level").toInt(-1) == static_cast<int>(value.level));
+        CHECK(row.value("channel").toString() == QStringLiteral("plugin/%1/%2/%3").arg(instance, epoch, value.channel));
+        if (value.operation)
+            CHECK(row.value("notificationOperation").toString() == *value.operation);
+        else
+            CHECK(!row.contains("notificationOperation"));
+        lastEvent = event;
+    }
+    CHECK(index == expected.size());
+
+    Scene reader;
+    take(reader.shell.startOutputArchive(workspace.path().toStdString(), "log-publication-reader"));
+    auto* runs = reader.find<QComboBox>("CordisOutputRun");
+    const auto history = runs->findData(runId);
+    CHECK(history > 0);
+    runs->setCurrentIndex(history);
+    auto* sources = reader.find<QComboBox>("CordisOutputTarget");
+    const auto selected = sources->findData(first.source);
+    CHECK(selected >= 0 && sources->findData(rejected.source) < 0);
+    sources->setCurrentIndex(selected);
+    const auto recovered = reader.find<QPlainTextEdit>("CordisWorkbenchOutput")->toPlainText();
+    CHECK(recovered.split('\n').size() == 2 && recovered.contains("l2-first-notice") &&
+          recovered.contains("l2-first\n") && !recovered.contains("l2-second"));
+    reader.close();
+    CHECK(archivedBytes() == finalBytes);
 }
 void stopped()
 {
@@ -304,6 +456,8 @@ bool valuePublicationCase(const QString& name)
         held();
     else if (name == "values_order")
         order();
+    else if (name == "values_archive")
+        archivePublication();
     else if (name == "values_stopped")
         stopped();
     else if (name == "values_close")

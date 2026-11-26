@@ -6,7 +6,7 @@
 
 ## 日志系统专项
 
-设计完成，LOG-1 至 LOG-4 待开发。宿主负责平台与插件事件的采集、异步落盘、历史查询和故障恢复。通过无界面测试进程核对跨进程可读性、事件归属和故障处理。[日志系统工作单](runtime-logging-plan.md) · [日志验收清单](../tests/acceptance/runtime-logging.md)
+2026-11-26，LOG-1 已实现并通过 L1、L2。本机使用通用测试模块验证平台的输出接纳、JSON Lines 落盘、独立进程按事件 ID 查询、模块预检诊断及正常收尾。已验证待发布与撤销记录不会提前写入，通知镜像只接纳一次。平台专项覆盖通用接口和宿主行为。LOG-2 的保留及故障恢复、LOG-3 的来源和查询扩展、LOG-4 的独立验收仍待完成。[日志系统工作单](runtime-logging-plan.md) · [日志验收清单](../tests/acceptance/runtime-logging.md)
 
 ## UI 与交互专项
 

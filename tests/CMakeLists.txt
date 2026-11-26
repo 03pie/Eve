@@ -1,4 +1,7 @@
 add_subdirectory(abi)
+if(TARGET cordis_external_workbench)
+    add_subdirectory(logging)
+endif()
 add_executable(cordis_replacement_builder_tests unit/replacement_builder.cpp)
 target_link_libraries(cordis_replacement_builder_tests PRIVATE Cordis::Core)
 cordis_target_defaults(cordis_replacement_builder_tests)
@@ -371,7 +374,7 @@ if(CORDIS_BUILD_ELA_UI)
     foreach(case IN ITEMS pages_held pages_aborted pages_factory_failure pages_input pages_stopped
         pages_registration_close pages_scope_commit pages_scope_recover pages_home pages_dialog observer_discarded
         commands_held commands_aborted suggestion_gate ela_held ela_indices ela_stack ela_compact ela_animation
-        ela_animation_cancel values_held values_order values_stopped values_close values_clear values_reentry
+        ela_animation_cancel values_held values_order values_archive values_stopped values_close values_clear values_reentry
         values_count values_bytes values_targets values_abort_failure values_discarded
         values_scope_commit values_scope_recover)
         add_test(NAME p5.ui_publication_${case} COMMAND cordis_ui_publication_tests ${case})

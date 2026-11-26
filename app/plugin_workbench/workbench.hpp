@@ -6,8 +6,17 @@
 #include <cordis/loader/session.hpp>
 #include <cordis/ui/configuration.hpp>
 #include <cordis/ui/ela_shell.hpp>
+#include <stdexcept>
 
 namespace cordis::workbench {
+class ModulePreflightError final : public std::runtime_error {
+public:
+    explicit ModulePreflightError(const ErrorInfo& error);
+    const char* diagnostic() const noexcept { return diagnostic_; }
+private:
+    const char* diagnostic_;
+};
+
 // The application thread owns this object until close() settles. The caller owns its event loop.
 class Workbench final {
 public:
