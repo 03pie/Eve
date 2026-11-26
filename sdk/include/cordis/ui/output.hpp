@@ -12,6 +12,7 @@ namespace cordis::ui {
 namespace detail { struct OutputControl; }
 class ElaShell;
 enum class OutputLevel { Info, Warning, Error };
+/** @brief 可随平台输出归档的诊断信息。operation 关联一次操作，code 用于识别同类诊断。 */
 struct OutputDiagnostic {
     std::optional<OperationId> operation;
     std::string code;
@@ -23,17 +24,26 @@ struct OutputEntry {
     std::string channel, title, text;
     OutputLevel level;
 };
-/** @brief ui.output/v1；owner 写入，最多保留 1000 条、64 个目标，每条 4096 字节。 */
+/** @brief ui.output/v1 的实时输出视图。宿主复制已发布的记录，并在已连接归档时提交给后台写入器。
+ * historyLimit 与 channelLimit 限制实时历史。textLimit 是单条插件文本的 UTF-8 字节上限。
+ * pending 系列常量限制等待资源组发布的记录条数、总字节数和目标数。
+ */
 class OutputService {
 public:
     static constexpr std::size_t historyLimit = 1000, channelLimit = 64, textLimit = 4096;
     static constexpr std::size_t pendingCountLimit = 1000, pendingByteLimit = 1024 * 1024, pendingTargetLimit = 64;
-    /** @brief 同调度器/epoch 校验后复制；未发布值有界等待原组终态，不改变可见通道或历史。
-     * 成功即保留本服务序号，放弃可留下空洞；发布后按保留序号接纳，拒绝不占号。
+    /** @brief 在 owner 调度线程按有效 epoch 写入 UTF-8 纯文本，未发布的记录有界等待原组终态。
+     * @param owner 拥有本条输出的实例上下文，宿主使用实际代次标记来源。
+     * @param channel 非空 UTF-8 通道名，最多 64 字节，禁止 ASCII 控制字符。
+     * @param text 非空 UTF-8 文本，超过 textLimit 时返回 InvalidArgument。
+     * @param level 该条记录的严重程度，默认为 Info。
+     * @return 成功时返回本服务的序号。待发布记录被放弃时可留下空洞，持久化确认由宿主归档层另行报告。
      */
     Result<std::uint64_t> write(const Context& owner, std::string channel, std::string text,
                                 OutputLevel level = OutputLevel::Info) const;
-    /** @brief owner 先纯值结算已有终态再复制历史；开放期间发布故障返回错误，关闭后历史仍可读。 */
+    /** @brief 在 owner 线程结算已有终态并复制当前有界历史。开放期间发布故障返回错误。
+     * 宿主关闭后仍可读取其保留的历史，输出控制对象销毁后返回空快照。
+     */
     Result<std::vector<OutputEntry>> snapshot() const;
 private:
     friend class ElaShell;

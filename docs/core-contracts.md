@@ -29,7 +29,7 @@ FakeScheduler 提供 `runOne()`、`runUntilIdle(stepLimit)` 和队列大小；�
 
 Promise 可以复制为同一生产者的共享控制句柄；最后一个 Promise 未完成便释放时，源任务以 BrokenPromise 失败。`tryResult()` 返回拥有生命周期的不可变结果快照，pending 返回空指针。Task/Promise 支持跨线程注册、完成；同一实例的移动/赋值不得与访问并发，移动后句柄只用于销毁或重新赋值。CancellationToken 只支持查询，不在请求取消时内联调用用户处理器。
 
-调度器/完成协议对正常运行内存资源成立；没有承诺 OOM 下可继续执行。闭包需要符合不抛异常析构约束，插件边界的模块引用和专用线程析构将在后续适配中实现。
+调度器的投递协议以可分配内存为前提。回调捕获的对象必须支持无异常析构。模块映射的租约和 Qt 专用线程的清理分别由适配层持有。[Native 宿主生命周期](adr/0033-native-host-lifecycle.md) · [Qt 资源屏障](adr/0005-qt-resource-barriers.md)
 
 ## 3. Effect
 
@@ -54,11 +54,11 @@ EffectToken.snapshot() -> EffectSnapshot
 
 `scope.close()` 先对所有 effect 标 Closing 并请求取消，再通过队列清理，组间可以同时等待，组内逆序。`token.close()` 只关闭该组，副本共享同一个 CleanupReport 结果。setup 中请求 owner close 安全；关闭期间 setup 后到的 cleanup 仍被收集。setup 已过期时 token.ready() 报 OperationCancelled，不能发布新的 Active 结果。
 
-`context.adopt(childToken)` 将子组 close 加入父组 cleanup 队列，等待子组真正释放；要求相同 scheduler，并检查显式收养图环。组间没有全局 LIFO 顺序。任意用户 Task 构造的等待环仍不能全面检测，遇到时保持等待并通过超时观察诊断；实例/服务等待图留到 W3/W5。
+`context.adopt(childToken)` 将子组 close 加入父组 cleanup 队列，等待子组真正释放。父子组须使用相同 scheduler，显式收养会检查图环。组间没有全局 LIFO 顺序。任意用户 Task 构造的等待环仍可能保持等待，可通过超时观察诊断。实例所有权和服务依赖的联合环检查见第 5 节。
 
 close 的结果为 `Task<CleanupReport>`：`quiescent` 表示是否确认资源释放，errors 是 setup/cleanup 错误汇总。setup 失败但回滚全部成功时可 quiescent=true 且 errors 非空；任一 cleanup 失败则保留失败闭包、控制块和 scope 所有权 pin，状态保持 Closing，结果 quiescent=false。清理尚未结束、调度投递被丢弃时 close 继续 pending，快照以 setupPending、cleanupPending、deliveryBlocked、retainedCleanups 解释原因。
 
-owner/token 析构不承担异步关闭。必须在 scheduler 关闭前显式 close 并检查 quiescent；丢弃未关闭 owner、清理失败或投递中断时会保守保留资源记录，当前没有强制释放/自动重试入口。scope 有任何 cleanup 正在等待时，暂时拒绝新建 effect；这是 W2 的保守策略，W3 的 Context mode 若细化该行为须单独评审。
+调用方须在 scheduler 关闭前显式 close 并检查 quiescent。丢弃未关闭 owner、清理失败或投递中断时，资源记录会保守保留。scope 有 cleanup 正在等待时拒绝新建 effect，防止释放过程取得新的资源。
 
 ### 时钟与观察
 
@@ -70,16 +70,16 @@ owner/token 析构不承担异步关闭。必须在 scheduler 关闭前显式 cl
 
 ## 4. Kernel / Instance / Context
 
-W3 已有 `instance.hpp` 的生命周期、update/retry、operation/awaitTarget/awaitActive、Context::effect/config/onCleanup 与 CleanupContext，以及 `kernel.hpp` 的 registerPlugin/mount/close/snapshot，范围与验证见 [W3 开发记录](adr/0003-effect-quiescence.md)。每代资源静止后才启动最新配置；失败静止后允许 retry，stop 才终结实例。Runtime/Instance/Operation 标识进程内唯一；retry 不改变配置修订。awaitActive 仅查询已启动代次，未来代次报 InvalidArgument，历史成功不授予当前业务权限。下列接口为概念形状，服务与域视图的实际签名见第 5 节及 SDK；通用挂载 options 仍为目标契约。
+Kernel 登记插件定义并挂载实例，Instance 提供更新、重试、停止和代次观察。每代资源静止后才启动最新配置。失败静止后允许 retry，stop 终结实例。Runtime、Instance 和 Operation 的标识在进程内唯一。retry 保留配置修订，awaitActive 查询已启动代次，对未来代次返回 InvalidArgument。持有历史成功结果时，业务调用仍需通过当前代次检查。以下列出主要接口，完整参数类型和默认值见 [Kernel 声明](../sdk/include/cordis/kernel.hpp)及 [Instance 声明](../sdk/include/cordis/instance.hpp)。
 
 ```text
-registerPlugin(definition) -> Result<RuntimeHandle>
-mount(runtime, rawConfig, options) -> Result<InstanceHandle>
-handle.stop() -> Task<StopReport>
-handle.update(config, expectedRevision) -> Result<OperationHandle>
-handle.awaitTarget(operation) -> Task<StableReport>
-handle.awaitActive(epoch) -> Task<ActiveReport>
-handle.retry() -> Result<OperationHandle>
+Kernel.registerPlugin(name, activate, dependencies, outputs) -> Result<Runtime>
+Kernel.mount(runtime, config, realms, additionalDependencies) -> Result<Instance>
+Instance.stop() -> Task<CleanupReport>
+Instance.update(config, expectedRevision) -> Result<OperationHandle>
+Instance.awaitTarget(operation) -> Task<StableReport>
+Instance.awaitActive(epoch) -> Task<ActiveReport>
+Instance.retry() -> Result<OperationHandle>
 ```
 
 命令在 scheduler 所在线程接受，所有异步完成通过队列推进；不递归激活。stop 最终终结 InstanceId，后续 update/retry 失败；依赖失效只结束当前 epoch，仍可恢复。
@@ -92,13 +92,13 @@ W3 实现 `Context::onCleanup(function<Task<void>(CleanupContext)>, label)`，�
 
 服务 key 为 name + interfaceMajor + realm。provide 创建 BindingId，输出在 setup 完成前为 Staged。强依赖不足时实例保持 Pending。消费者保存 committed binding；提供者退出先 Retiring，拒绝新业务，再等消费者清理后销毁资源。
 
-首阶段只提供内置同工具链类型化调用，不跨 DLL。不通过自由获取的裸指针绕过 epoch/调用门禁。跨 ABI 的函数表和序列化协议留到 P4。
+同工具链的 C++ 服务通过类型化绑定访问。Windows x64 Native 模块通过宿主的 C 函数表注册、调用和撤销服务，跨 ABI 传递带长度的 UTF-8 JSON、显式句柄和请求标识。两种入口都要经过代次、调用和资源所有权检查。[业务 ABI](abi-v1.md) · [Native 服务桥](adr/0035-native-services.md)
 
 W4 的 `service.hpp` 提供 ServiceRegistry::stage/find/createRealm/snapshot、ProviderHandle::publish/retire/release 与 ServiceRef<T>::withService。Staged 不可查，Retiring 保留键并拒绝新调用；同步调用或 committed 租约存在时禁止 release。withService 回调必须返回 void，不导出对象所有权，禁止保存传入对象引用或用它启动异步操作；异步调用使用下述 invoke。范围、线程及所有权约定见 [W4 开发记录](adr/0017-instance-inject-contracts.md)。
 
 后续增量已实现 Context::consume，将精确绑定固定到本实例代次账目；其 ServiceRef 同时受消费者业务能力和提供者状态门禁限制。CleanupContext::withService 只访问本实例本代已提交的旧绑定，允许 Retiring，但受清理调用窗口限制。实例在 effect 清理与在途 committed 调用均静止后才释放本代租约，清理失败继续保留，提供者 release 也检查 committed 保留。低层 registry.find 不授予实例权限；托管实例的自动收敛接口见下段。
 
-W4 已接入自动收敛：Kernel::registerPlugin 接受 ServiceRequirement::of<T>(key, minimumMinor, capabilities) 强依赖和 ServiceOutput::of<T>(key, required, metadata) 输出声明。缺依赖时 Pending、不执行 activate；类型/minor/能力不匹配明确失败；服务就绪后激活前固定租约。Context::provide 仅在 Loading 登记声明过的 Staged 输出，发布前核对所有必供项，缺项、未声明输出、冲突或失败均回滚，空输出表禁止 provide。提供者退役先取消和传播业务失效，再等待输出消费者归零，最后清理自身并释放输出与上游租约；消费者保配置恢复新 epoch。实际租约回边已拒绝，声明与父子联合图留待 W5。
+Kernel::registerPlugin 接受 ServiceRequirement::of<T>(key, minimumMinor, capabilities) 强依赖和 ServiceOutput::of<T>(key, required, metadata) 输出声明。缺依赖时进入 Pending，类型、minor 或能力不匹配时明确失败。服务就绪后在激活前固定租约。Context::provide 仅在 Loading 登记已声明的 Staged 输出，发布前核对所有必供项，缺项、未声明输出、冲突或失败均回滚，空输出表禁止 provide。提供者退役先取消和传播业务失效，等待输出消费者归零，再清理自身并释放输出与上游租约。消费者保留配置并恢复到新 epoch。联合图的预检与实际租约检查见下文。
 
 RealmMap 为不可变名称覆盖视图，可由 isolate(name, realm) 派生并通过 Kernel::mount 的第三个参数传入；预检依赖、输出声明、provide 与 consume 都按视图解析。Context::isolate 派生同代 Context，不修改父句柄，未覆盖项继承；覆盖优先于传入键 realm，查找不得回退其他域。外域视图及映射后重复输出键在挂载前拒绝。
 
@@ -120,7 +120,7 @@ Kernel::mount 和 Instance::mount 可传入 additionalDependencies，按解析�
 
 Instance::whenActiveAfter(afterEpoch = 0) 在 owner 线程观察大于阈值的当前有效或后续成功代次，返回 Task<Context>。不查询退役历史；阈值大于当前代次报 InvalidArgument。Pending/失败保留观察，重试或恢复成功再完成；失败诊断仍用 operation/target。stop 立即取消未完成观察，新查询报 InstanceDisposed。已有投递故障拒绝登记，登记后的故障遵守保守保留协议，宿主还须检查 deliveryBlocked。
 
-成功 Context 弱持实例并保留该代配置/域快照，历史 Task 不重写；收到排队通知后每次业务调用仍检查 epoch 和停止门禁，不把成功结果当成永久权限。Context::inject 也可接收 additionalDependencies，联合规则同 mount，子继承调用视图且仍由本父代拥有。父新代成功之前必须等待旧子树静止；宿主可观察新代再创建新身份的子实例。详见 [ADR-0018](adr/0018-activation-context-bridge.md)；Loader 显式配置子树执行仍待接入。
+成功 Context 弱持实例并保留该代配置和域快照，收到排队通知后的每次业务调用仍检查 epoch 和停止门禁。Context::inject 可接收 additionalDependencies，联合规则同 mount，子实例继承调用视图并归本父代所有。父新代启动前须等待旧子树静止。Loader 由 Kernel.mount 建立内置配置根，使用直接父代的有效 Context.inject 建立启用的配置子项。父代尚未可用时，驱动记录待执行意图，并在有效父代出现后重新检查。[跨代上下文桥](adr/0018-activation-context-bridge.md) · [配置子树协调](adr/0019-configuration-subtrees.md)
 
 成功瞬间冻结观察集合，随后 ready/target 通知中重入更新并登记的观察不回放旧代。完成通知前保留原登记的取消能力，重入 stop 必须在返回前取消其余尚未完成观察；已经成功的观察不重写为取消。
 

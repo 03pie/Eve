@@ -1,4 +1,6 @@
-/* Windows x64 business ABI V1. C11, natural layout; no C++/Qt types or packing. */
+/** @file plugin.h
+ * @brief Windows x64 C11 业务 ABI。宿主与模块以自然布局的固定宽度函数表传递句柄、借用字节和请求终态。
+ */
 #ifndef CORDIS_ABI_PLUGIN_H
 #define CORDIS_ABI_PLUGIN_H
 #include <stdint.h>
@@ -54,6 +56,7 @@ typedef int32_t CordisStatus;
 #define CORDIS_LOG_WARNING UINT32_C(3)
 #define CORDIS_LOG_ERROR UINT32_C(4)
 
+/** @brief 宿主用 struct_size 提供可写容量，生产方报告自身表长，调用方按已协商版本访问已知前缀。 */
 typedef struct CordisTableHeaderV1 {
     uint32_t struct_size;
     uint32_t abi_major;
@@ -61,9 +64,9 @@ typedef struct CordisTableHeaderV1 {
     uint32_t reserved;
 } CordisTableHeaderV1;
 
-/* Borrowed bytes, no terminator. size > 0 requires data != NULL. JSON is UTF-8.
- * Inputs live only through the call; receivers copy before returning.
- * Zero bytes means no result, never an implicit JSON null. No shared buffers V1.
+/** @brief 由发送方持有、按 size 读取的借用字节。size 大于零时 data 必须有效，无需终止符。
+ * 输入只在调用期间有效，接收方需保留时须在返回前复制。JSON 使用 UTF-8 编码。
+ * 对于结果字段，零字节表示没有结果，JSON 的 null 须显式编码。V1 没有共享缓冲区所有权协议。
  */
 typedef struct CordisBytesV1 {
     const uint8_t* data;
@@ -83,11 +86,10 @@ typedef struct CordisServiceMetadataV1 {
     CordisBytesV1 capabilities_json;
 } CordisServiceMetadataV1;
 
-/* Host-owned immutable table. It outlives all module instances, callbacks and
- * outstanding requests. Nonzero handles are scoped to context/generation/epoch.
- * All operations except complete/log require the owner thread. complete/log
- * copy data on any thread and never execute a registry mutation or callback inline.
- * Output handles/request IDs are zero on failure. No exception may escape.
+/** @brief 宿主持有不可变的函数表，并保持其有效直至所有模块实例、回调和在途请求均已结束。
+ * 非零句柄的作用域受上下文、模块代次和实例 epoch 限制。complete 和 log 可在任意线程复制输入，
+ * 调用期间不得内联修改注册表或执行回调。其余操作须在宿主所属线程调用。
+ * 失败时输出句柄或请求标识为零。所有入口均禁止异常越过 ABI 边界。
  */
 typedef struct CordisHostV1 {
     CordisTableHeaderV1 header;
@@ -98,6 +100,10 @@ typedef struct CordisHostV1 {
      */
     CordisStatus(CORDIS_CALL* complete)(CordisHandle context, CordisRequestId request, CordisStatus status,
                                         CordisBytesV1 result_json);
+    /** @brief 可从任意线程提交至多 CORDIS_MAX_LOG_BYTES 字节的 UTF-8 文本。
+     * CORDIS_OK 表示宿主已将记录复制到该实例的有界内存日志。宿主配置接收端且日志已获准发布时才异步投递。
+     * 磁盘归档取决于接收端的配置和写入结果。
+     */
     CordisStatus(CORDIS_CALL* log)(CordisHandle context, uint32_t level, CordisBytesV1 text);
     /* Cancels a plugin-originated host operation; completion still arrives. */
     CordisStatus(CORDIS_CALL* request_cancel)(CordisHandle context, CordisRequestId request);
@@ -125,13 +131,11 @@ typedef struct CordisHostV1 {
                                                       CordisRequestId* request);
 } CordisHostV1;
 
-/* Base lifecycle and request callbacks are mandatory. Optional family slots
- * are all nonnull iff their capability is negotiated; otherwise they are NULL.
- * Query metadata spans stay immutable for the mapped module lifetime.
- * Functions run on the owner thread and never throw. All async entries receive
- * a host-issued request: PENDING promises exactly one host.complete (which may
- * race with return). Any other return is final and forbids complete. The host
- * reconciles a copied early completion only after the entry has returned.
+/** @brief 模块必须提供基础生命周期和请求回调。在已协商的可选能力组内，每个槽位都必须有效，其余能力组的槽位均为 NULL。
+ * 查询返回的元数据字节须在模块映射期间保持有效且不可变。函数均在宿主所属线程执行，禁止抛出异常。
+ * 每个异步入口接收宿主分配的请求标识。返回 CORDIS_PENDING 的请求必须恰好调用一次 host.complete，
+ * 完成通知可能早于入口返回。其他返回值均是终态，此时禁止再调用 host.complete。
+ * 宿主先复制提前到达的结果，等入口返回后再核对并结算。
  */
 typedef struct CordisPluginApiV1 {
     CordisTableHeaderV1 header;
@@ -168,15 +172,15 @@ typedef struct CordisPluginApiV1 {
                                                CordisHandle cleanup_callback, CordisRequestId request);
 } CordisPluginApiV1;
 
-/* Pure negotiation: no callbacks, resource creation or lifecycle calls.
- * host_abi is the major; minor/size/capabilities are in the tables. Host sets
- * output.header.struct_size to capacity. Producer writes <= min(capacity, own
- * size), reports own size, and retains host only after a successful query.
- * Same major + known prefix/features permits a newer minor/tail. Unknown bits
- * or required features missing from host are rejected, never silently ignored.
+/** @brief 入口仅协商函数表，调用期间禁止回调宿主、创建资源或执行生命周期操作。
+ * host_abi 指定主版本，次版本、结构长度和能力位由表提供。宿主在 output.header.struct_size 中写入容量，
+ * 模块至多写入该容量和自身表长的较小值，并报告自身表长。协商成功后模块才可保留 host。
+ * 主版本相同、已知前缀完整且能力可识别时允许较新的次版本或尾部扩展。
+ * 出现未知能力位或宿主缺少模块必需的能力时，必须拒绝协商。
  */
 typedef CordisStatus(CORDIS_CALL* CordisQueryFnV1)(uint32_t host_abi, const CordisHostV1* host,
                                                    CordisPluginApiV1* output);
+/** @brief 按 CordisQueryFnV1 协商模块与宿主的业务函数表。宿主校验成功后才进入实例生命周期。 */
 CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_query_v1(uint32_t host_abi, const CordisHostV1* host,
                                                        CordisPluginApiV1* output);
 

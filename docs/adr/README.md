@@ -24,6 +24,7 @@
 - [ADR-0010 项目内维护 Ela 基础库与原生导航](0010-maintained-ela-navigation.md)
 - [ADR-0028 Home 卡片管理窗口与平台添加入口](0028-home-management-windows.md)
 - [ADR-0051 UI 贡献复用原发布组](0051-ui-contribution-publication.md)
+- [ADR-0063 日志查询与显示边界](0063-log-query-contract.md)
 
 ## 配置、协调与持久化
 
@@ -40,6 +41,7 @@
 - [ADR-0021 Home 与管理页的配置路由](0021-configuration-management-routing.md)
 - [ADR-0022 配置后台 I/O 与文件监听](0022-configuration-background-io-watcher.md)
 - [ADR-0047 配置与运行共用不可变定义目录](0047-configuration-definition-identity.md)
+- [ADR-0066 工作区配置的归属](0066-workspace-configuration.md)
 
 ## 原生模块、ABI 与 Qt 模块
 
@@ -56,6 +58,7 @@
 - [ADR-0039 同工具链 UI 插件共用 Qt/UI 运行库](0039-shared-qt-ui-runtime.md)
 - [ADR-0040 配置驱动的业务 UI DLL 与宿主诊断](0040-configured-qt-workspace.md)
 - [ADR-0050 白名单原生模块的映像终结](0050-approved-native-module-unloading.md)
+- [ADR-0065 外部 Qt 插件的生成与安装契约](0065-sdk-generation.md)
 
 ## 代次管理、受控发布与替换
 
@@ -67,6 +70,7 @@
 - [ADR-0046 模块预约与共同创建准入](0046-module-replacement-reservation.md)
 - [ADR-0048 由宿主持有整体替换操作](0048-host-replacement-operation.md)
 - [ADR-0049 替换状态由实例提供、由宿主事务持有](0049-versioned-replacement-state.md)
+- [ADR-0064 Native 替换来源的所有权](0064-native-input-ownership.md)
 
 ## 依赖诊断与运行验证
 

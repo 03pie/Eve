@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory)][string]$TestExecutable,
     [Parameter(Mandatory)][string]$QtRoot,
     [string]$EvidenceFile
