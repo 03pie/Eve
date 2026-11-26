@@ -13,6 +13,13 @@ class QTabWidget;
 class QSplitter;
 namespace cordis::ui::detail
 {
+/** @brief 设置控件、偏好文件和首次启动共同使用的逻辑像素范围。 */
+struct PreferenceDimension {
+    int minimum, initial, maximum;
+};
+inline constexpr PreferenceDimension navigationWidthPixels{180, 240, 360};
+inline constexpr PreferenceDimension panelHeightPixels{120, 160, 480};
+
 struct SystemSurfaceSettings {
     bool highContrast = false;
     bool transparencyEnabled = true;
@@ -72,7 +79,7 @@ class WorkbenchPreferences final : public QObject
     QTimer timer_;
     std::function<void(const QString &)> reporter_;
     std::function<void()> appearanceObserver_;
-    int panelHeight_ = 160;
+    int panelHeight_ = panelHeightPixels.initial;
     bool restoring_ = true, applyingHeight_ = false, dirty_ = false;
 };
 } // namespace cordis::ui::detail

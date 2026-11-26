@@ -32,6 +32,7 @@
 
 namespace cordis::ui::detail {
 namespace {
+constexpr int minimumMainPaneHeight = 240;
 #ifdef Q_OS_WIN
 class SystemAppearanceObserver final : public QObject, public QAbstractNativeEventFilter {
 public:
@@ -148,7 +149,7 @@ WorkbenchPreferences::WorkbenchPreferences(ElaWindow* window, QTabWidget* panel,
     if (splitter_)
         connect(splitter_, &QSplitter::splitterMoved, this, [this] {
             if (!applyingHeight_ && panel_ && panel_->isVisible()) {
-                panelHeight_ = std::clamp(panel_->height(), 120, 480);
+                panelHeight_ = std::clamp(panel_->height(), panelHeightPixels.minimum, panelHeightPixels.maximum);
                 changed();
             }
         });
@@ -194,8 +195,9 @@ void WorkbenchPreferences::load()
                number <= high;
     };
     if (error.error != QJsonParseError::NoError || !document.isObject() || !integer("version", 1, 1) ||
-        !integer("theme", 0, 1) || !integer("navigationMode", 2, 3) || !integer("navigationWidth", 180, 360) ||
-        !integer("panelHeight", 120, 480)) {
+        !integer("theme", 0, 1) || !integer("navigationMode", 2, 3) ||
+        !integer("navigationWidth", navigationWidthPixels.minimum, navigationWidthPixels.maximum) ||
+        !integer("panelHeight", panelHeightPixels.minimum, panelHeightPixels.maximum)) {
         report(QString::fromUtf8("界面偏好格式或版本无效，已保留默认布局。修改设置后可重新保存。"));
         return;
     }
@@ -314,7 +316,7 @@ void WorkbenchPreferences::changed()
 }
 void WorkbenchPreferences::setPanelHeight(int height)
 {
-    panelHeight_ = std::clamp(height, 120, 480);
+    panelHeight_ = std::clamp(height, panelHeightPixels.minimum, panelHeightPixels.maximum);
     applyHeight();
     changed();
 }
@@ -324,8 +326,8 @@ void WorkbenchPreferences::applyHeight()
         return;
     applyingHeight_ = true;
     const auto total = splitter_->height();
-    const auto desired = std::min(panelHeight_, std::max(120, total - 240));
-    splitter_->setSizes({std::max(240, total - desired), desired});
+    const auto desired = std::min(panelHeight_, std::max(panelHeightPixels.minimum, total - minimumMainPaneHeight));
+    splitter_->setSizes({std::max(minimumMainPaneHeight, total - desired), desired});
     applyingHeight_ = false;
 }
 bool WorkbenchPreferences::eventFilter(QObject* watched, QEvent* event)
@@ -352,7 +354,8 @@ bool WorkbenchPreferences::flush()
     QJsonObject value{{"version", 1},
                             {"theme", eTheme->getThemeMode() == ElaThemeType::Dark ? 1 : 0},
                             {"navigationMode", static_cast<int>(mode)},
-                            {"navigationWidth", std::clamp(window_->getNavigationBarWidth(), 180, 360)},
+                            {"navigationWidth", std::clamp(window_->getNavigationBarWidth(),
+                                                           navigationWidthPixels.minimum, navigationWidthPixels.maximum)},
                             {"panelHeight", panelHeight_}};
     if (material_) value.insert("material", material_);
     if (transition_) value.insert("transition", transition_);
@@ -381,9 +384,9 @@ void WorkbenchPreferences::reset()
     material_ = transition_ = 0;
     setUserCardVisible(true);
     setBackground({});
-    window_->setNavigationBarWidth(240);
+    window_->setNavigationBarWidth(navigationWidthPixels.initial);
     window_->setNavigationBarDisplayMode(ElaNavigationType::Compact);
-    setPanelHeight(160);
+    setPanelHeight(panelHeightPixels.initial);
     changed();
 }
 } // namespace cordis::ui::detail

@@ -37,6 +37,7 @@
 #include <QProcess>
 #include <QPropertyAnimation>
 #include <QPushButton>
+#include <QSize>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QStandardPaths>
@@ -182,6 +183,31 @@ void roundtrip()
         scene.close();
     }
     CHECK(read(path).value("navigationWidth").toInt() == 240);
+
+    // 用原有 v1 文件验证两个端点，再通过控件尝试越界写入。
+    struct DimensionCase {
+        QSize loaded, requested, persisted;
+    };
+    const DimensionCase cases[] = {{{180, 480}, {361, 119}, {360, 120}},
+                                   {{360, 120}, {179, 481}, {180, 480}}};
+    for (const auto& dimensions : cases) {
+        saved["navigationWidth"] = dimensions.loaded.width();
+        saved["panelHeight"] = dimensions.loaded.height();
+        write(path, QJsonDocument(saved).toJson());
+        Scene scene(path);
+        scene.settings();
+        auto* widthControl = scene.find<ElaSpinBox>("CordisSettingsNavigationWidth");
+        auto* heightControl = scene.find<ElaSpinBox>("CordisSettingsPanelHeight");
+        CHECK(widthControl->value() == dimensions.loaded.width() && heightControl->value() == dimensions.loaded.height());
+        CHECK(widthControl->minimum() == 180 && widthControl->maximum() == 360);
+        CHECK(heightControl->minimum() == 120 && heightControl->maximum() == 480);
+        widthControl->setValue(dimensions.requested.width());
+        heightControl->setValue(dimensions.requested.height());
+        scene.close();
+        const auto clamped = read(path);
+        CHECK(clamped.value("navigationWidth").toInt() == dimensions.persisted.width());
+        CHECK(clamped.value("panelHeight").toInt() == dimensions.persisted.height());
+    }
 }
 
 /** @brief 损坏/未知版本/越界/错误类型不进入恢复，也不在无操作时覆盖文件。 */
@@ -192,6 +218,10 @@ void invalid()
     for (const auto& bytes :
          {QByteArray("invalid"), QByteArray("{\"version\":2}"),
           QByteArray("{\"version\":1,\"theme\":0,\"navigationMode\":2,\"navigationWidth\":9999,\"panelHeight\":160}"),
+          QByteArray("{\"version\":1,\"theme\":0,\"navigationMode\":2,\"navigationWidth\":179,\"panelHeight\":480}"),
+          QByteArray("{\"version\":1,\"theme\":0,\"navigationMode\":2,\"navigationWidth\":361,\"panelHeight\":120}"),
+          QByteArray("{\"version\":1,\"theme\":0,\"navigationMode\":2,\"navigationWidth\":180,\"panelHeight\":481}"),
+          QByteArray("{\"version\":1,\"theme\":0,\"navigationMode\":2,\"navigationWidth\":360,\"panelHeight\":119}"),
           QByteArray(
               "{\"version\":1,\"theme\":true,\"navigationMode\":2,\"navigationWidth\":240,\"panelHeight\":160}")}) {
         write(path, bytes);
@@ -199,6 +229,7 @@ void invalid()
         scene.settings();
         CHECK(scene.find<ElaText>("CordisPreferencesStatus")->text().contains(QString::fromUtf8("无效")));
         CHECK(scene.window->getNavigationBarWidth() == 240);
+        CHECK(scene.find<ElaSpinBox>("CordisSettingsPanelHeight")->value() == 160);
         scene.close();
         QFile file(path);
         CHECK(file.open(QIODevice::ReadOnly) && file.readAll() == bytes);

@@ -8,6 +8,7 @@
 #include "appearance_p.hpp"
 #include "home_p.hpp"
 #include "panel_p.hpp"
+#include "preferences_p.hpp"
 #include "runtime_log_archive_p.hpp"
 #include "services_p.hpp"
 #include "workbench_p.hpp"

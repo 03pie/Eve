@@ -193,7 +193,8 @@ SettingsPage *createSettingsPage(ElaWindow *window, QTabWidget *panel, Workbench
         nav->setCurrentIndex(window->getNavigationBarDisplayMode() == ElaNavigationType::Maximal);
     });
     auto navWidth =
-        spin("CordisSettingsNavigationWidth", QObject::tr("展开导航宽度"), 180, 360, window->getNavigationBarWidth(),
+        spin("CordisSettingsNavigationWidth", QObject::tr("展开导航宽度"), navigationWidthPixels.minimum,
+             navigationWidthPixels.maximum, window->getNavigationBarWidth(),
              QObject::tr("导航宽度 width"), [window](int width) { window->setNavigationBarWidth(width); });
     QObject::connect(window, &ElaWindow::pNavigationBarWidthChanged, navWidth, [=] {
         QSignalBlocker block(navWidth);
@@ -202,7 +203,8 @@ SettingsPage *createSettingsPage(ElaWindow *window, QTabWidget *panel, Workbench
     auto showPanel = toggle("CordisSettingsPanel", QObject::tr("显示底部工作区"), !panel->isHidden(),
                             QObject::tr("底部面板 panel"), [panel](bool visible) { panel->setVisible(visible); });
     new PanelVisibility(panel, showPanel);
-    auto height = spin("CordisSettingsPanelHeight", QObject::tr("底部工作区高度"), 120, 480, prefs->panelHeight(),
+    auto height = spin("CordisSettingsPanelHeight", QObject::tr("底部工作区高度"), panelHeightPixels.minimum,
+                       panelHeightPixels.maximum, prefs->panelHeight(),
                        QObject::tr("面板高度 panel height"), [prefs](int value) { prefs->setPanelHeight(value); });
     if (auto splitter = window->findChild<QSplitter *>("ElaWorkbenchPanelSplitter"))
         QObject::connect(splitter, &QSplitter::splitterMoved, height, [=] {
