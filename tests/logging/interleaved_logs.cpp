@@ -110,15 +110,22 @@ void run(const QString& dll, const QDir& evidence)
     auto* selector = control<QComboBox>(window, "CordisOutputTarget");
     auto* commandFilter = control<QLineEdit>(window, "CordisCommandFilter");
     auto* list = control<QListView>(window, "CordisCommandList");
+    auto* openCommands = control<QAction>(window, "CordisOpenCommands");
+    auto* runCommand = control<QPushButton>(window, "CordisRunCommand");
     const auto runId = control<QComboBox>(window, "CordisOutputRun")->currentData().toString();
     check(!QUuid(runId).isNull(), "missing archive run ID");
     check(selector->findData("plugin/test.logs.alpha") < 0 && selector->findData("plugin/test.logs.bravo") < 0, "silent source visible");
     for (const auto& marker : markers) {
-        control<QAction>(window, "CordisOpenCommands")->trigger();
-        commandFilter->setText("Write sample log " + marker.left(1));
-        until([&] { return commandFilter->isVisible() && list->model()->rowCount() == 1; }, "no unique plugin command");
-        check(list->currentIndex().data().toString().contains(commandFilter->text()), "wrong palette command");
-        control<QPushButton>(window, "CordisRunCommand")->click();
+        const auto title = "Write sample log " + marker.left(1);
+        commandFilter->setText(title);
+        // Let the command publication reach the list model before opening the palette.
+        until([&] { return list->model()->rowCount() == 1; }, "command filter did not produce a unique row");
+        const auto match = list->model()->index(0, 0);
+        check(match.data().toString().startsWith(title + " "), "command filter returned the wrong plugin");
+        openCommands->trigger();
+        check(commandFilter->isVisible() && runCommand->isVisible(), "command palette did not open");
+        list->setCurrentIndex(match);
+        runCommand->click();
         until([&] { return eventLines(editor).join('\n').contains("Interleaved log " + marker); }, "plugin command did not publish");
     }
     const auto all = eventLines(editor);
