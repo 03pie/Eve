@@ -18,6 +18,7 @@ struct ConfigurationPayloadValidator {
     virtual Result<void> validatePayload(const std::string& text) const = 0;
 };
 QString outputPluginName(const std::shared_ptr<ManagementControl>& control, InstanceId instance);
+QString outputConfigurationKey(const std::shared_ptr<ManagementControl>& control, ContextIdentity owner);
 void setManagementLogAction(const std::shared_ptr<ManagementControl>& control,
                             std::function<void(InstanceId, const std::string&, QWidget*)> action);
 void setAddedInstanceAction(const std::shared_ptr<ManagementControl>& control,

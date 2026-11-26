@@ -8,9 +8,10 @@
 #include <ElaPlainTextEdit.h>
 #include <QApplication>
 #include <QClipboard>
-#include <QDateTime>
 #include <QDesktopServices>
+#include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QSaveFile>
 #include <QShortcut>
 #include <QUrl>
@@ -80,18 +81,26 @@ class OutputEditor final : public ElaPlainTextEdit
         fitTools();
     }
 };
-QString format(const LogRecord& row)
+
+bool exportWouldModifyArchive(const QString& path, const QString& logs)
 {
-    const auto& entry = row.entry;
-    const auto level = entry.level == OutputLevel::Error     ? "ERROR"
-                       : entry.level == OutputLevel::Warning ? "WARN"
-                                                             : "INFO";
-    return QString("[%1] %2 [%3] %4%5  %6")
-        .arg(entry.sequence)
-        .arg(QDateTime::fromMSecsSinceEpoch(row.utcMs).toString("HH:mm:ss.zzz"), QString::fromLatin1(level),
-             row.sourceName,
-             entry.owner ? QString(" #%1/%2").arg(entry.owner->instance.value()).arg(entry.owner->epoch) : QString{},
-             QString::fromStdString(entry.text));
+    const QFileInfo file(path), root(logs);
+#ifdef Q_OS_WIN
+    const auto sensitivity = Qt::CaseInsensitive;
+#else
+    const auto sensitivity = Qt::CaseSensitive;
+#endif
+    const auto isWithin = [&](const QString& candidate, const QString& directory) {
+        if (candidate.isEmpty() || directory.isEmpty())
+            return false;
+        const auto absolute = QDir::cleanPath(candidate);
+        const auto rootPath = QDir::cleanPath(directory);
+        return absolute.compare(rootPath, sensitivity) == 0 || absolute.startsWith(rootPath + '/', sensitivity);
+    };
+    const auto canonicalParent = file.absoluteDir().canonicalPath();
+    return isWithin(file.absoluteFilePath(), root.absoluteFilePath()) ||
+           isWithin(file.canonicalFilePath(), root.canonicalFilePath()) ||
+           (!canonicalParent.isEmpty() && isWithin(canonicalParent + '/' + file.fileName(), root.canonicalFilePath()));
 }
 } // namespace
 QPlainTextEdit* createOutputEditor(QWidget* parent) { return new OutputEditor(parent); }
@@ -100,7 +109,7 @@ void OutputControl::readHistory(bool older)
 {
     if (!older) {
         history.clear();
-        before = 0;
+        olderCursor.reset();
         notice.clear();
         browsingOlder = false;
     }
@@ -109,16 +118,20 @@ void OutputControl::readHistory(bool older)
     if (live() && !older &&
         std::any_of(entries.begin(), entries.end(), [&](const auto& row) { return outputMatches(row, filter); }))
         return;
-    auto cursor = before;
-    if (live() && history.empty() && !entries.empty()) {
-        cursor = std::numeric_limits<quint64>::max();
+    quint64 before = 0;
+    if (live() && !olderCursor && history.empty() && !entries.empty()) {
+        before = std::numeric_limits<quint64>::max();
         for (const auto& row : entries)
             if (row.eventId)
-                cursor = std::min(cursor, row.eventId);
+                before = std::min(before, row.eventId);
     }
-    const auto page = archive->query(run, filter, cursor);
-    before = page.before;
-    notice = page.warning;
+    const LogQuery query(*archive);
+    const auto page = query.page(olderCursor ? *olderCursor : query.begin(run, filter, before));
+    olderCursor = page.older;
+    notice = !page.warning.isEmpty() ? page.warning
+             : !page.expired.empty() ? QString::fromUtf8("所选范围的一部分日志已清理。")
+             : !page.missing.empty() || page.missingIncomplete ? QString::fromUtf8("所选范围有缺失记录。")
+              : QString{};
     history.insert(history.begin(), page.rows.begin(), page.rows.end());
     if (older && !page.rows.empty()) {
         browsingOlder = true;
@@ -129,10 +142,10 @@ void OutputControl::readHistory(bool older)
 QString OutputControl::lineFor(const LogRecord& row, bool memory)
 {
     if (!memory)
-        return format(row);
+        return formatLogText(row);
     auto [it, added] = liveLines.try_emplace(row.entry.sequence);
     if (added)
-        it->second = format(row);
+        it->second = formatLogText(row);
     return it->second;
 }
 QString OutputControl::text(std::vector<VisibleRecord>* positions)
@@ -277,6 +290,8 @@ void syncCombo(QComboBox* combo, const Choices& choices, const QString& selected
 }
 QString instanceKey(const LogFilter& filter)
 {
+    if (!filter.instanceKey.isEmpty())
+        return "config/" + filter.instanceKey;
     if (!filter.instance)
         return {};
     auto key = QString::number(filter.instance->value());
@@ -337,6 +352,8 @@ void OutputControl::syncSources()
             owners[id] = QString::fromUtf8("实例 #") + id;
             owners[id + "/" + QString::number(epoch)] = QString::fromUtf8("#%1 · 代 %2").arg(id).arg(epoch);
         }
+        for (const auto& key : it->instanceKeys)
+            owners["config/" + key] = QString::fromUtf8("配置实例 ") + key;
     }
     if (!filter.sourceId.isEmpty() && !catalog.contains(filter.sourceId))
         sources.emplace_back(filter.sourceId, filter.sourceId.section('/', 1));
@@ -344,7 +361,7 @@ void OutputControl::syncSources()
     Choices identities{{QString{}, QString::fromUtf8("全部实例")}};
     const auto key = instanceKey(filter);
     if (!key.isEmpty() && !owners.count(key))
-        owners[key] = "#" + key;
+        owners[key] = filter.instanceKey.isEmpty() ? "#" + key : QString::fromUtf8("配置实例 ") + filter.instanceKey;
     identities.insert(identities.end(), owners.begin(), owners.end());
     syncCombo(instances, identities, key);
 }
@@ -359,7 +376,7 @@ void setOutputArchive(const std::shared_ptr<OutputControl>& state, std::shared_p
     state->archive = std::move(archive);
     state->run = state->archive->currentRun();
     for (auto& row : state->entries)
-        row.eventId = state->archive->append(row.entry, row.sourceId, row.sourceName, row.utcMs, row.notification);
+        row.eventId = state->archive->append(row);
     state->liveSources.clear();
     syncRuns(*state);
     rebuildFilter(state);
@@ -392,8 +409,11 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
     editor->instance = self->instances;
     self->levels = combo("CordisOutputLevel", QString::fromUtf8("最低显示级别"), 108);
     editor->level = self->levels;
-    self->levels->addItems(
-        {QString::fromUtf8("所有级别"), QString::fromUtf8("警告及以上"), QString::fromUtf8("仅错误")});
+    self->levels->addItem(QString::fromUtf8("所有级别"));
+    self->levels->addItem(QString::fromUtf8("调试及以上"), static_cast<int>(LogSeverity::Debug));
+    self->levels->addItem(QString::fromUtf8("信息及以上"), static_cast<int>(LogSeverity::Info));
+    self->levels->addItem(QString::fromUtf8("警告及以上"), static_cast<int>(LogSeverity::Warning));
+    self->levels->addItem(QString::fromUtf8("仅错误"), static_cast<int>(LogSeverity::Error));
     self->search = new ElaLineEdit(tools);
     editor->search = self->search;
     self->search->setObjectName("CordisOutputSearch");
@@ -440,6 +460,7 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
             s->filter.sourceId = s->targets->currentData().toString();
             s->filter.instance.reset();
             s->filter.epoch.reset();
+            s->filter.instanceKey.clear();
             s->editor->window()->setProperty("CordisOutputSource", s->filter.sourceId);
             rebuildFilter(s);
         }
@@ -449,16 +470,22 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
             const auto id = s->instances->currentData().toString();
             s->filter.instance.reset();
             s->filter.epoch.reset();
-            if (!id.isEmpty())
+            s->filter.instanceKey.clear();
+            if (id.startsWith("config/")) {
+                s->filter.instanceKey = id.mid(7);
+            } else if (!id.isEmpty()) {
                 s->filter.instance = InstanceId{id.section('/', 0, 0).toULongLong()};
-            if (id.contains('/'))
-                s->filter.epoch = id.section('/', 1, 1).toULongLong();
+                if (id.contains('/'))
+                    s->filter.epoch = id.section('/', 1, 1).toULongLong();
+            }
             rebuildFilter(s);
         }
     });
     QObject::connect(self->levels, QOverload<int>::of(&QComboBox::currentIndexChanged), tools, [weak](int index) {
         if (auto s = weak.lock(); s && s->open) {
-            s->filter.minimumLevel = static_cast<OutputLevel>(index);
+            const auto selected = s->levels->itemData(index);
+            s->filter.minimumSeverity = selected.isValid()
+                ? std::optional<LogSeverity>{static_cast<LogSeverity>(selected.toInt())} : std::nullopt;
             rebuildFilter(s, false);
         }
     });
@@ -519,7 +546,7 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
             refreshOutput(s);
             s->editor->verticalScrollBar()->setValue(s->editor->verticalScrollBar()->minimum());
         });
-        older->setEnabled(s->archive && (s->before || (s->live() && s->history.empty() && !s->entries.empty())));
+        older->setEnabled(s->archive && (s->olderCursor || (s->live() && s->history.empty() && !s->entries.empty())));
         auto newest = menu->addAction(QString::fromUtf8("返回最新一页"), [s] { rebuildFilter(s); });
         newest->setEnabled(s->browsingOlder);
         menu->addSeparator();
@@ -540,44 +567,24 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
             const QString run = s->run;
             const LogFilter filter = s->filter;
             const auto archive = s->archive;
+            const auto cursor = archive ? std::optional<LogCursor>(LogQuery(*archive).begin(run, filter)) : std::nullopt;
             const auto memory = archive ? QString{} : s->text();
             const auto path =
                 QFileDialog::getSaveFileName(s->editor, QString::fromUtf8("导出已筛选记录"),
                                              QStringLiteral("cordis-output.txt"), QStringLiteral("Text (*.txt)"));
             if (path.isEmpty() || !s->open)
                 return;
+            if (archive && exportWouldModifyArchive(path, archive->directory())) {
+                s->notice = QString::fromUtf8("请选择归档目录之外的导出位置。");
+                QToolTip::showText(s->editor->mapToGlobal(QPoint(8, 4)), s->notice, s->editor);
+                return;
+            }
             QSaveFile file(path);
             bool ok = file.open(QIODevice::WriteOnly);
-            if (ok && archive) {
-                // Collect page boundaries first, then stream oldest to newest with bounded record buffers.
-                std::vector<quint64> cursors;
-                quint64 before = 0, upper = 0;
-                do {
-                    auto batch = archive->query(run, filter, before);
-                    if (!batch.warning.isEmpty()) {
-                        ok = false;
-                        break;
-                    }
-                    if (batch.rows.empty())
-                        break;
-                    if (!upper)
-                        upper = batch.rows.back().eventId + 1;
-                    cursors.push_back(before ? before : upper);
-                    before = batch.before;
-                } while (before);
-                for (auto it = cursors.rbegin(); ok && it != cursors.rend(); ++it) {
-                    const auto page = archive->query(run, filter, *it);
-                    ok = page.warning.isEmpty();
-                    for (const auto& record : page.rows) {
-                        const auto bytes =
-                            (QString("[%1 / event %2] ").arg(run).arg(record.eventId) + format(record) + '\n').toUtf8();
-                        if (file.write(bytes) != bytes.size()) {
-                            ok = false;
-                            break;
-                        }
-                    }
-                }
-            } else if (ok) {
+            QString exportError;
+            if (ok && cursor)
+                ok = LogQuery(*archive).exportText(*cursor, file, exportError);
+            else if (ok) {
                 const auto bytes = memory.toUtf8();
                 ok = file.write(bytes) == bytes.size();
             }
@@ -585,7 +592,8 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
                 ok = file.commit();
             if (!ok) {
                 file.cancelWriting();
-                s->notice = QString::fromUtf8("日志导出失败：") + file.errorString();
+                s->notice = QString::fromUtf8("日志导出失败：") +
+                            (exportError.isEmpty() ? file.errorString() : exportError);
             }
             QToolTip::showText(s->editor->mapToGlobal(QPoint(8, 4)),
                                ok ? QString::fromUtf8("已导出筛选结果到 ") + path : s->notice, s->editor);
@@ -603,7 +611,7 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
     });
 }
 void showOutput(const std::shared_ptr<OutputControl>& s, std::optional<std::uint64_t> sequence, InstanceId instance,
-                QWidget* returnFocus, const QString& runId, const QString& configurationPath)
+                QWidget* returnFocus, const QString& runId, const QString& configurationPath, quint64 eventId)
 {
     if (!s || !s->open || !s->panel)
         return;
@@ -614,41 +622,59 @@ void showOutput(const std::shared_ptr<OutputControl>& s, std::optional<std::uint
         s->originPage = s->panel->isAncestorOf(returnFocus) ? s->panel->currentWidget() : nullptr;
         s->origin.capture(returnFocus, mainWindow);
     }
-    if (sequence || instance.valid() || !runId.isEmpty() || !configurationPath.isEmpty()) {
+    const bool locating = sequence || eventId;
+    if (locating || instance.valid() || !runId.isEmpty() || !configurationPath.isEmpty()) {
         s->run = runId.isEmpty() && s->archive ? s->archive->currentRun() : runId;
-        if(sequence || instance.valid() || !configurationPath.isEmpty())
+        if (locating || instance.valid() || !configurationPath.isEmpty())
             clearFilterControls(*s);
         std::optional<LogRecord> target;
-        if (sequence) {
+        std::optional<LogLookup> exact;
+        bool inMemory = false;
+        if (locating) {
             if (s->live())
                 for (const auto& row : s->entries)
-                    if (row.entry.sequence == *sequence) {
+                    if (eventId ? row.eventId == eventId : row.entry.sequence == *sequence) {
                         target = row;
+                        inMemory = true;
                         break;
                     }
-            if (!target && s->archive)
-                target = s->archive->locate(s->run, *sequence);
+            if (!target && s->archive) {
+                if (eventId) {
+                    exact = LogQuery(*s->archive).locate(s->run, eventId);
+                    target = exact->record;
+                } else {
+                    target = s->archive->locate(s->run, *sequence);
+                }
+            }
         }
         if (target)
             s->filter.sourceId = target->sourceId;
         if (instance.valid())
             s->filter.instance = instance;
         else if (!configurationPath.isEmpty() && !target)
-            s->filter.sourceId = "configuration/" + configurationPath;
+            s->filter.instanceKey = configurationPath;
         syncRuns(*s);
         rebuildFilter(s);
-        if (!instance.valid() && !configurationPath.isEmpty() && !target)
+        if (!instance.valid() && !configurationPath.isEmpty() && !target && s->notice.isEmpty() && s->text().isEmpty())
             s->notice = QString::fromUtf8("配置实例 %1 尚无已发布的运行日志。").arg(configurationPath);
-        if (sequence && !target)
-            s->notice = QString::fromUtf8("该事件已清理或不在当前记录范围内。");
+        if (locating && !target) {
+            if (exact && exact->status == LogLookupStatus::Expired)
+                s->notice = QString::fromUtf8("该日志事件已按保留策略清理。");
+            else if (exact && exact->status == LogLookupStatus::Unavailable)
+                s->notice = exact->warning;
+            else
+                s->notice = QString::fromUtf8("当前记录中找不到该日志事件。");
+        }
         if (target) {
-            const bool inMemory = s->live() && std::any_of(s->entries.begin(), s->entries.end(), [&](const auto& r) {
-                                      return r.entry.sequence == *sequence;
-                                  });
             if (!inMemory && s->archive) {
-                const auto page = s->archive->query(s->run, s->filter, target->eventId + 1);
-                s->history = page.rows;
-                s->before = page.before;
+                const LogQuery query(*s->archive);
+                const auto located = exact ? *exact : query.locate(s->run, target->eventId);
+                if (located.neighborhood) {
+                    const auto page = query.page(*located.neighborhood);
+                    s->history = page.rows;
+                    s->olderCursor = page.older;
+                    s->notice = page.warning;
+                }
                 s->browsingOlder = true;
             }
             s->cleared.erase(target->entry.sequence);
@@ -661,9 +687,9 @@ void showOutput(const std::shared_ptr<OutputControl>& s, std::optional<std::uint
     mainWindow->raise();
     mainWindow->activateWindow();
     s->targets->setFocus();
-    if (sequence) {
+    if (locating) {
         for (const auto& row : s->visibleRecords)
-            if (row.sequence == *sequence) {
+            if (eventId ? row.eventId == eventId : row.sequence == *sequence) {
                 auto cursor = s->editor->textCursor();
                 cursor.setPosition(row.start);
                 cursor.setPosition(row.end, QTextCursor::KeepAnchor);
@@ -674,7 +700,7 @@ void showOutput(const std::shared_ptr<OutputControl>& s, std::optional<std::uint
     }
 }
 void showNotificationOutput(const std::shared_ptr<OutputControl>& s, std::uint64_t sequence,
-                            const QString& runId, WorkbenchReturnPoint origin)
+                            const QString& runId, WorkbenchReturnPoint origin, quint64 eventId)
 {
     if (!s || !s->open || !s->panel) {
         origin.restore();
@@ -685,7 +711,7 @@ void showNotificationOutput(const std::shared_ptr<OutputControl>& s, std::uint64
         s->originPage = target && s->panel->isAncestorOf(target) && s->panel->currentWidget() != s->editor
                             ? s->panel->currentWidget() : nullptr;
     s->origin.take(std::move(origin));
-    showOutput(s, sequence, {}, nullptr, runId);
+    showOutput(s, sequence, {}, nullptr, runId, {}, eventId);
 }
 QString currentOutputText(const std::shared_ptr<OutputControl>& s)
 {

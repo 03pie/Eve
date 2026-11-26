@@ -827,6 +827,10 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
         const auto shell = outputWeak.lock();
         return shell ? detail::outputPluginName(shell->management, id) : QString{};
     });
+    detail::setOutputConfigurationResolver(control_->output, [outputWeak](ContextIdentity owner) {
+        const auto shell = outputWeak.lock();
+        return shell ? detail::outputConfigurationKey(shell->management, owner) : QString{};
+    });
     control_->managementPage = detail::managementWidget(control_->management);
     control_->managementKey = "cordis:management";
     window->addFooterNode(QString::fromUtf8("输出与问题"), control_->commandsKey, 0, ElaIconType::Terminal);
@@ -1157,6 +1161,21 @@ std::shared_ptr<OutputService> ElaShell::output() const { return output_; }
 Result<std::uint64_t> ElaShell::writeOutput(std::string text, OutputLevel level) const
 {
     return detail::appendOutput(control_->output, {}, "platform", std::move(text), level);
+}
+Result<std::uint64_t> ElaShell::writeOutput(std::string text, OutputLevel level, OutputDiagnostic diagnostic) const
+{
+    return detail::appendOutput(control_->output, {}, "platform", std::move(text), level, true, {},
+                                std::move(diagnostic));
+}
+Result<std::uint64_t> ElaShell::writeNativeOutput(const module::NativeLogEvent& event) const
+{
+    return detail::appendNativeOutput(control_->output, event);
+}
+Result<void> ElaShell::registerQtOutputRuntime(RuntimeId runtime, GenerationId generation,
+                                               const std::string& moduleId, const std::string& moduleVersion,
+                                               const std::string& pluginId) const
+{
+    return detail::registerQtOutputRuntime(control_->output, runtime, generation, moduleId, moduleVersion, pluginId);
 }
 Result<void> ElaShell::startOutputArchive(const std::string& workspace,const std::string& version) const
 {

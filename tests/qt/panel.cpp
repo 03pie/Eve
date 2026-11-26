@@ -15,6 +15,7 @@
 #include <QMenuBar>
 #include <QFileDialog>
 #include <QFile>
+#include <QFileInfo>
 #include <QDir>
 #include <QDirIterator>
 #include <QCryptographicHash>
@@ -344,7 +345,10 @@ void historicalFilters()
     instances->setCurrentIndex(instances->findData(secondId));
     CHECK(editor->toPlainText().contains("recent instance 209") && !editor->toPlainText().contains("early instance only"));
     sources->setCurrentIndex(0);
-    search->setText("sample-row-");level->setCurrentIndex(1);
+    const auto warningIndex=level->findData(static_cast<int>(OutputLevel::Warning));
+    const auto errorIndex=level->findData(static_cast<int>(OutputLevel::Error));
+    CHECK(level->count()==5 && warningIndex>=0 && errorIndex>=0);
+    search->setText("sample-row-");level->setCurrentIndex(warningIndex);
     CHECK(editor->toPlainText().count("sample-row-")==200);
     outputMenuAction(s,QString::fromUtf8("读取前一页"))->trigger();
     CHECK(editor->toPlainText().count("sample-row-")==400);
@@ -356,8 +360,8 @@ void historicalFilters()
     outputMenuAction(s,QString::fromUtf8("返回最新一页"))->trigger();
     CHECK(editor->toPlainText().count("sample-row-")==200 && editor->toPlainText().contains("sample-row-1311"));
     CHECK(!editor->toPlainText().contains("other-row"));
-    level->setCurrentIndex(2);CHECK(editor->toPlainText().isEmpty());
-    level->setCurrentIndex(1);
+    level->setCurrentIndex(errorIndex);CHECK(editor->toPlainText().isEmpty());
+    level->setCurrentIndex(warningIndex);
     const auto path=workspace.filePath("filtered.txt");
     QTimer::singleShot(10,[path]{
         for(auto top:QApplication::topLevelWidgets()) if(auto dlg=qobject_cast<QFileDialog*>(top)) {
@@ -371,6 +375,17 @@ void historicalFilters()
     auto rows=bytes.split('\n');rows.removeLast();
     CHECK(rows.size()==1311);
     for(int i=0;i<rows.size();++i) CHECK(rows[i].endsWith("sample-row-"+QByteArray::number(i+1)));
+    const auto archivePath = QFileInfo(segment).absoluteDir().filePath("unwanted-export.txt");
+    QTimer::singleShot(10, [archivePath] {
+        for (auto* top : QApplication::topLevelWidgets())
+            if (auto* dialog = qobject_cast<QFileDialog*>(top)) {
+                dialog->selectFile(archivePath);
+                QMetaObject::invokeMethod(dialog, "accept", Qt::QueuedConnection);
+                return;
+            }
+    });
+    outputMenuAction(s, QString::fromUtf8("导出已筛选记录…"))->trigger();
+    CHECK(!QFileInfo::exists(archivePath));
     s.find<QAction>("CordisClearOutput")->trigger();CHECK(editor->toPlainText().isEmpty());
     s.find<QAction>("CordisPreviousOutput")->trigger();CHECK(editor->toPlainText().contains("sample-row-1311"));
     CHECK(digest()==before);
@@ -432,7 +447,7 @@ void responsive()
     until([&]{return !panel->isVisible() && QApplication::focusWidget()==origin;});
     CHECK(origin->selectedText()=="elop" && origin->cursorPosition()==3);
     s.shell.showOutputEvent(seq+10000,origin).value();
-    CHECK(s.find<QLabel>("CordisOutputFeedback")->text().contains(QString::fromUtf8("该事件已清理")));
+    CHECK(s.find<QLabel>("CordisOutputFeedback")->text().contains(QString::fromUtf8("找不到该日志事件")));
     s.close();
 }
 void throughput()

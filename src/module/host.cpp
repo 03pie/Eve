@@ -12,6 +12,7 @@
 #include "request_p.hpp"
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cordis/module/manager.hpp>
 #include <cordis/module/native.hpp>
 #include <map>
@@ -178,11 +179,22 @@ CordisStatus CORDIS_CALL log(CordisHandle context, std::uint32_t level, CordisBy
             value.assign(reinterpret_cast<const char*>(text.data), static_cast<std::size_t>(text.size));
         if (!validAbiUtf8(value))
             return CORDIS_E_INVALID_ARGUMENT;
-        std::lock_guard<std::mutex> lock(self->mutex);
-        if (self->logs.size() >= 128 || value.size() > 256 * 1024 - self->logBytes)
-            return CORDIS_E_LIMIT;
-        self->logBytes += value.size();
-        self->logs.push_back({level, std::move(value)});
+        const auto stamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::system_clock::now().time_since_epoch()).count();
+        bool queued;
+        {
+            std::lock_guard<std::mutex> lock(self->mutex);
+            if (self->logs.size() >= 128 || value.size() > 256 * 1024 - self->logBytes)
+                return CORDIS_E_LIMIT;
+            const auto length = value.size();
+            const auto operation = self->logPublication == NativeInstanceControl::LogPublication::Pending
+                                       ? self->logOperation : std::nullopt;
+            self->logs.push_back({stamp, operation, {level, std::move(value)}});
+            self->logBytes += length;
+            queued = self->requestLogDeliveryLocked();
+        }
+        if (queued)
+            self->queueLogDelivery();
         return CORDIS_OK;
     } catch (...) {
         return CORDIS_E_FAILED;
@@ -305,6 +317,91 @@ ErrorInfo operationError(CordisStatus status, bool stopping, const std::string& 
         error.causes.push_back(std::move(cause));
     }
     return error;
+}
+
+bool NativeInstanceControl::requestLogDeliveryLocked()
+{
+    if (logPublication != LogPublication::Published || logDeliveryQueued || deliveredLogs == logs.size() ||
+        root->logSink.expired())
+        return false;
+    logDeliveryQueued = true;
+    return true;
+}
+
+void NativeInstanceControl::queueLogDelivery() noexcept
+{
+    try {
+        const auto target = root->scheduler.lock();
+        const auto self = shared_from_this();
+        // The queued tick owns the bounded snapshot only until copied host values have been delivered.
+        if (target && target->post({[self] { self->deliverLogs(); }, [self] {
+                                        std::lock_guard<std::mutex> lock(self->mutex);
+                                        self->logDeliveryQueued = false;
+                                    }}))
+            return;
+    } catch (...) {
+    }
+    std::lock_guard<std::mutex> lock(mutex);
+    logDeliveryQueued = false;
+}
+
+void NativeInstanceControl::deliverLogs() noexcept
+{
+    try {
+        const auto destination = root->logSink.lock();
+        std::vector<NativeLogEvent> batch;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            logDeliveryQueued = false;
+            if (!destination || logPublication != LogPublication::Published)
+                return;
+            batch.reserve(logs.size() - deliveredLogs);
+            const auto& source = root->source;
+            for (auto i = deliveredLogs; i < logs.size(); ++i)
+                batch.push_back({source.manifest.moduleId, source.manifest.moduleVersion, pluginId,
+                                 source.generation, instance, epoch, i + 1, logs[i].utcMs, logs[i].operation,
+                                 logs[i].record});
+            deliveredLogs = logs.size();
+        }
+        for (auto& row : batch) {
+            try {
+                (*destination)(std::move(row));
+            } catch (...) {
+                // A host logging consumer cannot change a completed C ABI call or starve the rest of its batch.
+            }
+        }
+    } catch (...) {
+        // The original bounded snapshot remains available after an allocation failure.
+    }
+}
+
+void NativeInstanceControl::discardLogPublication()
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    if (logPublication == LogPublication::Pending)
+        logPublication = LogPublication::Aborted;
+}
+
+void NativeInstanceControl::settleLogPublication()
+{
+    if (!logPublicationDecision)
+        return;
+    const auto decision = logPublicationDecision();
+    if (decision.hasValue() && !decision.value().has_value())
+        return;
+    bool queued = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (logPublication == LogPublication::Pending) {
+            logPublication = decision.hasValue() && *decision.value() ? LogPublication::Published :
+                                                                       LogPublication::Aborted;
+            queued = requestLogDeliveryLocked();
+        }
+    }
+    logPublicationDecision = {};
+    logPublicationObserver.reset();
+    if (queued)
+        queueLogDelivery();
 }
 
 void NativeInstanceControl::quarantine(ErrorInfo error) noexcept
@@ -497,6 +594,8 @@ void NativeInstanceControl::destroy()
         std::lock_guard<std::mutex> lock(root->mutex);
         root->instances.erase(channel.context());
     }
+    // The C destroy call has returned and its handle is closed. Deliver its final values before announcing quiescence.
+    deliverLogs();
     stopped.resolve({true, {}});
 }
 Result<NativeInstanceSnapshot> NativeInstanceControl::snapshot() const
@@ -511,10 +610,14 @@ Result<NativeInstanceSnapshot> NativeInstanceControl::snapshot() const
     if (!effects.hasValue())
         return Result<NativeInstanceSnapshot>::failure(effects.error());
     std::lock_guard<std::mutex> lock(mutex);
+    std::vector<NativeLogRecord> records;
+    records.reserve(logs.size());
+    for (const auto& row : logs)
+        records.push_back(row.record);
     return Result<NativeInstanceSnapshot>::success(
         {root->source.generation, instance, epoch, pluginId, uncertain ? NativeInstanceState::Failed : state,
          native != 0, closing || uncertain, uncertain, blocked, requests.value().requests.size(), hostCalls, failure,
-         logs, resources->pending(), effects.value(), resources->services->snapshot(),
+         std::move(records), resources->pending(), effects.value(), resources->services->snapshot(),
          resources->services->committed()});
 }
 void NativeModuleControl::finishOne(const Result<CleanupReport>& value)
@@ -567,9 +670,18 @@ using namespace detail;
 Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id, std::shared_ptr<IScheduler> scheduler,
                                         std::optional<ServiceRegistry> services)
 {
+    return open(manager, id, std::move(scheduler), std::move(services), {});
+}
+
+Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id, std::shared_ptr<IScheduler> scheduler,
+                                        std::optional<ServiceRegistry> services,
+                                        std::shared_ptr<const NativeLogSink> logs)
+{
     auto managerView = manager.snapshot();
     if (!managerView.hasValue())
         return Result<NativeModule>::failure(managerView.error());
+    if (logs && !*logs)
+        return Result<NativeModule>::failure(hostError(ErrorCode::InvalidArgument, "native log sink is empty"));
     if (!scheduler)
         return Result<NativeModule>::failure(hostError(ErrorCode::InvalidArgument, "native host scheduler is missing"));
     if (!scheduler->isCurrentThread())
@@ -610,6 +722,9 @@ Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id,
             std::lock_guard<std::mutex> rootLock(root->mutex);
             if (root->closing || root->faulted)
                 return Result<NativeModule>::failure(hostError(ErrorCode::ContextClosing, "native host is closing"));
+            if (logs && logs != root->logSink.lock())
+                return Result<NativeModule>::failure(hostError(ErrorCode::ServiceConflict,
+                                                               "generation already bound to another log sink"));
             if (services) {
                 if (root->services && !NativeServices::same(*root->services, *services))
                     return Result<NativeModule>::failure(
@@ -664,7 +779,7 @@ Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id,
         recordNativeBusiness(id, {});
     }
     auto root =
-        std::make_shared<NativeModuleControl>(std::move(source.value()), record, scheduler, std::move(services));
+        std::make_shared<NativeModuleControl>(std::move(source.value()), record, scheduler, std::move(services), logs);
     {
         auto& directory = registry();
         std::lock_guard<std::mutex> lock(directory.mutex);
@@ -727,8 +842,30 @@ Result<NativeInstance> NativeModule::createBound(std::string plugin, std::string
     auto self = std::make_shared<NativeInstanceControl>(root, scheduler, std::move(plugin), id, epoch,
                                                         std::move(lease.value()));
     self->resources = std::make_shared<NativeResources>(self, scheduler);
-    if (context)
+    if (context) {
         self->managed = *context;
+        if (!root->logSink.expired()) {
+            self->logPublication = NativeInstanceControl::LogPublication::Pending;
+            const auto source = context->source();
+            if (source.hasValue())
+                self->logOperation = source.value().replacement;
+            std::weak_ptr<NativeInstanceControl> weak = self;
+            auto presentation = context->presentation(scheduler, {[weak] {
+                if (const auto instance = weak.lock())
+                    instance->settleLogPublication();
+            }, [weak] {
+                if (const auto instance = weak.lock())
+                    instance->discardLogPublication();
+            }});
+            if (presentation.hasValue()) {
+                self->logPublicationDecision = std::move(presentation.value().publication);
+                self->logPublicationObserver = std::move(presentation.value().observation);
+                self->settleLogPublication();
+            } else {
+                self->discardLogPublication();
+            }
+        }
+    }
     {
         auto& directory = registry();
         std::lock_guard<std::mutex> lock(directory.mutex);

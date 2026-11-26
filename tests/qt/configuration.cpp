@@ -1,20 +1,28 @@
 /** @file configuration.cpp
  * @brief 真实 Qt、Kernel 和文件事务验证 Ela 配置页，不用控件状态冒充目标/保存成功。
  */
+#include "runtime_log_query_p.hpp"
 #include <ElaText.h>
 #include <ElaTheme.h>
 #include <QAbstractItemModel>
 #include <QApplication>
+#include <QBuffer>
 #include <QComboBox>
+#include <QDir>
 #include <QEventLoop>
 #include <QFile>
+#include <QFileInfo>
 #include <QFontDatabase>
 #include <QIcon>
 #include <QImage>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
+#include <QProcess>
+#include <QSaveFile>
 #include <QSplitter>
 #include <QTableView>
 #include <QTemporaryDir>
@@ -27,6 +35,7 @@
 #include <cordis/ui/configuration.hpp>
 #include <cordis/ui/ela_shell.hpp>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <iostream>
 #include <optional>
@@ -504,10 +513,159 @@ void feedback()
     scene.session->rebaseExternal(1).value();
     scene.close();
 }
+namespace {
+const QByteArray privateDisk = "# CONFIDENTIAL_DISK_TOKEN_A675C4\nformatVersion: 1\nplugins: []\n";
+const QString privateDraft = QStringLiteral("CONFIDENTIAL_DRAFT_TOKEN_E393F2");
+
+void saveEvidenceFile(const QString& path, const QByteArray& data)
+{
+    QSaveFile file(path);
+    CHECK(file.open(QIODevice::WriteOnly) && file.write(data) == data.size() && file.commit());
+}
+
+QByteArray loadFile(const QString& path)
+{
+    QFile source(path);
+    CHECK(source.open(QIODevice::ReadOnly));
+    const auto data = source.readAll();
+    CHECK(source.error() == QFile::NoError);
+    return data;
+}
+
+void logging()
+{
+    Scene scene;
+    const auto workspace = scene.directory.path();
+    scene.shell.startOutputArchive(workspace.toStdString(), "1.0.0").value();
+    std::uint64_t focusedLog = 0;
+    std::vector<std::pair<OutputDiagnostic, std::uint64_t>> accepted;
+    bindConfigurationFeedback(
+        scene.page,
+        [&](std::string message, OutputLevel level, OutputDiagnostic diagnostic) {
+            const auto seq = scene.shell.writeOutput(std::move(message), level, diagnostic).value();
+            accepted.emplace_back(std::move(diagnostic), seq);
+            return seq;
+        },
+        [&](std::uint64_t seq, QWidget*) { focusedLog = seq; });
+    scene.apply();
+    const auto beforeOperation = allocateOperationId();
+    auto editor = scene.child<QPlainTextEdit>("CordisConfigEditor");
+    editor->setPlainText(privateDraft);
+
+    QProcess outside;
+    outside.start(QCoreApplication::applicationFilePath(), {"--l7-external-write", scene.path()});
+    CHECK(outside.waitForStarted(4000) && outside.waitForFinished(8000));
+    CHECK(outside.exitStatus() == QProcess::NormalExit && outside.exitCode() == 0);
+    const qint64 outsidePid = outside.readAllStandardOutput().trimmed().toLongLong();
+    CHECK(outsidePid > 0 && outsidePid != QCoreApplication::applicationPid());
+
+    auto save = scene.child<QPushButton>("CordisConfigSave");
+    auto rebase = scene.child<QPushButton>("CordisConfigRebase");
+    const auto recorded = [&](const char* code) { return !accepted.empty() && accepted.back().first.code == code; };
+    save->click();
+    until([&] { return rebase->isEnabled() && save->isEnabled() && recorded("CONFIG_SAVE_CONFLICT"); });
+    const auto conflictSeq = accepted.back().second;
+    const auto operation = accepted.back().first.operation;
+    CHECK(operation && beforeOperation < *operation);
+    scene.child<QPushButton>("CordisConfigOpenLog")->click();
+    CHECK(focusedLog == conflictSeq && editor->toPlainText() == privateDraft);
+    CHECK(loadFile(scene.path()) == privateDisk && scene.session->snapshot().value().store.dirty);
+    CHECK(scene.child<QPlainTextEdit>("CordisConfigDetails")->toPlainText().contains("CONFIDENTIAL_DISK_TOKEN_A675C4"));
+
+    rebase->click();
+    CHECK(recorded("CONFIG_REBASE_ACCEPTED") && accepted.back().first.operation == operation);
+    CHECK(loadFile(scene.path()) == privateDisk && editor->toPlainText() == privateDraft);
+    save->click();
+    until([&] { return save->isEnabled() && recorded("CONFIG_SAVE_WRITTEN"); });
+    CHECK(accepted.back().first.operation == operation && editor->toPlainText() == privateDraft);
+    const auto persisted = loadFile(scene.path());
+    CHECK(persisted != privateDisk && !persisted.contains(privateDraft.toUtf8()));
+    const auto store = scene.session->snapshot().value().store;
+    CHECK(store.persistedRevision == 1 && !store.dirty);
+
+    save->click();
+    until([&] { return save->isEnabled() && recorded("CONFIG_SAVE_UNCHANGED"); });
+    const auto separateOperation = accepted.back().first.operation;
+    CHECK(separateOperation && *operation < *separateOperation);
+    CHECK(*separateOperation < allocateOperationId());
+    scene.close();
+
+    using namespace cordis::ui::detail;
+    const QDir root(QDir(workspace).filePath(".cordis/logs"));
+    const auto runs = root.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    CHECK(runs.size() == 1);
+    const auto run = runs.front();
+    const QDir disk(root.filePath(run));
+    const auto metadata = readSavedLogRun(workspace, run);
+    CHECK(metadata && metadata->ended && !disk.exists("active.lock"));
+    const LogQuery query(workspace);
+    LogFilter filter;
+    filter.sourceId = QStringLiteral("platform");
+    const auto cursor = query.begin(run, filter);
+    const auto page = query.page(cursor);
+    std::vector<QString> codes;
+    quint64 conflictEvent = 0;
+    for (const auto& row : page.rows) {
+        if (row.operation == operation)
+            codes.push_back(row.diagnosticCode);
+        if (row.diagnosticCode == "CONFIG_SAVE_CONFLICT") {
+            CHECK(row.entry.sequence == conflictSeq && row.entry.level == OutputLevel::Error && !row.entry.owner);
+            conflictEvent = row.eventId;
+        }
+    }
+    CHECK(conflictEvent > 0);
+    CHECK((codes == std::vector<QString>{"CONFIG_SAVE_CONFLICT", "CONFIG_REBASE_ACCEPTED", "CONFIG_SAVE_WRITTEN"}));
+    const auto lookedUp = query.locate(run, conflictEvent);
+    CHECK(lookedUp.record && lookedUp.record->operation == operation);
+
+    QBuffer output;
+    CHECK(output.open(QIODevice::WriteOnly));
+    QString error;
+    CHECK(query.exportText(cursor, output, error));
+    const auto result = output.data();
+    const auto folderPath = qEnvironmentVariable("CORDIS_LOG_L7_EVIDENCE");
+    const QDir evidence(QDir(folderPath).filePath(run));
+    if (!folderPath.isEmpty())
+        CHECK(QDir().mkpath(evidence.path()));
+    const auto checkPrivacy = [&](const QByteArray& data) {
+        CHECK(!data.contains(privateDraft.toUtf8()) && !data.contains("CONFIDENTIAL_DISK_TOKEN_A675C4") &&
+              !data.contains(QFileInfo(scene.path()).fileName().toUtf8()) && !data.contains(workspace.toUtf8()));
+    };
+    checkPrivacy(result);
+    CHECK(result.contains("CONFIG_SAVE_CONFLICT") && result.contains("CONFIG_REBASE_ACCEPTED") &&
+          result.contains("CONFIG_SAVE_WRITTEN"));
+    const auto operationLabel = QByteArray("[op=") + QByteArray::number(static_cast<qulonglong>(operation->value())) + "]";
+    CHECK(result.count(operationLabel) == 3);
+    for (const auto& piece : disk.entryList({"events-*.jsonl"}, QDir::Files)) {
+        const auto contents = loadFile(disk.filePath(piece));
+        checkPrivacy(contents);
+        if (!folderPath.isEmpty())
+            saveEvidenceFile(evidence.filePath(piece), contents);
+    }
+    if (!folderPath.isEmpty()) {
+        saveEvidenceFile(evidence.filePath("run.json"), loadFile(disk.filePath("run.json")));
+        saveEvidenceFile(evidence.filePath("export.txt"), result);
+        const QJsonObject receipt{{"pid", QString::number(QCoreApplication::applicationPid())},
+                                  {"externalPid", QString::number(outsidePid)}, {"run", run},
+                                  {"operation", QString::number(operation->value())},
+                                  {"nextOperation", QString::number(separateOperation->value())},
+                                  {"conflictEvent", QString::number(conflictEvent)}, {"draftPreserved", true},
+                                  {"acceptedRevisionSaved", true}};
+        saveEvidenceFile(evidence.filePath("result.json"), QJsonDocument(receipt).toJson());
+        std::cout << "LOG_L7_EVIDENCE=" << evidence.path().toStdString() << '\n';
+    }
+}
+} // namespace
 /** @brief 每项使用独立 QApplication，offscreen 下显式加载中文字体。 */
 int main(int argc, char** argv)
 {
     try {
+        if (argc == 3 && std::strcmp(argv[1], "--l7-external-write") == 0) {
+            QCoreApplication child(argc, argv);
+            saveEvidenceFile(child.arguments().at(2), privateDisk);
+            std::cout << QCoreApplication::applicationPid() << '\n';
+            return 0;
+        }
         QApplication app(argc, argv);
         app.setQuitOnLastWindowClosed(false);
         CHECK(argc == 2);
@@ -518,6 +676,8 @@ int main(int argc, char** argv)
         const std::string name = argv[1];
         if (name == "feedback")
             feedback();
+        else if (name == "logging")
+            logging();
         else if (name == "editor_reentry")
             editorReentry();
         else if (name == "disk_changes")

@@ -43,7 +43,8 @@ std::function<Result<void>()> available(const std::shared_ptr<CurrentModule>& re
 cordis::Result<void> prepareServiceModule(const std::shared_ptr<CurrentModule>& record,
                                           cordis::module::ModuleManager& manager,
                                           std::shared_ptr<cordis::IScheduler> scheduler,
-                                          cordis::ServiceRegistry services)
+                                          cordis::ServiceRegistry services,
+                                          std::shared_ptr<const cordis::module::NativeLogSink> logs)
 {
     using namespace cordis;
     const auto current = record;
@@ -51,7 +52,8 @@ cordis::Result<void> prepareServiceModule(const std::shared_ptr<CurrentModule>& 
         return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "service module record invalid"));
     if (current->session || current->runtime)
         return Result<void>::failure(makeError(ErrorCode::ConfigConflict, "service module already prepared"));
-    auto session = module::NativeModule::open(manager, current->generation, std::move(scheduler), std::move(services));
+    auto session = module::NativeModule::open(manager, current->generation, std::move(scheduler), std::move(services),
+                                             std::move(logs));
     if (!session.hasValue())
         return Result<void>::failure(session.error());
     current->session.emplace(std::move(session).value());

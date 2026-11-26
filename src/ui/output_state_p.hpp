@@ -4,7 +4,7 @@
 #pragma once
 #include "output_p.hpp"
 #include "pending_values_p.hpp"
-#include "runtime_log_archive_p.hpp"
+#include "runtime_log_query_p.hpp"
 #include "workbench_focus_p.hpp"
 #include <QPointer>
 #include <deque>
@@ -16,6 +16,10 @@ class ElaToolButton;
 class QLabel;
 namespace cordis::ui::detail
 {
+struct QtOutputOrigin {
+    GenerationId generation;
+    QString moduleId, moduleVersion, pluginId;
+};
 struct OutputControl {
     std::shared_ptr<qt::QtScheduler> scheduler;
     QPointer<QPlainTextEdit> editor;
@@ -28,6 +32,8 @@ struct OutputControl {
     QPointer<QWidget> originPage;
     WindowAccess access;
     std::function<QString(InstanceId)> resolve;
+    std::function<QString(ContextIdentity)> resolveConfiguration;
+    std::map<RuntimeId, QtOutputOrigin> qtOrigins;
     std::shared_ptr<RuntimeLogArchive> archive;
     std::deque<LogRecord> entries;
     std::map<std::string, int> retainedChannels;
@@ -48,15 +54,17 @@ struct OutputControl {
     std::vector<LogRecord> appended;
     unsigned unread = 0;
     unsigned rendersThisTurn = 0;
-    quint64 before = 0;
-    PendingValues<OutputEntry> pending{OutputService::pendingCountLimit, OutputService::pendingByteLimit,
-                                       OutputService::pendingTargetLimit};
+    std::optional<LogCursor> olderCursor;
+    PendingValues<LogRecord> pending{OutputService::pendingCountLimit, OutputService::pendingByteLimit,
+                                     OutputService::pendingTargetLimit};
     std::uint64_t sequence = 0;
     bool open = true, presenting = false, channelsDirty = true, textDirty = false, preserveText = true;
     bool browsingOlder = false;
     bool live() const { return !archive || run == archive->currentRun(); }
 
-    void admit(OutputEntry entry, std::optional<OperationId> notification = {});
+    void admit(OutputEntry entry, std::optional<OperationId> notification = {}, OutputDiagnostic diagnostic = {});
+    void admit(LogRecord row);
+    LogRecord captureQt(OutputEntry entry, const ContextSource& source) const;
     void readHistory(bool older);
     QString lineFor(const LogRecord& row, bool memory);
     QString text(std::vector<VisibleRecord>* positions = nullptr);

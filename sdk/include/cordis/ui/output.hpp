@@ -12,6 +12,10 @@ namespace cordis::ui {
 namespace detail { struct OutputControl; }
 class ElaShell;
 enum class OutputLevel { Info, Warning, Error };
+struct OutputDiagnostic {
+    std::optional<OperationId> operation;
+    std::string code;
+};
 /** @brief 全部为宿主复制的值，空 owner 表示平台通道。 */
 struct OutputEntry {
     std::uint64_t sequence;

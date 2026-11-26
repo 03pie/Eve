@@ -30,9 +30,10 @@ struct BusinessRecord {
 
 struct NativeModuleControl : std::enable_shared_from_this<NativeModuleControl> {
     NativeModuleControl(NativeSource value, std::shared_ptr<BusinessRecord> business,
-                        std::shared_ptr<IScheduler> target, std::optional<ServiceRegistry> index)
+                        std::shared_ptr<IScheduler> target, std::optional<ServiceRegistry> index,
+                        std::weak_ptr<const NativeLogSink> destination)
         : source(std::move(value)), record(std::move(business)), scheduler(target), owner(std::this_thread::get_id()),
-          services(std::move(index))
+          services(std::move(index)), logSink(std::move(destination))
     {
     }
     NativeSource source;
@@ -40,6 +41,7 @@ struct NativeModuleControl : std::enable_shared_from_this<NativeModuleControl> {
     std::weak_ptr<IScheduler> scheduler;
     const std::thread::id owner;
     std::optional<ServiceRegistry> services;
+    const std::weak_ptr<const NativeLogSink> logSink;
     mutable std::mutex mutex;
     bool closing = false, closed = false, faulted = false;
     std::size_t waiting = 0;
@@ -78,12 +80,29 @@ struct NativeInstanceControl : std::enable_shared_from_this<NativeInstanceContro
     bool callbacksClosing = false, destroying = false;
     bool stateCalling = false, closeStarted = false;
     std::size_t hostCalls = 0, logBytes = 0;
-    std::vector<NativeLogRecord> logs;
+    struct AcceptedLog {
+        std::int64_t utcMs;
+        std::optional<OperationId> operation;
+        NativeLogRecord record;
+    };
+    enum class LogPublication { Published, Pending, Aborted };
+    std::vector<AcceptedLog> logs;
+    std::size_t deliveredLogs = 0;
+    bool logDeliveryQueued = false;
+    LogPublication logPublication = LogPublication::Published;
+    std::optional<OperationId> logOperation;
+    std::function<Result<std::optional<bool>>()> logPublicationDecision;
+    std::shared_ptr<ScheduledJob> logPublicationObserver;
     std::optional<ErrorInfo> failure;
     InstanceOriginLease instanceLease;
     Promise<void> started, callbacksEmpty;
     Promise<CleanupReport> stopped;
     bool ownerThread() const { return root->ownerThread(); }
+    bool requestLogDeliveryLocked();
+    void queueLogDelivery() noexcept;
+    void deliverLogs() noexcept;
+    void settleLogPublication();
+    void discardLogPublication();
     void quarantine(ErrorInfo error) noexcept;
     void watch(const Task<void>& receipt);
     template <class T, class F> void observe(const Task<T>& task, F action)

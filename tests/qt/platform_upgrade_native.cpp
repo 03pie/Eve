@@ -3,6 +3,11 @@
  */
 #include "native_image_p.hpp"
 #include "platform_upgrade_p.hpp"
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QPointer>
 #include <QWidget>
 
@@ -18,6 +23,35 @@ void reclaimed(Scene& scene, const UpgradePreview& value, const WorkspaceUpgrade
                    !take(scene.state->manager->runtimeOrigin(value.previousRuntime)));
     old.absent();
 }
+
+void archivedReplacement(const QString& configuration, const std::string& moduleId,
+                         GenerationId previous, GenerationId candidate, OperationId operation)
+{
+    const QDir root(QFileInfo(configuration).absolutePath() + "/.cordis/logs");
+    const auto runs = root.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    PLATFORM_CHECK(runs.size() == 1);
+    const QDir run(root.filePath(runs.front()));
+    QFile metadata(run.filePath("run.json"));
+    PLATFORM_CHECK(!run.exists("active.lock") && metadata.open(QIODevice::ReadOnly) &&
+                   QJsonDocument::fromJson(metadata.readAll()).object().contains("ended"));
+    const auto expectedModule = QString::fromStdString(moduleId);
+    bool oldSeen = false, committedSeen = false;
+    for (const auto& segment : run.entryList({"events-*.jsonl"}, QDir::Files)) {
+        QFile file(run.filePath(segment));
+        PLATFORM_CHECK(file.open(QIODevice::ReadOnly));
+        while (!file.atEnd()) {
+            const auto event = QJsonDocument::fromJson(file.readLine()).object();
+            if (event.value("module") != expectedModule || !event.value("source").toString().startsWith("native/"))
+                continue;
+            const auto generation = event.value("generation").toString().toULongLong();
+            oldSeen |= generation == previous.value();
+            committedSeen |= generation == candidate.value() &&
+                             event.value("operation").toString().toULongLong() == operation.value();
+        }
+    }
+    PLATFORM_CHECK(oldSeen && committedSeen);
+}
+
 void replace(const QString& sourceBin, const std::string& alias, bool roundtrip)
 {
     Scene scene;
@@ -55,6 +89,9 @@ void replace(const QString& sourceBin, const std::string& alias, bool roundtrip)
                        scene.page(notes.instance) == widget);
     }
     finish(scene);
+    if (alias == "reporter")
+        archivedReplacement(scene.file, value.previousManifest.moduleId, value.previous, report.candidate,
+                            report.replacement->operation);
 }
 void retainedFactory(const QString& sourceBin)
 {

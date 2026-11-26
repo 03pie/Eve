@@ -331,11 +331,11 @@ public:
                 if (!result.hasValue()) {
                     draft_.reset();
                     message_ = describe(result.error());
-                    record(QStringLiteral("检查配置失败"), displayedRevision_, &result.error());
+                    record(QStringLiteral("检查配置失败"), displayedRevision_, "CONFIG_PREVIEW_FAILED", &result.error());
                     return;
                 }
                 draft_.emplace(std::move(result).value());
-                record(QStringLiteral("已检查配置"), displayedRevision_);
+                record(QStringLiteral("已检查配置"), displayedRevision_, "CONFIG_PREVIEW_OK");
                 message_ = QString::fromUtf8("检查通过；可审阅下方差异后应用。无配置变化时，应用仍可重试失败项。");
             });
         });
@@ -348,11 +348,11 @@ public:
                 auto result = session.apply(draft);
                 if (!result.hasValue()) {
                     message_ = describe(result.error());
-                    record(QStringLiteral("应用配置失败"), displayedRevision_, &result.error());
+                    record(QStringLiteral("应用配置失败"), displayedRevision_, "CONFIG_APPLY_FAILED", &result.error());
                     return;
                 }
                 editorRevision_ = result.value().revision;
-                record(QStringLiteral("已应用配置目标"), editorRevision_);
+                record(QStringLiteral("已应用配置目标"), editorRevision_, "CONFIG_APPLY_ACCEPTED");
                 matches_ = editor_->toPlainText() == text;
                 draft_.reset();
                 message_ = matches_ ? QString::fromUtf8("目标已接受；运行结果和保存状态分别显示。")
@@ -361,13 +361,14 @@ public:
         });
         QObject::connect(save_, &QPushButton::clicked, this, [this] {
             action([&](ConfigurationSession& session) {
-                auto result = session.save(displayedRevision_);
+                const auto revision = displayedRevision_;
+                auto result = session.save(revision);
                 if (!result.hasValue()) {
                     message_ = describe(result.error());
-                    record(QStringLiteral("保存配置失败"), displayedRevision_, &result.error());
+                    recordSave(revision, SaveOutcome::Failed, &result.error());
                     return;
                 }
-                saving_.emplace(result.value());
+                saving_ = PendingSave{result.value(), revision};
                 message_ = QString::fromUtf8("保存已排队。");
             });
         });
@@ -375,9 +376,14 @@ public:
                          [this] { action([&](ConfigurationSession& session) { useDesired(session); }); });
         QObject::connect(rebase_, &QPushButton::clicked, this, [this] {
             action([&](ConfigurationSession& session) {
-                auto result = session.rebaseExternal(displayedRevision_);
+                const auto revision = displayedRevision_;
+                auto result = session.rebaseExternal(revision);
+                const auto* error = result.hasValue() ? nullptr : &result.error();
+                const auto operation = recoveryOperation(revision, error);
+                recovery_ = SaveRecovery{revision, operation};
                 record(result.hasValue() ? QStringLiteral("已采用磁盘冲突基线") : QStringLiteral("采用冲突基线失败"),
-                       displayedRevision_, result.hasValue() ? nullptr : &result.error());
+                       revision, result.hasValue() ? "CONFIG_REBASE_ACCEPTED" : "CONFIG_REBASE_FAILED",
+                       error, operation);
                 message_ =
                     result.hasValue() ? QString::fromUtf8("基线已更新；当前目标尚未保存。") : describe(result.error());
             });
@@ -434,7 +440,7 @@ public:
         refresh();
     }
 
-    void bindFeedback(std::function<std::uint64_t(std::string, OutputLevel)> publish,
+    void bindFeedback(std::function<std::uint64_t(std::string, OutputLevel, OutputDiagnostic)> publish,
                       std::function<void(std::uint64_t, QWidget*)> locate)
     {
         publish_ = std::move(publish);
@@ -471,16 +477,55 @@ private:
         resultTitle_->setVisible(!narrow || section == 2);
         details_->setVisible(!narrow || section == 2);
     }
-    void record(const QString& summary, std::uint64_t revision, const ErrorInfo* error = nullptr,
-                OutputLevel level = OutputLevel::Info)
+    void record(const QString& summary, std::uint64_t revision, const char* code, const ErrorInfo* error = nullptr,
+                std::optional<OperationId> operation = {}, OutputLevel level = OutputLevel::Info)
     {
         if (!publish_)
             return;
         auto text = summary + QStringLiteral(" · 修订 %1").arg(revision);
-        if (error)
+        if (error) {
             text += QStringLiteral(" · 错误码 %1").arg(static_cast<int>(error->code));
-        eventId_ = publish_(text.toStdString(), error ? OutputLevel::Error : level);
+            if (!operation && error->operation.valid())
+                operation = error->operation;
+        }
+        eventId_ = publish_(text.toStdString(), error ? OutputLevel::Error : level, {operation, code});
         viewLog_->setVisible(eventId_ && locate_);
+    }
+    OperationId recoveryOperation(std::uint64_t revision, const ErrorInfo* error) const
+    {
+        if (recovery_ && recovery_->revision == revision)
+            return recovery_->operation;
+        if (error && error->operation.valid())
+            return error->operation;
+        return allocateOperationId();
+    }
+    void recordSave(std::uint64_t revision, SaveOutcome outcome, const ErrorInfo* error)
+    {
+        const auto operation = recoveryOperation(revision, error);
+        const auto succeeded = outcome == SaveOutcome::Written || outcome == SaveOutcome::Unchanged;
+        if (succeeded)
+            recovery_.reset();
+        else
+            recovery_ = SaveRecovery{revision, operation};
+        const char* code = "CONFIG_SAVE_FAILED";
+        switch (outcome) {
+        case SaveOutcome::Written:
+            code = "CONFIG_SAVE_WRITTEN";
+            break;
+        case SaveOutcome::Unchanged:
+            code = "CONFIG_SAVE_UNCHANGED";
+            break;
+        case SaveOutcome::Conflict:
+            code = "CONFIG_SAVE_CONFLICT";
+            break;
+        case SaveOutcome::Skipped:
+            code = "CONFIG_SAVE_SKIPPED";
+            break;
+        case SaveOutcome::Failed:
+            break;
+        }
+        record(succeeded ? QStringLiteral("配置已保存") : QStringLiteral("保存配置失败"), revision, code, error,
+               operation, succeeded ? OutputLevel::Info : OutputLevel::Error);
     }
     /** @brief 模型信号或 EnabledChange 重入关闭时不销毁当前页面栈。 */
     struct Frame {
@@ -567,7 +612,7 @@ private:
         if (editorRevision_ != displayedRevision_)
             matches_ = false;
         if (saving_)
-            if (auto saved = saving_->tryResult()) {
+            if (auto saved = saving_->task.tryResult()) {
                 const bool written = saved->hasValue() && (saved->value().outcome == SaveOutcome::Written ||
                                                            saved->value().outcome == SaveOutcome::Unchanged);
                 const auto error = saved->hasValue() ? saved->value().error : std::optional<ErrorInfo>(saved->error());
@@ -577,10 +622,10 @@ private:
                            : saved->hasValue() && saved->value().error ? describe(*saved->value().error)
                            : saved->hasValue()                         ? QString::fromUtf8("保存未完成。")
                                                                        : describe(saved->error());
+                const auto revision = saved->hasValue() ? saved->value().revision : saving_->requestedRevision;
                 saving_.reset();
-                record(written ? QStringLiteral("配置已保存") : QStringLiteral("保存配置失败"),
-                       saved->hasValue() ? saved->value().revision : displayedRevision_, error ? &*error : nullptr,
-                       written ? OutputLevel::Info : OutputLevel::Error);
+                recordSave(revision, saved->hasValue() ? saved->value().outcome : SaveOutcome::Failed,
+                           error ? &*error : nullptr);
             }
         editStatus_->setText(matches_ && state.coordinator.desired ? QString::fromUtf8("编辑：已应用")
                              : draft_ && draft_->baseRevision() == displayedRevision_
@@ -774,7 +819,7 @@ private:
     ElaText* resultTitle_;
     QSplitter* split_;
     std::uint64_t eventId_ = 0;
-    std::function<std::uint64_t(std::string, OutputLevel)> publish_;
+    std::function<std::uint64_t(std::string, OutputLevel, OutputDiagnostic)> publish_;
     std::function<void(std::uint64_t, QWidget*)> locate_;
     ElaPlainTextEdit *editor_, *details_ = nullptr;
     ElaTableView* table_;
@@ -782,7 +827,16 @@ private:
     ElaToggleSwitch* enabled_;
     QTimer* timer_;
     std::optional<ConfigurationDraft> draft_;
-    std::optional<Task<SaveReport>> saving_;
+    struct PendingSave {
+        Task<SaveReport> task;
+        std::uint64_t requestedRevision;
+    };
+    struct SaveRecovery {
+        std::uint64_t revision;
+        OperationId operation;
+    };
+    std::optional<PendingSave> saving_;
+    std::optional<SaveRecovery> recovery_;
     std::string path_;
     QString message_, fingerprint_;
     std::uint64_t displayedRevision_ = 0, editorRevision_ = 0;
@@ -791,6 +845,17 @@ private:
 };
 } // namespace
 void bindConfigurationFeedback(QWidget* page, std::function<std::uint64_t(std::string, OutputLevel)> publish,
+                               std::function<void(std::uint64_t, QWidget*)> locate)
+{
+    std::function<std::uint64_t(std::string, OutputLevel, OutputDiagnostic)> adapted;
+    if (publish)
+        adapted = [publish = std::move(publish)](std::string text, OutputLevel level, OutputDiagnostic) {
+            return publish(std::move(text), level);
+        };
+    bindConfigurationFeedback(page, std::move(adapted), std::move(locate));
+}
+void bindConfigurationFeedback(QWidget* page,
+                               std::function<std::uint64_t(std::string, OutputLevel, OutputDiagnostic)> publish,
                                std::function<void(std::uint64_t, QWidget*)> locate)
 {
     if (auto panel = dynamic_cast<ConfigurationPanel*>(page))

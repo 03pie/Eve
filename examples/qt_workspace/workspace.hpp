@@ -168,6 +168,7 @@ private:
     void initialize(const QString& root, const QString& store, const QString& file, SourceMode mode);
     void publishUi();
     cordis::loader::ConfiguredPlugin openNotebook(const cordis::loader::PluginModule& source, bool stateful);
+    void registerQtOutputSource(cordis::RuntimeId runtime, cordis::GenerationId generation);
     void initializeHost(const QString& file, cordis::loader::ConfigurationFileSnapshot baseline,
                         std::vector<cordis::loader::ConfiguredPlugin> plugins, SourceMode mode);
     void flushBeforeClose();
@@ -184,6 +185,7 @@ private:
     void retainCloseFailure(cordis::ErrorInfo failure);
     void retryableCloseFailure(cordis::ErrorInfo failure);
     std::string pluginRoot_;
+    std::shared_ptr<const cordis::module::NativeLogSink> nativeLogSink_;
     std::shared_ptr<NotebookModule> notebook_;
     std::shared_ptr<native_services::CurrentModule> counter_, reporter_;
     std::shared_ptr<const cordis::loader::ConfigurationDefinitions> definitions_;

@@ -22,11 +22,12 @@ struct CurrentModule {
     std::optional<cordis::module::NativeModule> session;
     std::optional<cordis::Runtime> runtime;
 };
-/** @brief 使用已装载的实际代次和调用方索引；不加载文件、创建平台或重用已准备记录。 */
+/** @brief 使用已装载的代次和调用方索引。调用方可在会话期间持有日志接收端。 */
 cordis::Result<void> prepareServiceModule(const std::shared_ptr<CurrentModule>& record,
                                           cordis::module::ModuleManager& manager,
                                           std::shared_ptr<cordis::IScheduler> scheduler,
-                                          cordis::ServiceRegistry services);
+                                          cordis::ServiceRegistry services,
+                                          std::shared_ptr<const cordis::module::NativeLogSink> logs = {});
 /** @brief 同一固定业务契约的配置定义；available 只弱查原代记录，不保留会话副本。 */
 cordis::Result<cordis::loader::ConfiguredPlugin> configuredServicePlugin(const std::shared_ptr<CurrentModule>& record,
                                                                          cordis::loader::PluginModule source);

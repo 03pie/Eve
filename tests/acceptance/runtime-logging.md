@@ -32,8 +32,49 @@ cmake --build build/ela-msvc-release --target cordis_logging_acceptance cordis_u
 ctest --test-dir build/ela-msvc-release -R '^(logging\.l1_cross_process|p5\.ui_publication_values_archive)$' --output-on-failure
 ```
 
-L3–L7 的专项验收留待后续阶段。
-
 本轮 Release 常规 UI 回归 260/260。另以受审模块复跑 6 项 P5 产品验证，全部通过。常规回归命令及原始结果位于 `build/design-tools/log-1-platform-release.log`。
+
+### LOG-2 本机实测 · 2026-11-26
+
+- **L3 写入与退出。** 在专用运行目录对当前测试账户临时禁止新增文件，验证应用实际无法创建分段。解除权限后，从同一个运行、同一个事件 ID 读到记录。分别在首条和后续记录实际只写一半，验证原始片段保全、完整前缀重读及续写后的唯一性。另验证持续失败时终态保留未确认计数与范围，以及配置保存冲突导致取消关闭时仍能写入，修复后正常收尾。
+- **L3 压力。** 10 万次接纳，入队条数高峰 57，序列化字节高峰 37,947。配置的测试上限为 64 条、48 KiB，末条错误仍占到预留额度。57 条刷新确认、99,943 条已报告丢弃，事件区间可重算。一次 Release 测得生产约 925 ms，峰值工作集 20,963,328 字节。
+- **L5 保留与恢复读。** 两个真实写入进程并发使用同一工作区。降低轮转和配额阈值后验证最旧分段优先、已删事件有范围凭据，仍活动的运行和 Windows 目录联接目标不受影响。另验证进程中止后无成功终态，完整行仍可查，截断末行原件保持。最终 Debug 样本见 `build/ela-msvc-debug/tests/logging/artifacts/logging-l5-YYLPGt/result.json`。
+
+### LOG-3 本机实测 · 2026-11-26
+
+- **L4 Native 接纳与往返。** 用通用 Native 测试模块覆盖五个级别、64 KiB 正边界、超长、非法 UTF-8、失效句柄和跨线程调用，核对原 ABI 返回码。持有中的发布组只在提交后公开，撤销组不写归档。真实 Native 到 Ela 归档样本 `build/ela-msvc-debug/tests/logging/artifacts/logging-native-tpVock/result.json` 保留了 PID 44396、运行 `a5e57954-0313-4710-acee-9a69bf29725f`，事件 5–9 对应五级，原来源序号 2–6。真实混合工作台升级另核对两代来源，候选提交后记录保留对应替换操作。
+- **L4 Qt 原二进制兼容。** 本轮之前生成的通用测试模块保持 SHA-256 `81507B933D5E58AAC7F4B9D4E646844147D132C3DE8E2B8C50FCBC4354EAEDF7`，直接交给新宿主加载。模块拒绝操作的日志、真实退出以及独立回读均通过。原件见 `build/ui-special-evidence/logging-old-qt-compat/logging-l1-seJhoC`。
+- **L4 Qt 来源与负向门禁。** 归档中核对模块标识、版本、代次和原来源序号，原 Qt 输出值接口的发布及撤销回归通过。SDK 声明缺失及版本、运行库、位宽不匹配继续由 `p4.qt_preflight_*` 拒绝。最终旧二进制重跑原件位于 `build/ui-special-evidence/logging-old-qt-compat/logging-l1-URjIpK`。
+- **L6 查询、续读及导出。** 四千余条数据覆盖磁盘与实时尾部交叠。验收固定初页上限，追加和切筛选不改变已有游标，按接纳顺序回放迟交记录。取消订阅后从检查点续读，分辨已清理事件、确实缺失及读取受阻。导出包含筛选范围和安全的关联字段，封闭分段 SHA-256 一致。`build/design-tools/l6-query-tests.log` 包含查询、面板和通知联动结果。
+- **L6 原件。** `build/p7-reader-release/tests/logging/artifacts/logging-l6-vwKLnq` 保留清理前分段、截断样本、内存与磁盘重叠样本和筛选导出。导出文件 SHA-256 为 `090308835E0EC4740A140B675ED2E4EE6832DFCED2AABDBE2109D05B2099F3AF`。工具独立打开旧版 Qt 测试运行，按模块、通道、实例、代次、级别和文本过滤，导出一条匹配记录，原段哈希相同。结果见 `build/design-tools/logging-cli-closeout.json`。
+- **L7 配置操作与日志关联。** 独立进程写入外部配置，触发真实保存冲突。本机样本的事件 4、5、6 共享操作 4，分别记录冲突、采用基线、重试写入。下一次独立保存使用操作 5。未应用草稿保留，已接纳修订写盘。原始段、导出和两进程回执位于 `build/ela-msvc-debug/tests/logging/artifacts/l7-configuration/f6637030-f95e-4613-9ea5-76b89bf15b97`。归档和导出均经过敏感输入断言。
+
+### 独立查询
+
+平台构建目标 `cordis_log_query` 提供只读查询。使用匹配的 Qt/Ela 运行库，指定工作区，按需补充运行 UUID。事件 ID 取自导出行或查询结果。
+
+```powershell
+$query = Join-Path $PWD 'build/ela-msvc-release/bin/cordis_log_query.exe'
+& $query --workspace D:\CordisWorkspace
+$run = 'a5e57954-0313-4710-acee-9a69bf29725f' # 示例值，换成上一条命令显示的 UUID
+& $query --workspace D:\CordisWorkspace --run $run --sources
+& $query --workspace D:\CordisWorkspace --run $run --event 2
+& $query --workspace D:\CordisWorkspace --run $run --source platform --level warning
+```
+
+工具在指定事件缺失、已清理或当前不可读时返回不同的退出码。默认分段上限 8 MiB，正常结束归档按 14 天及 256 MiB 规则清理。仍在写入、结束未确认或无法证明可安全清理的分段保留。达到容量仍无法清理时报告当前占用。
+
+### LOG-4 汇总验收 · 2026-11-26
+
+Windows x64 Release 的 15 项 `logging` 标签用例全部通过，覆盖 L1–L7。独立命令行查询、旧 Qt 通用二进制回读与受审产物的 6 项 P5 产品验证分别执行，均通过。按用例的原件目录见上方记录。专项原始 CTest 日志在 `build/design-tools/logging-closeout-focused.log`。
+
+最终兼容验证重跑使用相同的旧 Qt 模块字节，证据目录 `build/ui-special-evidence/logging-old-qt-compat/logging-l1-RqIVUy`。单轮并行全量回归曾触发已知的配置临时文件原子替换失败，记录保留在 `build/design-tools/logging-closeout-release.log`。同一配置用例随后独立连续五次通过。使用最终二进制重跑 1,505 项常规 Release 回归全部通过，原始日志为 `build/design-tools/logging-closeout-release-rerun.log`。其中需要精确受审模块的四项正向用例在独立 P5 产品回归中执行，六项均通过。[配置保存复测背景](ui-runtime-feedback.md#通知中心与平台工具窗口主题复验--2026-11-26)
+
+以下命令复跑日志专项。运行依赖为匹配的 Qt/Ela 和已启用 `BUILD_TESTING` 的平台构建。常规专项使用随平台构建的通用模块。
+
+```powershell
+cmake --build build/ela-msvc-release
+ctest --test-dir build/ela-msvc-release -L '^logging$' --output-on-failure
+```
 
 复用 `tests/qt/value_publication.cpp` 和 `tests/qt/value_publication_faults.cpp` 验证发布、撤销及关闭次序，保留旧 Qt 和 Native 服务边界用例。新日志用例随实现注册 CTest，并在本表补实际命令、进程返回、事件样本与产物摘要。交给界面侧的联调数据包括两次启动的真实归档、明确来源、一个失败后恢复的操作及可查询的具体事件 ID。[真实界面联调用例 U7](ui-runtime-feedback.md)

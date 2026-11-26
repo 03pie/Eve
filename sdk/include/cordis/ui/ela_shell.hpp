@@ -12,6 +12,7 @@
 #include <memory>
 #include <string>
 
+namespace cordis::module { struct NativeLogEvent; }
 namespace cordis::ui {
 /** @brief 外壳只在应用线程操作；退出先 Kernel.close，再 shell.close，再停 scheduler。 */
 class ElaShell {
@@ -34,6 +35,12 @@ public:
     std::shared_ptr<OutputService> output() const;
     /** @brief 仅宿主写入平台输出；插件使用带 Context 的 OutputService。 */
     Result<std::uint64_t> writeOutput(std::string text, OutputLevel level = OutputLevel::Info) const;
+    Result<std::uint64_t> writeOutput(std::string text, OutputLevel level, OutputDiagnostic diagnostic) const;
+    /** @brief 宿主组装层接入经过 Native 生命周期门禁的值。 */
+    Result<std::uint64_t> writeNativeOutput(const module::NativeLogEvent& event) const;
+    /** @brief Register provenance copied by the host from the inspected Qt runtime and module generation. */
+    Result<void> registerQtOutputRuntime(RuntimeId runtime, GenerationId generation, const std::string& moduleId,
+                                         const std::string& moduleVersion, const std::string& pluginId) const;
     /** @brief 宿主在工作区确定后开启本次运行的归档；原有嵌入式宿主可沿用会话输出。 */
     Result<void> startOutputArchive(const std::string& workspace, const std::string& version) const;
     /** @brief 从平台操作定位本次运行的已接纳输出，关闭面板时返回原控件。 */

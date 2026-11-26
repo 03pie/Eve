@@ -797,7 +797,7 @@ void editInstance()
     auto log = scene.find<QPushButton>("CordisManagementOpenLog");
     CHECK(log->isEnabled());
     log->click();
-    CHECK(scene.find<QComboBox>("CordisOutputTarget")->currentData().toString() == "configuration/sibling");
+    CHECK(scene.find<QComboBox>("CordisOutputInstance")->currentData().toString() == "config/sibling");
     QTest::keyClick(scene.find<QComboBox>("CordisOutputTarget"), Qt::Key_Escape);
     editor->setPlainText("{\"owner\":\"sibling\"}");
     scene.apply("formatVersion: 1\nplugins: [{id: survivor, plugin: demo}]\n");

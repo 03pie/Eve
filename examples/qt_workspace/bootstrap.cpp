@@ -3,7 +3,9 @@
  */
 #include "source_p.hpp"
 #include <QDir>
+#include <QFileInfo>
 #include <cordis/module/install.hpp>
+#include <algorithm>
 
 namespace notebook {
 using namespace cordis;
@@ -27,11 +29,26 @@ ConfiguredPlugin Workspace::openNotebook(const PluginModule& source, bool statef
     const auto loaded = detail::require(loadQtModule(pluginRoot_, source.manifest));
     notebook_ = std::make_shared<NotebookModule>(loaded.generation);
     auto plugin = detail::prepareNotebook(notebook_, manager, scheduler, source, stateful);
-    (void)detail::require(kernel->registerRuntime("example.notebook", *notebook_->runtime));
+    const auto registered = detail::require(kernel->registerRuntime("example.notebook", *notebook_->runtime));
+    registerQtOutputSource(registered.id(), loaded.generation);
     return plugin;
+}
+void Workspace::registerQtOutputSource(RuntimeId runtime, GenerationId generation)
+{
+    const auto origin = detail::require(manager->runtimeOrigin(runtime));
+    const auto rows = detail::require(manager->snapshot());
+    const auto loaded = std::find_if(rows.begin(), rows.end(),
+                                     [generation](const auto& row) { return row.generation == generation; });
+    if (!origin || origin->generation != generation || loaded == rows.end())
+        throw detail::InitializationFailure{
+            makeError(ErrorCode::ConfigConflict, "Qt output origin does not match the loaded generation")};
+    detail::require(shell.registerQtOutputRuntime(runtime, generation, origin->moduleId,
+                                                  loaded->manifest.moduleVersion, origin->pluginId));
 }
 void Workspace::initialize(const QString& root, const QString& store, const QString& file, SourceMode mode)
 {
+    detail::require(shell.startOutputArchive(QFileInfo(file).absolutePath().toUtf8().toStdString(),
+                                             CORDIS_PRODUCT_VERSION));
     publishUi();
     auto baseline = detail::require(readConfigurationFile(file));
     std::vector<ConfiguredPlugin> plugins;
@@ -43,6 +60,11 @@ void Workspace::initialize(const QString& root, const QString& store, const QStr
                                           : detail::require(readConfigurationFile(root + "/workspace.yaml")).text;
         plugins.push_back(openNotebook({"notebook", "notebook/module.json"}, false));
     } else {
+        const std::weak_ptr<Workspace> owner = shared_from_this();
+        nativeLogSink_ = std::make_shared<NativeLogSink>([owner](NativeLogEvent event) {
+            if (const auto workspace = owner.lock())
+                (void)workspace->shell.writeNativeOutput(event);
+        });
         if (!QDir::isAbsolutePath(store) || !QDir(store).exists())
             throw detail::InitializationFailure{
                 makeError(ErrorCode::InvalidArgument, "business store must be an existing absolute directory")};
@@ -78,7 +100,8 @@ void Workspace::initialize(const QString& root, const QString& store, const QStr
             const auto generation =
                 detail::require(manager->load(pluginRoot_, locators.at(name), {}, approvals_)).generation;
             record = std::make_shared<native_services::CurrentModule>(kind, generation);
-            detail::require(native_services::prepareServiceModule(record, *manager, scheduler, kernel->services()));
+            detail::require(native_services::prepareServiceModule(record, *manager, scheduler, kernel->services(),
+                                                                  nativeLogSink_));
             if (kind == native_services::ServiceKind::Counter) {
                 const auto& schema = record->runtime->stateSchema();
                 if (!schema || schema->id != "org.cordis.example.counter" || schema->version != 1)

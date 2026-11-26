@@ -612,6 +612,11 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
 } // namespace cordis::detail
 
 namespace cordis {
+OperationId allocateOperationId()
+{
+    return detail::nextOperationId();
+}
+
 Result<void> Context::state(StateParticipant participant) const
 {
     auto self = control_.lock();

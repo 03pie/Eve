@@ -165,8 +165,10 @@ void Workspace::closeShell()
         self->closeState_->shell.emplace(result);
         if (!result.hasValue())
             self->retainCloseFailure(result.error());
-        else
+        else {
+            self->nativeLogSink_.reset();
             self->releaseOwners();
+        }
     });
 }
 void Workspace::releaseOwners()

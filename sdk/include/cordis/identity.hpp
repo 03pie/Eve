@@ -86,6 +86,8 @@ using InstanceId = Id<InstanceTag>;
 using BindingId = Id<BindingTag>;
 using RealmId = Id<RealmTag>;
 using OperationId = Id<OperationTag>;
+/** @brief Allocate a host operation ID from the same process sequence used by Core. */
+OperationId allocateOperationId();
 using GenerationId = Id<GenerationTag>;
 using EffectId = Id<EffectTag>;
 using Epoch = std::uint64_t;

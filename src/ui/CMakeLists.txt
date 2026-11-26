@@ -5,7 +5,8 @@ if(CORDIS_SHARED_CORE)
     set(cordis_ui_type SHARED)
 endif()
 add_library(cordis_ui ${cordis_ui_type} pages.cpp services.cpp notifications.cpp management.cpp workbench.cpp home.cpp preferences.cpp brand.cpp output.cpp panel.cpp
-    settings_page.cpp settings_controls.cpp accessible_toggle.cpp runtime_log_archive.cpp output_view.cpp "${PROJECT_SOURCE_DIR}/app/shell/resources/eve_brand.qrc")
+    settings_page.cpp settings_controls.cpp accessible_toggle.cpp runtime_log_archive.cpp runtime_log_retention.cpp runtime_log_query.cpp
+    output_view.cpp "${PROJECT_SOURCE_DIR}/app/shell/resources/eve_brand.qrc")
 set_target_properties(cordis_ui PROPERTIES AUTORCC ON)
 add_library(Cordis::Ui ALIAS cordis_ui)
 target_link_libraries(cordis_ui PUBLIC Cordis::Qt Qt5::Widgets PRIVATE Ela::WidgetTools)

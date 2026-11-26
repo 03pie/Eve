@@ -1595,6 +1595,17 @@ QString outputPluginName(const std::shared_ptr<ManagementControl>& control, Inst
         std::find_if(core.names.begin(), core.names.end(), [&](const auto& name) { return name.id == found->runtime; });
     return runtime == core.names.end() ? QString{} : QString::fromStdString(runtime->name);
 }
+QString outputConfigurationKey(const std::shared_ptr<ManagementControl>& control, ContextIdentity owner)
+{
+    if (!control || !control->open || !control->scheduler->isCurrentThread() || !control->lastConfiguration)
+        return {};
+    const auto& entries = control->lastConfiguration->entries;
+    const auto configured = std::find_if(entries.begin(), entries.end(), [owner](const auto& entry) {
+        return entry.hasActual && entry.instance == owner.instance && entry.epoch == owner.epoch;
+    });
+    return configured == entries.end() ? QString{} : QString::fromStdString(configured->path);
+}
+
 void setManagementLogAction(const std::shared_ptr<ManagementControl>& control,
                             std::function<void(InstanceId, const std::string&, QWidget*)> action)
 {

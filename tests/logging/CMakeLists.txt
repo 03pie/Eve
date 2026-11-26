@@ -19,3 +19,62 @@ add_test(NAME logging.l1_cross_process COMMAND cordis_logging_acceptance "$<TARG
     "$<TARGET_FILE:cordis_plugin_workbench>" "${CMAKE_CURRENT_BINARY_DIR}/artifacts")
 set_tests_properties(logging.l1_cross_process PROPERTIES LABELS "logging;qt;ui" TIMEOUT 60
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+add_test(NAME logging.l3_close_retry COMMAND cordis_logging_acceptance "$<TARGET_FILE:cordis_logging_fixture>"
+    "$<TARGET_FILE:cordis_plugin_workbench>" "${CMAKE_CURRENT_BINARY_DIR}/artifacts" close_retry)
+set_tests_properties(logging.l3_close_retry PROPERTIES LABELS "logging;qt;ui" TIMEOUT 60
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+add_executable(cordis_log_retention_tests log_retention.cpp)
+target_include_directories(cordis_log_retention_tests PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
+target_link_libraries(cordis_log_retention_tests PRIVATE Cordis::Ui)
+cordis_target_defaults(cordis_log_retention_tests)
+add_test(NAME logging.l5_retention COMMAND cordis_log_retention_tests "${CMAKE_CURRENT_BINARY_DIR}/artifacts")
+set_tests_properties(logging.l5_retention PROPERTIES LABELS "logging;qt;ui" TIMEOUT 45)
+
+add_executable(cordis_logging_durability archive_durability.cpp)
+target_include_directories(cordis_logging_durability PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
+target_link_libraries(cordis_logging_durability PRIVATE Cordis::Ui)
+cordis_target_defaults(cordis_logging_durability)
+foreach(case IN ITEMS short first_short pressure unconfirmed concurrent_close)
+    add_test(NAME logging.l3_${case} COMMAND cordis_logging_durability "${case}")
+    set_tests_properties(logging.l3_${case} PROPERTIES LABELS "logging;qt" TIMEOUT 30)
+endforeach()
+
+add_library(cordis_native_logging_fixture MODULE native_logging_fixture.c)
+target_include_directories(cordis_native_logging_fixture PRIVATE "${PROJECT_SOURCE_DIR}/sdk/include")
+target_compile_definitions(cordis_native_logging_fixture PRIVATE CORDIS_MODULE_EXPORTS CORDIS_ABI_EXPORTS)
+set_target_properties(cordis_native_logging_fixture PROPERTIES PREFIX "" C_STANDARD 11 C_STANDARD_REQUIRED ON)
+cordis_target_defaults(cordis_native_logging_fixture)
+
+add_executable(cordis_native_logging_tests native_logging.cpp)
+target_link_libraries(cordis_native_logging_tests PRIVATE Cordis::ModuleHost Cordis::ModuleNative Qt5::Core)
+cordis_target_defaults(cordis_native_logging_tests)
+add_dependencies(cordis_native_logging_tests cordis_native_logging_fixture)
+foreach(case IN ITEMS boundary publication)
+    add_test(NAME logging.l4_native_${case} COMMAND cordis_native_logging_tests
+        "${case}" "$<TARGET_FILE:cordis_native_logging_fixture>")
+    set_tests_properties(logging.l4_native_${case} PROPERTIES LABELS "logging;native;abi" TIMEOUT 20)
+endforeach()
+
+add_executable(cordis_native_logging_archive_tests native_logging_archive.cpp)
+target_include_directories(cordis_native_logging_archive_tests PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
+target_link_libraries(cordis_native_logging_archive_tests PRIVATE
+    Cordis::ModuleHost Cordis::ModuleNative Cordis::Ui Qt5::Test)
+cordis_target_defaults(cordis_native_logging_archive_tests)
+add_dependencies(cordis_native_logging_archive_tests cordis_native_logging_fixture)
+add_test(NAME logging.l4_native_archive COMMAND cordis_native_logging_archive_tests
+    "$<TARGET_FILE:cordis_native_logging_fixture>" "${CMAKE_CURRENT_BINARY_DIR}/artifacts")
+set_tests_properties(logging.l4_native_archive PROPERTIES LABELS "logging;native;abi;qt;ui" TIMEOUT 30
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+if(WIN32)
+    target_link_libraries(cordis_logging_durability PRIVATE Advapi32)
+    add_test(NAME logging.l3_inaccessible COMMAND cordis_logging_durability inaccessible)
+    set_tests_properties(logging.l3_inaccessible PROPERTIES LABELS "logging;qt" TIMEOUT 30)
+endif()
+
+add_executable(cordis_logging_query log_query.cpp)
+target_include_directories(cordis_logging_query PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
+target_link_libraries(cordis_logging_query PRIVATE Cordis::Ui)
+cordis_target_defaults(cordis_logging_query)
+add_test(NAME logging.l6_query COMMAND cordis_logging_query "${CMAKE_CURRENT_BINARY_DIR}/artifacts")
+set_tests_properties(logging.l6_query PROPERTIES LABELS "logging;qt" TIMEOUT 30)

@@ -44,6 +44,7 @@ struct AcceptedNotice {
     bool read = false;
     bool announce = false;
     QString run;
+    quint64 archivedEvent = 0;
     bool sameGroup(const NotificationSnapshot& other) const
     {
         return value.owner.instance == other.owner.instance && value.owner.epoch == other.owner.epoch &&
@@ -472,10 +473,11 @@ void installNotificationCenter(const std::shared_ptr<NotificationControl>& self,
                                         [&](const auto* n) { return n->run == run && n->value.sequence == seq; });
         if (found == rows.end())
             return;
+        const auto archivedEvent = (*found)->archivedEvent;
         host->markRead(*found);
         host->panel->hide();
         if (host->open)
-            showNotificationOutput(host->logs, event, run, std::exchange(host->origin, {}));
+            showNotificationOutput(host->logs, event, run, std::exchange(host->origin, {}), archivedEvent);
     };
     QObject::connect(panel->openLog, &QPushButton::clicked, panel, openLog);
     QObject::connect(panel->list, &QListView::activated, panel, [openLog](const QModelIndex&) { openLog(); });
@@ -514,7 +516,8 @@ void watchNotificationArchive(const std::shared_ptr<NotificationControl>& self,
                                seq,
                                reads->value(QString::number(seq)).toBool(),
                                false,
-                               run});
+                               run,
+                               record.eventId});
         }
         return notices;
     });

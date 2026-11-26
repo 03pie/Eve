@@ -9,6 +9,7 @@
 #include <cordis/loader/qt_store.hpp>
 #include <cordis/module/qt_manifest.hpp>
 #include <cordis/module/qt_module.hpp>
+#include <algorithm>
 
 namespace cordis::workbench {
 namespace {
@@ -97,6 +98,15 @@ void Workbench::open(const QString& manifestPath, const QString& workspaceDir)
          ServiceRequirement::of<ui::OutputService>({"ui.output"}),
          ServiceRequirement::of<std::shared_ptr<qt::QtScheduler>>({"qt.scheduler"})}, {}}, scheduler));
     const auto registered = checked(kernel->registerRuntime(id, runtime));
+    const module::ModuleManager modules;
+    const auto origin = checked(modules.runtimeOrigin(registered.id()));
+    const auto actual = checked(modules.snapshot());
+    const auto loaded = std::find_if(actual.begin(), actual.end(),
+                                     [generation](const auto& row) { return row.generation == generation; });
+    if (!origin || origin->generation != generation || loaded == actual.end())
+        throw std::logic_error("Qt runtime could not be matched to its loaded generation.");
+    checked(shell.registerQtOutputRuntime(registered.id(), generation, origin->moduleId,
+                                          loaded->manifest.moduleVersion, origin->pluginId));
     ConfiguredPlugin plugin{{id, {{"ui.pages"}, {"ui.commands"}, {"ui.output"}, {"qt.scheduler"}},
                              validateConfiguration, {"extension", "module.json"}},
                             runtime, {}, {}};
@@ -112,8 +122,8 @@ void Workbench::open(const QString& manifestPath, const QString& workspaceDir)
             [this] {
                 auto widget = ui::createConfigurationPage(session, initial_);
                 ui::bindConfigurationFeedback(widget.get(),
-                    [this](std::string message, ui::OutputLevel level) {
-                        auto result = shell.writeOutput(std::move(message), level);
+                    [this](std::string message, ui::OutputLevel level, ui::OutputDiagnostic diagnostic) {
+                        auto result = shell.writeOutput(std::move(message), level, std::move(diagnostic));
                         return result.hasValue() ? result.value() : std::uint64_t{};
                     },
                     [this](std::uint64_t event, QWidget* origin) { (void)shell.showOutputEvent(event, origin); });
@@ -209,7 +219,8 @@ void Workbench::closeKernel()
         else if (!result.value().quiescent)
             closed_.reject(makeError(ErrorCode::CleanupFailed, "Plugin instances did not finish cleanup."));
         else {
-            (void)shell.writeOutput("WORKBENCH_CLEANUP_COMPLETE: 插件与内核资源已清理。");
+            (void)shell.writeOutput("WORKBENCH_CLEANUP_COMPLETE: 插件与内核资源已清理。", ui::OutputLevel::Info,
+                                    {{}, "WORKBENCH_CLEANUP_COMPLETE"});
             closeShell();
         }
     });

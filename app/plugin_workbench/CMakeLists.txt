@@ -8,3 +8,8 @@ add_executable(cordis_plugin_workbench WIN32 main.cpp)
 target_link_libraries(cordis_plugin_workbench PRIVATE cordis_external_workbench Qt5::WinMain)
 cordis_target_defaults(cordis_plugin_workbench)
 cordis_attach_eve_icon(cordis_plugin_workbench)
+
+add_executable(cordis_log_query log_query.cpp)
+target_include_directories(cordis_log_query PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
+target_link_libraries(cordis_log_query PRIVATE Cordis::Ui)
+cordis_target_defaults(cordis_log_query)

@@ -56,6 +56,7 @@ target_link_libraries(cordis_notebook_host PUBLIC Cordis::ModuleQt Cordis::Modul
     Cordis::ConfigUi Cordis::ConfigKernel Cordis::ConfigStoreQt Cordis::Replacement cordis_native_service_modules)
 target_link_libraries(cordis_notebook_host PRIVATE Ela::WidgetTools)
 target_include_directories(cordis_notebook_host PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(cordis_notebook_host PRIVATE CORDIS_PRODUCT_VERSION="${PROJECT_VERSION}")
 cordis_target_defaults(cordis_notebook_host)
 add_dependencies(cordis_notebook_host cordis_example_notebook)
 if(CORDIS_BUILD_EXAMPLES)

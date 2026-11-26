@@ -32,7 +32,7 @@ QJsonObject parse(const QByteArray& bytes)
 }
 
 template<class T>
-typename cordis::Task<T>::Snapshot wait(const cordis::Task<T>& task)
+typename cordis::Task<T>::Snapshot settle(const cordis::Task<T>& task)
 {
     QElapsedTimer timeout;
     timeout.start();
@@ -41,7 +41,14 @@ typename cordis::Task<T>::Snapshot wait(const cordis::Task<T>& task)
         QTest::qWait(5);
     }
     const auto result = task.tryResult();
-    LOG_REQUIRE(result && result->hasValue());
+    LOG_REQUIRE(result);
+    return result;
+}
+template<class T>
+typename cordis::Task<T>::Snapshot wait(const cordis::Task<T>& task)
+{
+    auto result = settle(task);
+    LOG_REQUIRE(result->hasValue());
     return result;
 }
 
@@ -72,7 +79,7 @@ struct Producer {
     }
 };
 
-void produce(const QString& manifest, const QString& workspace, const QDir& evidence)
+void produce(const QString& manifest, const QString& workspace, const QDir& evidence, bool conflict)
 {
     const auto applicationSuffix = QCryptographicHash::hash(workspace.toUtf8(), QCryptographicHash::Sha256).toHex().left(16);
     QCoreApplication::setApplicationName("CordisLogging-" + QString::fromLatin1(applicationSuffix));
@@ -89,6 +96,18 @@ void produce(const QString& manifest, const QString& workspace, const QDir& evid
     LOG_REQUIRE(std::count_if(rows.begin(), rows.end(), rejected) == 1);
     const auto& event = *std::find_if(rows.begin(), rows.end(), rejected);
     LOG_REQUIRE(event.level == OutputLevel::Error && event.owner && event.sequence > 0);
+    if (conflict) {
+        const auto beforeClose = producer.host.session->snapshot();
+        LOG_REQUIRE(beforeClose.hasValue() && beforeClose.value().store.dirty);
+        const auto revision = beforeClose.value().coordinator.desiredRevision;
+        const auto config = QDir(workspace).filePath("session.yaml");
+        files::write(config, "# External edit before close\n");
+        const auto failed = settle(producer.host.close());
+        LOG_REQUIRE(!failed->hasValue() && failed->error().code == cordis::ErrorCode::ConfigConflict);
+        LOG_REQUIRE(producer.host.shell.cancelCloseRequest().hasValue());
+        LOG_REQUIRE(producer.host.shell.writeOutput("TEST_AFTER_CANCELLED_CLOSE").hasValue());
+        LOG_REQUIRE(producer.host.session->rebaseExternal(revision).hasValue());
+    }
     producer.close();
     const QJsonObject receipt{{"pid", QString::number(QCoreApplication::applicationPid())},
         {"sequence", QString::number(event.sequence)}, {"instance", QString::number(event.owner->instance.value())},
@@ -203,11 +222,13 @@ QJsonObject verifyRun(const QString& workspace, const QString& diagnostic, const
 
 void verify(const QStringList& args, const QDir& evidence)
 {
+    const bool conflict = args.size() == 5 && args[4] == "close_retry";
     const auto workspace = evidence.filePath(QString::fromUtf8(u8"测试工作区 𠮷"));
     const auto fixture = files::install(args[1], evidence.filePath("module"), "org.cordis.test.logging",
                                        QJsonArray{"test.logging"}, "qt-ui");
     const auto pid = launch(evidence, QCoreApplication::applicationFilePath(),
-                            {"--producer", fixture, workspace, evidence.path()}, "plugin", EXIT_SUCCESS);
+                            {conflict ? "--cancel-close" : "--producer", fixture, workspace, evidence.path()},
+                            "plugin", EXIT_SUCCESS);
     const auto producer = parse(files::read(evidence.filePath("plugin-emission.json")));
     const auto producerPid = producer.value("pid").toString().toLongLong();
     LOG_REQUIRE(producerPid > 0 && producerPid != QCoreApplication::applicationPid());
@@ -216,8 +237,27 @@ void verify(const QStringList& args, const QDir& evidence)
     const auto plugin = verifyRun(workspace, "TEST_OPERATION_REJECTED", "plugin/test.logging");
     const auto pluginEvent = plugin.value("rawEvent").toObject();
     LOG_REQUIRE(pluginEvent.value("text") == producer.value("eventText"));
+    LOG_REQUIRE(pluginEvent.value("module") == "org.cordis.test.logging" &&
+                pluginEvent.value("moduleVersion") == "1.0.0" &&
+                pluginEvent.value("generation").toString().toULongLong() > 0 &&
+                pluginEvent.value("sourceSequence") == pluginEvent.value("sequence"));
     LOG_REQUIRE(pluginEvent.value("sequence") == producer.value("sequence") &&
                 pluginEvent.value("instance") == producer.value("instance") && pluginEvent.value("epoch") == producer.value("epoch"));
+    if (conflict) {
+        int continued = 0;
+        const auto run = plugin.value("run").toString();
+        const auto final = plugin.value("cleanupEventId").toString().toULongLong();
+        const auto warning = cordis::ui::detail::scanSavedDescending(workspace, run, 0, [&](const auto& row) {
+            if (row.entry.text == "TEST_AFTER_CANCELLED_CLOSE") {
+                LOG_REQUIRE(row.sourceId == "platform" && final > row.eventId);
+                ++continued;
+            }
+            return true;
+        });
+        LOG_REQUIRE(warning.isEmpty() && continued == 1);
+        files::write(evidence.filePath("result.json"), QJsonDocument(QJsonObject{{"passed", true}, {"plugin", plugin}}).toJson());
+        return;
+    }
 
     const auto badModuleWorkspace = evidence.filePath("bad-module-workspace");
     const QByteArray manifestDirName("CORDIS_L1_PRIVATE_MODULE");
@@ -239,18 +279,18 @@ void verify(const QStringList& args, const QDir& evidence)
 int main(int argc, char** argv)
 {
     try {
-        if (argc > 1 && std::strcmp(argv[1], "--producer") == 0) {
+        if (argc > 1 && (std::strcmp(argv[1], "--producer") == 0 || std::strcmp(argv[1], "--cancel-close") == 0)) {
             QApplication app(argc, argv);
             app.setQuitOnLastWindowClosed(false);
             const auto args = app.arguments();
             LOG_REQUIRE(args.size() == 5);
-            produce(args[2], args[3], QDir(args[4]));
+            produce(args[2], args[3], QDir(args[4]), args[1] == "--cancel-close");
             return EXIT_SUCCESS;
         }
         const QCoreApplication app(argc, argv);
         const auto args = app.arguments();
-        LOG_REQUIRE(args.size() == 4 && QDir().mkpath(args[3]));
-        QTemporaryDir directory(QDir(args[3]).filePath("logging-l1-XXXXXX"));
+        LOG_REQUIRE((args.size() == 4 || args.size() == 5) && QDir().mkpath(args[3]));
+        QTemporaryDir directory(QDir(args[3]).filePath(args.size() == 5 ? "logging-l3-close-XXXXXX" : "logging-l1-XXXXXX"));
         LOG_REQUIRE(directory.isValid());
         directory.setAutoRemove(false);
         std::cout << "LOG_ARCHIVE_EVIDENCE=" << directory.path().toUtf8().constData() << '\n' << std::flush;

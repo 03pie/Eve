@@ -70,12 +70,13 @@ void WorkspaceUpgradeExecution::start(const UpgradePreview& preview)
         candidateNotebook = std::make_shared<NotebookModule>(report.candidate);
         plugin.emplace(prepareNotebook(candidateNotebook, owner->manager, owner->scheduler,
                                        {report.alias, candidateLocator}, true));
+        owner->registerQtOutputSource(plugin->runtime.id(), report.candidate);
     } else {
         candidateNative = std::make_shared<native_services::CurrentModule>(
             report.alias == "counter" ? native_services::ServiceKind::Counter : native_services::ServiceKind::Reporter,
             report.candidate);
         require(native_services::prepareServiceModule(candidateNative, *owner->manager, owner->scheduler,
-                                                      owner->kernel->services()));
+                                                      owner->kernel->services(), owner->nativeLogSink_));
         plugin.emplace(
             require(native_services::configuredServicePlugin(candidateNative, {report.alias, candidateLocator})));
     }

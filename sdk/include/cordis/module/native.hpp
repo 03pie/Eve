@@ -5,6 +5,7 @@
 #include <cordis/effect.hpp>
 #include <cordis/module/ledger.hpp>
 #include <cordis/service.hpp>
+#include <functional>
 #include <optional>
 
 namespace cordis {
@@ -25,6 +26,18 @@ struct NativeLogRecord {
     std::uint32_t level;
     std::string text;
 };
+/** @brief Accepted host-side value. It retains neither a DLL, an instance nor an ABI context handle. */
+struct NativeLogEvent {
+    std::string moduleId, moduleVersion, pluginId;
+    GenerationId generation;
+    InstanceId instance;
+    Epoch epoch;
+    std::uint64_t sourceSequence;
+    std::int64_t utcMs;
+    std::optional<OperationId> operation;
+    NativeLogRecord record;
+};
+using NativeLogSink = std::function<void(NativeLogEvent)>;
 struct NativeInstanceSnapshot {
     GenerationId generation;
     InstanceId instance;
@@ -81,6 +94,12 @@ public:
     static Result<NativeModule> open(ModuleManager& manager, GenerationId generation,
                                      std::shared_ptr<IScheduler> scheduler,
                                      std::optional<ServiceRegistry> services = {});
+    /** @brief Host-only log delivery, on the scheduler owner after ABI acceptance and publication.
+     * Hold the sink until after module closure. The active session cannot switch to a different sink.
+     */
+    static Result<NativeModule> open(ModuleManager& manager, GenerationId generation,
+                                     std::shared_ptr<IScheduler> scheduler, std::optional<ServiceRegistry> services,
+                                     std::shared_ptr<const NativeLogSink> logs);
     Result<NativeInstance> create(std::string pluginId, std::string configJson, InstanceId instance, Epoch epoch) const;
     /** @brief 创建 Core 托管定义；契约见 runtime.hpp，不改变低层 create 的行为。 */
     Result<Runtime> runtime(NativePlugin plugin) const;

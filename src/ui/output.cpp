@@ -7,6 +7,8 @@
 #include <QDateTime>
 #include <QPlainTextEdit>
 #include <QTimer>
+#include <cordis/module/native.hpp>
+#include <cordis_abi/plugin.h>
 #include <algorithm>
 #include <limits>
 #include <utility>
@@ -49,32 +51,56 @@ Result<OutputEntry> prepareOutput(std::optional<ContextIdentity> owner, std::str
 } // namespace
 bool outputMatches(const LogRecord& row, const LogFilter& filter)
 {
-    const auto& e = row.entry;
-    return (filter.sourceId.isEmpty() || filter.sourceId == row.sourceId) && e.level >= filter.minimumLevel &&
-           (!filter.instance || (e.owner && e.owner->instance == *filter.instance)) &&
-           (!filter.epoch || (e.owner && e.owner->epoch == *filter.epoch)) &&
-           (filter.text.isEmpty() || QString::fromStdString(e.text).contains(filter.text, Qt::CaseInsensitive));
+    return logMatches(row, filter);
 }
-void OutputControl::admit(OutputEntry entry, std::optional<OperationId> notification)
+LogRecord OutputControl::captureQt(OutputEntry entry, const ContextSource& source) const
 {
-    QString name;
-    if (entry.owner) {
-        const auto known = publishedOwners.find(entry.owner->instance);
-        if (known != publishedOwners.end())
-            name = known->second;
-        else if (resolve) {
-            name = resolve(entry.owner->instance);
-            if (!name.isEmpty())
-                publishedOwners[entry.owner->instance] = name;
-        }
+    LogRecord row{std::move(entry), {}, {}, QDateTime::currentMSecsSinceEpoch()};
+    row.operation = source.replacement;
+    if (const auto registered = qtOrigins.find(source.runtime); registered != qtOrigins.end()) {
+        row.sourceName = registered->second.pluginId;
+        row.moduleId = registered->second.moduleId;
+        row.moduleVersion = registered->second.moduleVersion;
+        row.generation = registered->second.generation.value();
     }
-    const QString source = !entry.owner     ? QStringLiteral("platform")
-                           : name.isEmpty() ? QString("instance/%1").arg(entry.owner->instance.value())
-                                            : "plugin/" + name;
-    if (name.isEmpty())
-        name = entry.owner ? QString::fromStdString(entry.channel).section('/', 3) : QString::fromUtf8("平台");
-    LogRecord row{std::move(entry), source, name, QDateTime::currentMSecsSinceEpoch(), 0, notification};
-    row.eventId = archive ? archive->append(row.entry, source, name, row.utcMs,notification) : row.entry.sequence;
+    return row;
+}
+void OutputControl::admit(OutputEntry entry, std::optional<OperationId> notification, OutputDiagnostic diagnostic)
+{
+    LogRecord row{std::move(entry), {}, {}, QDateTime::currentMSecsSinceEpoch(), 0, notification};
+    row.operation = diagnostic.operation;
+    row.diagnosticCode = QString::fromStdString(diagnostic.code);
+    admit(std::move(row));
+}
+void OutputControl::admit(LogRecord row)
+{
+    if (!row.entry.owner) {
+        row.sourceId = QStringLiteral("platform");
+        row.sourceName = QString::fromUtf8("平台");
+    } else {
+        const auto owner = *row.entry.owner;
+        if (row.sourceId.isEmpty()) {
+            if (row.sourceName.isEmpty()) {
+                const auto known = publishedOwners.find(owner.instance);
+                if (known != publishedOwners.end())
+                    row.sourceName = known->second;
+                else if (resolve) {
+                    row.sourceName = resolve(owner.instance);
+                    if (!row.sourceName.isEmpty())
+                        publishedOwners[owner.instance] = row.sourceName;
+                }
+            }
+            if (row.sourceName.isEmpty()) {
+                row.sourceId = QString("instance/%1").arg(owner.instance.value());
+                row.sourceName = QString::fromStdString(row.entry.channel).section('/', 3);
+            } else {
+                row.sourceId = "plugin/" + row.sourceName;
+            }
+        }
+        if (row.instanceKey.isEmpty() && resolveConfiguration)
+            row.instanceKey = resolveConfiguration(owner);
+    }
+    row.eventId = archive ? archive->append(row) : row.entry.sequence;
     if (!retainedChannels.count(row.entry.channel))
         channelsDirty = true;
     if (!archive)
@@ -103,6 +129,37 @@ void OutputControl::admit(OutputEntry entry, std::optional<OperationId> notifica
         }
         entries.pop_front();
     }
+}
+void setOutputConfigurationResolver(const std::shared_ptr<OutputControl>& self,
+                                    std::function<QString(ContextIdentity)> resolve)
+{
+    self->resolveConfiguration = std::move(resolve);
+}
+Result<void> registerQtOutputRuntime(const std::shared_ptr<OutputControl>& self, RuntimeId runtime,
+                                     GenerationId generation, const std::string& moduleId,
+                                     const std::string& moduleVersion, const std::string& pluginId)
+{
+    if (!self->scheduler->isCurrentThread())
+        return Result<void>::failure(makeError(ErrorCode::WrongThread, "output origin requires owner thread"));
+    if (!self->open || !self->scheduler->isOpen())
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "output closed"));
+    const auto validAtom = [](const std::string& value, std::size_t limit) {
+        return !value.empty() && value.size() <= limit && std::all_of(value.begin(), value.end(), [](char character) {
+            return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+                   (character >= '0' && character <= '9') || character == '.' || character == '_' || character == '-';
+        });
+    };
+    if (!runtime.valid() || !generation.valid() || !validAtom(moduleId, 128) || !validAtom(moduleVersion, 64) ||
+        !validAtom(pluginId, 128))
+        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "invalid Qt output origin"));
+    const QtOutputOrigin value{generation, QString::fromStdString(moduleId), QString::fromStdString(moduleVersion),
+                               QString::fromStdString(pluginId)};
+    const auto [entry, inserted] = self->qtOrigins.emplace(runtime, value);
+    const auto& existing = entry->second;
+    if (!inserted && (existing.generation != value.generation || existing.moduleId != value.moduleId ||
+                      existing.moduleVersion != value.moduleVersion || existing.pluginId != value.pluginId))
+        return Result<void>::failure(makeError(ErrorCode::ConfigConflict, "Qt output origin already differs"));
+    return Result<void>::success();
 }
 std::shared_ptr<OutputControl> createOutput(std::shared_ptr<qt::QtScheduler> scheduler, QPlainTextEdit* editor,
                                             WindowAccess access)
@@ -170,7 +227,7 @@ void presentIncoming(const std::shared_ptr<OutputControl>& state)
 } // namespace
 Result<std::uint64_t> appendOutput(const std::shared_ptr<OutputControl>& self, std::optional<ContextIdentity> owner,
                                    std::string channel, std::string text, OutputLevel level, bool render,
-                                   std::optional<OperationId> notification)
+                                   std::optional<OperationId> notification, OutputDiagnostic diagnostic)
 {
     using Output = Result<std::uint64_t>;
     if (!self->scheduler->isCurrentThread())
@@ -185,10 +242,42 @@ Result<std::uint64_t> appendOutput(const std::shared_ptr<OutputControl>& self, s
         return Output::failure(makeError(ErrorCode::InvalidArgument, "output sequence exhausted"));
     const auto sequence = self->sequence + 1;
     prepared.value().sequence = sequence;
-    self->admit(std::move(prepared).value(),notification);
+    self->admit(std::move(prepared).value(), notification, std::move(diagnostic));
     self->sequence = sequence;
     if (render)
         presentIncoming(self);
+    return Output::success(sequence);
+}
+Result<std::uint64_t> appendNativeOutput(const std::shared_ptr<OutputControl>& self, const module::NativeLogEvent& event)
+{
+    using Output = Result<std::uint64_t>;
+    if (!self->scheduler->isCurrentThread())
+        return Output::failure(makeError(ErrorCode::WrongThread, "output requires owner thread"));
+    if (!self->open || !self->scheduler->isOpen())
+        return Output::failure(makeError(ErrorCode::ContextClosing, "output closed"));
+    if (event.record.level > CORDIS_LOG_ERROR || !event.sourceSequence || event.moduleId.empty() || event.pluginId.empty())
+        return Output::failure(makeError(ErrorCode::InvalidArgument, "invalid native output identity or level"));
+    settleOutput(self, false);
+    if (self->sequence == std::numeric_limits<std::uint64_t>::max())
+        return Output::failure(makeError(ErrorCode::InvalidArgument, "output sequence exhausted"));
+    const auto severity = static_cast<int>(event.record.level) - static_cast<int>(CORDIS_LOG_INFO);
+    auto sequence = ++self->sequence;
+    LogRecord row{};
+    row.moduleId = QString::fromStdString(event.moduleId);
+    row.moduleVersion = QString::fromStdString(event.moduleVersion);
+    row.sourceName = QString::fromStdString(event.pluginId);
+    row.sourceId = "native/" + row.moduleId + "/" + row.sourceName;
+    row.generation = event.generation.value();
+    row.sourceSequence = event.sourceSequence;
+    row.operation = event.operation;
+    row.utcMs = event.utcMs;
+    row.severity = static_cast<LogSeverity>(severity);
+    const auto channel = "native/" + std::to_string(event.instance.value()) + "/" + std::to_string(event.epoch) + "/log";
+    const auto title = QString::fromUtf8("Native · 实例 #%1 / 代 %2").arg(event.instance.value()).arg(event.epoch);
+    row.entry = {sequence, ContextIdentity{event.instance, event.epoch}, channel, title.toStdString(),
+                 event.record.text, static_cast<OutputLevel>(std::max(severity, 0))};
+    self->admit(std::move(row));
+    presentIncoming(self);
     return Output::success(sequence);
 }
 void closeOutput(const std::shared_ptr<OutputControl>& self)
@@ -220,17 +309,19 @@ Result<std::uint64_t> OutputService::write(const Context& owner, std::string cha
     const auto available = state->pending.status();
     if (!available.hasValue())
         return Output::failure(available.error());
-    const auto identity = owner.identity();
-    if (!identity.hasValue())
-        return Output::failure(identity.error());
-    auto prepared = detail::prepareOutput(identity.value(), std::move(channel), std::move(text), level, true);
+    const auto contextSource = owner.source();
+    if (!contextSource.hasValue())
+        return Output::failure(contextSource.error());
+    const ContextIdentity identity{contextSource.value().instance, contextSource.value().epoch};
+    auto prepared = detail::prepareOutput(identity, std::move(channel), std::move(text), level, true);
     if (!prepared.hasValue())
         return Output::failure(prepared.error());
     if (state->sequence == std::numeric_limits<std::uint64_t>::max())
         return Output::failure(makeError(ErrorCode::InvalidArgument, "output sequence exhausted"));
-    auto source = state->pending.source(identity.value());
+    auto row = state->captureQt(std::move(prepared).value(), contextSource.value());
+    auto source = state->pending.source(identity);
     if (!source) {
-        source = std::make_shared<detail::PendingSource>(identity.value());
+        source = std::make_shared<detail::PendingSource>(identity);
         const std::weak_ptr<detail::OutputControl> weak = state;
         auto presentation = owner.presentation(state->scheduler, source->observe([weak] {
             if (auto host = weak.lock())
@@ -247,16 +338,19 @@ Result<std::uint64_t> OutputService::write(const Context& owner, std::string cha
     if (!decision.hasValue())
         return Output::failure(decision.error());
     const auto sequence = state->sequence + 1;
-    prepared.value().sequence = sequence;
+    row.entry.sequence = sequence;
+    row.sourceSequence = sequence;
     if (!decision.value().has_value()) {
-        const auto target = prepared.value().channel;
-        const auto bytes = target.size() + prepared.value().channel.size() + prepared.value().title.size() +
-                           prepared.value().text.size();
-        const auto queued = state->pending.enqueue(std::move(prepared).value(), std::move(source), target, bytes);
+        const auto target = row.entry.channel;
+        const auto metadataBytes = static_cast<std::size_t>(row.sourceName.size() + row.moduleId.size() +
+                                                            row.moduleVersion.size()) * sizeof(QChar);
+        const auto bytes = target.size() + row.entry.channel.size() + row.entry.title.size() + row.entry.text.size() +
+                           metadataBytes;
+        const auto queued = state->pending.enqueue(std::move(row), std::move(source), target, bytes);
         if (!queued.hasValue())
             return Output::failure(queued.error());
     } else if (*decision.value())
-        state->admit(std::move(prepared).value());
+        state->admit(std::move(row));
     else
         return Output::failure(makeError(ErrorCode::ContextClosing, "output publication aborted"));
     state->sequence = sequence;
