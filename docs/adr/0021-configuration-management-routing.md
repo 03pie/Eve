@@ -28,7 +28,7 @@ Home 信号发出时捕获路径和修订，排队后提交管理器；管理器
 
 cordis_config_workbench 绑定配置及内部控制台定义，使用原 Debug/Release 目录；cordis_ela_demo 仍演示手动模式。启动仍只读取配置编辑区，不自动接受或写入。文件 watcher、后台 I/O 与专用资源屏障另在 Q4d3 接入。
 
-验证及人工复核见 [Q4e2 记录](../p3-development.md#q4e2-home-与管理页配置路由)和 [补充清单](../../tests/acceptance/p3-ui.md#q4e2-home管理路由补充验收)。
+验证方式见[测试指南](../testing.md)。
 
 ## 后续状态
 

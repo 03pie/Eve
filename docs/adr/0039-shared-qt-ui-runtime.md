@@ -20,4 +20,4 @@
 
 独立真实 DLL 检查跨模块具体类型调度、服务调用、Ela QWidget、工厂捕获/子对象/业务对象析构、多实例和 epoch 换代。既有工作台与配置回归检查共享库转换兼容性，实际导入表核对宿主/插件依赖同一组运行库。
 
-这段完成 M4c 的运行库前置条件，不替代业务 UI DLL 示例、Kernel/Session 配置装配、模块诊断和原生桌面验收。最终结果见 [M4c 记录](../p4-m4c-development.md)。
+运行库装配之后的配置、Session 和模块诊断集成见 [ADR-0040](0040-configured-qt-workspace.md)。

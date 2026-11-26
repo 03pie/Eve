@@ -4,13 +4,13 @@
 
 ## 固定依赖与构建
 
-ElaWidgetTools 固定为 `aae58f5d0d98e05eabe10c263aa7da5f2491d702`，归档 SHA256 为 `3f52ac2a47387ebaee0975c72a251795873f927cffee6ba179b17f2d1a2a307a`。只构建库子目录，不执行会 FORCE Qt 路径和安装路径的上游顶层 CMake；Qt 仍精确为 5.15.2。依赖下载、源码、moc/rcc 和二进制均位于 build，不修改 research/sources。上游 MIT 许可证复制到生成 DLL 旁；本项目许可证状态不变。
+ElaWidgetTools 初始基线为 `aae58f5d0d98e05eabe10c263aa7da5f2491d702`，以 Qt 5.15.2 构建库子目录并保留上游 MIT 许可。当前仓库内的依赖与构建方式见 [ADR-0010](0010-maintained-ela-navigation.md)。
 
-只在 CORDIS_BUILD_ELA_UI 开启时下载/构建 Ela，新增 ela-msvc-debug/release 预设；普通 Qt 和无 Qt 内核不引入 Ela。Ela 构建为 DLL，使用该版本真实导出宏，不能把其 STATIC 选项当作已验证路径。
+`CORDIS_BUILD_ELA_UI` 控制 Ela 构建。Ela 使用共享库及实际的符号导出宏，普通 Qt 和无 Qt 预设各自保有独立构建入口。
 
 ## 动态导航的适配边界
 
-初版使用原生 addPageNode/navigation/removeNavigationNode，在快速撤页的演示中真实触发了 heap-use-after-free。ASan 指向 ElaNavigationBarPrivate.cpp:429 的延迟 scrollTo 使用旧 QModelIndex，随后 ElaNavigationModel::parent 访问已释放的 ElaNavigationNode。证据日志：`build/p3-q3-native-navigation-asan-failure.log`；普通 Debug 也复现多个 SegFault，见 `build/p3-q3-native-navigation-failure.log`。相关固定源码为 [延迟滚动](https://github.com/Liniyous/ElaWidgetTools/blob/aae58f5d0d98e05eabe10c263aa7da5f2491d702/ElaWidgetTools/private/ElaNavigationBarPrivate.cpp#L420) 和 [节点删除](https://github.com/Liniyous/ElaWidgetTools/blob/aae58f5d0d98e05eabe10c263aa7da5f2491d702/ElaWidgetTools/Development/ElaNavigationModel.cpp#L336)。
+初版使用原生 addPageNode/navigation/removeNavigationNode，在快速撤页时触发了 heap-use-after-free。ASan 将其定位到 ElaNavigationBarPrivate 的延迟 scrollTo 使用旧 QModelIndex，随后 ElaNavigationModel::parent 访问已释放的 ElaNavigationNode。固定源码见[延迟滚动](https://github.com/Liniyous/ElaWidgetTools/blob/aae58f5d0d98e05eabe10c263aa7da5f2491d702/ElaWidgetTools/private/ElaNavigationBarPrivate.cpp#L420)和[节点删除](https://github.com/Liniyous/ElaWidgetTools/blob/aae58f5d0d98e05eabe10c263aa7da5f2491d702/ElaWidgetTools/Development/ElaNavigationModel.cpp#L336)。
 
 因此当前使用 ElaWindow 作为外壳，通过公开 addCentralWidget 接入宿主 QTreeWidget/QStackedWidget。动态贡献不调用 Ela 原生导航，避免依赖未知延迟回调排空时长，也无需修改第三方源码。关闭原生导航、页面动画、路由按钮和独立页面窗口。未来若恢复原生导航，必须先修复/升级固定依赖并重验动态删除与历史路由；本次通过不能推广到该路径。
 

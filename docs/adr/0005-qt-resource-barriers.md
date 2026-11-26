@@ -27,4 +27,4 @@ Qt 5.15.2 的 QObject::destroyed 先于子对象析构；deleteLater 只登记�
 
 ## 验证
 
-14 个真实 QApplication/offscreen 场景涵盖完整父子析构、析构重入、QWidget、所有权/线程限制、外部销毁失败、实际 timer、observeFor、跨线程取消、已到期排队、异常隔离、执行中关闭、scheduler 提前关闭、最后句柄在回调中释放、退出兜底及 Kernel 清理集成；资源场景另通过第一方 MSVC ASan 插桩检查。结果见 [P3 Q2 记录](../p3-development.md#q2-timerqobject)。不覆盖任意第三方资源、connection 排空、worker join、模块 lease 或物理卸载。
+真实 QApplication 用例覆盖完整父子析构、析构重入、QWidget、所有权和线程限制、外部销毁失败、实际 timer、observeFor、跨线程取消、已到期排队、异常隔离、执行中关闭、scheduler 提前关闭、回调释放最后句柄、退出兜底及 Kernel 清理集成。运行方式见[测试指南](../testing.md)。

@@ -52,4 +52,4 @@ Kernel.remount 使用已终结句柄保存的最新配置及 realm，并验证 R
 
 ## 证据
 
-tests/unit/diagnostics.cpp 覆盖无 Qt 名称/归属查询、线程、精确 realm/minor/capability 与不新增租约。tests/qt/management.cpp 覆盖缺依赖恢复、diagnostics/v1 消费、按钮重试和操作号、异步停止、取消选择、跨线程/跨内核、关闭前已排队动作、Kernel 过期、刷新/导航关闭重入、清理失败及投递阻断。工具链与实测结果见 [P3 开发记录](../p3-development.md#q3b2-基础管理页)。offscreen/ASan 不替代原生桌面人工交互、泄漏或物理卸载证明。
+Core 诊断用例覆盖无 Qt 名称及归属查询、线程、精确 realm、minor、capability 与租约计数。Qt 管理页用例覆盖缺依赖恢复、diagnostics/v1 消费、按钮重试和操作号、异步停止、取消选择、跨线程及跨内核、关闭前已排队动作、Kernel 过期、刷新及导航关闭重入、清理失败与投递阻断。

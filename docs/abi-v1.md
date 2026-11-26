@@ -1,6 +1,6 @@
 # C 业务 ABI V1
 
-日期：2026-10-29。对应 [独立 C11 头](../sdk/include/cordis_abi/plugin.h)、[ADR-0031](adr/0031-business-abi.md) 和 [M2b 开发记录](p4-m2b-development.md)。这是 Windows x64 业务表的签名及布局基线；M3a–M3c 已实现请求、生命周期与 dispatch/service/effect 桥，Kernel/Session 联合接入仍在 M3d 实施。
+这是 Windows x64 业务表的签名和布局基线。公开入口及配套类型见[独立 C11 头](../sdk/include/cordis_abi/plugin.h)和[业务 ABI 决策](adr/0031-business-abi.md)。
 
 ## 平台与版本
 

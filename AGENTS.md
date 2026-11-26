@@ -1,10 +1,8 @@
-# ChatGPT project context
+# Cordis 平台开发
 
-This directory is a local mirror of the ChatGPT project “C++Cordis插件平台开发”.
-
-- Treat every file under `sources/` as read-only reference material.
-- Do not edit, rename, move, or delete synced project files.
-- These files may be replaced the next time a task is created from this ChatGPT project.
+- `sources/` 中的同步项目文件是只读参考资料，禁止编辑、重命名、移动或删除。
+- 平台仓库维护通用插件接口、样例和测试夹具。业务插件在独立项目开发。
+- 使用 CMake 预设构建并验证变更，具体命令见[开发环境](docs/development.md)。
 
 
 ## Project instructions

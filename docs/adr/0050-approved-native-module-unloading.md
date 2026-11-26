@@ -1,6 +1,6 @@
 # ADR-0050：白名单原生模块的映像终结
 
-日期：2026-11-17。状态：采纳，先完成 M4-0 架构审计；实现按 M4 工作单分段。
+日期：2026-11-17。状态：已采纳。
 
 ## 问题与依据
 
@@ -8,13 +8,15 @@ M3-c 已随 b454d85 审计、提交并同步。当前唯一进程目录在 Gener
 
 Windows 的 PIN 持续到进程结束，不能通过 FreeLibrary 撤销；FreeLibrary 成功只证明本方引用被递减，引用归零才移除映像。[GetModuleHandleEx](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulehandleexw)、[FreeLibrary](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-freelibrary)。装卸会运行持有 loader lock 的 DllMain，故平台不得在目录、代次或宿主锁中调用系统释放函数；测试卸载见证也只做简单原子写入。[DllMain](https://learn.microsoft.com/en-us/windows/win32/dlls/dllmain)、[DLL 最佳实践](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-best-practices)。
 
-说明书 §11.4/§12 和开发指南 §10.2 要求全部执行引用归零、无 pin、后端支持、配置允许；H01/H02 通过后才向实际插件开放白名单。M4 只用专用测试产物验证能力，业务名单发布继续受 M5 压力门禁约束。
+显式卸载同时要求执行引用归零、无 pin、后端支持和宿主批准。使用专用测试 DLL 验证物理终结和清理边界，固定工作台序列的验证口径见 [ADR-0054](0054-native-workspace-endurance.md)。
 
 ## 权限与兼容契约
 
 区分三项：插件的卸载声明、宿主精确白名单、首次映射选定的实际策略。manifest 保存 unloadPolicy:resident 或 unloadPolicy:explicit；请求本身不授权。首轮白名单仅为 C ABI 后端，键为 (c-abi, moduleId, sha256)，使用 verifyModuleSource 重新固定的真实产物比较；版本名、旧预检对象或路径文本不能代替摘要。路径边界继续由受控根、最终路径/文件身份和同句柄摘要保证。
 
 宿主在 load/stage 时显式传入纯值白名单，默认空；沿原 loadGeneration/reserveGeneration/mapGenerationImage 接线，不设置全局可变开关或另建装载目录。实际策略在第一次 LoadLibraryEx 前固定到同一 Generation，复用时必须匹配，不能升级历史 resident 或覆盖首次装载 owner。resident 声明即使命中白名单仍走原驻留/PIN 路径；显式声明未获批准在映射前拒绝。Qt UI 的入口与适配器始终 resident，拒绝显式卸载，未知后端不被推断为支持。
+
+批准是受信宿主的装配输入，绑定已验证的产物字节。测试宿主对自身夹具的批准仅作用于该次测试。宿主应从独立审核的输入取得业务批准，来自插件清单、命令行、环境变量或运行报告的数据仍只参与原验证。
 
 原发现 1.0 的 RESIDENT 含义保持不变；新增 1.1 的显式卸载声明协商，保留原结构布局与 1.0 常量，旧驻留路径继续请求 minor 0，显式路径请求 minor 1 并要求对应互斥声明。新 descriptor flag 使用独立位值 2，不能与 RESIDENT 位 1 同时设置；request flags 仍为零，runtime/business ABI 仍为 1.0。不把旧 RESIDENT 位改成提示，不以旧 DLL 拒绝新请求作为卸载授权。plugin.h、业务 ABI 与状态 IID 无需改变；module_query.h 的语义扩展须有新旧真实 DLL 和 C 布局测试。
 

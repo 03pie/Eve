@@ -1,6 +1,6 @@
 # ADR-0014：配置文件事务基础
 
-日期：2026-10-24。范围：Q4d1。Q3c 原生桌面人工验收仍待完成，Q4c2 Kernel 运行树/管理页接入门禁保持不变；本轮独立实现文件事务，为后续 Store 提供真实磁盘读写能力。
+日期：2026-10-24。文件事务为 Store 提供实际磁盘读写能力。
 
 本页保留 Q4d1 的文件层边界；后续目标/保存状态、单写队列和退出刷新见 [ADR-0015](0015-configuration-store.md)。文件值类型现位于 file.hpp，qt_file.hpp 保持原包含入口。
 
@@ -9,6 +9,8 @@
 启用 CORDIS_REQUIRE_QT5152 时构建 Cordis::ConfigFileQt，公开头 cordis/loader/qt_file.hpp，依赖 ConfigYaml 和 Qt5::Core。基础 Loader、解析层、通用协调器和 Core 不反向依赖它，未增加 Ela 或 GUI 依赖。Qt5::Core 已是现有工具链依赖，没有导入新的第三方源码。
 
 readConfigurationFile 同步返回磁盘原文及 ConfigurationFileVersion；commitConfigurationFile 接收有效 ValidatedCandidate 与期望磁盘版本，写入其 normalizedYaml。方法不运行事件循环、不执行用户回调，不需要 QCoreApplication 或 scheduler，可由宿主安排到专用线程。同路径写事务使用协作锁串行化；完整 Store 的异步写队列另行接入。
+
+Windows 工作台通过 Qt 的 `QCoreApplication::arguments()` 获取 `--file` 路径。文件名可以包含空格和当前系统窄字符代码页无法表示的 Unicode 字符，宿主应把这一路径传给文件事务。
 
 ## 路径、读取和版本
 
@@ -42,4 +44,4 @@ QSaveFile 提供文件替换机制，不等于任意外部编辑器之间的文�
 
 读取方式沿用原实现。Windows 写入持有同一协作锁，只有 `QSaveFile` 返回 `RenameError` 才安排最多三次重试，退避为 25、50、100 毫秒。等待不运行事件循环。其他失败阶段仍原样返回。Qt 会销毁失败的临时文件，每次重试先复核原基线，再写新的同目录临时文件，并在提交前再次比较。重试时发现变化则保留实际冲突原文。全程保留原 API、写入配额和禁止直接覆盖的规则。[Qt 原子替换实现](https://github.com/qt/qtbase/blob/v5.15.2/src/corelib/io/qsavefile.cpp)
 
-两项新增测试先让真实 Windows 文件句柄阻止替换，再用目录通知等待第一次失败的临时文件删除。此时释放句柄，或先修改磁盘原文再释放。修复前两项均失败，修复后分别成功保存和返回冲突，持续占用用例仍返回失败并保留原文件。Debug 下配置文件、后台 I/O、Store 和配置 UI 合计 41/41。两项新增用例和原偶发 UI 用例分别连续通过 100 次。原件见 `build/design-tools/config-replace-baseline-tests.log`、`config-replace-debug-tests.log`、`config-replace-repeat.log` 与 `config-replace-win32-probe.json`。
+两项回归先让真实 Windows 文件句柄阻止替换，再用目录通知等待第一次失败的临时文件删除。直接释放句柄时保存成功，先修改磁盘原文再释放时返回冲突。持续占用时写入失败并保留原文件。

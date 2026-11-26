@@ -20,4 +20,4 @@ Qt 5.15.2 的 QFileSystemWatcher::fileChanged/directoryChanged 在 QString 后�
 
 两编译器检查原生 watcher 的正向实例化，以及类型不符、空前缀、过长、指针、隐式转换、完整私有标记六种拒绝路径。完整私有标记拒绝是 observeValues 保持原契约的证据，不将其自动降级为前缀。
 
-本接口不实现通用 Qt 元类型转换、文件监听重连或二进制模块驻留。完整矩阵及日志见 [开发记录](../p3-development.md#q2g-原生-qt-信号前缀与验收映射)，P3 场景范围见 [验收映射](../p3-acceptance.md)。
+接口范围止于已声明的原生 Qt 值前缀。回归入口见[测试指南](../testing.md)。

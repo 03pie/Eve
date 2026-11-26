@@ -1,33 +1,7 @@
-# UI 贡献与管理
+# 工作台与 UI 贡献
 
-P5-M5-a1 d936580 已将页面/命令接到原 Context 发布组：候选在 ready 前准备完整控件/节点/命令，但导航、搜索、菜单、页签、Home 与执行须等共同提交完成。纯呈现查询和原业务 guard 分开，原 effect/完整析构仍负责退出。M5-a2 已接候选输出/通知并拆开通知后端，阶段审计及五配置全量验证通过；精确范围见 [M5-a2 收口](../../docs/p5-m5-development.md#m5-a2-收口结论)与 [ADR-0051](../../docs/adr/0051-ui-contribution-publication.md)。
+`Cordis::Ui` 提供页面、命令、输出和通知的贡献服务。业务贡献绑定实例与激活代的 effect。在替换事务就绪期间保存待发布值，随共同提交公开，撤销时等待界面及捕获完整释放。[页面](../../docs/adr/0006-ela-page-contributions.md) · [命令和通知](../../docs/adr/0007-ui-commands-notifications.md) · [发布协议](../../docs/adr/0051-ui-contribution-publication.md)
 
-Output/Notification 在接受时保留序号，候选值独立有界保存，提交后按原序号入历史，Abort 可留空号。Held 不建可见通道、不淘汰当前历史，也不改状态栏或产生通知镜像。原终态查询不依赖实例存活；只读结算不触 Qt，队列观察刷新已准备的 dirty 投影，入历史后释放来源/watch。关闭在关输出前结算已提交通知镜像并先关命令/通知入口，防控件信号重入；关闭后仅留纯历史。公开期间投递故障用原 Result 报告，不增快照字段。
+工作台使用 Ela 原生菜单、活动栏和导航、中央页签及底部「输出」「问题」面板。命令由工作台命令入口执行。概览的插件实例卡片可打开管理和配置。设置页管理主题、材质、背景和导航等界面偏好，偏好文件独立于工作区的业务配置。通知中心通过状态栏打开。[导航](../../docs/adr/0010-maintained-ela-navigation.md) · [管理窗口](../../docs/adr/0028-home-management-windows.md) · [日志与通知](../../docs/runtime-logging.md)
 
-启用 CORDIS_BUILD_ELA_UI 后构建 Cordis::Ui，公开 pages.hpp 不依赖 Ela 类型。UiPagesService 登记 Context.effect，工厂返回 QWidget；PageHandle 支持 ready、navigate、close 与诊断。页面和分类按实例/epoch 隔离，关闭等待 Q2 完整删除和工厂载荷释放。
-
-CORDIS_SHARED_CORE=ON 时 Ui 与 Qt 一同共享，Debug 使用 cordis_uid.dll。Cordis::QtUiPluginSdk 聚合共享 Ui/Qt/Core 和 Ela；平台目录、配置驱动及 ConfigUi 仍留在宿主，普通插件只消费已有贡献服务。跨 DLL 页面与完整析构的验证见 [M4c 记录](../../docs/p4-m4c-development.md)。
-
-宿主 ElaShell 使用项目内维护的 ElaWindow 原生页面、展开分组及页脚导航，组件库位于 third_party/ela。延迟滚动、节点选择和动画归属已作本地修正；通用导航门禁接入 Context/epoch，插件不获得 ElaWindow。正常退出先 Kernel.close，再 shell.close，最后停 scheduler 与 Qt。当前决策见 [ADR-0010](../../docs/adr/0010-maintained-ela-navigation.md)。
-
-工作台采用左侧原生活动栏、中央页面页签与页面区、底部命令/输出及状态栏；资源树属于具体插件页。页面页签与动态贡献同步删除，所有页签均可关闭，零页签中央空白；Ctrl+B 和 Ctrl+J 分别切换导航模式、底部面板，分隔条可调整宽高。底部默认收起，通知不会将其打开。面板均由根窗口持有；新增管理/配置窗口也由根窗口或贡献 effect 托管，不允许未托管浮动窗口。
-
-页签右键提供关闭当前/其他/右侧/全部，动作绑定打开菜单时的键及页签代次，关闭后重开的视图不受旧菜单影响。输出页的复制/清空工具复用菜单动作，命令页隐藏输出专用工具。设置页支持中英文关键词过滤、Ctrl+F 聚焦和 Escape 清空，过滤不修改偏好。状态栏铃铛与“转到→通知历史”打开管理通知标签，历史读取独立服务快照，不依赖 Kernel 绑定，也不会主动展开底部。
-
-CommandService（ui.commands/v1）按实例/epoch 登记带可选启用谓词的命令。execute 始终排队，撤销同步关门，effect 等待已接受调用和谓词返回后才释放闭包；worker 完成也需由 owner 消费结果。宿主列表双击或回车执行，插件不直接获得列表或 QAction。
-
-NotificationService（ui.notifications/v1）只保存级别、文本、操作和归属值，最多 100 条、每条 4096 字节，显示为纯文本；历史不持插件对象，也不替代持久化日志。命令/通知门禁、在途调用和投递阻断契约见 [ADR-0007](../../docs/adr/0007-ui-commands-notifications.md)。
-
-基础管理页由宿主 `shell.management()->attach(sharedKernel)` 绑定，后端只弱持 Kernel。ManagementController 排队停止/重试，按实例号防重复请求；DiagnosticsService（diagnostics/v1）仅返回值快照。界面包含顶层实例、精确依赖、资源、服务/界面、通知与操作记录；取消选择或已选实例移出后禁用操作，不把当前单元格当作已选行，也不把连续点击转给另一实例。关闭会停止刷新并等待当前界面写入及管理页导航栈返回，再删除窗口。契约见 [ADR-0008](../../docs/adr/0008-management-diagnostics.md)。
-
-管理表格/命令列表使用 ElaTableView/ElaListView 与宿主模型；文字、按钮、只读详情和标签使用 ElaText、ElaPushButton、ElaPlainTextEdit、ElaTabWidget。背景、字体与容器调色板跟随 Ela 主题；诊断标签不能拖出为独立窗口。组件与主题契约见 [ADR-0009](../../docs/adr/0009-ela-components-theme.md)。Qt 布局及模型继续作为基础设施，普通页面工厂仍返回 QWidget。
-
-UI 专项统一采用 ElaApplication 的 Microsoft YaHei 字体和 ElaAwesome 图标；配置编辑也继承 Ela 字体。第一方 ActionButton / KeyboardToggleSwitch 保留 Ela 绘制，补齐键盘焦点及 Space/Enter；状态图标直接由类型化快照产生并立即跟随主题更新。组件盘点见 [设计规范](../../docs/ui-design-system.md)。
-
-ElaShell 的可选第二参数为 UTF-8 界面偏好文件路径；空路径为不落盘会话模式。偏好 JSON 独立于 Loader/插件 YAML，只保存主题、导航模式/宽度和底部高度，启动底部仍收起。读取校验版本/类型/范围，原子写入失败保留旧文件并提示；两个交互示例显式启用各自本地偏好，smoke 禁用。验证见 [UI 专项记录](../../docs/ui-optimization-verification.md)。
-
-页面内的任意程序信号/worker 不自动成为托管资源；当前输入门禁覆盖所适配的输入事件，其他回调仍须遵循 Context/服务与专用清理契约。原生桌面验收按 [清单](../../tests/acceptance/p3-ui.md) 执行，随后推进配置/持久化/模块管理。页面契约见 [ADR-0006](../../docs/adr/0006-ela-page-contributions.md)，证据见 [P3 记录](../../docs/p3-development.md)。
-
-Home 卡片的“管理”“配置”打开定位到该对象的 ElaDialog，不再将管理列为活动栏/中央页签。顶部“文件”菜单添加已注册配置实例或打开完整配置文件窗口；手动实例未绑定 Session 时不提供配置编辑。PagePresentation::Dialog 复用原页面 effect、输入门禁及 QObjectResource，隐藏不等于停止；退役删除整个窗口和内容。协议与边界见 [ADR-0028](../../docs/adr/0028-home-management-windows.md)，验证见 [Home 管理记录](../../docs/home-management-development.md)。
-
-M5-c1 增加宿主专用 ElaShell.onModulesRequested，顶部模块管理 QAction与原平台命令模型使用同一入口。无 handler 时可见但禁用，晚绑定立即同步；回调在原窗口访问屏障中复制后调用，异常/关闭重入变为明确 Result。handler 仅私有控制块持有，关闭释放；Ui 不引入 Module/Loader/Replacement 依赖。具体目录/诊断视图留在实际宿主，见 [c1 结论](../../docs/p5-m5c-development.md#c1-收口结论)。新增方法非虚且保留七个数据成员/原符号，SDK 0.1.5 兼容结论限定于保存的真实工具链实物；不宣称稳定通用 ABI。
+`Cordis::QtUiPluginSdk` 聚合共享 Core、Qt 及 Ui。插件页面工厂返回 QWidget，宿主负责导航和管理入口。正常退出时宿主等待 Kernel 与窗口关闭，再关闭调度器与 Qt 事件循环。[共享运行时](../../docs/adr/0039-shared-qt-ui-runtime.md) · [SDK 接入](../../docs/sdk-consumer.md)

@@ -3,11 +3,12 @@
 Copy this entire directory outside the Cordis repository. With the matching x64 MSVC developer environment and Qt 5.15.2 development installation:
 
 ```powershell
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL -DCMAKE_PREFIX_PATH="C:/CordisSdk;C:/Qt/5.15.2/msvc2019_64"
+$sdkPrefix = 'C:/path/to/cordis-sdk'
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL "-DCMAKE_PREFIX_PATH=$sdkPrefix;$env:CORDIS_QT5152_ROOT"
 cmake --build build
 ```
 
-Use the configuration installed by the SDK producer. The result is `build/module/external_page/{external_page.dll,module.json}`. Keep both files together. The host must declare the actual plugin ID and required `ui.pages` service through its existing Module/Session assembly; copying the DLL into a directory does not register it.
+Use the configuration installed by the SDK producer. The result is `build/module/external_page/{external_page.dll,module.json}`. Keep both files together. Start the workbench with `--module <path-to-module.json>` in a writable workspace. The module declares the plugin ID, and the plugin depends on the host's `ui.pages` service.
 
 The factory source includes `<source-stem>.moc` and uses `FILE "cordis_plugin_metadata.json"`. `cordis_add_qt_ui_plugin` generates metadata from the SDK version and actual compiler/configuration and generates the digest after linking. Rename the source and its moc include together. Extra implementation sources can be supplied with `SOURCES`; put the factory metadata in the single `SOURCE` translation unit. Public headers used by that source must be supplied in `SOURCES` when they affect generated moc output.
 

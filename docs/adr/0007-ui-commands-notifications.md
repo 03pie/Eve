@@ -34,4 +34,4 @@ effect 清理先移除宿主列表项，再等待保留数归零，最后释放 
 
 ## 证据
 
-tests/qt/ui_services.cpp 使用真实 QApplication、QtScheduler 和固定 Ela DLL，覆盖实例命名空间、异步调用/worker 完成、排队撤销、禁用和异常、谓词关闭重入、提供者恢复、有界纯文本通知、线程/scheduler 门禁、窗口等待、键盘执行及投递阻断。结果及日志见 [P3 开发记录](../p3-development.md#q3b1-命令与通知)。offscreen 检查不替代原生 Windows 人工交互，不构成 Qt 全程序内存安全或插件卸载证明。
+命令与通知用例使用真实 QApplication、QtScheduler 和 Ela DLL，覆盖实例命名空间、异步调用及 worker 完成、排队撤销、禁用和异常、谓词关闭重入、提供者恢复、有界纯文本通知、线程和 scheduler 门禁、窗口等待、键盘执行及投递阻断。原生 Windows 交互需要单独验证。

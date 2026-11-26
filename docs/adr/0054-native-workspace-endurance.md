@@ -1,10 +1,10 @@
 # ADR-0054：同进程真实 Native 连续替换资格
 
-日期：2026-11-19。状态：按实施前设计完成实现、代码审查及三配置原生资格验证，随收口提交归档。源码基线1aa9e79（M5-d0b已审查提交同步）。仅实现M5-d1，随机/回放缩减另属d2。
+日期：2026-11-19。状态：已采纳。验证处理固定序列，回放另见 [ADR-0055](0055-workspace-action-traces.md)。
 
 ## 原有职责与验证对象
 
-复用原 Scene、Workspace、ReplacementOperation、ModuleManager、Driver/Session/Store，以及共享的实际 platform_upgrade_support。整个用例仅一个 QApplication/Scene/平台和模块目录；不逐轮重启，不提高64重代次/128纯历史预算，不给业务DLL加测试导出，不复制事务或State RPC。测试范围是固定counter/reporter A/B原产物，Notebook作为不受影响的真实UI贡献。
+复用实际 Workspace、ReplacementOperation、ModuleManager、Driver/Session/Store。整个用例仅使用一个 QApplication、测试场景和模块目录，沿用 64 个重量代次和 128 条纯值历史的预算。测试夹具分别提供两组原生提供者及消费者 DLL，以及贯穿测试的独立 Qt UI 贡献。
 
 8次成功预热后再100次成功原事务，固定四相位counter→B、reporter→B、counter→A、reporter→A。共108次Applied，原操作ID必须有效且互异。Counter升级的旧Reporter清理发生于捕获之后，新Reporter启动净增1；Reporter升级在同一Counter上清理/启动净增2。初值1时108次后为163；逐轮用实际Reporter结果验证，不假设每次均加1。
 
@@ -32,6 +32,6 @@ M5-e2 补充准备契约：初始采样前，用 public QMutex 完成一次真�
 
 用steady_clock记录请求→settled、显式save、原FIFO探针排队延迟及可观察阶段区间；清理/停机如只能定位上下界则明确写区间，不能伪称内部精准时长或SLA。所有uint64 ID/计数用无损字符串输出。每轮实时落盘JSONL/最终报告，错误保留原原因及当轮上下文，不能静默跳过。
 
-## 出口
+## 验证入口
 
-新增原生Windows专用CTest入口并运行时断言QPA=windows，隐藏原生窗口仍须IsWindow/进程归属证明，offscreen不算本资格。Release/Debug/ASan实际运行100次与资源/来源/产物验证后审查提交同步，工作区干净再做d2；最终M5-e全支持矩阵、精确名单和新增桌面人工验收仍待完成。
+Windows 专用 CTest 验证原生窗口、进程归属和 `windows` QPA，并核对完整序列、资源、来源及产物。更复杂的动作轨迹和回放见 [ADR-0055](0055-workspace-action-traces.md)，运行方式见[测试指南](../testing.md)。

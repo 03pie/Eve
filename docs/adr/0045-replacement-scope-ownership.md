@@ -1,6 +1,6 @@
 # ADR-0045：Core 替换闭包的排他所有权
 
-日期：2026-10-31。状态：已接受。基线 1cd701c。依赖 [实际闭包](0044-replacement-dependency-closure.md)，完整范围仍为 [P5](../p5-development.md)。
+日期：2026-10-31。状态：已采纳。依赖[实际闭包](0044-replacement-dependency-closure.md)。
 
 ## 问题
 
@@ -20,4 +20,4 @@ ReplacementScope 是不可复制的权限句柄。取得作用域时从权威状
 
 ## 边界
 
-本小阶段交付真实 Core 排他、业务冻结和有序停止，不将它报告为模块升级成功。模块当前/候选代的逻辑锁、工厂和冻结定义协同、版本/schema 验证及服务/目录整体提交仍由后续上层 ReplacementOperation 完成；状态迁移/恢复、白名单卸载和最终 H01/H02/S09 不减范围。Core 不依赖 Module、Loader、Qt 或 UI。Kernel 私有布局变化要求当前源码 SDK 的宿主与同工具链插件一起重建；SDK 更新到 0.1.1，沿用已有 toolchain.sdkVersion 精确检查，在映射前拒绝 0.1.0 声明，C ABI 不变。Driver/Session 普通关闭不越过作用域，后续上层事务须先完成或取消替换再关闭会话。实现与验证见 [开发记录](../p5-m2c2-development.md)。
+Core 提供排他所有权、业务冻结和有序停止，仅依赖自身契约。当前代与候选代预约、工厂和冻结定义、版本及 schema 验证、服务及目录共同提交由 [ReplacementOperation](0048-host-replacement-operation.md) 统筹。C++ SDK 的私有布局变化须通过 toolchain.sdkVersion 精确匹配，宿主和插件应一起重建。Driver/Session 关闭遵守替换作用域，由上层事务完成或取消替换后继续关闭会话。

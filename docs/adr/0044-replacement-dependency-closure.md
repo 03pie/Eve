@@ -1,6 +1,6 @@
 # ADR-0044：以真实服务图和 Kernel 所有权计算替换闭包
 
-日期：2026-10-31。状态：接受。前提为 [受控服务发布](0043-controlled-service-publication.md)，完整替换范围见 [P5 计划](../p5-development.md)。
+日期：2026-10-31。状态：已采纳。依赖[受控服务发布](0043-controlled-service-publication.md)。
 
 ## 问题与边界
 

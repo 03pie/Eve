@@ -1,6 +1,6 @@
-# 首阶段接口契约
+# Core 接口契约
 
-本文件冻结接口行为和实现顺序。W1–W6 已有源码 SDK，见 `sdk/include/cordis`；各包验证范围见交付记录。
+本页描述 Core 的接口行为、并发和资源所有权。公开定义见 [SDK 头文件](../sdk/include/cordis/)；验证入口见[测试矩阵](testing.md)。
 
 ## 1. Result 与错误
 
@@ -46,7 +46,7 @@ EffectToken.snapshot() -> EffectSnapshot
 
 `Failed` 作为错误信息保存，资源仍未清理完成时 EffectState 保持 Closing，不能用失败状态掩盖资源存活。清理函数不得创建新 effect、等待自己的 close，或阻塞 scheduler。
 
-### W2 实际接口与边界
+### 清理接口与边界
 
 `EffectScope(scheduler)` 是 Context 的资源归属底座。构造要求打开的 owner-thread scheduler，否则抛 invalid_argument。`scope.effect(setup, label)` 返回 Result<EffectToken>；成功仅表示已接受登记，启动结果由 token.ready() 观察。setup 接收按值 EffectSetupContext，返回 Task<void>。
 
@@ -60,7 +60,7 @@ close 的结果为 `Task<CleanupReport>`：`quiescent` 表示是否确认资源�
 
 owner/token 析构不承担异步关闭。必须在 scheduler 关闭前显式 close 并检查 quiescent；丢弃未关闭 owner、清理失败或投递中断时会保守保留资源记录，当前没有强制释放/自动重试入口。scope 有任何 cleanup 正在等待时，暂时拒绝新建 effect；这是 W2 的保守策略，W3 的 Context mode 若细化该行为须单独评审。
 
-### W2 时钟与观察
+### 时钟与观察
 
 `FakeClock` 不可复制，after/advance/close 及查询在创建线程使用；TimerToken.cancel 可跨线程。时间以单调毫秒计，拒绝负值、溢出和嵌套 advance；同 deadline 按登记顺序触发，零延迟也不内联。advance 有步数预算，耗尽时停在当前已处理时间，StepLimitExceeded 的 causes 保留本次已发生的回调错误；再次推进由调用方决定。timer 抛错被汇总，不饿死其余到期项。
 
@@ -70,7 +70,7 @@ owner/token 析构不承担异步关闭。必须在 scheduler 关闭前显式 cl
 
 ## 4. Kernel / Instance / Context
 
-W3 已有 `instance.hpp` 的生命周期、update/retry、operation/awaitTarget/awaitActive、Context::effect/config/onCleanup 与 CleanupContext，以及 `kernel.hpp` 的 registerPlugin/mount/close/snapshot，范围与验证见 [W3 开发记录](w3-development.md)。每代资源静止后才启动最新配置；失败静止后允许 retry，stop 才终结实例。Runtime/Instance/Operation 标识进程内唯一；retry 不改变配置修订。awaitActive 仅查询已启动代次，未来代次报 InvalidArgument，历史成功不授予当前业务权限。下列接口为概念形状，服务与域视图的实际签名见第 5 节及 SDK；通用挂载 options 仍为目标契约。
+W3 已有 `instance.hpp` 的生命周期、update/retry、operation/awaitTarget/awaitActive、Context::effect/config/onCleanup 与 CleanupContext，以及 `kernel.hpp` 的 registerPlugin/mount/close/snapshot，范围与验证见 [W3 开发记录](adr/0003-effect-quiescence.md)。每代资源静止后才启动最新配置；失败静止后允许 retry，stop 才终结实例。Runtime/Instance/Operation 标识进程内唯一；retry 不改变配置修订。awaitActive 仅查询已启动代次，未来代次报 InvalidArgument，历史成功不授予当前业务权限。下列接口为概念形状，服务与域视图的实际签名见第 5 节及 SDK；通用挂载 options 仍为目标契约。
 
 ```text
 registerPlugin(definition) -> Result<RuntimeHandle>
@@ -94,7 +94,7 @@ W3 实现 `Context::onCleanup(function<Task<void>(CleanupContext)>, label)`，�
 
 首阶段只提供内置同工具链类型化调用，不跨 DLL。不通过自由获取的裸指针绕过 epoch/调用门禁。跨 ABI 的函数表和序列化协议留到 P4。
 
-W4 的 `service.hpp` 提供 ServiceRegistry::stage/find/createRealm/snapshot、ProviderHandle::publish/retire/release 与 ServiceRef<T>::withService。Staged 不可查，Retiring 保留键并拒绝新调用；同步调用或 committed 租约存在时禁止 release。withService 回调必须返回 void，不导出对象所有权，禁止保存传入对象引用或用它启动异步操作；异步调用使用下述 invoke。范围、线程及所有权约定见 [W4 开发记录](w4-development.md)。
+W4 的 `service.hpp` 提供 ServiceRegistry::stage/find/createRealm/snapshot、ProviderHandle::publish/retire/release 与 ServiceRef<T>::withService。Staged 不可查，Retiring 保留键并拒绝新调用；同步调用或 committed 租约存在时禁止 release。withService 回调必须返回 void，不导出对象所有权，禁止保存传入对象引用或用它启动异步操作；异步调用使用下述 invoke。范围、线程及所有权约定见 [W4 开发记录](adr/0017-instance-inject-contracts.md)。
 
 后续增量已实现 Context::consume，将精确绑定固定到本实例代次账目；其 ServiceRef 同时受消费者业务能力和提供者状态门禁限制。CleanupContext::withService 只访问本实例本代已提交的旧绑定，允许 Retiring，但受清理调用窗口限制。实例在 effect 清理与在途 committed 调用均静止后才释放本代租约，清理失败继续保留，提供者 release 也检查 committed 保留。低层 registry.find 不授予实例权限；托管实例的自动收敛接口见下段。
 
@@ -108,15 +108,15 @@ InstanceSnapshot.failure 提供本轮错误，包括后续更新中的输出校�
 
 W5 实现 `Context::inject(const Runtime&, string config = {}) -> Result<Instance>`，子实例继承调用 Context 的域视图和托管注册表，独立等待声明依赖，不扩大父实例重启范围。父更新/停止先请求全部子实例停止，同时退役输出，等待子与消费者静止后再清理自身。子清理失败保留父资源，错误汇入父报告；旧 Context、关闭 scheduler、错误线程或父退役期间拒绝 inject。InstanceSnapshot.children 统计本代持有的直接子记录，父确认静止才清空。
 
-W5 将子→父所有权边加入消费者→提供者的实际图，拒绝父消费后代输出等联合环；激活前还预检解析后的强依赖与必供输出声明。候选提供者缺失或多义时不臆测连边，实际绑定优先。发现环时 DependencyCycle 的 causes/message 提供逐边完整路径；尚未启动的实例不递增 epoch、不执行 activate。图范围和非合作任务边界见 [W5 交付记录](w5-development.md)。
+W5 将子→父所有权边加入消费者→提供者的实际图，拒绝父消费后代输出等联合环；激活前还预检解析后的强依赖与必供输出声明。候选提供者缺失或多义时不臆测连边，实际绑定优先。发现环时 DependencyCycle 的 causes/message 提供逐边完整路径；尚未启动的实例不递增 epoch、不执行 activate。图范围和非合作任务边界见 [W5 交付记录](adr/0018-activation-context-bridge.md)。
 
 已稳定返回 PendingMissingDependency 的实例，后来预检因环或版本不兼容而 Failed 时，会创建新的自动收敛操作发布 Failed；旧操作仍返回历史 Pending，配置修订不递增。当前失败通过 operation/awaitTarget 与 snapshot.failure 一致观察。
 
-### 实例级附加依赖（Q4c2b）
+### 实例级附加依赖
 
 Kernel::mount 和 Instance::mount 可传入 additionalDependencies，按解析后的完整服务键与 Runtime 固定需求联合，minor 取最大值、能力取并集。同键不同 C++ 类型拒绝；重复键归一化为一个提交租约。Runtime 本身不修改，不因配置创建新定义。实例的 update/retry 保留契约，停止后 Kernel::remount 也复制完整实例依赖；修改有效契约须停止并重建。Loader 的类型目录、接受前复核和配置规划规则见 [ADR-0017](adr/0017-instance-inject-contracts.md)。
 
-### 宿主成功代次观察（Q4c2c1）
+### 宿主成功代次观察
 
 Instance::whenActiveAfter(afterEpoch = 0) 在 owner 线程观察大于阈值的当前有效或后续成功代次，返回 Task<Context>。不查询退役历史；阈值大于当前代次报 InvalidArgument。Pending/失败保留观察，重试或恢复成功再完成；失败诊断仍用 operation/target。stop 立即取消未完成观察，新查询报 InstanceDisposed。已有投递故障拒绝登记，登记后的故障遵守保守保留协议，宿主还须检查 deliveryBlocked。
 
@@ -132,4 +132,4 @@ W6 的 `event.hpp` 实现 EventBus<T>，每个 EventKey（名称、显式 realm�
 
 异步分发入口也排队，参数由分发控制块持有。parallel 返回 EventReport<T>，各项 Result 汇集全部监听器错误；serial 首错终止。快照中的已注销项跳过，但其闭包保留仍阻止 effect 报告静止，直到该快照释放。启动或完成投递受阻时保守保留任务与资源，通过 EventBusSnapshot 诊断。observe 使用独立 Observer 协议隔离错误；尚未自动接线内核通知。
 
-EventNext 共享一次性同步窗口，回调退出或抛错后失效，不保留下游快照。空分发返回 Continue 或空报告。当前仅类型化独立总线，没有全局跨类型 schema、post、跨 ABI ValueTuple 或 Qt 适配；图外的用户回调自等待关闭任务也不能自动排除。详见 [W6 交付记录](w6-development.md)。
+EventNext 共享一次性同步窗口，回调退出或抛错后失效，不保留下游快照。空分发返回 Continue 或空报告。当前仅类型化独立总线，没有全局跨类型 schema、post、跨 ABI ValueTuple 或 Qt 适配；图外的用户回调自等待关闭任务也不能自动排除。详见 [W6 交付记录](testing.md)。

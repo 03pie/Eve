@@ -1,6 +1,6 @@
 # ADR-0016：顶层内置配置的真实 Kernel 驱动
 
-日期：2026-10-25。范围：Q4c2a，本文保留该阶段固定依赖的交付边界；后续动态 inject 已按 [ADR-0017](0017-instance-inject-contracts.md)、显式配置子树已按 [ADR-0019](0019-configuration-subtrees.md) 扩展。用户已确认桌面人工验收完成，登记于 [验收单](../../tests/acceptance/p3-ui.md)，解除接入真实运行驱动的前置条件。管理入口/保存装配继续待办。
+日期：2026-10-25。此记录描述顶层固定依赖的初始驱动。动态依赖与显式配置子树分别由 [ADR-0017](0017-instance-inject-contracts.md) 和 [ADR-0019](0019-configuration-subtrees.md) 扩展。
 
 ## 模块与所有权
 
@@ -38,4 +38,4 @@ close 先向全部自有实例广播 stop，再等待全部清理及在途动作
 
 `p3.kernel_driver_*` 的 13 项场景使用真实 Kernel/Instance/ServiceRegistry，只将时间推进替换为 FakeScheduler，覆盖配置生命周期、依赖清理窗口、Pending 恢复、最新目标、失败重试、清理残留、异步退出、realm 替换、能力拒绝/环/冲突、输出归属转移、共享 Kernel 边界、线程/动作门禁及投递失败。`p3.reconcile_demo` 演示 YAML/schema → CAS 接受 → 提供者启动 → 消费者恢复 → 完整退出。
 
-构建与 ASan 实测结果见 [开发记录](../p3-development.md#q4c2a-顶层内置配置驱动)。本轮不等同于全部 L01–L04/S05：显式配置子树、动态 inject Runtime 变体、管理页编辑/保存、Store 和驱动的全应用装配、watcher/后台 I/O 仍待实现。
+后续配置会话、界面保存与后台 I/O 分别见 [ADR-0020](0020-configuration-session-ui.md) 和 [ADR-0022](0022-configuration-background-io-watcher.md)。

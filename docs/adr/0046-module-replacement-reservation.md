@@ -1,6 +1,6 @@
 # ADR-0046：模块预约与共同创建准入
 
-日期：2026-10-31。状态：已接受。基线 e5e6899。依赖 [Core 排他所有权](0045-replacement-scope-ownership.md)，完整范围仍见 [P5](../p5-development.md)。
+日期：2026-10-31。状态：已采纳。依赖 [Core 排他所有权](0045-replacement-scope-ownership.md)。
 
 ## 问题
 
@@ -18,4 +18,4 @@ Core 作用域拥有真实 Kernel 闭包，但模块还可从其他管理句柄�
 
 本段只提供模块级预约与真实入口准入，不改变 Current/Candidate、不执行旧实例停止、候选创建或迁移，也不表示工厂/schema 兼容已验证。后续 ReplacementOperation 须在同一控制块内持有模块预约、Core 作用域和旧定义/目标快照，先验证业务契约，再授权候选创建、协调冻结 Driver/Session 并整体提交服务/目录；开始破坏性动作后须保留这些权限直到提交或恢复结束，不能把本段可撤销预约的析构当作恢复完成。
 
-Core、GenerationLedger、C ABI 和默认驻留策略保持原边界。完整迁移/恢复、白名单物理卸载、UI 和 H01/H02/S09、Windows 连续 100 次与随机压力不减范围，实施与验证见 [记录](../p5-m2c3-development.md)。
+Core、GenerationLedger、C ABI 与默认驻留策略沿用原边界。状态迁移与恢复、物理卸载的判据分别见 [ADR-0049](0049-versioned-replacement-state.md) 和 [ADR-0050](0050-approved-native-module-unloading.md)。

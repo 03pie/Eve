@@ -1,49 +1,7 @@
-# Module host
+# 模块装载与生命周期
 
-P5-M4-c 沿原 ReplacementOperation/Driver/Session 验证终结后的真实 Retired 回收，不增加生产 API、自动 close 或反向依赖；SDK 仍为 0.1.5。宿主须显式关闭旧 Native 会话、释放旧 Runtime/ConfigurationDefinitions 等执行拥有者，并等待 owner 队列返回，再尝试卸载。纯报告、已结算 Task、旧 Disposed Instance 不阻碍回收；恢复期间和 RecoveryFailed 保留原作用域/预约，协议不确定另保留真实对象及 pin。物理失败只写独立 unloadFailure，不回滚已提交业务或已保存配置。组合、五配置全量与整 M4 审计通过；生产业务白名单、UI 在线升级与连续替换压力仍属 M5，见 [M4 收口](../../docs/p5-m4-development.md#m4-c-收口结论)。
+ModuleManager 管理模块的当前代、候选代、会话和工厂租约。预检固定清单和 DLL 路径、文件身份与 SHA-256。Native 加载器随后协商 C ABI，Qt 加载器核对 metadata 和共享 Core 身份。预检结果只证明被核对的文件快照，实际装载仍需重验。[预检](../../docs/adr/0029-module-preflight-ledger.md) · [Native 发现](../../docs/adr/0030-native-module-discovery.md) · [Qt 边界](../../docs/adr/0037-qt-module-boundaries.md)
 
-P5-M4-b（SDK 0.1.5）提供显式 ModuleManager::tryUnload：首次真实线程身份、来源、预约/读者与原子空账目均通过后，关闭新准入，在内部锁外退役原 Native 缓存并消费本方系统引用。只有真实映像离开且文件保护释放才发布 Unloaded；系统失败保留原引用可显式重试，未知外部映射永久 pin。默认 Native/Qt 仍驻留；析构及 worker 最后租约不执行卸载。同一目录限制 64 重代和 128 纯历史，重装使用新 ID。阶段审计及五配置全量通过，随收口提交归档；具体所有权和证据边界见 [M4-b 收口](../../docs/p5-m4-development.md#m4-b-收口结论)。以下按阶段保留历史记录。
+模块安装将声明的产物放入固定摘要目录。暂存候选代和预约切换分别管理目录与操作所有权。Native 的在途请求、服务、effect 与回调捕获由各自的账目保留，状态迁移也绑定实际代次与实例。Core 保持独立，由宿主组装模块、配置与替换。[安装](../../docs/adr/0042-module-artifact-installation.md) · [预约](../../docs/adr/0046-module-replacement-reservation.md) · [状态迁移](../../docs/adr/0049-versioned-replacement-state.md)
 
-P5-M4-a（SDK 0.1.4）已接入首次装载策略：manifest 的 unloadPolicy:explicit 只表达请求，C ABI 宿主还须按重新固定的真实模块 ID/SHA256 精确批准；Generation 保存实际策略与首次 owner。默认 resident 继续发现 1.0/PIN，已批准显式映像协商发现 1.1，不执行 PIN，但仍保留原映射引用、文件/身份检查及失败 pin。Qt 仍固定 resident，既有代不能通过另一 facade 或改声明升级。load/stage 的白名单默认为空，未新增物理卸载入口；原业务 ABI/状态 IID 不变，宿主与同工具链插件须一起重建，见 [M4-a 证据](../../docs/p5-m4-development.md#m4-a-收口结论)。
-
-P5-M3-b 为原生和 Qt 工厂增加可选状态适配：原生独立 C 查询和 Qt 独立状态 IID 共用宿主有界值检查，描述在原代次协商中缓存；原 V1 表/虚表保留。参与者绑定实际业务对象，导入成功后才 start/activate；同步调用同时持原 Call 与真实对象保护，普通拒绝也须重新核对来源健康，协议故障沿原不确定资源路径保留。Qt 对象保护位于原 QObjectResource 内，不增加实例目录或删除路径。接口、实现范围和整阶段验证见 [M3 记录](../../docs/p5-m3-development.md)。M3-c 完整状态事务已随 b454d85 收口，见 [实际迁移与恢复](../../docs/p5-m3-development.md#m3-c-收口结论)；本段以下保留当时默认驻留边界。下文保留各阶段历史记录。
-
-M2c5 的原生主动服务撤回、effect 关闭及实例/模块关闭共用 Core 绑定读准入。在绑定读门禁处被拒绝时，服务/effect ABI 返回 BUSY 且 request 为零，实例/模块关闭 Task 保留实际读操作编号；不分配请求、不发布关闭状态、不隔离健康实例。完整 effect/实例/模块先检查全部服务，解除权限后仍沿原清理路径完成；真实故障的保留语义不变。见 [审查](../../docs/code-review.md#p5-m2c5-原生主动撤回准入复查)。
-
-P5-M2c3 增加 ModuleManager::reserveReplacement 返回的唯一模块预约：在同一目录核对真实当前/候选及前驱，同模块工厂/定义/新宿主、暂存和 drain 共用准入，包含其他候选的装载/协商窗口；已有业务和清理不借此排空。reset 只解除预约，不执行升级，后续 ReplacementOperation 须持有权限直到运行提交/恢复结束，见 [记录](../../docs/p5-m2c3-development.md)及 [ADR-0046](../../docs/adr/0046-module-replacement-reservation.md)。
-
-P5-M2c2 的 Core 排他作用域对原生服务桥同样生效：新增租约冲突返回 BUSY，已冻结的旧业务返回 CLOSED，原清理能力继续有效；见 [记录](../../docs/p5-m2c2-development.md)。尚未授予原生模块换代或卸载入口。源码 SDK 更新到 0.1.1，C++ 宿主与 Qt 插件须一起重建，旧 SDK 声明在映射前拒绝；C ABI 协议不变。
-
-P5-M2b 接入 Core 发布组视图：NativeServices 的托管视图归每个原生实例，模块共享索引保持规范视图；同一 DLL 的组内服务不能泄漏给其他实例。激活后 Held 只对组内消费者可用，全体成员就绪后才公开；放弃仍等待原调用/清理屏障，见 [M2b 记录](../../docs/p5-m2b-development.md)与 [ADR-0043](../../docs/adr/0043-controlled-service-publication.md)。这不是完整模块替换或卸载入口。
-
-P5-M2a 新增独立 Cordis::ModuleInstall / installModuleArtifact，把固定来源的单 DLL 与原始声明复制到 hash 目录，临时验证后不覆盖发布。InstalledArtifact 持有安装目标的文件/目录保护，交给原 stage 路径时仍独立重验；安装不执行 DLL、不接管运行目录或切换业务。只复制声明产物，不隐式打包依赖和旁文件，见 [M2a 记录](../../docs/p5-m2a-development.md)与 [ADR-0042](../../docs/adr/0042-module-artifact-installation.md)。
-
-P5-M1 增加同一目录中的 Current/Candidate 与 predecessor。普通 load/loadQtModule 仍选择当前代；ModuleManager::stage / stageQtModule 显式装载另一份独立目录的候选，保持文件归属、前驱、后端、插件目录、预算和默认驻留约束。暂存不切换业务或授予卸载能力，后续事务/迁移与白名单路线见 [P5 计划](../../docs/p5-development.md)及 [M1 验证](../../docs/p5-m1-development.md)。下文保留 P4 各段历史。
-
-P4-M1 提供 Cordis::Module 的宿主分类账目/唯一租约，以及 Windows x64 的 Cordis::ModulePreflight 声明、最终路径与 SHA256 预检。公开头不暴露 Qt；Core 不反向依赖 Module。
-
-GenerationLedger 排空不等于允许卸载，永久 pin 独立保留；租约只能在其真实资源完整析构后释放。当前预检不加载或执行 DLL，也不证明 PE/ABI 有效，返回值只是一次文件快照。
-
-预检的根必须为带盘符或完整 UNC 共享的路径。路径检查、元数据及摘要读取使用同一句柄，持有期间拒绝写入/删除共享，冲突解除后可以重试；函数返回后句柄释放，未来装载仍需重新校验。关闭示例构建不会禁用路径边界回归。
-
-M2a 新增 Cordis::ModuleNative / ModuleManager：固定并重验产物、PE/平台检查、受限搜索及真实 DLL 只读描述握手。模块目录进程共享，同 ID 相同内容复用，失败和 drain 不自动卸载；原生 PIN 与主产物只读保护保留至进程退出。默认诊断仍为预检，显式 --load 才执行 DLL。
-
-M2b 新增独立 plugin.h、完整业务表协议和 Cordis::ModuleAbi 私有协商器，见 [ABI V1](../../docs/abi-v1.md)及 [M2b 记录](../../docs/p4-m2b-development.md)。ModuleManager 仍只做 M2a；业务表不从公共管理器泄露，真实请求/服务/effect 与 ModuleLease 集成留给 M3，QPluginLoader 留给 M4。
-
-M2 装载/协商层已完成，不代表整个 P4 或物理卸载完成；M2a 历史见 [发现记录](../../docs/p4-m2-development.md)及 [ADR-0030](../../docs/adr/0030-native-module-discovery.md)。
-
-M3a 的 Cordis::ModuleRequests 提供私有请求仲裁/JSON 复制与真实 ledger 租约。close 与最终 seal 分开，drained 等待真实退役；投递/协议不确定时保留账目。它尚未替代 M3b–M3d 的原生宿主和 Kernel 资源桥，见 [M3 记录](../../docs/p4-m3-development.md)。
-
-M3b 的 Cordis::ModuleHost / NativeModule 提供稳定基础 HostTable、真实 DLL 生命周期、跨线程回调 Call 租约和显式关闭；不确定失败保留对象和模块。Serving 只表示业务宿主已建立；capabilities=0，不将未接入服务/effect 伪报为生产能力。实现及后续边界见 [M3b 记录](../../docs/p4-m3b-development.md)。
-
-M3c1 开启生产 DISPATCH/EFFECTS：复制及排队调用、独立请求/ACK、真实 Core effect、逆序清理和最后捕获退役屏障。服务能力仍关闭，M3c2 接入服务后再进入 Kernel/Session 联合验收，见 [资源桥记录](../../docs/p4-m3c-development.md)。上述 capabilities=0 是 M3b 提交时的历史状态。
-
-M3c2 已开启生产服务能力；M3d1 在同一桥上新增 NativeModule.runtime/NativePlugin 与 Core 托管模式。输入借用 Core 预提交租约、输出由 Core 统一发布并保留到完整清理；低层 open/create 继续可用。宿主通过 Kernel.registerRuntime 保留定义身份，并以冻结配置目录接入 Session，见 [接入与验证](../../docs/p4-m3d1-development.md)及 [ADR-0036](../../docs/adr/0036-managed-native-runtime.md)。托管实例先由 Core/Kernel 关闭，之后关闭模块会话、排空代次、最后关闭 scheduler。当前真实 DLL 夹具不替代 M3d2 业务示例/Qt 事件循环或 M4 UI DLL；默认 PIN 驻留不变。
-
-M3d2a 已增加 [两个业务服务 DLL 与真实 Qt/Kernel/Session 示例](../../examples/native_services/README.md)，包含实际磁盘保存、多实例/realm、启动失败和清理失败驻留；仍沿用 M3d1 托管桥和默认 PIN。[M3d2b 的分层 S06/S07](../../docs/p4-m3d2b-development.md)已通过，M3 当前范围收口；M4 UI DLL 不由该示例交付。
-
-M4a 将文件/祖先固定、二次声明/摘要及 PE 检查提取为私有 VerifiedSource，原生后端与 Cordis::ModuleQtPreflight 共用。manifest 明确区分 c-abi/qt-ui，原生后端拒绝 Qt 类型；Qt 端仅返回宿主工具链/产物快照，不调用 load/instance，不创建 root 或第二套目录。Qt 工厂/页面适配在 M4b/c，见 [架构边界](../../docs/adr/0037-qt-module-boundaries.md)和 [M4a 记录](../../docs/p4-m4a-development.md)。
-
-M4b1 新增 Cordis::ModuleQt / loadQtModule：两个装载后端共用进程目录、受限映像搜索及 PIN；Qt 对相同产物创建一次 loader root，并保留 loader/root 租约。root 活跃时 drain 拒绝，错误构造保守驻留；不手动 delete root 或 unload。此时 descriptorAccepted/businessAccepted 仍为 false，尚不能创建业务实例或插件页面；M4b2 工厂/实例适配继续，见 [记录](../../docs/p4-m4b1-development.md)。
-
-M4b2 提供 IQtPluginV1/IQtInstanceV1、Cordis::QtPluginSdk 和 qtRuntime。工厂通过实际 Core 身份和插件目录握手，宿主创建普通 Runtime；业务对象等待全部 Context 资源、输出对象和后登记的末尾清理完成，再通过 QObjectResource 完整析构并释放模块引用。输入 committed 租约在末尾清理成功后才释放，失败保留未确认对象。Windows/MSVC/Qt 默认使用共享 Core（Debug 加 d），SDK 与 Core 拒绝 /MT；无 Qt 默认静态 Core。根工厂继续进程驻留，创建中失活只清理、不激活旧代。实现与验证见 [M4b2](../../docs/p4-m4b2-development.md)，页面 DLL 在 M4c。
+Native 和 Qt 模块默认驻留。Native 显式物理卸载要求首次装载时匹配宿主批准的模块 ID 和精确产物摘要。关闭和排空后，宿主还须在原线程显式请求卸载，验证账目归零与实际映像释放。保留的外部映射会阻止卸载。[卸载策略](../../docs/adr/0050-approved-native-module-unloading.md) · [回归测试](../../docs/testing.md)

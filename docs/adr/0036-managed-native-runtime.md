@@ -24,4 +24,4 @@ PluginDefinition/KernelPlugin 追加缺省为 builtin 的 PluginModule。宿主�
 
 ## 结果与边界
 
-M3d1 完成托管与目录这一可验证工作包，证据见 [开发记录](../p4-m3d1-development.md)。业务服务 DLL 示例、真实 Qt 事件循环、失败驻留与 S06/S07 联合退出属于 M3d2；M4 UI DLL、P5 受控替换和物理卸载不由本决策完成。默认驻留不变。
+这里只定义原生请求的托管与目录。后续 Qt 模块边界和受控原生物理卸载分别见 [ADR-0037](0037-qt-module-boundaries.md) 与 [ADR-0050](0050-approved-native-module-unloading.md)。驻留仍为默认策略。

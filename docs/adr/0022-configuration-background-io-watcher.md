@@ -32,7 +32,7 @@ watcher 同时监听文件和父目录。QSaveFile/编辑器原子替换可能�
 
 真实临时文件专项覆盖读取、串行提交/读取元数据、外部冲突、锁失败、关门排空、facade 释放、线程/预算门禁、内容消重、原子替换/原地续写、删除重建、父目录恢复、自身写入及外部回退、scheduler 关闭与待合并请求取消。UI 专项验证外部原文不覆盖未应用编辑、显式载入不推进期望、保存继续冲突及明确 rebase。
 
-本模块只提供配置专用后台 I/O 与 watcher 屏障，不替代任意插件 worker、connection 或动态模块卸载协议。证据见 [Q4d3 开发记录](../p3-development.md#q4d3-配置后台-io-与文件监听)；新增原生体验单列 [专项清单](../../tests/acceptance/p3-ui.md#q4d3-文件监听与后台读写补充验收)。
+任意插件工作线程、信号连接与动态模块分别遵循各自的退出屏障，见 [ADR-0024](0024-managed-workers.md)、[ADR-0023](0023-managed-qt-connections.md) 和 [ADR-0050](0050-approved-native-module-unloading.md)。
 
 ## 提交前审查修正
 

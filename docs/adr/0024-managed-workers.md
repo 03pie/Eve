@@ -37,4 +37,4 @@ Windows 后端使用 _beginthreadex，owner 私有 Qt 计时器以 WaitForSingle
 
 审查后 21 项真实线程/Qt 场景覆盖正常完成、本地和所属代取消、不合作函数、TLS 析构阻塞、捕获析构重入、旧代更新、失败/抛错、非 owner 释放 facade、scheduler 提前关闭、线程门禁、激活中停止、初始化嵌套循环/自动退役、ready/result 延续使用 Context、清理重叠/退役投递受阻、worker/connection/clock 联合退出、应用先销毁和事件循环先退出。TLS 场景在真实 thread_local 析构中阻塞，检查函数已返回但 result/close 仍未完成、捕获仍存活；异常退出场景由测试另行等待原生线程，仍检查适配器报告失败及保留资源。
 
-新增 headless worker_demo 展示真实信号触发 Kernel 关闭，确认 worker、连接和 Kernel 各自完成后退出。完整结果见 [Q2d 开发记录](../p3-development.md#q2d-托管工作线程)。
+退出场景由真实信号触发 Kernel 关闭，等待 worker、连接和 Kernel 各自完成。

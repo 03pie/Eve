@@ -1,6 +1,6 @@
 # ADR-0042：固定来源与 hash 目录安装事务
 
-日期：2026-10-30。状态：接受。承接 [候选代目录](0041-module-candidate-generations.md)与 [P5 计划](../p5-development.md)。
+日期：2026-10-30。状态：已采纳。承接[候选代目录](0041-module-candidate-generations.md)。
 
 ## 问题与边界
 
@@ -25,4 +25,4 @@ M1 可并存独立目录中的当前/候选代，但调用方仍须自行准备�
 
 事务提供正常进程中的完整目录发布与错误可见性，不宣称断电持久性、崩溃后自动清扫、管理员攻击隔离或未知文件的安全接管。store 应由宿主管理；拿不到创建目录的身份时保留异常路径并报错，不猜测归属。完整 UNC 输入规则沿用预检，但本轮真实文件系统验证为本机 Windows NTFS，未把本地结果写成网络共享的实测证据。
 
-Windows 行为以官方 [FILE_RENAME_INFO](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_rename_info)、[SetFileInformationByHandle](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle) 和 [CreateFileW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew) 为依据。安装、重命名冲突和清理使用真实 OS 文件与句柄验证；证据见 [M2a 记录](../p5-m2a-development.md)。
+安装、重命名冲突和清理使用真实 Windows 文件与句柄验证。系统语义见 [FILE_RENAME_INFO](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_rename_info)、[SetFileInformationByHandle](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle) 和 [CreateFileW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)。

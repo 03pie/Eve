@@ -34,4 +34,4 @@ Qt 的元数据查询与 root 所有权依据 [QPluginLoader 官方文档](https
 
 2026-10-29：第二个后端实际接入时，提取 catalog.cpp 为两个后端共用的唯一代次目录和受限 Windows 映像映射。原生管理器保留自己的描述握手；Qt 使用自己的 QPluginLoader 与 root 驻留所有者。共同错误信号不依赖目录/Windows/Qt，业务请求层无需知道 Qt 装载器。
 
-M4b 分为 root 装载与业务工厂两次提交：b1 的 loadQtModule 只建立真实映像/root，诊断不标记 descriptorAccepted/businessAccepted；b2 才冻结 IQtPluginV1 业务契约并接实例。root 的真实 QObject 租约保持登记且阻止 drain，首版不以手动删除 root、调用 unload 或清空账目取得假退出。模块默认驻留与每次业务激活的完整退出分开验收，详见 [实施记录](../p4-m4b1-development.md)。
+loadQtModule 建立真实映像和 root。业务契约由 IQtPluginV1 接入，描述及业务接受分别记录。root 的 QObject 租约持续登记并阻止 drain；完整的业务退出与模块驻留分别验证。

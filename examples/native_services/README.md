@@ -17,8 +17,8 @@ cmake --build build/ela-msvc-release --target cordis_native_services_demo --para
 
 入口使用真实 QCoreApplication/QtScheduler、ModuleManager、Core Runtime、KernelReconcileDriver、ConfigurationSession 和 QtConfigurationWriter。保存到独立临时文件，重新读取并核对持久化内容，退出后清理该文件。成功时依次关闭 Session、Kernel、模块会话，排空代次，再关闭调度器，打印 DLL 仍驻留；不会打开桌面窗口或修改默认工作台配置。
 
-宿主装配和逐阶段异步关闭位于 [pipeline.hpp](pipeline.hpp) 与 [pipeline.cpp](pipeline.cpp)，由 cordis_native_pipeline 静态库提供；运行器保留五场景输入、断言和退出。Pipeline 接收调用方真实共享队列，失败装配也沿该队列收尾；manager/Session 等均真实共享拥有。关闭报告仅保存原阶段值结果，先释放定义、Runtime 与 Kernel 等拥有者，再尝试 drain；外部工厂保留会准确拒绝排空，清理或回执失败保留实际资源。实现与验证范围见 [M5-b1 记录](../../docs/p5-m5b-development.md#b1-收口结论)。
+宿主装配和逐阶段异步关闭位于 [pipeline.hpp](pipeline.hpp) 与 [pipeline.cpp](pipeline.cpp)，由 cordis_native_pipeline 静态库提供；运行器保留五场景输入、断言和退出。Pipeline 接收调用方真实共享队列，失败装配也沿该队列收尾；manager/Session 等均真实共享拥有。关闭报告仅保存原阶段值结果，先释放定义、Runtime 与 Kernel 等拥有者，再尝试 drain；外部工厂保留会准确拒绝排空，清理或回执失败保留实际资源。实现与验证范围见 [M5-b1 记录](../../docs/testing.md)。
 
 另有 start_failure 和 cleanup_failure 两个显式故障演示。前者用报告器配置 {"failStart":true} 验证失败回滚后仍能完整退出；后者用计数器配置 {"failCleanup":true} 验证不静止报告、DLL 和执行引用保留。故障场景返回 0 表示它符合预期的验收结果，不能解释为清理成功。这两个参数仅为本示例 schema 的故障演示能力。
 
-五项检查在关闭 CORDIS_BUILD_EXAMPLES 时仍由 cordis_native_services_probe 执行。业务链、真实磁盘保存、多实例/realm 与上述故障已覆盖；report/read 方法由示例提供，本轮联合检查观察启动业务日志，未单独发起该方法调用。S06 取消后的晚到 stop completion 与 S07 DLL 内捕获析构已由 [M3d2b 专用夹具分层验证](../../docs/p4-m3d2b-development.md)，没有向本示例加入测试控制导出；M4 UI DLL 另行实施，见 [阶段记录](../../docs/p4-m3d2a-development.md)。
+五项检查在关闭 CORDIS_BUILD_EXAMPLES 时仍由 cordis_native_services_probe 执行。业务链、真实磁盘保存、多实例/realm 与上述故障已覆盖；report/read 方法由示例提供，本轮联合检查观察启动业务日志，未单独发起该方法调用。S06 取消后的晚到 stop completion 与 S07 DLL 内捕获析构已由 [M3d2b 专用夹具分层验证](../../docs/testing.md)，没有向本示例加入测试控制导出；M4 UI DLL 另行实施，见 [阶段记录](../../docs/architecture.md)。

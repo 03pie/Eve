@@ -25,4 +25,4 @@ Qt 5.15.2 的 execCleanup 在主循环结束后触发 aboutToQuit，并处理 De
 
 使用真实 Qt 循环验证：同线程与跨线程 post 始终排队；已完成 Task 的 thenOn 不内联；FIFO/重入；关闭与投递竞争中执行/丢弃恰好一次；接收对象销毁；异常隔离；丢弃可观察；Kernel 异步关闭在循环停止前完成。不得仅用环境探测代替 QtScheduler 验收。
 
-已由 tests/qt/scheduler.cpp 中 10 个独立 CTest 场景覆盖，包含 worker 释放最后一个句柄、错误线程拒绝、执行中关闭、可调用对象移动/析构重入、通知释放所有者和 aboutToQuit 兜底。具体结果见 [P3 开发记录](../p3-development.md)。这些结果不代表 QObject 资源屏障、Ela UI 或原生模块卸载已验收。
+Qt 调度器用例覆盖 worker 释放最后一个句柄、错误线程拒绝、执行中关闭、可调用对象移动及析构重入、通知释放所有者和 aboutToQuit 兜底。运行方式见[测试指南](../testing.md)。

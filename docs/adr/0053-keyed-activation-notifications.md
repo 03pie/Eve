@@ -1,10 +1,10 @@
 # ADR-0053：服务可用性按键通知原激活作业
 
-实施前设计日期：2026-11-18。2026-11-19完成实现、代码审查与五配置专项验证，随收口提交归档。源码基线 a9f4230（M5-d0 已审查提交同步）。观测口径沿用 [ADR-0052](0052-dependency-evaluation-observation.md)，实施出口见 [M5-d 工作单](../p5-m5d-development.md)。
+日期：2026-11-18。状态：已采纳。观测口径沿用 [ADR-0052](0052-dependency-evaluation-observation.md)。
 
 ## 问题与边界
 
-原说明书/指南要求 key→interested instances 索引。当前每次 publish/retire 都广播实例观察作业；enqueue 能合并，但不相关服务仍会令 Pending 重新评估，Active 也收到空唤醒。d0 已给出真实评估批次基线，不能用其统计接口代替索引本身。
+最初的 publish 和 retire 会广播实例观察作业。enqueue 能合并投递，无关服务仍可能触发 Pending 实例重新评估或唤醒 Active 实例。按服务键索引观察者可缩小通知范围，评估统计用于验证效果。
 
 不能把所有通知机械改成直接 key：先 stage 未发布的外部 x，再挂载 A(dep x,out a)、B(dep a,out b)、C(dep b,out x)，外部 Staged 绑定遮住声明候选，三者可均 Pending。release 外部 x 后才显露声明环；只通知 x 的直接消费者会漏掉 B/C。声明、实际绑定和 child→parent 共同参与原判环，重写一个不完整的反向图会改变故障语义。
 
@@ -37,4 +37,4 @@ stageErased 原本不通知，仍保持；它会影响声明 provider 解析，�
 
 先在原 a9f4230 Core 上运行新定向通知判据，保存无关键仍触发评估的实际负例；随后实现索引并复验。真实公开路径覆盖完整 key 的 name/major/realm 分离、相关通知合并、Pending 恢复、Active/committed 失效、上述 Staged-x 声明环、Held commit/abort、零依赖结构唤醒、替换解除门禁、停止后排队作业与拒投。退出后原声明/资源必须清空，不暴露测试友元或索引写入口。
 
-复验相应 Core/Loader、真实原生替换及 UI 呈现/故障，核旧公开布局/符号与实物、实际 ASan 依赖，以及静态 Core/无 Qt GCC。保留原始负例，不把专项当全量。完成源码和证据审查、提交同步且工作区干净后才冻结 d1 的连续替换资源基线。
+Core 与 Loader 回归覆盖相关和无关服务键的通知范围，并复核原生替换、UI 呈现与故障场景。连续替换的资源验证见 [ADR-0054](0054-native-workspace-endurance.md)。

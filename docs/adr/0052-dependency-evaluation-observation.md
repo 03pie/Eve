@@ -1,12 +1,12 @@
 # ADR-0052：依赖评估的原位只读统计
 
-日期：2026-11-18。状态：按实施前设计完成实现、阶段审查与五配置验证，随收口提交归档。源码基线 73cc08e（M5-c 已审查提交同步）。实施和验证见 [M5-d 工作单](../p5-m5d-development.md)。
+日期：2026-11-18。状态：已采纳。
 
 ## 问题与边界
 
-开发指南要求记录真实重算数量，再测队列延迟、停机与清理耗时。当前 revision、epoch 和队列任务数都不能表示重算次数：通知可合并，Active 实例可被空唤醒，Pending 实例也可多次重新评估而没有新 epoch。逐轮推算或从日志猜测会掩盖实际算法行为。
+运行验证需要测量实际依赖评估批次、队列延迟、停机与清理耗时。通知可合并，Active 实例可被空唤醒，Pending 实例可在同一 epoch 内重新评估，因此评估次数需要独立读取。
 
-当前 ServiceRegistry 广播弱观察作业，Instance::enqueue 合并排队，start 的 stopping/retiring/dirty、替换与发布门禁拒绝空执行。绑定的 committed consumers 负责精确失效传播；这不等于指南所述完整 serviceKey→interested instances 反向通知索引。本段准确测量现有算法，不同时重写通知和依赖图。反向通知索引仍是原指南待兑现的要求，须另段设计和验证，不能用统计接口代替；图检测的 DFS 优化则按原说明书在基线后判断必要性。
+最初 ServiceRegistry 广播弱观察作业，由 Instance::enqueue 合并排队，绑定的 committed consumers 负责失效传播。统计接口记录实际评估行为。后续的按键通知索引见 [ADR-0053](0053-keyed-activation-notifications.md)。
 
 ## 决定
 

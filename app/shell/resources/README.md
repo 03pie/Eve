@@ -19,8 +19,8 @@ python tools/package_eve_icon.py
 
 脚本只使用 Python 标准库；常规 CMake 构建使用已入库的 ICO，不需要 Python。UI 库显式注册静态链接的 Qt 资源，新增的公开 SDK 依赖为零。宿主已显式设置应用图标时沿用宿主选择；默认桌面入口采用本套 Eve 图标。图标替换不修改应用名、配置路径、插件业务图标或已保存目标。
 
-当前三个入口为 cordis_ela_demo、cordis_config_workbench 和 cordis_qt_workspace_demo。可用以下只读检查确认 PE 的 RT_GROUP_ICON/RT_ICON 资源与正式 ICO 七帧逐字节相同，不需要启动程序：
+可用以下检查确认平台工作台和配置示例的 PE 图标与正式 ICO 七帧逐字节相同。
 
 ```powershell
-python tools/check_eve_icons.py build/ela-msvc-release/bin/cordis_ela_demo.exe build/ela-msvc-release/bin/cordis_config_workbench.exe build/ela-msvc-release/bin/cordis_qt_workspace_demo.exe
+python tools/check_eve_icons.py build/ela-msvc-release/bin/cordis_plugin_workbench.exe build/ela-msvc-release/bin/cordis_config_workbench.exe
 ```

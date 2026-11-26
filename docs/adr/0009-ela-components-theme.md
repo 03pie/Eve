@@ -1,6 +1,6 @@
 # ADR-0009：Ela 组件与主题统一
 
-日期：2026-10-24。范围：P3 Q3c 宿主与内置演示界面的初次组件迁移。后续将 Ela 基础库纳入仓库维护并采用原生导航与工作台布局，替代本页树导航策略，见 [ADR-0010](0010-maintained-ela-navigation.md)。sources/research 始终只读。
+日期：2026-10-24。此记录描述宿主的初次 Ela 组件迁移。后续工作台采用 Ela 原生导航，见 [ADR-0010](0010-maintained-ela-navigation.md)。
 
 ## 组件与数据模型
 
@@ -20,4 +20,4 @@
 
 新增 management_theme 检查实际组件类型、明暗调色板、选择保持、实例操作号/epoch 不因换肤改变及拖动不生成窗口。原选择、动态撤页、命令调用与关闭重入测试迁移至 view/model API 并继续运行。
 
-演示新增 --smoke-dark，与 --smoke 分别生成 ela-smoke-dark.png、ela-smoke.png，再执行完整关闭链。offscreen 预览和自动化回归不替代原生 Windows 缩放、鼠标、键盘与主题动画的人工验收；验收单见 tests/acceptance/p3-ui.md。
+自动化回归覆盖明暗主题与完整关闭链。原生 Windows 的缩放、鼠标、键盘与主题动画需要桌面会话验证。运行方式见[测试指南](../testing.md)。
