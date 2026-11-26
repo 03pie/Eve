@@ -1,6 +1,11 @@
 ---
 description: "Use when adding, editing, or reviewing first-party code comments; use Chinese Doxygen format for C++ files and the applicable language documentation format elsewhere."
 applyTo:
+  - "app/**/*.{h,hpp,c,cpp}"
+  - "src/**/*.c"
+  - "sdk/**/*.c"
+  - "examples/**/*.c"
+  - "tests/**/*.c"
   - "src/**/*.h"
   - "src/**/*.hpp"
   - "src/**/*.cpp"
