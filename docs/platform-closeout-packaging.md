@@ -24,3 +24,11 @@ python tools/package_platform.py --host-root build/ela-msvc-release/bin `
 ## 运行验收
 
 静态记录和本机运行记录分别保留。本机使用不含开发套件的进程环境，在独立的新目录中启动实际解压工作台并检查日志查询工具。记录程序和依赖来源、进程退出、空工作区及含已有配置的工作区行为。发布仍属于当前的内部预览范围。
+
+```powershell
+$zip = Join-Path $output 'Cordis-0.1.5-platform-preview.1-windows-x64.zip'
+$receipt = Get-Content -Raw -Encoding UTF8 (Join-Path $output 'Cordis-0.1.5-platform-preview.1-windows-x64.verification.json') | ConvertFrom-Json
+./tools/verify_platform_package.ps1 -Archive $zip -ExpectedSha256 $receipt.archiveSha256 -EvidenceDirectory (Join-Path $output 'host-acceptance')
+```
+
+兼容验收可再传入平台通用验收模块的清单路径。输出目录已存在时另选一个新目录。[本轮交付和实测结果](platform-closeout.md)

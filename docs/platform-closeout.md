@@ -11,3 +11,19 @@
 ## 本机交付验收
 
 验收工具将最终 ZIP 解压到本次专用目录，使用独立工作区和系统 PATH 启动 Windows 原生窗口。验证空工作台首次启动、正常关窗、配置落盘和原文件重开。查询工具独立读两次运行，检查归档终态、事件及未改变的原分段散列。额外用一个依赖外部清单的配置核对诊断及原文件保留，并可用包外通用测试模块验证显式入口。每次打包的 SHA-256、实际进程回执及模块加载位置独立保留。
+
+## 2026-11-26 收尾结果
+
+交付包 `Cordis-0.1.5-platform-preview.1-windows-x64.zip` 位于 `D:/WorkSpace/delivery/Cordis-Platform-20261126-1`。源码为干净的 `79b104a0fc6b0cd6b92dcf3081f73f313e15636f`。ZIP 共 122 个文件，大小 15,423,419 字节，SHA-256 为 `aea318bdfbed97f55dcafd48d024cb587b3f0b5cf01f9e8a8aac14d4ad46d0b8`。包内包含工作台、日志查询工具、运行依赖、使用说明与许可材料。
+
+- 解压后的 PID 49144 首次打开空工作区，PID 39636 打开同一工作区，两次均正常退出。保存的空配置重开后 SHA-256 不变。运行 `5f54f6d7-c4ca-4960-a52b-3e2e74793957` 与 `b1b5a708-5407-407c-a1c4-d9f2543e9aa4` 均封存。包内只读工具定位两个运行的清理事件，查询前后归档散列一致。
+- PID 48124 在模块依赖无法满足时以退出码 1 结束，记录 `WORKBENCH_MODULE_REQUIRED`，配置原件的散列一致。PID 47248 经 `--module` 加载包外通用验收模块，写入日志后退出码为 0。
+- 同一解压包无参数启动 PID 47340，在默认 `platform-workspace` 中生成空配置、完成归档并以 0 退出。历史默认配置路径的文件状态和散列一致。
+
+打包静态回执及逐文件清单在交付目录。实际运行原件为 `host-acceptance/result.json` 和 `host-acceptance/no-arguments.json`，保留环境、加载来源、事件和进程结果。上述操作均在本机 Windows 以实际解压文件执行。[复跑命令](platform-closeout-packaging.md)
+
+## 配置保存
+
+本机实测短时文件占用能使 Windows 原子替换失败。保存现在对这类替换错误最多执行三次有界重试，每次先重核原始版本。检测到外部改动时报告冲突，保留外部文件和草稿，持续占用时继续返回真实错误。原偶发占用进程未确认。[事务设计与故障原件](adr/0014-configuration-file-transactions.md)
+
+两项新增故障用例及原配置 UI 偶发用例各连续通过 100 次。最终 Release 常规回归 1,508/1,508，使用原受审模块另执行 6 项 P5 产品验证，全部通过。原日志为 `build/design-tools/platform-closeout-full.log` 和 `build/design-tools/config-replace-repeat.log`。
