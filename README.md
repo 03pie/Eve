@@ -18,6 +18,8 @@ Windows x64 的 MSVC 使用 Visual Studio 2022 x64 Developer PowerShell 和 `cor
 
 ## 运行 Windows 工作台
 
+使用已构建的 Windows x64 安装包时，双击安装程序即可为当前用户安装工作台。制作离线安装包、校验文件和卸载流程见 [Windows 安装包](docs/windows-installer.md)。
+
 安装 Visual Studio 2022 C++ x64 工具和 Qt 5.15.2 的 MSVC x64 开发套件。将示例中的路径改为你的 Qt 目录，然后运行以下命令。
 
 ```powershell

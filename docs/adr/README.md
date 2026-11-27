@@ -81,6 +81,7 @@
 
 ## 桌面发行
 
+- [ADR-0067 Windows 工作台运行时的安装边界](0067-windows-runtime.md)
 - [ADR-0068 Windows 桌面安装器](0068-windows-installer.md)
 
 内部交付和验收记录可在 Git 历史中查看。
