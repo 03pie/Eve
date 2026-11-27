@@ -82,9 +82,7 @@ void run(const QString& dll, const QDir& evidence)
                                          QJsonArray::fromStringList(ids), "qt-ui");
     const auto loaded = take(module::loadQtModule(evidence.path().toStdString(), manifest.toStdString()));
     Host host;
-    take(host.app.shell.startOutputArchive(evidence.filePath("workspace").toStdString(), "test"));
-    take(host.app.shell.management()->attach(host.app.kernel));
-    host.app.publishUi();
+    wait(host.app.open(std::nullopt, evidence.filePath("workspace")));
     QJsonObject identities;
     for (const auto& id : ids) {
         const module::QtPlugin contract{id.toStdString(),
@@ -104,7 +102,7 @@ void run(const QString& dll, const QDir& evidence)
         if (auto* shell = qobject_cast<ElaWindow*>(widget)) window = shell;
     check(window, "missing shell");
     window->setAttribute(Qt::WA_ShowWithoutActivating);
-    take(host.app.shell.show());
+    take(host.app.desktop()->show());
     control<QAction>(window, "EveOpenOutput")->trigger();
     auto* editor = control<QPlainTextEdit>(window, "EveWorkbenchOutput");
     auto* selector = control<QComboBox>(window, "EveOutputTarget");

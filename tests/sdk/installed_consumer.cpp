@@ -93,7 +93,7 @@ void verifyFrozenNotebook(eve::workbench::Workbench& host)
     editor->setPlainText(QString::fromStdString(marker));
     publish->click();
     until([&] {
-        const auto rows = host.shell.output()->snapshot().value();
+        const auto rows = host.desktop()->output()->snapshot().value();
         return std::any_of(rows.begin(), rows.end(), [&](const auto& row) {
             return row.owner && row.text == marker;
         });
@@ -105,8 +105,7 @@ void verifyInstalledConsumer(const QString& manifest, const QString& workspace, 
 {
     eve::workbench::Workbench host;
     try {
-        host.open(manifest, workspace);
-        host.publishUi();
+        await(host.open(manifest, workspace));
         const auto applied = await(host.applyInitial().settled);
         if (applied->value().outcome != eve::loader::PlanOutcome::Applied || !applied->value().errors.empty())
             throw std::runtime_error("The workbench could not activate the template module.");
@@ -115,7 +114,7 @@ void verifyInstalledConsumer(const QString& manifest, const QString& workspace, 
         } else {
             const bool reopen = mode == "reopen";
             until([&] {
-                const auto pages = host.shell.pages()->snapshot().value();
+                const auto pages = host.desktop()->pages()->snapshot().value();
                 return std::any_of(pages.begin(), pages.end(), [](const auto& page) {
                     return page.id == "external-page" && page.widgetAlive && page.navigationPresent;
                 });

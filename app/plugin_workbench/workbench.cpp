@@ -5,8 +5,10 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QStandardPaths>
-#include <QWidget>
+#include "runtime_log_archive_p.hpp"
 #include <algorithm>
+#include <stdexcept>
+#include <eve/loader/kernel_driver.hpp>
 #include <eve/loader/qt_store.hpp>
 #include <eve/loader/yaml.hpp>
 #include <eve/module/qt_manifest.hpp>
@@ -14,23 +16,24 @@
 
 namespace eve::workbench {
 namespace {
-constexpr char pagesService[] = "ui.pages";
-constexpr char commandsService[] = "ui.commands";
-constexpr char outputService[] = "ui.output";
-constexpr char schedulerService[] = "qt.scheduler";
+class StartupError : public std::runtime_error {
+public:
+    explicit StartupError(ErrorInfo error) : std::runtime_error(error.message), detail(std::move(error)) {}
+    ErrorInfo detail;
+};
 
 /** @brief 装配失败时将诊断交给应用入口，成功时取走已创建的宿主值。 */
 template<class T> T checked(Result<T> result)
 {
     if (!result.hasValue())
-        throw std::runtime_error(result.error().message);
+        throw StartupError(result.error());
     return std::move(result).value();
 }
 /** @brief 将无返回值的装配失败交给应用入口。 */
 void checked(Result<void> result)
 {
     if (!result.hasValue())
-        throw std::runtime_error(result.error().message);
+        throw StartupError(result.error());
 }
 
 /** @brief 首次选择外部模块时创建主实例，插件自行解释配置对象中的字段。 */
@@ -50,17 +53,19 @@ Result<void> validateConfiguration(const std::string& text)
 }
 
 /** @brief 按预检阶段选择面向用户的诊断，便于从启动日志定位失败原因。 */
-const char* preflightDiagnostic(const ErrorInfo& error)
+ErrorInfo preflightDiagnostic(ErrorInfo error)
 {
     if (error.phase == "workbench.module.required")
-        return "WORKBENCH_MODULE_REQUIRED: 该工作区引用外部模块。请使用 --module 指定清单，或通过 --workspace 打开另一个工作区。";
-    if (error.phase == "module.manifest.read")
-        return "QT_MANIFEST_READ_FAILED: 无法读取或完整校验模块清单。";
-    if (error.code == ErrorCode::AbiMismatch)
-        return "QT_MODULE_INCOMPATIBLE: 模块预检发现 ABI、加载器或工具链不兼容。";
-    if (error.phase == "module.manifest")
-        return "QT_MANIFEST_INVALID: 模块清单格式或字段校验失败。";
-    return "QT_MODULE_PREFLIGHT_FAILED: 模块产物或元数据未通过预检。";
+        error.phase = "WORKBENCH_MODULE_REQUIRED";
+    else if (error.phase == "module.manifest.read")
+        error.phase = "QT_MANIFEST_READ_FAILED";
+    else if (error.code == ErrorCode::AbiMismatch)
+        error.phase = "QT_MODULE_INCOMPATIBLE";
+    else if (error.phase == "module.manifest")
+        error.phase = "QT_MANIFEST_INVALID";
+    else
+        error.phase = "QT_MODULE_PREFLIGHT_FAILED";
+    return error;
 }
 
 /** @brief 预检后交给宿主的实际模块目录和清单声明的唯一插件标识。 */
@@ -78,16 +83,19 @@ ModuleInput inspectConfiguredModule(const QString& path)
     auto root = source.absolutePath().toUtf8().toStdString();
     const auto inspected = module::inspectQtModule(root, "module.json");
     if (!inspected.hasValue())
-        throw ModulePreflightError(inspected.error());
+        throw StartupError(preflightDiagnostic(inspected.error()));
     const auto& manifest = inspected.value().artifact.manifest();
     if (manifest.plugins.size() != 1 || manifest.loader != module::ModuleLoader::QtUi ||
         manifest.unloadPolicy != module::ModuleUnloadPolicy::Resident)
         throw std::runtime_error("This workbench accepts a resident Qt UI module declaring one plugin.");
+    if (manifest.moduleId == desktopModuleId || manifest.plugins.front() == desktopId ||
+        manifest.plugins.front() == "host.configuration")
+        throw std::runtime_error("The selected business module uses a reserved system identity.");
     return {std::move(root), manifest.plugins.front()};
 }
 
 /** @brief 将同一加载代登记到内核和输出来源目录，配置依赖与 Runtime 共用服务名。 */
-loader::ConfiguredPlugin configureModule(const ModuleInput& input, Kernel& kernel, const ui::ElaShell& shell,
+loader::ConfiguredPlugin configureModule(const ModuleInput& input, Kernel& kernel, DesktopView& shell,
                                          const std::shared_ptr<qt::QtScheduler>& scheduler)
 {
     const auto generation = checked(module::loadQtModule(input.root, "module.json")).generation;
@@ -112,11 +120,6 @@ loader::ConfiguredPlugin configureModule(const ModuleInput& input, Kernel& kerne
 }
 } // namespace
 
-ModulePreflightError::ModulePreflightError(const ErrorInfo& error)
-    : std::runtime_error(error.message), diagnostic_(preflightDiagnostic(error))
-{
-}
-
 QString workbenchDataFile(const QString& applicationData, const QString& relativeFile)
 {
     const QDir data(applicationData);
@@ -130,17 +133,60 @@ QString workbenchDataFile(const QString& applicationData, const QString& relativ
 
 Workbench::Workbench()
     : scheduler(std::make_shared<qt::QtScheduler>()), kernel(std::make_shared<Kernel>(scheduler)),
-      shell(scheduler, workbenchDataFile(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation),
-                                         QStringLiteral("preferences/workbench.json")).toUtf8().toStdString())
+      bootstrap_(std::make_shared<DesktopBootstrap>())
 {
+    bootstrap_->preferencesFile = workbenchDataFile(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation),
+        QStringLiteral("preferences/workbench.json")).toUtf8().toStdString();
 }
 
-void Workbench::open(const std::optional<QString>& manifestPath, const QString& workspaceDir)
+Result<std::uint64_t> Workbench::writeOutput(std::string text, ui::OutputLevel level,
+                                             ui::OutputDiagnostic diagnostic) const
+{
+    if (!bootstrap_->archive)
+        return Result<std::uint64_t>::failure(makeError(ErrorCode::ContextClosing, "No open run archive."));
+    return bootstrap_->archive->writePlatform(std::move(text), level, std::move(diagnostic));
+}
+
+Task<void> Workbench::open(const std::optional<QString>& manifestPath, const QString& workspaceDir)
+{
+    if (bootstrap_->archive || closing_)
+        return failedTask(makeError(ErrorCode::InvalidArgument, "This workbench cannot open another workspace."));
+    Promise<void> ready;
+    try {
+        bootstrap_->archive = std::make_shared<ui::detail::RuntimeLogArchive>(workspaceDir, EVE_PRODUCT_VERSION);
+        const auto publish = [this](const char* key, const auto& service) {
+            providers_.push_back(checked(kernel->services().stage({key}, service)));
+            checked(providers_.back().publish());
+        };
+        publish(schedulerService, std::make_shared<std::shared_ptr<qt::QtScheduler>>(scheduler));
+        publish(desktopBootstrapKey, bootstrap_);
+        auto contract = desktopContract();
+        auto runtime = checked(kernel->registerPlugin(contract.id, activateDesktop,
+            std::move(contract.dependencies), std::move(contract.outputs)));
+        desktopRuntime_ = runtime.id();
+        const auto instance = checked(kernel->mount(runtime));
+        instance.ready().thenOn(scheduler, [this, ready, manifestPath, workspaceDir](const Result<void>& active) {
+            if (!active.hasValue()) { ready.reject(active.error()); return; }
+            if (closing_ || !desktop()) {
+                ready.reject(makeError(ErrorCode::ContextClosing, "Desktop unavailable while opening workspace."));
+                return;
+            }
+            try {
+                openWorkspace(manifestPath, workspaceDir).thenOn(scheduler, [ready](const Result<void>& outcome) {
+                    if (outcome.hasValue()) ready.resolve();
+                    else ready.reject(outcome.error());
+                });
+            } catch (const StartupError& error) { ready.reject(error.detail); }
+              catch (const std::exception& error) { ready.reject(makeError(ErrorCode::ConfigInvalid, error.what())); }
+        });
+    } catch (const StartupError& error) { ready.reject(error.detail); }
+      catch (const std::exception& error) { ready.reject(makeError(ErrorCode::ModuleLoad, error.what())); }
+    return ready.task();
+}
+
+Task<void> Workbench::openWorkspace(const std::optional<QString>& manifestPath, const QString& workspaceDir)
 {
     using namespace loader;
-    if (session)
-        throw std::logic_error("This workbench already owns a workspace.");
-    checked(shell.startOutputArchive(workspaceDir.toStdString(), EVE_PRODUCT_VERSION));
     const auto selected = manifestPath ? std::optional{inspectConfiguredModule(*manifestPath)} : std::nullopt;
     const QDir directory(workspaceDir);
     if (!directory.mkpath("."))
@@ -155,16 +201,23 @@ void Workbench::open(const std::optional<QString>& manifestPath, const QString& 
         initial_ = emptyWorkspaceYaml;
 
     const auto target = checked(parseConfiguration(initial_));
+    for (const auto& entry : target.structure().entries()) {
+        if (entry.second.plugin == desktopId || entry.second.plugin == "host.configuration") {
+            auto error = makeError(ErrorCode::ConfigInvalid, "System plugins cannot be managed through session.yaml.");
+            error.phase = "WORKBENCH_RESERVED_PLUGIN";
+            throw StartupError(std::move(error));
+        }
+    }
     if (!selected && (!target.structure().modules().empty() || !target.structure().entries().empty())) {
         auto error = makeError(ErrorCode::DependencyMissing,
             "该工作区引用外部模块。请使用 --module 指定清单，或通过 --workspace 打开另一个工作区。");
         error.phase = "workbench.module.required";
-        throw ModulePreflightError(error);
+        throw StartupError(preflightDiagnostic(std::move(error)));
     }
-    std::vector<RuntimeId> protectedRuntimes;
+    std::vector<RuntimeId> protectedRuntimes{desktopRuntime_};
     std::vector<ConfiguredPlugin> plugins;
     if (selected) {
-        plugins.push_back(configureModule(*selected, *kernel, shell, scheduler));
+        plugins.push_back(configureModule(*selected, *kernel, *desktop(), scheduler));
         protectedRuntimes.push_back(plugins.back().runtime.id());
     }
     auto definitions = checked(ConfigurationDefinitions::create(std::move(plugins)));
@@ -172,49 +225,20 @@ void Workbench::open(const std::optional<QString>& manifestPath, const QString& 
     auto driver = KernelReconcileDriver::configured(scheduler, kernel, definitions);
     session = std::make_shared<ConfigurationSession>(scheduler, driver, std::make_shared<QtConfigurationWriter>(file),
                                                      std::move(disk));
-    management_ = ui::createConfigurationManagement(session, scheduler);
-    checked(shell.management()->attach(kernel));
     auto configuration = checked(kernel->registerPlugin("host.configuration", [this](Context ctx) {
-        auto page = shell.pages()->add(ctx, {"configuration", "工作区配置", "host.configuration",
-            [this] {
-                auto widget = ui::createConfigurationPage(session, initial_);
-                ui::bindConfigurationFeedback(widget.get(),
-                    [this](std::string message, ui::OutputLevel level, ui::OutputDiagnostic diagnostic) {
-                        auto result = shell.writeOutput(std::move(message), level, std::move(diagnostic));
-                        return result.hasValue() ? result.value() : std::uint64_t{};
-                    },
-                    [this](std::uint64_t event, QWidget* origin) { (void)shell.showOutputEvent(event, origin); });
-                return widget;
-            }, ui::PagePresentation::Dialog});
-        if (!page.hasValue())
-            return failedTask(page.error());
-        configPage_.emplace(std::move(page).value());
-        return configPage_->ready();
-    }));
-    checked(kernel->mount(configuration));
+        auto pages = ctx.consume<ui::UiPagesService>({pagesService});
+        if (!pages.hasValue()) return failedTask(pages.error());
+        auto view = desktop();
+        if (!view) return failedTask(makeError(ErrorCode::ContextClosing, "Desktop unavailable."));
+        Task<void> ready = completedTask();
+        auto access = pages.value().withService([&](ui::UiPagesService& service) {
+            ready = view->addConfigurationPage(ctx, service);
+        });
+        return access.hasValue() ? ready : failedTask(access.error());
+    }, {ServiceRequirement::of<ui::UiPagesService>({pagesService})}));
     protectedRuntimes.push_back(configuration.id());
-    checked(shell.management()->attachConfiguration(management_, std::move(protectedRuntimes)));
-    checked(shell.onConfigurationRequested([this] {
-        return configPage_ ? configPage_->navigate() :
-            Result<void>::failure(makeError(ErrorCode::ContextClosing, "Configuration page unavailable."));
-    }));
-    checked(shell.onModulesRequested([this] { return shell.showManagement(); }));
-}
-
-void Workbench::publishUi()
-{
-    if (published_ || closing_)
-        throw std::logic_error("UI service publication is already active or closing.");
-    const auto publish = [this](const char* name, const auto& service) {
-        providers_.push_back(checked(kernel->services().stage({name}, service)));
-        checked(providers_.back().publish());
-    };
-    publish(pagesService, shell.pages());
-    publish(commandsService, shell.commands());
-    publish(outputService, shell.output());
-    publish("ui.notifications", shell.notifications());
-    publish(schedulerService, std::make_shared<std::shared_ptr<qt::QtScheduler>>(scheduler));
-    published_ = true;
+    checked(desktop()->bindWorkspace(kernel, session, initial_, std::move(protectedRuntimes)));
+    return checked(kernel->mount(configuration)).ready();
 }
 
 loader::AcceptedTarget Workbench::applyInitial()
@@ -231,6 +255,7 @@ Task<void> Workbench::close()
     if (session) {
         const auto state = session->snapshot();
         if (!state.hasValue()) {
+            closing_ = false;
             closed_.reject(state.error());
             return closed_.task();
         }
@@ -260,48 +285,77 @@ Task<void> Workbench::close()
 
 void Workbench::closeSession()
 {
-    if (!session) {
-        closeKernel();
-        return;
-    }
+    if (!session) { closeConsumers(); return; }
     session->close().thenOn(scheduler, [this](const Result<void>& result) {
-        if (result.hasValue()) closeKernel();
-        else closed_.reject(result.error());
+        if (result.hasValue()) closeConsumers();
+        else failCleanup(result.error(), "WORKBENCH_SESSION_CLEANUP_FAILED");
     });
+}
+
+void Workbench::failCleanup(ErrorInfo error, const char* phase)
+{
+    if (bootstrap_->archive) {
+        ui::OutputDiagnostic diagnostic{{}, phase};
+        if (error.operation.valid()) diagnostic.operation = error.operation;
+        (void)writeOutput(std::string(phase) + " · 清理未完成", ui::OutputLevel::Error, std::move(diagnostic));
+        bootstrap_->archive->finish(false);
+    }
+    closed_.reject(std::move(error));
+}
+
+void Workbench::closeConsumers()
+{
+    // Session.close drains managed entries. Also drain configuration and any independent
+    // host-mounted consumers before the desktop begins closing its widget tree.
+    auto snapshot = kernel->snapshot();
+    if (!snapshot.hasValue()) { failCleanup(snapshot.error(), "WORKBENCH_CONSUMER_CLEANUP_FAILED"); return; }
+    std::vector<Instance> consumers;
+    for (const auto& row : snapshot.value().instances) {
+        if (row.runtime == desktopRuntime_) continue;
+        auto found = kernel->findInstance(row.instance);
+        if (!found.hasValue()) { failCleanup(found.error(), "WORKBENCH_CONSUMER_CLEANUP_FAILED"); return; }
+        consumers.push_back(std::move(found).value());
+    }
+    if (consumers.empty()) { closeKernel(); return; }
+    struct Drain { std::size_t remaining; std::optional<ErrorInfo> failure; };
+    auto drain = std::make_shared<Drain>(Drain{consumers.size(), {}});
+    for (const auto& consumer : consumers) {
+        consumer.stop().thenOn(scheduler, [this, drain](const Result<CleanupReport>& result) {
+            if (!result.hasValue()) drain->failure = result.error();
+            else if (!result.value().quiescent)
+                drain->failure = makeError(ErrorCode::CleanupFailed, "Desktop consumer did not finish cleanup.");
+            if (--drain->remaining == 0) {
+                if (drain->failure) failCleanup(*drain->failure, "WORKBENCH_CONSUMER_CLEANUP_FAILED");
+                else closeKernel();
+            }
+        });
+    }
 }
 
 void Workbench::closeKernel()
 {
     kernel->close().thenOn(scheduler, [this](const Result<CleanupReport>& result) {
-        if (!result.hasValue()) closed_.reject(result.error());
-        else if (!result.value().quiescent)
-            closed_.reject(makeError(ErrorCode::CleanupFailed, "Plugin instances did not finish cleanup."));
-        else {
-            (void)shell.writeOutput("WORKBENCH_CLEANUP_COMPLETE: 插件与内核资源已清理。", ui::OutputLevel::Info,
-                                    {{}, "WORKBENCH_CLEANUP_COMPLETE"});
-            closeShell();
-        }
-    });
-}
-
-void Workbench::closeShell()
-{
-    shell.close().thenOn(scheduler, [this](const Result<void>& result) {
-        if (!result.hasValue()) {
-            closed_.reject(result.error());
+        if (!result.hasValue()) { failCleanup(result.error(), "WORKBENCH_KERNEL_CLEANUP_FAILED"); return; }
+        if (!result.value().quiescent) {
+            failCleanup(makeError(ErrorCode::CleanupFailed, "Desktop or kernel did not finish cleanup."),
+                        "WORKBENCH_KERNEL_CLEANUP_FAILED");
             return;
         }
         for (auto& provider : providers_) {
-            const auto retired = provider.retire();
-            if (!retired.hasValue()) { closed_.reject(retired.error()); return; }
-            const auto released = provider.release();
-            if (!released.hasValue()) { closed_.reject(released.error()); return; }
+            auto retired = provider.retire();
+            if (!retired.hasValue()) { failCleanup(retired.error(), "WORKBENCH_PROVIDER_CLEANUP_FAILED"); return; }
+            auto released = provider.release();
+            if (!released.hasValue()) { failCleanup(released.error(), "WORKBENCH_PROVIDER_CLEANUP_FAILED"); return; }
         }
         providers_.clear();
-        configPage_.reset();
-        management_.reset();
         session.reset();
         kernel.reset();
+        if (bootstrap_->archive) {
+            auto marker = writeOutput("WORKBENCH_CLEANUP_COMPLETE: 插件与内核资源已清理。", ui::OutputLevel::Info,
+                {{}, "WORKBENCH_CLEANUP_COMPLETE"});
+            bootstrap_->archive->finish(marker.hasValue());
+            if (!marker.hasValue()) { closed_.reject(marker.error()); return; }
+        }
         closed_.resolve();
     });
 }

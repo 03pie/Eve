@@ -10,6 +10,7 @@
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 
@@ -93,8 +94,7 @@ QByteArray readFile(const QString& path)
 void openEmpty(const QString& workspace, const QString& marker, bool exerciseWindow)
 {
     Scene scene;
-    scene.host.open(std::nullopt, workspace);
-    scene.host.publishUi();
+    await(scene.host.open(std::nullopt, workspace));
     const auto target = scene.host.applyInitial();
     const auto applied = await(target.settled);
     REQUIRE(applied->value().outcome == eve::loader::PlanOutcome::Applied);
@@ -103,15 +103,33 @@ void openEmpty(const QString& workspace, const QString& marker, bool exerciseWin
     REQUIRE(session.coordinator.desiredRevision == target.revision && session.coordinator.running.empty());
     REQUIRE(session.coordinator.desired && session.coordinator.desired->source().structure().modules().empty());
     REQUIRE(scene.host.session->registeredPlugins().value().empty());
-    scene.host.shell.management()->refresh().value();
-    const auto diagnostics = scene.host.shell.diagnostics()->snapshot().value();
+    scene.host.desktop()->refresh().value();
+    const auto diagnostics = scene.host.desktop()->diagnostics()->snapshot().value();
     REQUIRE(diagnostics.managementOpen && diagnostics.configuration && diagnostics.configuration->open);
     REQUIRE(diagnostics.configuration->entries.empty() && diagnostics.configuration->availablePlugins.empty());
-    REQUIRE(diagnostics.kernel.names.size() == 1 && diagnostics.kernel.names.front().name == "host.configuration");
+    REQUIRE(diagnostics.kernel.names.size() == 2);
+    for (const char* runtime : {"eve.desktop", "host.configuration"})
+        REQUIRE(std::any_of(diagnostics.kernel.names.begin(), diagnostics.kernel.names.end(),
+                            [runtime](const auto& name) { return name.name == runtime; }));
+    const auto& names = diagnostics.kernel.names;
+    const auto desktop = std::find_if(names.begin(), names.end(), [](const auto& name) {
+        return name.name == "eve.desktop";
+    });
+    const auto& instances = diagnostics.kernel.instances;
+    const auto owner = std::find_if(instances.begin(), instances.end(),
+                                    [&](const auto& instance) { return instance.runtime == desktop->id; });
+    REQUIRE(owner != instances.end() && owner->state == eve::InstanceState::Active);
+    const auto graph = scene.host.kernel->services().dependencyGraph().value();
+    for (const char* service : {"ui.pages", "ui.commands", "ui.output", "ui.notifications"}) {
+        REQUIRE(std::count_if(graph.bindings.begin(), graph.bindings.end(), [&](const auto& binding) {
+            return binding.binding.key.name == service && binding.provider == owner->instance &&
+                   binding.managedProvider && binding.binding.state == eve::BindingState::Published;
+        }) == 1);
+    }
 
-    const auto sequence = scene.host.shell.writeOutput(marker.toStdString()).value();
+    const auto sequence = scene.host.writeOutput(marker.toStdString()).value();
     if (exerciseWindow) {
-        scene.host.shell.show().value();
+        scene.host.desktop()->show().value();
         until([] { return visibleWidget<QWidget>("EveWelcomePage") != nullptr; });
         auto* welcome = visibleWidget<QWidget>("EveWelcomePage");
         auto* window = welcome->window();
@@ -122,7 +140,7 @@ void openEmpty(const QString& workspace, const QString& marker, bool exerciseWin
         configuration->trigger();
         until([] { return visibleWidget<QPlainTextEdit>("EveConfigEditor") != nullptr; });
         REQUIRE(visibleWidget<QPlainTextEdit>("EveConfigEditor")->toPlainText().contains("plugins"));
-        scene.host.shell.showOutputEvent(sequence, nullptr).value();
+        scene.host.desktop()->showOutputEvent(sequence, nullptr).value();
         until([&] {
             auto* editor = visibleWidget<QPlainTextEdit>("EveWorkbenchOutput");
             return editor && editor->toPlainText().contains(marker);
@@ -190,14 +208,12 @@ void rejectModuleWorkspace(const QString& workspace)
     }
 
     Scene scene;
-    bool rejected = false;
-    try {
-        scene.host.open(std::nullopt, workspace);
-    } catch (const eve::workbench::ModulePreflightError& error) {
-        REQUIRE(std::string(error.what()).find("--module") != std::string::npos);
-        rejected = true;
-    }
-    REQUIRE(rejected && !scene.host.session && readFile(file) == original);
+    const auto opened = scene.host.open(std::nullopt, workspace);
+    until([&] { return opened.isReady(); });
+    const auto result = opened.tryResult();
+    REQUIRE(result && !result->hasValue());
+    REQUIRE(result->error().message.find("--module") != std::string::npos);
+    REQUIRE(!scene.host.session && readFile(file) == original);
     scene.close();
     REQUIRE(readFile(file) == original);
 }

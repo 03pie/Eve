@@ -85,11 +85,10 @@ void produce(const QString& manifest, const QString& workspace, const QDir& evid
     QCoreApplication::setApplicationName("EveLogging-" + QString::fromLatin1(applicationSuffix));
     QStandardPaths::setTestModeEnabled(true);
     Producer producer;
-    producer.host.open(manifest, workspace);
-    producer.host.publishUi();
+    wait(producer.host.open(manifest, workspace));
     const auto result = wait(producer.host.applyInitial().settled);
     LOG_REQUIRE(result->value().outcome == eve::loader::PlanOutcome::Applied);
-    const auto snapshot = producer.host.shell.output()->snapshot();
+    const auto snapshot = producer.host.desktop()->output()->snapshot();
     LOG_REQUIRE(snapshot.hasValue());
     const auto& rows = snapshot.value();
     const auto rejected = [](const auto& row) { return row.text.rfind("TEST_OPERATION_REJECTED:", 0) == 0; };
@@ -104,8 +103,9 @@ void produce(const QString& manifest, const QString& workspace, const QDir& evid
         files::write(config, "# External edit before close\n");
         const auto failed = settle(producer.host.close());
         LOG_REQUIRE(!failed->hasValue() && failed->error().code == eve::ErrorCode::ConfigConflict);
-        LOG_REQUIRE(producer.host.shell.cancelCloseRequest().hasValue());
-        LOG_REQUIRE(producer.host.shell.writeOutput("TEST_AFTER_CANCELLED_CLOSE").hasValue());
+        LOG_REQUIRE(producer.host.canRetryClose());
+        LOG_REQUIRE(producer.host.desktop()->cancelCloseRequest().hasValue());
+        LOG_REQUIRE(producer.host.writeOutput("TEST_AFTER_CANCELLED_CLOSE").hasValue());
         LOG_REQUIRE(producer.host.session->rebaseExternal(revision).hasValue());
     }
     producer.close();

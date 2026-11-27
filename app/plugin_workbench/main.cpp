@@ -14,13 +14,31 @@
 using namespace eve;
 
 namespace {
+struct StartupDiagnostic { const char* code; const char* message; };
+
+/** @brief 用户提供的清单和业务错误可能含私有路径和内容。归档只记录固定的阶段名称和说明。 */
+StartupDiagnostic startupDiagnostic(const ErrorInfo& error)
+{
+    static constexpr StartupDiagnostic known[] = {
+        {"WORKBENCH_MODULE_REQUIRED", "该工作区引用外部模块。请使用 --module 指定清单，或通过 --workspace 打开另一个工作区。"},
+        {"QT_MANIFEST_READ_FAILED", "无法读取或完整校验模块清单。"},
+        {"QT_MODULE_INCOMPATIBLE", "模块预检发现 ABI、加载器或工具链不兼容。"},
+        {"QT_MANIFEST_INVALID", "模块清单格式或字段校验失败。"},
+        {"QT_MODULE_PREFLIGHT_FAILED", "模块产物或元数据未通过预检。"},
+        {"WORKBENCH_RESERVED_PLUGIN", "工作区配置引用了受保护的系统插件。"},
+    };
+    for (const auto& entry : known)
+        if (error.phase == entry.code) return entry;
+    return {"WORKBENCH_STARTUP_FAILED", "工作台启动失败。请检查桌面组件、所选模块和工作区。"};
+}
+
 /** @brief 将平台错误码和可用的操作标识附到对应日志事件。 */
-void recordFailure(const ui::ElaShell& shell, const ErrorInfo& error, const char* summary, const char* code)
+void recordFailure(const workbench::Workbench& host, const ErrorInfo& error, const char* summary, const char* code)
 {
     ui::OutputDiagnostic diagnostic{{}, code};
     if (error.operation.valid())
         diagnostic.operation = error.operation;
-    (void)shell.writeOutput(std::string(summary) + " · 错误码 " + std::to_string(static_cast<int>(error.code)),
+    (void)host.writeOutput(std::string(summary) + " · 错误码 " + std::to_string(static_cast<int>(error.code)),
                             ui::OutputLevel::Error, std::move(diagnostic));
 }
 }
@@ -54,13 +72,14 @@ int main(int argc, char** argv)
         host.close().thenOn(host.scheduler, [&](const Result<void>& outcome) {
             if (!outcome.hasValue()) {
                 std::cerr << outcome.error().message << '\n';
-                if (status == EXIT_SUCCESS) {
-                    recordFailure(host.shell, outcome.error(), "工作区未关闭。", "WORKBENCH_CLOSE_FAILED");
-                    (void)host.shell.cancelCloseRequest();
+                if (status == EXIT_SUCCESS && host.canRetryClose()) {
+                    recordFailure(host, outcome.error(), "工作区未关闭。", "WORKBENCH_CLOSE_FAILED");
+                    (void)host.desktop()->cancelCloseRequest();
                     QMessageBox::warning(nullptr, QString::fromUtf8("工作区未关闭"),
                                          QString::fromUtf8(outcome.error().message.c_str()));
                     return;
                 }
+                status = EXIT_FAILURE;
             }
             QTimer::singleShot(0, &application, [&] {
                 const auto stopped = host.scheduler->close();
@@ -68,30 +87,33 @@ int main(int argc, char** argv)
             });
         });
     };
-    try {
-        host.open(manifest, workspace);
-        host.publishUi();
-        const auto applied = host.applyInitial();
-        applied.settled.thenOn(host.scheduler, [&](const Result<loader::PlanReport>& result) {
-            if (!result.hasValue())
-                recordFailure(host.shell, result.error(), "工作区目标启动失败。", "WORKBENCH_TARGET_FAILED");
-            else for (const auto& error : result.value().errors)
-                recordFailure(host.shell, error, "工作区目标启动失败。", "WORKBENCH_TARGET_FAILED");
-            (void)host.shell.management()->refresh();
-        });
-        host.shell.onCloseRequested(close).value();
-        host.shell.show().value();
-    } catch (const std::exception& error) {
-        const auto* preflight = dynamic_cast<const workbench::ModulePreflightError*>(&error);
-        const std::string diagnostic = preflight ? preflight->diagnostic() : "工作台启动失败。请检查所选模块和工作区。";
-        const auto code = preflight ? diagnostic.substr(0, diagnostic.find(':')) : "WORKBENCH_STARTUP_FAILED";
-        (void)host.shell.writeOutput(diagnostic, ui::OutputLevel::Error, {{}, code});
-        std::cerr << "Eve: " << error.what() << '\n';
-        if (application.arguments().size() == 1)
-            QMessageBox::critical(nullptr, QString::fromUtf8("无法打开插件工作台"),
-                                  QString::fromUtf8(error.what()));
+    auto failed = [&](const ErrorInfo& error) {
+        const auto diagnostic = startupDiagnostic(error);
+        const auto text = std::string(diagnostic.code) + ": " + diagnostic.message;
+        recordFailure(host, error, text.c_str(), diagnostic.code);
+        std::cerr << "Eve: " << error.message << '\n';
         status = EXIT_FAILURE;
         QTimer::singleShot(0, &application, close);
-    }
+    };
+    host.open(manifest, workspace).thenOn(host.scheduler, [&](const Result<void>& opened) {
+        if (!opened.hasValue()) { failed(opened.error()); return; }
+        try {
+            const auto applied = host.applyInitial();
+            applied.settled.thenOn(host.scheduler, [&](const Result<loader::PlanReport>& result) {
+                if (!result.hasValue())
+                    recordFailure(host, result.error(), "工作区目标启动失败。", "WORKBENCH_TARGET_FAILED");
+                else for (const auto& error : result.value().errors)
+                    recordFailure(host, error, "工作区目标启动失败。", "WORKBENCH_TARGET_FAILED");
+                if (auto view = host.desktop()) (void)view->refresh();
+            });
+            auto view = host.desktop();
+            auto bound = view->onCloseRequested(close);
+            if (!bound.hasValue()) { failed(bound.error()); return; }
+            auto shown = view->show();
+            if (!shown.hasValue()) failed(shown.error());
+        } catch (const std::exception& error) {
+            failed(makeError(ErrorCode::ActivationFailed, error.what()));
+        }
+    });
     return application.exec();
 }

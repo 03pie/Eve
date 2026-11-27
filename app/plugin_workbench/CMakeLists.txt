@@ -1,5 +1,5 @@
-add_library(eve_external_workbench STATIC workbench.cpp)
-target_include_directories(eve_external_workbench PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+add_library(eve_external_workbench STATIC workbench.cpp desktop_activation.cpp)
+target_include_directories(eve_external_workbench PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
 target_link_libraries(eve_external_workbench PUBLIC Eve::ModuleQt Eve::ModuleQtPreflight
     Eve::ConfigUi Eve::ConfigKernel Eve::ConfigStoreQt)
 eve_target_defaults(eve_external_workbench)
