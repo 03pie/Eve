@@ -20,7 +20,7 @@ $env:EVE_QT5152_ROOT = 'C:\Qt\5.15.2\msvc2019_64'
 安装包和同名的 `.sha256` 文件位于 `build/ela-installer-msvc-release/dist/`。版本来自根 CMake 项目。以下示例用当前版本的产物在普通权限的本机桌面执行验收。
 
 ```powershell
-$setup = 'build/ela-installer-msvc-release/dist/Eve-0.3.0-windows-x64-setup.exe'
+$setup = 'build/ela-installer-msvc-release/dist/Eve-0.3.1-windows-x64-setup.exe'
 if ((Get-FileHash $setup -Algorithm SHA256).Hash -ne ((Get-Content "$setup.sha256") -split ' ')[0]) {
     throw '安装包 SHA-256 与校验文件不匹配。'
 }

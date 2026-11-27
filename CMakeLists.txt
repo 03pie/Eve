@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(Eve VERSION 0.3.0 LANGUAGES C CXX)
+project(Eve VERSION 0.3.1 LANGUAGES C CXX)
 # The desktop product and the exact-toolchain business plugin SDK evolve independently.
 set(EVE_SDK_VERSION 0.2.0)
 

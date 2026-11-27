@@ -69,7 +69,7 @@ eve_add_extension_package(my_plugin PACKAGE_JSON package.json)
 }
 ```
 
-执行 `cmake --build build --target my_plugin_package`。将 `build/my_plugin.evepkg` 交给用户，在扩展页选择、检查并确认安装。业务实例由工作区配置保存。更新时递增 CMake 的 `MODULE_VERSION`。平台会检查映像摘要和本机工具链兼容性。
+执行 `cmake --build build --target my_plugin_package`。将 `build/my_plugin.evepkg` 交给用户，在首页选择安装包，检查详情并确认安装。业务实例由工作区配置保存。更新时递增 CMake 的 `MODULE_VERSION`。平台会检查映像摘要和本机工具链兼容性。
 
 ### 开发独立桌面
 
@@ -77,7 +77,7 @@ eve_add_extension_package(my_plugin PACKAGE_JSON package.json)
 
 桌面通过真实实例的 `Context` 取得 `eve::desktop::LayoutServiceV1`，在应用线程调用 `attach` 将顶层窗口交给平台。窗口交付时须保持隐藏、没有父对象并关闭 `WA_DeleteOnClose`。平台将当前工作区嵌入指定位置，复用业务页面、持久输出、命令、设置、扩展和通知服务。自定义导航可用 `invoke` 调用平台动作。实例退役时，平台先分离工作区并销毁已接管的窗口，再释放插件实例。
 
-构建 `external_desktop_package`，在扩展页安装、选择桌面并重启。正常重启会先保存工作区。平台在事件循环中确认新的顶层窗口和工作区都可见后记录启动成功。启动失败或缺少回执时恢复随包 Ela。开发中可用 `eve_plugin_workbench --safe-desktop` 单次进入随包桌面，再在扩展页切换或卸载相关版本。
+构建 `external_desktop_package`，从首页安装生成的扩展包。点击该桌面的卡片，在详情窗口中选择使用该桌面并重启。正常重启会先保存工作区。平台在事件循环中确认新的顶层窗口和工作区都可见后记录启动成功。启动失败或缺少回执时恢复随包 Ela。开发中可用 `eve_plugin_workbench --safe-desktop` 单次进入随包桌面，再从首页卡片切换或卸载相关版本。
 
 ### 业务插件
 
