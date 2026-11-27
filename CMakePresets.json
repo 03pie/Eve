@@ -72,6 +72,16 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL"
       }
+    },
+    {
+      "name": "ela-installer-msvc-release",
+      "inherits": "ela-msvc-release",
+      "displayName": "Windows x64 desktop installer / Release",
+      "cacheVariables": {
+        "BUILD_TESTING": "OFF",
+        "CORDIS_BUILD_EXAMPLES": "OFF",
+        "CORDIS_INSTALL_RUNTIME": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -82,7 +92,8 @@
     { "name": "qt-msvc-debug", "configurePreset": "qt-msvc-debug" },
     { "name": "qt-msvc-release", "configurePreset": "qt-msvc-release" },
     { "name": "ela-msvc-debug", "configurePreset": "ela-msvc-debug" },
-    { "name": "ela-msvc-release", "configurePreset": "ela-msvc-release" }
+    { "name": "ela-msvc-release", "configurePreset": "ela-msvc-release" },
+    { "name": "ela-installer-msvc-release", "configurePreset": "ela-installer-msvc-release", "targets": ["cordis_windows_installer"] }
   ],
   "testPresets": [
     { "name": "core-gcc-debug", "configurePreset": "core-gcc-debug", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },

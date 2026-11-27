@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="492" height="942" viewBox="0 0 492 942">
+  <title>Cordis installer</title>
+  <!-- Export at intrinsic size. Set the root class to "dark" for welcome-dark.png. -->
+  <style>
+    .dark #sky stop:nth-child(1) { stop-color: #cedff5 }
+    .dark #sky stop:nth-child(2) { stop-color: #95abc9 }
+    .dark #sky stop:nth-child(3) { stop-color: #435e86 }
+    .dark #surface stop:nth-child(1) { stop-color: #849fc7 }
+    .dark #surface stop:nth-child(2) { stop-color: #5575a0 }
+    .dark #surface stop:nth-child(3) { stop-color: #365781 }
+    .dark #fold stop:nth-child(1) { stop-color: #41648d }
+    .dark #fold stop:nth-child(2) { stop-color: #294976 }
+    .dark #fold stop:nth-child(3) { stop-color: #172f53 }
+    .dark #base stop:nth-child(1) { stop-color: #2a4970 }
+    .dark #base stop:nth-child(2) { stop-color: #132642 }
+    .dark #foreground { fill: #112136 }
+  </style>
+  <defs>
+    <linearGradient id="sky" x2="0.8" y2="1">
+      <stop stop-color="#f3f9ff"/>
+      <stop offset=".55" stop-color="#c6e0ff"/>
+      <stop offset="1" stop-color="#9ec3f3"/>
+    </linearGradient>
+    <linearGradient id="surface" x1=".1" x2=".85" y2=".9">
+      <stop stop-color="#e4f1ff"/>
+      <stop offset=".53" stop-color="#8bb8f2"/>
+      <stop offset="1" stop-color="#588ade"/>
+    </linearGradient>
+    <linearGradient id="fold" x1="0" y1="0" x2=".95" y2=".85">
+      <stop stop-color="#7dabea"/>
+      <stop offset=".55" stop-color="#356fc9"/>
+      <stop offset="1" stop-color="#214f9a"/>
+    </linearGradient>
+    <linearGradient id="base" x2=".88" y2=".8">
+      <stop stop-color="#3877c9"/>
+      <stop offset="1" stop-color="#183960"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#sky)" d="M0 0h492v942H0z"/>
+  <image x="164" y="170" width="164" height="164"
+         xlink:href="../../../app/shell/resources/eve-256.png"/>
+  <path fill="url(#surface)" d="M0 650C115 559 339 535 492 353v589H0z"/>
+  <path fill="url(#fold)" d="M0 737c106-101 235-109 355-190 72-49 109-103 137-165v560H0z"/>
+  <path fill="url(#base)" d="M0 819c87-78 168-105 273-147 96-38 167-92 219-183v453H0z"/>
+  <path id="foreground" fill="#123663" d="M0 942v-38c87-75 191-110 302-155 80-33 145-73 190-120v313z"/>
+  <path fill="none" stroke="#f4f9ff" stroke-opacity=".48" stroke-width="2"
+        d="M0 649C115 558 339 534 492 352"/>
+</svg>

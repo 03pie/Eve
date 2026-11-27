@@ -21,13 +21,16 @@ MSVC 依赖输出前缀；默认读取进程变量，用于编码无法自动识
 param(
     [ValidateSet('doctor', 'configure', 'build', 'test', 'verify')]
     [string]$Action = 'verify',
-    [ValidateSet('core-gcc-debug', 'core-gcc-release', 'core-msvc-debug', 'core-msvc-release', 'qt-msvc-debug', 'qt-msvc-release', 'ela-msvc-debug', 'ela-msvc-release')]
+    [ValidateSet('core-gcc-debug', 'core-gcc-release', 'core-msvc-debug', 'core-msvc-release', 'qt-msvc-debug', 'qt-msvc-release', 'ela-msvc-debug', 'ela-msvc-release', 'ela-installer-msvc-release')]
     [string]$Preset = 'core-gcc-debug',
     [string]$QtRoot = $env:CORDIS_QT5152_ROOT,
     [string]$ShowIncludesPrefix = $env:CORDIS_MSVC_SHOWINCLUDES_PREFIX
 )
 
 $ErrorActionPreference = 'Stop'
+if ($Preset -eq 'ela-installer-msvc-release' -and $Action -in 'test','verify') {
+    throw 'Use desktop.ps1 -Action package and test-windows-installer.ps1 to verify the Windows installer.'
+}
 $taskRoot = Split-Path -Parent $PSScriptRoot
 
 <#

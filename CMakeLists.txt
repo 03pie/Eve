@@ -88,6 +88,13 @@ if(CORDIS_BUILD_EXAMPLES)
 endif()
 include("${PROJECT_SOURCE_DIR}/cmake/CordisSdk.cmake")
 include("${PROJECT_SOURCE_DIR}/cmake/CordisRuntime.cmake")
+if(CORDIS_INSTALL_RUNTIME)
+    add_custom_target(cordis_windows_installer
+        COMMAND "${CMAKE_COMMAND}" "-Dbuild_dir=${PROJECT_BINARY_DIR}" "-Dapp_version=${PROJECT_VERSION}"
+            -P "${PROJECT_SOURCE_DIR}/cmake/BuildWindowsInstaller.cmake"
+        DEPENDS cordis_plugin_workbench cordis_log_query
+        USES_TERMINAL VERBATIM)
+endif()
 if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()

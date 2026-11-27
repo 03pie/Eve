@@ -5,7 +5,7 @@
 自动发现 VS2022 x64 工具链，使用显式指定的 Qt 5.15.2。
 环境变量只在本次调用中生效，退出时恢复；依赖安装独立进行。
 .PARAMETER Action
-doctor、configure、build、test、verify 或 run。run 默认启动平台工作台。
+doctor、configure、build、test、verify、run 或 package。package 生成 Windows x64 安装程序及其校验文件。
 .PARAMETER Preset
 Qt/Ela 的 MSVC Debug 或 Release 预设。
 .PARAMETER QtRoot
@@ -23,10 +23,10 @@ platform 为平台入口，configuration 为配置示例。
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('doctor', 'configure', 'build', 'test', 'verify', 'run')]
+    [ValidateSet('doctor', 'configure', 'build', 'test', 'verify', 'run', 'package')]
     [string]$Action = 'verify',
-    [ValidateSet('qt-msvc-debug', 'qt-msvc-release', 'ela-msvc-debug', 'ela-msvc-release')]
-    [string]$Preset = 'ela-msvc-debug',
+    [ValidateSet('qt-msvc-debug', 'qt-msvc-release', 'ela-msvc-debug', 'ela-msvc-release', 'ela-installer-msvc-release')]
+    [string]$Preset = $(if ($Action -eq 'package') { 'ela-installer-msvc-release' } else { 'ela-msvc-debug' }),
     [string]$QtRoot = $env:CORDIS_QT5152_ROOT,
     [string]$ConfigurationFile,
     [ValidateSet('platform', 'configuration')]
@@ -37,6 +37,12 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if ($Action -eq 'package' -and $Preset -ne 'ela-installer-msvc-release') {
+    throw 'The package action requires the ela-installer-msvc-release preset.'
+}
+if ($Action -eq 'run' -and $Preset -eq 'ela-installer-msvc-release') {
+    throw 'Launch the installed workbench, or use the ela-msvc-release preset to run from the build tree.'
+}
 if (($Workspace -or $ModuleManifest) -and ($Action -ne 'run' -or $Workbench -ne 'platform')) {
     throw 'Workspace and ModuleManifest require platform run.'
 }
@@ -109,6 +115,10 @@ try {
         $taskRunExitCode = $LASTEXITCODE
         $ErrorActionPreference = 'Stop'
         if ($taskRunExitCode -ne 0) { throw "Workbench exited with code $taskRunExitCode." }
+    }
+    elseif ($Action -eq 'package') {
+        & (Join-Path $PSScriptRoot 'dev.ps1') -Action configure -Preset $Preset -QtRoot $QtRoot
+        & (Join-Path $PSScriptRoot 'dev.ps1') -Action build -Preset $Preset -QtRoot $QtRoot
     }
     else {
         & (Join-Path $PSScriptRoot 'dev.ps1') -Action $Action -Preset $Preset -QtRoot $QtRoot
