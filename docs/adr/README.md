@@ -79,4 +79,8 @@
 - [ADR-0054 同进程真实 Native 连续替换资格](0054-native-workspace-endurance.md)
 - [ADR-0055 真实工作台有限动作轨迹与独立进程回放](0055-workspace-action-traces.md)
 
+## 桌面发行
+
+- [ADR-0068 Windows 桌面安装器](0068-windows-installer.md)
+
 内部交付和验收记录可在 Git 历史中查看。
