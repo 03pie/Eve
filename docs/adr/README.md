@@ -85,6 +85,7 @@
 - [ADR-0068 Windows 桌面安装器](0068-windows-installer.md)
 - [ADR-0069 Eve 平台与开发接口命名](0069-eve-platform-identity.md)
 - [ADR-0070 官方桌面插件和运行日志的所有权](0070-kernel-desktop-plugin.md)
+- [ADR-0071 本地扩展库、工作区实例与可切换桌面](0071-extension-packages-and-desktop-selection.md)
 
 0068 及以前的记录沿用决策时的 Cordis 项目名和接口名；当前模块名称与开发入口见[平台架构](../architecture.md)。
 
