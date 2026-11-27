@@ -8,9 +8,13 @@
 待验证的 Eve Windows 安装程序。
 .PARAMETER LegacyInstaller
 可选的 0.1.5 基线安装程序，用同一 AppId 验证改名升级、原工作区与快捷方式。
+.PARAMETER PreviousEveInstaller
+可选的 Eve 0.2.0 安装程序，用已有工作区和日志验证升级到独立桌面插件。
 #>
-[CmdletBinding()]
-param([Parameter(Mandatory)][string]$Installer, [string]$LegacyInstaller)
+[CmdletBinding(DefaultParameterSetName='Eve')]
+param([Parameter(Mandatory)][string]$Installer,
+      [Parameter(ParameterSetName='Cordis')][string]$LegacyInstaller,
+      [Parameter(ParameterSetName='Eve')][string]$PreviousEveInstaller)
 
 $ErrorActionPreference = 'Stop'
 if (-not [Environment]::Is64BitProcess) { throw '请使用 64 位 PowerShell 运行桌面验收。' }
@@ -20,6 +24,7 @@ if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 }
 $setup = (Get-Item -LiteralPath $Installer).FullName
 if ($LegacyInstaller) { $LegacyInstaller = (Get-Item -LiteralPath $LegacyInstaller).FullName }
+if ($PreviousEveInstaller) { $PreviousEveInstaller = (Get-Item -LiteralPath $PreviousEveInstaller).FullName }
 $definition = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../packaging/windows/Eve.iss') -Encoding UTF8 -Raw
 $id = [regex]::Match($definition, '(?im)^AppId=\{(\{[0-9a-f-]{36}\})\s*$')
 if (-not $id.Success) { throw '无法从安装定义读取稳定的 AppId。' }
@@ -82,7 +87,7 @@ function Uninstall-Eve {
     if (@(Get-Registration).Count) { throw '卸载后仍有注册记录。' }
 }
 
-function Start-Workbench([string]$Executable, [string]$Product = 'Eve') {
+function Start-Workbench([string]$Executable, [string]$Product = 'Eve', [switch]$ExpectDesktopPlugin) {
     $process = Start-Process -FilePath $Executable -ArgumentList @('--workspace', ('"{0}"' -f $workspace)) `
         -WorkingDirectory $evidence -WindowStyle Normal -PassThru
     try {
@@ -96,6 +101,15 @@ function Start-Workbench([string]$Executable, [string]$Product = 'Eve') {
         # 同时核验已加载模块路径，避免开发机的 Qt kit 或全局安装的 VC 库掩盖遗漏。
         $loaded = @{}
         foreach ($module in $process.Modules) { $loaded[$module.ModuleName] = $module.FileName }
+        if ($ExpectDesktopPlugin) {
+            $systemModule = Join-Path $app 'system/desktop'
+            $manifest = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $systemModule 'module.json') | ConvertFrom-Json
+            $expected = [IO.Path]::GetFullPath((Join-Path $systemModule 'eve_desktop.dll'))
+            if ($manifest.moduleId -ne 'org.eve.desktop' -or $manifest.library -ne 'eve_desktop.dll' -or
+                $loaded['eve_desktop.dll'] -ne $expected -or (Get-FileHash -LiteralPath $expected).Hash -ne $manifest.sha256) {
+                throw '实际加载的官方桌面 DLL 与安装清单不一致。'
+            }
+        }
         foreach ($dll in "${Product}_core.dll","${Product}_qt.dll","${Product}_ui.dll",'ElaWidgetTools.dll',
                 'Qt5Core.dll','Qt5Gui.dll','Qt5Widgets.dll','qwindows.dll','msvcp140.dll','vcruntime140.dll') {
             if (-not $loaded[$dll] -or -not $loaded[$dll].StartsWith(($app + '\'), [StringComparison]::OrdinalIgnoreCase)) {
@@ -159,6 +173,14 @@ try {
             throw '升级仍残留旧版程序或旧快捷方式。'
         }
         if ((Get-FileHash -LiteralPath $sessionFile).Hash -ne $legacyConfigHash) { throw '升级更改了旧工作区。' }
+    } elseif ($PreviousEveInstaller) {
+        Install-Release $PreviousEveInstaller 'eve-baseline' -FirstInstall
+        Start-Workbench (Join-Path $app 'eve_plugin_workbench.exe')
+        $baseline = @(Get-ChildItem -LiteralPath $workspace -Recurse -Force -File | Get-FileHash)
+        Install-Release $setup 'eve-upgrade'
+        foreach ($file in $baseline) {
+            if ((Get-FileHash -LiteralPath $file.Path).Hash -ne $file.Hash) { throw "升级更改了工作区文件 $($file.Path)" }
+        }
     } else {
         Install-Release $setup 'install' -FirstInstall
     }
@@ -170,7 +192,7 @@ try {
     if (-not $exe.StartsWith(($app + '\'), [StringComparison]::OrdinalIgnoreCase) -or
         [IO.Path]::GetFileName($exe) -ne 'eve_plugin_workbench.exe') { throw "快捷方式目标错误：$exe" }
     $query = Join-Path (Split-Path $exe -Parent) 'eve_log_query.exe'
-    Start-Workbench $exe
+    Start-Workbench $exe -ExpectDesktopPlugin
     $configuration = Get-Content -LiteralPath $sessionFile -Encoding UTF8 -Raw | ConvertFrom-Json
     if ($configuration.formatVersion -ne 1 -or $configuration.plugins.Count -ne 0) { throw '首次启动未生成空工作区。' }
     $firstHash = (Get-FileHash -LiteralPath $sessionFile).Hash
@@ -179,9 +201,9 @@ try {
     Set-Content -LiteralPath $userFile -Value $suffix -Encoding UTF8
     $userHash = (Get-FileHash -LiteralPath $userFile).Hash
     Install-Release $setup 'reinstall'
-    Start-Workbench $exe
+    Start-Workbench $exe -ExpectDesktopPlugin
     $runs = @(Read-Log @())
-    $expectedRuns = if ($LegacyInstaller) { 3 } else { 2 }
+    $expectedRuns = if ($LegacyInstaller -or $PreviousEveInstaller) { 3 } else { 2 }
     if ($runs.Count -ne $expectedRuns) { throw "预期保留 $expectedRuns 次独立运行的归档，实际 $($runs.Count) 次。" }
     $runs | Set-Content -LiteralPath (Join-Path $evidence 'runs.tsv') -Encoding UTF8
     foreach ($run in $runs) {

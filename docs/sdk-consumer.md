@@ -1,5 +1,7 @@
 # Eve 仓库外插件 SDK
 
+Eve 0.2.1 工作台继续接受正式 0.2.0 SDK 构建的同工具链业务 DLL。桌面作为系统模块提供页面、命令、通知和输出服务，业务项目仍链接 `Eve::QtUiPluginSdk`，使用原有服务标识。安装包的产品版本与 `find_package` 所用 SDK 版本分别维护。
+
 ## 从 Cordis 0.1.x 迁移
 
 使用 Eve 0.2.0 SDK 时，将工程改为 `find_package(Eve 0.2.0 EXACT CONFIG REQUIRED COMPONENTS QtUiPluginSdk)`，通过 `eve_add_qt_ui_plugin` 构建。C++ 头路径使用 `<eve/...>`，命名空间使用 `eve::`。以新版模板重新生成 Qt metadata 和工厂 IID。对于 Native 模块，使用 `<eve_abi/...>` 的声明重建并导出 `eve_module_query_v1`、`eve_query_v1` 和所实现的可选扩展。最后由构建助手重新生成与产物匹配的清单及 SHA-256。插件作者原来分配的模块 ID 和插件 ID 可继续使用，已有工作区通过这些身份关联实例。
@@ -49,6 +51,8 @@ eve_add_qt_ui_plugin(my_plugin
 ModuleManager 是唯一动态模块入口。loader root 只做 factory，交给 QPluginLoader 管理；每次 `create` 返回新建、无 parent、处于应用线程的业务 QObject。业务对象的页面、服务、连接、任务与线程必须登记到本代 context，并在 cleanup 屏障内完成释放。不得手动删除 root、绕过失活代身份、保存服务借用中的裸引用或用未托管回调继续访问插件。页面通过 `ui.pages` 服务贡献，宿主内部窗口不成为 SDK 接口。
 
 独立工作台接受一个声明单个插件的驻留 Qt UI 模块。宿主提供 `ui.pages`、`ui.commands`、`ui.output` 和 `qt.scheduler`，包括页面注册、命令、持久化输出和受管调度入口。
+
+旧版业务插件可以原样使用这些服务。自行构造 `ElaShell` 或调用 `ManagementController` 的程序属于嵌入式宿主。此类程序需要从源码构建并链接桌面实现，静态嵌入使用 `EVE_SHARED_CORE=OFF` 和 `Eve::Ui`。安装 SDK 中保留的宿主头文件可供源码引用，安装版 `eve_ui.dll` 提供业务插件服务接口。
 
 配置、持久业务数据与热替换状态是三个独立契约；运行态快照不自动变成跨进程持久化。数据版本、插件版本、SDK/ABI、应用版本分别记录。Qt 插件只驻留；C ABI Native 物理卸载必须对准确新产物做独立资格、审查及明确采用。SDK、manifest、构建成功或模板不会扩大批准名单。
 

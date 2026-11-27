@@ -19,3 +19,5 @@
 使用独立无界面宿主验证纯服务实例和缺少 UI 的依赖状态。安装版验证官方模块的身份及缺失、损坏、ABI 不匹配，验证旧业务 DLL、工作区、历史日志、新装和升级。无界面宿主仅用于测试。固定官方外壳范围内无需开放第三方桌面选择或运行中卸载 Qt DLL。
 
 初始二进制基线来自提交 `314f4cb` 安装的 0.2.0 SDK。将该版的 Notebook 测试源复制到仓库外，使用 SDK 的 `eve_add_qt_ui_plugin`、Qt 5.15.2 和 MSVC x64 Release 构建一次，记录 SHA-256 `919e45e22142b405d7c2038d18fa38fe823ef38b302b910920d259907f92017a`。旧宿主实测从页面按钮执行命令，归档中记录了 `plugin/example.notebook` 的 `SDK_020_FROZEN_COMMAND` 事件。复验时使用相同二进制和独立工作区，运行 `eve_sdk_consumer_tests <module.json> <workspace> frozen`，再用 `eve_log_query` 按来源读回事件。换工具链制作新基线时应单独记录其摘要。
+
+0.2.1 Release 已完成本机全新安装及从 0.2.0 升级验证。进程实际加载安装目录中的桌面 DLL。冻结业务 DLL 产生的命令事件和最终清理事件可从同一次运行离线读回。自动回归入口包括 `platform.headless_kernel`、`platform.empty_workbench` 和 `platform.desktop_module_failure`。后者从独立运行目录启动真实进程，覆盖文件缺失、身份、摘要、ABI 和官方模块版本错误。官方模块与启动器按产品版本匹配，业务模块按共享 SDK 契约匹配。
