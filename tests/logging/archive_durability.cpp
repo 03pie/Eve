@@ -109,6 +109,21 @@ void shortWrite(const QString& workspace, unsigned faultAt)
     }
 }
 
+void windowlessRun(const QString& workspace)
+{
+    RuntimeLogArchive archive(workspace, "host-test");
+    const auto first = archive.writePlatform("Desktop unavailable", OutputLevel::Error, {{}, "DESKTOP_LOAD_FAILED"});
+    REQUIRE(first.hasValue() && first.value() == 1);
+    archive.finish(true);
+    archive.finish(false);
+    REQUIRE(!archive.writePlatform("after close").hasValue());
+    verifyTerminal(archive, true);
+    REQUIRE(archive.persistence().accepted == 1);
+    const auto row = readSavedLogEvent(workspace, archive.currentRun(), 1);
+    REQUIRE(row && row->diagnosticCode == "DESKTOP_LOAD_FAILED" && row->entry.text == "Desktop unavailable");
+    REQUIRE(row->entry.sequence == first.value() && row->sourceId == "platform");
+}
+
 void pressure(const QString& workspace)
 {
     std::mutex mutex;
@@ -272,6 +287,7 @@ int main(int argc, char** argv)
         else if (test == "pressure") pressure(workspace.path());
         else if (test == "unconfirmed") unconfirmed(workspace.path());
         else if (test == "concurrent_close") concurrentClose(workspace.path());
+        else if (test == "windowless_run") windowlessRun(workspace.path());
 #ifdef Q_OS_WIN
         else if (test == "inaccessible") inaccessible(workspace.path());
 #endif

@@ -14,7 +14,12 @@
 
 namespace eve::module { struct NativeLogEvent; }
 namespace eve::ui {
-/** @brief 外壳只在应用线程操作；退出先 Kernel.close，再 shell.close，再停 scheduler。 */
+class ElaShell;
+namespace detail {
+class RuntimeLogArchive;
+Result<void> attachDesktopArchive(ElaShell& shell, const std::shared_ptr<RuntimeLogArchive>& archive);
+}
+/** @brief 外壳在应用线程操作，清理完成前保持调度器与 Qt 事件循环运行。 */
 class ElaShell {
 public:
     /** @brief 创建 Ela 安全页；可选 UTF-8 偏好文件只保存外观/布局，空路径不落盘。 */
@@ -64,6 +69,7 @@ public:
     /** @brief owner 关门，等待页面/命令 effects 与窗口完整销毁，清理失败保留资源。 */
     Task<void> close() const;
 private:
+    friend Result<void> detail::attachDesktopArchive(ElaShell&, const std::shared_ptr<detail::RuntimeLogArchive>&);
     std::shared_ptr<detail::ShellControl> control_;
     std::shared_ptr<UiPagesService> pages_;
     std::shared_ptr<CommandService> commands_;

@@ -372,17 +372,48 @@ void setOutputSourceResolver(const std::shared_ptr<OutputControl>& state, std::f
 {
     state->resolve = std::move(resolve);
 }
-void setOutputArchive(const std::shared_ptr<OutputControl>& state, std::shared_ptr<RuntimeLogArchive> archive)
+Result<void> setOutputArchive(const std::shared_ptr<OutputControl>& state, std::shared_ptr<RuntimeLogArchive> archive)
 {
     if (!state || !state->open || state->archive || !archive)
-        return;
+        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "output cannot attach archive"));
+    const std::weak_ptr<OutputControl> weak = state;
+    auto offset = archive->attachOutput([weak](std::string text, OutputLevel level, OutputDiagnostic diagnostic) {
+        const auto output = weak.lock();
+        return output ? appendOutput(output, {}, "platform", std::move(text), level, true, {}, std::move(diagnostic))
+                      : Result<std::uint64_t>::failure(makeError(ErrorCode::ContextClosing, "desktop output expired"));
+    });
+    if (!offset.hasValue())
+        return Result<void>::failure(offset.error());
+    if (offset.value() > std::numeric_limits<std::uint64_t>::max() - state->sequence) {
+        archive->detachOutput(offset.value());
+        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "output sequence exhausted"));
+    }
     state->archive = std::move(archive);
     state->run = state->archive->currentRun();
-    for (auto& row : state->entries)
+    std::vector<LogRecord> startup;
+    if (offset.value()) {
+        state->archive->scanDescending(state->run, 0, [&startup](const LogRecord& row) {
+            startup.push_back(row);
+            return startup.size() < OutputService::historyLimit;
+        });
+    }
+    // Desktop construction logs are buffered before service publication. Assign them their place after host startup.
+    state->sequence += offset.value();
+    for (auto& row : state->entries) {
+        row.entry.sequence += offset.value();
         row.eventId = state->archive->append(row);
+    }
+    if (!startup.empty()) {
+        state->appended.clear();
+        state->liveLines.clear();
+        state->textDirty = true;
+        for (auto it = startup.rbegin(); it != startup.rend(); ++it)
+            state->admit(std::move(*it));
+    }
     state->liveSources.clear();
     syncRuns(*state);
     rebuildFilter(state);
+    return Result<void>::success();
 }
 void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* panel)
 {

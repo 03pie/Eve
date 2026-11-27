@@ -2,6 +2,7 @@
  * @brief 对外输出服务、发布接纳与有界实时记录。
  */
 #include "output_state_p.hpp"
+#include "output_record_p.hpp"
 #include <ElaComboBox.h>
 #include <ElaToolButton.h>
 #include <QDateTime>
@@ -14,41 +15,6 @@
 #include <utility>
 namespace eve::ui::detail
 {
-namespace
-{
-/** @brief 平台截断和插件严格长度共用一次值校验；不登记目标或消耗序号。 */
-Result<OutputEntry> prepareOutput(std::optional<ContextIdentity> owner, std::string channel, std::string text,
-                                  OutputLevel level, bool strict)
-{
-    using Output = Result<OutputEntry>;
-    if (channel.empty() || channel.size() > 64 || text.empty() ||
-        (level != OutputLevel::Info && level != OutputLevel::Warning && level != OutputLevel::Error))
-        return Output::failure(makeError(ErrorCode::InvalidArgument, "invalid output record"));
-    if (text.size() > OutputService::textLimit) {
-        if (strict)
-            return Output::failure(makeError(ErrorCode::InvalidArgument, "output record exceeds text limit"));
-        auto end = OutputService::textLimit - 3;
-        while (end && (static_cast<unsigned char>(text[end]) & 0xc0) == 0x80)
-            --end;
-        text.resize(end);
-        text += "…";
-    }
-    if (QString::fromUtf8(channel.data(), static_cast<int>(channel.size())).toUtf8().toStdString() != channel ||
-        QString::fromUtf8(text.data(), static_cast<int>(text.size())).toUtf8().toStdString() != text ||
-        std::any_of(channel.begin(), channel.end(), [](unsigned char byte) { return byte < 0x20 || byte == 0x7f; }))
-        return Output::failure(
-            makeError(ErrorCode::InvalidArgument, "output requires UTF-8 text and printable channel"));
-    auto id =
-        owner ? "plugin/" + std::to_string(owner->instance.value()) + "/" + std::to_string(owner->epoch) + "/" + channel
-              : "platform";
-    const auto title = owner ? QString::fromUtf8("%1 · 实例 #%2 / 代 %3")
-                                   .arg(QString::fromStdString(channel))
-                                   .arg(owner->instance.value())
-                                   .arg(owner->epoch)
-                             : QString::fromUtf8("平台");
-    return Output::success({0, owner, std::move(id), title.toStdString(), std::move(text), level});
-}
-} // namespace
 bool outputMatches(const LogRecord& row, const LogFilter& filter)
 {
     return logMatches(row, filter);
@@ -100,7 +66,8 @@ void OutputControl::admit(LogRecord row)
         if (row.instanceKey.isEmpty() && resolveConfiguration)
             row.instanceKey = resolveConfiguration(owner);
     }
-    row.eventId = archive ? archive->append(row) : row.entry.sequence;
+    if (!row.eventId)
+        row.eventId = archive ? archive->append(row) : row.entry.sequence;
     if (!retainedChannels.count(row.entry.channel))
         channelsDirty = true;
     if (!archive)
@@ -286,6 +253,8 @@ void closeOutput(const std::shared_ptr<OutputControl>& self)
         return;
     settleOutput(self, false);
     self->pending.clear();
+    if (self->archive)
+        self->archive->detachOutput(self->sequence);
     self->open = false;
     self->access = {};
 }

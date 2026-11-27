@@ -12,6 +12,7 @@
 
 class QFile;
 
+namespace eve::ui { class ElaShell; }
 namespace eve::ui::detail
 {
 enum class LogRunState { Active, Ended, Unconfirmed };
@@ -117,6 +118,13 @@ public:
     quint64 append(const OutputEntry& entry, const QString& sourceId, const QString& sourceName, qint64 utcMs,
                    std::optional<OperationId> notification = {});
     quint64 append(LogRecord record);
+    /** Platform writes work on the archive owner's thread, including before desktop activation and after cleanup. */
+    Result<std::uint64_t> writePlatform(std::string text, OutputLevel level = OutputLevel::Info,
+                                        OutputDiagnostic diagnostic = {});
+    using PlatformWriter = std::function<Result<std::uint64_t>(std::string, OutputLevel, OutputDiagnostic)>;
+    /** Only one live desktop projection may own the sequence cursor at a time. */
+    Result<std::uint64_t> attachOutput(PlatformWriter writer);
+    void detachOutput(std::uint64_t lastSequence);
     std::vector<std::pair<QString, LogRecord>> recentNotifications(std::size_t limit) const;
     LogSourceResult sourceCatalog(const QString& run) const;
     std::optional<LogRecord> locate(const QString& run, std::uint64_t sourceSequence) const;
@@ -126,4 +134,5 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
+Result<void> attachDesktopArchive(ElaShell& shell, const std::shared_ptr<RuntimeLogArchive>& archive);
 } // namespace eve::ui::detail

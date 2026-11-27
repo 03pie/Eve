@@ -2,6 +2,7 @@
  * @brief 每次宿主启动独占一个运行目录。只写已发布值，分页读取完整 JSON Lines。
  */
 #include "runtime_log_archive_p.hpp"
+#include "output_record_p.hpp"
 #include "runtime_log_retention_p.hpp"
 #include <QCoreApplication>
 #include <QDateTime>
@@ -441,6 +442,9 @@ struct RuntimeLogArchive::Impl {
     mutable std::mutex mutex;
     std::condition_variable ready;
     std::thread writer;
+    const std::thread::id owner = std::this_thread::get_id();
+    PlatformWriter platformWriter;
+    std::uint64_t lastSequence = 0;
     std::atomic_bool stopping{false};
     bool hasNotifications = false, cleanRequested = false;
     bool urgent = false;
@@ -795,6 +799,7 @@ quint64 RuntimeLogArchive::append(LogRecord row)
     if (d.stopping || d.state.accepted == std::numeric_limits<quint64>::max())
         return 0;
     const auto id = ++d.state.accepted;
+    d.lastSequence = std::max(d.lastSequence, row.entry.sequence);
     row.eventId = id;
     auto bytes = encode(row);
     const auto size = static_cast<quint64>(bytes.size());
@@ -823,6 +828,61 @@ quint64 RuntimeLogArchive::append(LogRecord row)
     d.urgent = d.urgent || urgent;
     d.ready.notify_one();
     return id;
+}
+Result<std::uint64_t> RuntimeLogArchive::attachOutput(PlatformWriter writer)
+{
+    using Output = Result<std::uint64_t>;
+    auto& d = *impl_;
+    if (std::this_thread::get_id() != d.owner)
+        return Output::failure(makeError(ErrorCode::WrongThread, "archive attachment requires owner"));
+    std::lock_guard<std::mutex> guard(d.mutex);
+    if (d.stopping || d.platformWriter || !writer)
+        return Output::failure(makeError(ErrorCode::InvalidArgument, "archive cannot attach desktop output"));
+    d.platformWriter = std::move(writer);
+    return Output::success(d.lastSequence);
+}
+void RuntimeLogArchive::detachOutput(std::uint64_t lastSequence)
+{
+    auto& d = *impl_;
+    std::lock_guard<std::mutex> guard(d.mutex);
+    // Pending and aborted plugin entries also reserve sequence numbers for the life of this run.
+    d.lastSequence = std::max(d.lastSequence, lastSequence);
+    d.platformWriter = {};
+}
+Result<std::uint64_t> RuntimeLogArchive::writePlatform(std::string text, OutputLevel level, OutputDiagnostic diagnostic)
+{
+    using Output = Result<std::uint64_t>;
+    auto& d = *impl_;
+    if (std::this_thread::get_id() != d.owner)
+        return Output::failure(makeError(ErrorCode::WrongThread, "platform output requires owner"));
+    // The live projection may detach itself while rendering a notification.
+    PlatformWriter writer;
+    {
+        std::lock_guard<std::mutex> guard(d.mutex);
+        if (d.stopping)
+            return Output::failure(makeError(ErrorCode::ContextClosing, "run archive closed"));
+        writer = d.platformWriter;
+    }
+    if (writer)
+        return writer(std::move(text), level, std::move(diagnostic));
+    auto entry = prepareOutput({}, "platform", std::move(text), level, false);
+    if (!entry.hasValue())
+        return Output::failure(entry.error());
+    std::uint64_t sequence;
+    {
+        std::lock_guard<std::mutex> guard(d.mutex);
+        if (d.lastSequence == std::numeric_limits<std::uint64_t>::max())
+            return Output::failure(makeError(ErrorCode::InvalidArgument, "output sequence exhausted"));
+        sequence = ++d.lastSequence;
+    }
+    entry.value().sequence = sequence;
+    LogRecord row{std::move(entry).value(), QStringLiteral("platform"), QString::fromUtf8("平台"),
+                  QDateTime::currentMSecsSinceEpoch()};
+    row.operation = diagnostic.operation;
+    row.diagnosticCode = QString::fromStdString(diagnostic.code);
+    if (!append(std::move(row)))
+        return Output::failure(makeError(ErrorCode::ContextClosing, "run archive closed"));
+    return Output::success(sequence);
 }
 void RuntimeLogArchive::finish(bool clean)
 {

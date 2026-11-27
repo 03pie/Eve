@@ -16,7 +16,7 @@ struct OutputControl;
 class WorkbenchReturnPoint;
 class RuntimeLogArchive;
 QPlainTextEdit* createOutputEditor(QWidget* parent);
-void setOutputArchive(const std::shared_ptr<OutputControl>& control, std::shared_ptr<RuntimeLogArchive> archive);
+Result<void> setOutputArchive(const std::shared_ptr<OutputControl>& control, std::shared_ptr<RuntimeLogArchive> archive);
 void setOutputSourceResolver(const std::shared_ptr<OutputControl>& control, std::function<QString(InstanceId)> resolve);
 void setOutputConfigurationResolver(const std::shared_ptr<OutputControl>& control,
                                     std::function<QString(ContextIdentity)> resolve);

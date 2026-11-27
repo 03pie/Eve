@@ -171,6 +171,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
     std::shared_ptr<ServicesControl> services;
     std::shared_ptr<OutputControl> output;
     std::shared_ptr<RuntimeLogArchive> archive;
+    bool ownsArchive = false;
     std::shared_ptr<ManagementControl> management;
     QPointer<HostWindow> window;
     std::optional<qt::QObjectResource> windowResource;
@@ -321,7 +322,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
         modulesHandler = {};
         auto self = shared_from_this();
         eve::detail::TaskAccess::observe(windowResource->close(), [self](Task<void>::Snapshot result) {
-            if (self->archive) self->archive->finish(result->hasValue());
+            if (self->ownsArchive) self->archive->finish(result->hasValue());
             if (result->hasValue()) self->closed.resolve();
             else self->closed.reject(result->error());
         });
@@ -1179,15 +1180,38 @@ Result<void> ElaShell::registerQtOutputRuntime(RuntimeId runtime, GenerationId g
 {
     return detail::registerQtOutputRuntime(control_->output, runtime, generation, moduleId, moduleVersion, pluginId);
 }
-Result<void> ElaShell::startOutputArchive(const std::string& workspace,const std::string& version) const
+namespace {
+Result<void> connectArchive(const std::shared_ptr<detail::ShellControl>& state,
+                            const std::shared_ptr<detail::RuntimeLogArchive>& archive)
 {
-    const auto& state=control_;
-    if (!state->scheduler->isCurrentThread()) return Result<void>::failure(makeError(ErrorCode::WrongThread,"archive requires shell owner"));
-    if (!state->open || state->archive || workspace.empty()) return Result<void>::failure(makeError(ErrorCode::InvalidArgument,"archive cannot be opened for this shell"));
-    state->archive=std::make_shared<detail::RuntimeLogArchive>(QString::fromStdString(workspace),QString::fromStdString(version));
-    detail::setOutputArchive(state->output,state->archive);
-    detail::setNotificationArchive(state->services,state->archive);
+    if (!state->scheduler->isCurrentThread())
+        return Result<void>::failure(makeError(ErrorCode::WrongThread, "archive requires shell owner"));
+    if (!state->open || state->archive || !archive)
+        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "archive cannot be attached to this shell"));
+    const auto attached = detail::setOutputArchive(state->output, archive);
+    if (!attached.hasValue())
+        return attached;
+    state->archive = archive;
+    detail::setNotificationArchive(state->services, archive);
     return Result<void>::success();
+}
+} // namespace
+Result<void> detail::attachDesktopArchive(ElaShell& shell, const std::shared_ptr<RuntimeLogArchive>& archive)
+{
+    return connectArchive(shell.control_, archive);
+}
+Result<void> ElaShell::startOutputArchive(const std::string& workspace, const std::string& version) const
+{
+    if (!control_->scheduler->isCurrentThread())
+        return Result<void>::failure(makeError(ErrorCode::WrongThread, "archive requires shell owner"));
+    if (!control_->open || control_->archive || workspace.empty())
+        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "archive cannot be opened for this shell"));
+    auto archive = std::make_shared<detail::RuntimeLogArchive>(QString::fromStdString(workspace),
+                                                               QString::fromStdString(version));
+    const auto attached = connectArchive(control_, archive);
+    if (attached.hasValue())
+        control_->ownsArchive = true;
+    return attached;
 }
 Result<void> ElaShell::showOutputEvent(std::uint64_t sequence,QWidget* origin) const
 {
