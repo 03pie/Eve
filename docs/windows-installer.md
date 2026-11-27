@@ -20,7 +20,7 @@ $env:EVE_QT5152_ROOT = 'C:\Qt\5.15.2\msvc2019_64'
 安装包和同名的 `.sha256` 文件位于 `build/ela-installer-msvc-release/dist/`。版本来自根 CMake 项目。以下示例用当前版本的产物在普通权限的本机桌面执行验收。
 
 ```powershell
-$setup = 'build/ela-installer-msvc-release/dist/Eve-0.2.1-windows-x64-setup.exe'
+$setup = 'build/ela-installer-msvc-release/dist/Eve-0.3.0-windows-x64-setup.exe'
 if ((Get-FileHash $setup -Algorithm SHA256).Hash -ne ((Get-Content "$setup.sha256") -split ' ')[0]) {
     throw '安装包 SHA-256 与校验文件不匹配。'
 }
@@ -29,7 +29,7 @@ if ((Get-FileHash $setup -Algorithm SHA256).Hash -ne ((Get-Content "$setup.sha25
 
 验收在临时目录执行安装、同版本覆盖、实际窗口启动、日志查询和卸载，核对当前用户的开始菜单、注册记录以及卸载后的工作区内容。已安装同一产品时，脚本会在开始安装前退出。
 
-从 Eve 0.2.0 升级时，给验收脚本传入 `-PreviousEveInstaller <0.2.0安装包路径>`。脚本核对工作区和已有归档的内容，并验证新进程实际加载了安装目录 `system/desktop` 中与清单摘要匹配的 `eve_desktop.dll`。修复缺失或损坏的桌面组件可以重装对应版本。可用 `eve_log_query --workspace <工作区>` 列出归档，再加上 `--run <运行ID> --source platform` 查看启动诊断。
+从上一版 Eve 升级时，给验收脚本传入 `-PreviousEveInstaller <旧版安装包路径>`。脚本核对工作区和已有归档的内容，并验证新进程实际加载了安装目录 `system/desktop` 中与清单摘要匹配的 `eve_desktop.dll`。修复缺失或损坏的内置桌面组件可以重装对应版本。可用 `eve_log_query --workspace <工作区>` 列出归档，再加上 `--run <运行ID> --source platform` 查看启动诊断。
 
 要验证改名升级，可在尚未安装该产品的 Windows 账户下给同一脚本追加 `-LegacyInstaller <原版0.1.5安装包路径>`。脚本会从旧版创建工作区，检查已修改文件的保护、升级后的入口和历史运行记录，最后卸载测试安装。
 

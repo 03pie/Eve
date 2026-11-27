@@ -2,7 +2,7 @@
 
 Eve 是一个 C++17 插件平台，包含可移植的 Core 和 Windows 桌面工作台。Core 管理实例生命周期、服务依赖和资源清理。工作台基于 Qt 5.15.2 与 ElaWidgetTools，提供插件实例管理、配置、输出、问题和通知界面。平台与插件的运行日志按工作区持久化。
 
-Eve 0.2.1 的桌面由内核加载的官方 Ela 插件提供，业务插件继续使用 Eve 0.2.0 SDK。Eve 延续本仓库原 Cordis C++ 内核，Cordis 阶段的插件可通过重新编译迁移。[平台架构](docs/architecture.md) · [命名与兼容边界](docs/adr/0069-eve-platform-identity.md)
+Eve 0.3.0 默认使用内核加载的 Ela 桌面。按 **Ctrl+Shift+X** 打开扩展中心，可以从本地 `.evepkg` 安装业务扩展或切换桌面。独立项目可以继续使用 Eve 0.2.0 业务 SDK。Eve 延续本仓库原 Cordis C++ 内核，Cordis 阶段的插件可通过重新编译迁移。[扩展使用指南](docs/extensions.md) · [命名与兼容边界](docs/adr/0069-eve-platform-identity.md)
 
 平台提供 Native C ABI 和同工具链 Qt 插件 SDK。外部插件可以独立构建，再通过工作台加载受信模块。首次启动可以使用空工作区。
 
