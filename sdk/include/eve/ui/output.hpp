@@ -9,7 +9,7 @@
 #include <vector>
 
 namespace eve::ui {
-namespace detail { struct OutputControl; }
+namespace detail { struct OutputEndpoint; struct OutputControl; }
 class ElaShell;
 enum class OutputLevel { Info, Warning, Error };
 /** @brief 可随平台输出归档的诊断信息。operation 关联一次操作，code 用于识别同类诊断。 */
@@ -47,7 +47,7 @@ public:
     Result<std::vector<OutputEntry>> snapshot() const;
 private:
     friend class ElaShell;
-    explicit OutputService(std::weak_ptr<detail::OutputControl> control) : control_(std::move(control)) {}
-    std::weak_ptr<detail::OutputControl> control_;
+    explicit OutputService(std::weak_ptr<detail::OutputEndpoint> control) : control_(std::move(control)) {}
+    std::weak_ptr<detail::OutputEndpoint> control_;
 };
 } // namespace eve::ui

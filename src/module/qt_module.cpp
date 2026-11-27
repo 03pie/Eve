@@ -3,7 +3,9 @@
  */
 #include "qt_manifest_p.hpp"
 #include "qt_module_p.hpp"
+#include "qt_system_p.hpp"
 #include <QCoreApplication>
+#include <QDir>
 #include <QPluginLoader>
 #include <QPointer>
 #include <QThread>
@@ -20,8 +22,25 @@ ErrorInfo error(ErrorCode code, std::string message)
     return value;
 }
 using detail::QtResidency;
+using detail::ImageDependencies;
+constexpr char desktopManifest[] = "system/desktop/module.json";
+constexpr char desktopLibrary[] = "system/desktop/eve_desktop.dll";
+
+bool isSystemDesktop(const PreflightArtifact& artifact, const std::string& root)
+{
+    const QDir application(QString::fromUtf8(root.c_str()));
+    const auto matches = [&](const std::string& pinned, const char* relative) {
+        return QString::compare(QString::fromUtf8(pinned.c_str()), application.filePath(QString::fromLatin1(relative)),
+                                Qt::CaseInsensitive) == 0;
+    };
+    const auto& manifest = artifact.manifest();
+    return manifest.moduleId == detail::systemDesktopModuleId && manifest.plugins.size() == 1 &&
+           manifest.plugins.front() == detail::systemDesktopPluginId && manifest.library == "eve_desktop.dll" &&
+           matches(artifact.manifestPath(), desktopManifest) && matches(artifact.libraryPath(), desktopLibrary);
+}
+
 Result<ModuleLoadReport> loadGeneration(const std::string& root, const std::string& path, PreflightLimits limits,
-                                        GenerationId predecessor)
+                                        GenerationId predecessor, ImageDependencies dependencies)
 {
     using Output = Result<ModuleLoadReport>;
     auto app = QCoreApplication::instance();
@@ -37,6 +56,14 @@ Result<ModuleLoadReport> loadGeneration(const std::string& root, const std::stri
     if (!source.hasValue())
         return Output::failure(source.error());
     const auto& artifact = source.value()->artifact;
+    if (dependencies == ImageDependencies::ApplicationBundle && !isSystemDesktop(artifact, root)) {
+        auto failure = error(ErrorCode::AbiMismatch, "The installed desktop module has an unexpected identity or path.");
+        failure.phase = "workbench.desktop.identity";
+        return Output::failure(std::move(failure));
+    }
+    // The private host/desktop C++ contract ships together even while the public SDK stays binary compatible.
+    if (dependencies == ImageDependencies::ApplicationBundle && artifact.manifest().moduleVersion != EVE_DESKTOP_VERSION)
+        return Output::failure(error(ErrorCode::AbiMismatch, "The installed desktop version differs from the launcher."));
     if (artifact.manifest().loader != ModuleLoader::QtUi ||
         artifact.manifest().unloadPolicy != ModuleUnloadPolicy::Resident)
         return Output::failure(error(ErrorCode::AbiMismatch, "Qt backend requires resident qt-ui loader"));
@@ -64,7 +91,7 @@ Result<ModuleLoadReport> loadGeneration(const std::string& root, const std::stri
         std::lock_guard<std::mutex> lock(generation->mutex);
         generation->backend = backend;
     }
-    auto mapped = detail::mapGenerationImage(generation);
+    auto mapped = detail::mapGenerationImage(generation, dependencies);
     if (!mapped.hasValue())
         return detail::failGeneration(generation, mapped.error());
     auto rootLease = generation->ledger.acquire(ResourceKind::QObject, "qt.loader.root");
@@ -97,9 +124,17 @@ Result<ModuleLoadReport> loadGeneration(const std::string& root, const std::stri
     return Output::success({generation->data.generation, false});
 }
 } // namespace
+Result<ModuleLoadReport> detail::loadSystemDesktopModule()
+{
+    if (!QCoreApplication::instance())
+        return Result<ModuleLoadReport>::failure(error(ErrorCode::WrongThread, "Desktop requires an application owner."));
+    const OpenedPath installation(QCoreApplication::applicationDirPath(), true);
+    return loadGeneration(installation.finalPath().toUtf8().toStdString(), desktopManifest, {}, {},
+                          ImageDependencies::ApplicationBundle);
+}
 Result<ModuleLoadReport> loadQtModule(const std::string& root, const std::string& path, PreflightLimits limits)
 {
-    return loadGeneration(root, path, limits, {});
+    return loadGeneration(root, path, limits, {}, ImageDependencies::ModuleDirectory);
 }
 Result<ModuleLoadReport> stageQtModule(const std::string& root, const std::string& path, GenerationId predecessor,
                                        PreflightLimits limits)
@@ -111,6 +146,6 @@ Result<ModuleLoadReport> stageQtModule(const std::string& root, const std::strin
     if (!predecessor.valid())
         return Result<ModuleLoadReport>::failure(
             error(ErrorCode::InvalidArgument, "candidate requires a current predecessor"));
-    return loadGeneration(root, path, limits, predecessor);
+    return loadGeneration(root, path, limits, predecessor, ImageDependencies::ModuleDirectory);
 }
 } // namespace eve::module

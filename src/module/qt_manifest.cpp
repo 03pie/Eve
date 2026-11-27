@@ -14,7 +14,7 @@
 namespace eve::module {
 QtToolchain qtToolchain()
 {
-    QtToolchain value{EVE_PROJECT_VERSION, QT_VERSION_STR, "MSVC", EVE_QT_COMPILER_VERSION, ""};
+    QtToolchain value{EVE_SDK_VERSION, QT_VERSION_STR, "MSVC", EVE_QT_COMPILER_VERSION, ""};
 #if defined(_DLL)
 #if defined(_DEBUG)
     value.runtime = "MDd";

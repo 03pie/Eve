@@ -42,7 +42,7 @@ endforeach()
 
 add_executable(eve_desktop_archive_test desktop_archive.cpp)
 target_include_directories(eve_desktop_archive_test PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
-target_link_libraries(eve_desktop_archive_test PRIVATE Eve::Ui Qt5::Test)
+target_link_libraries(eve_desktop_archive_test PRIVATE eve_desktop_impl Qt5::Test)
 eve_target_defaults(eve_desktop_archive_test)
 add_test(NAME logging.desktop_archive_lifetime COMMAND eve_desktop_archive_test)
 set_tests_properties(logging.desktop_archive_lifetime PROPERTIES LABELS "logging;qt;ui" TIMEOUT 20
@@ -67,7 +67,7 @@ endforeach()
 add_executable(eve_native_logging_archive_tests native_logging_archive.cpp)
 target_include_directories(eve_native_logging_archive_tests PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
 target_link_libraries(eve_native_logging_archive_tests PRIVATE
-    Eve::ModuleHost Eve::ModuleNative Eve::Ui Qt5::Test)
+    Eve::ModuleHost Eve::ModuleNative eve_desktop_impl Qt5::Test)
 eve_target_defaults(eve_native_logging_archive_tests)
 add_dependencies(eve_native_logging_archive_tests eve_native_logging_fixture)
 add_test(NAME logging.l4_native_archive COMMAND eve_native_logging_archive_tests
@@ -96,6 +96,17 @@ eve_target_defaults(eve_platform_startup_tests)
 add_test(NAME platform.empty_workbench COMMAND eve_platform_startup_tests)
 set_tests_properties(platform.empty_workbench PROPERTIES LABELS "platform;qt;ui" TIMEOUT 35
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+if(WIN32)
+    add_executable(eve_desktop_module_failure_tests desktop_module_failure.cpp)
+    target_include_directories(eve_desktop_module_failure_tests PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
+    target_link_libraries(eve_desktop_module_failure_tests PRIVATE Eve::Ui user32)
+    eve_target_defaults(eve_desktop_module_failure_tests)
+    add_dependencies(eve_desktop_module_failure_tests eve_plugin_workbench)
+    add_test(NAME platform.desktop_module_failure COMMAND eve_desktop_module_failure_tests
+        "$<TARGET_FILE:eve_plugin_workbench>")
+    set_tests_properties(platform.desktop_module_failure PROPERTIES LABELS "platform;module;logging;qt" TIMEOUT 120)
+endif()
 
 file(GENERATE OUTPUT "${logging_generated}/interleaved_metadata.json"
     CONTENT "{\"moduleId\":\"org.eve.test.logs\",\"moduleVersion\":\"1.0.0\",\"plugins\":[\"test.logs.alpha\",\"test.logs.bravo\"],\"toolchain\":${logging_toolchain}}")

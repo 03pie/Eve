@@ -554,7 +554,7 @@ Result<void> drainGeneration(GenerationId id)
         generation->data.state = ModuleState::Resident;
     return Result<void>::success();
 }
-Result<void> mapGenerationImage(const std::shared_ptr<Generation>& generation)
+Result<void> mapGenerationImage(const std::shared_ptr<Generation>& generation, ImageDependencies dependencies)
 {
     const auto& verified = generation->data;
     if (generation->policy == ModuleLoadPolicy::ApprovedNative && verified.manifest.loader != ModuleLoader::CAbi)
@@ -564,8 +564,11 @@ Result<void> mapGenerationImage(const std::shared_ptr<Generation>& generation)
     if (GetModuleHandleW(nativePath.c_str()))
         return Result<void>::failure(error(ErrorCode::ModulePinned, "module.existing",
                                            "untracked native image is already mapped; adoption refused"));
-    const auto image =
-        LoadLibraryExW(nativePath.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+    DWORD search = LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32;
+    // The nested official module shares the installer's Qt/Ela dependencies beside the EXE.
+    if (dependencies == ImageDependencies::ApplicationBundle)
+        search |= LOAD_LIBRARY_SEARCH_APPLICATION_DIR;
+    const auto image = LoadLibraryExW(nativePath.c_str(), nullptr, search);
     if (!image)
         return Result<void>::failure(error(ErrorCode::ModuleLoad, "module.load",
                                            "LoadLibraryExW failed, Windows error " + std::to_string(GetLastError())));

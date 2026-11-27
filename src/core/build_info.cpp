@@ -23,7 +23,7 @@ BuildInfo buildInfo() noexcept
 #else
     constexpr auto compiler = "unknown";
 #endif
-    return {EVE_PROJECT_VERSION, compiler, sizeof(void*) * 8U};
+    return {EVE_SDK_VERSION, compiler, sizeof(void*) * 8U};
 }
 const void* coreRuntimeIdentity() noexcept
 {

@@ -1,6 +1,7 @@
 /** @file services.cpp
  * @brief 管理命令调用保留及 effect 屏障；通知展示只持宿主值数据。
  */
+#include "contribution_backend_p.hpp"
 #include "notifications_p.hpp"
 #include "services_p.hpp"
 #include "panel_p.hpp"
@@ -43,7 +44,10 @@ protected:
     }
 };
 /** @brief 控制块保留回调直到已接受调用及谓词全部返回，不把列表行当作插件资源。 */
-struct CommandControl : std::enable_shared_from_this<CommandControl> {
+struct CommandControl : CommandEndpoint, std::enable_shared_from_this<CommandControl> {
+    Task<void> readyCommand() override;
+    Task<CleanupReport> closeCommand() override;
+    Result<CommandSnapshot> inspectCommand() override;
     std::weak_ptr<ServicesControl> host;
     std::shared_ptr<qt::QtScheduler> scheduler;
     ContextIdentity owner;
@@ -70,7 +74,7 @@ struct CommandControl : std::enable_shared_from_this<CommandControl> {
     /** @brief 业务入口先检查线程、宿主及本代门禁。 */
     Result<void> allowed() const;
     /** @brief 谓词执行期间占用调用保留，重入退役不能提前销毁自身闭包。 */
-    Result<bool> enabled();
+    Result<bool> enabled() override;
     /** @brief 调用完成后尝试释放插件闭包，捕获析构返回前不报告静止。 */
     void checkDrained()
     {
@@ -86,10 +90,14 @@ struct CommandControl : std::enable_shared_from_this<CommandControl> {
     /** @brief 同步禁止新执行，清理时移除宿主行并等待调用。 */
     Task<void> retire();
     /** @brief 统一由 owner 排队启动，即使回调返回已完成任务也不内联完成。 */
-    Task<void> execute();
+    Task<void> execute() override;
 };
 /** @brief 命令记录归本后端，通知控制块独立拥有候选值及历史。 */
-struct ServicesControl : std::enable_shared_from_this<ServicesControl> {
+struct ServicesControl : CommandsEndpoint, NotificationsEndpoint, std::enable_shared_from_this<ServicesControl> {
+    Result<CommandHandle> addCommand(const Context& owner, CommandSpec spec) override;
+    Result<std::vector<CommandSnapshot>> commandSnapshots() override;
+    Result<std::uint64_t> postNotification(const Context& owner, Notification notification) override;
+    Result<std::vector<NotificationSnapshot>> notificationSnapshots() override;
     std::shared_ptr<qt::QtScheduler> scheduler;
     QPointer<QListView> commands;
     QStandardItemModel* model = nullptr;
@@ -463,14 +471,21 @@ Task<void> closeUiServices(const std::shared_ptr<ServicesControl>& control)
     control->checkClosed();
     return control->closed.task();
 }
+std::weak_ptr<CommandsEndpoint> commandsEndpoint(const std::shared_ptr<ServicesControl>& control)
+{
+    return control;
+}
+std::weak_ptr<NotificationsEndpoint> notificationsEndpoint(const std::shared_ptr<ServicesControl>& control)
+{
+    return control;
+}
 } // namespace eve::ui::detail
 
 namespace eve::ui {
 /** @brief 列表初始化纳入 effect setup，Qt 插入信号重入时清理也必须等初始化返回。 */
-Result<CommandHandle> CommandService::add(const Context& owner, CommandSpec spec) const
+Result<CommandHandle> detail::ServicesControl::addCommand(const Context& owner, CommandSpec spec)
 {
-    auto host = control_.lock();
-    if (!host) return Result<CommandHandle>::failure(makeError(ErrorCode::ContextClosing, "command host expired"));
+    auto host = shared_from_this();
     auto checked = host->business();
     if (!checked.hasValue()) return Result<CommandHandle>::failure(checked.error());
     const auto context = owner;
@@ -530,10 +545,9 @@ Result<CommandHandle> CommandService::add(const Context& owner, CommandSpec spec
     return Result<CommandHandle>::success(CommandHandle(record));
 }
 /** @brief 快照不触发插件代码，关闭后仍可定位保留的调用。 */
-Result<std::vector<CommandSnapshot>> CommandService::snapshot() const
+Result<std::vector<CommandSnapshot>> detail::ServicesControl::commandSnapshots()
 {
-    auto host = control_.lock();
-    if (!host) return Result<std::vector<CommandSnapshot>>::success({});
+    auto host = shared_from_this();
     auto checked = host->thread();
     if (!checked.hasValue()) return Result<std::vector<CommandSnapshot>>::failure(checked.error());
     std::vector<CommandSnapshot> result;
@@ -541,30 +555,29 @@ Result<std::vector<CommandSnapshot>> CommandService::snapshot() const
     return Result<std::vector<CommandSnapshot>>::success(std::move(result));
 }
 /** @brief ready 只观察历史结果，不重新开放命令。 */
-Task<void> CommandHandle::ready() const { return control_->effect->ready(); }
-/** @brief 本地保留控制块，允许谓词释放外部最后一个句柄。 */
-Result<bool> CommandHandle::enabled() const { auto held = control_; return held->enabled(); }
-/** @brief 执行不借用 facade 生命周期，真正回调由宿主队列启动。 */
-Task<void> CommandHandle::execute() const { auto held = control_; return held->execute(); }
-/** @brief 错误线程不得更改 revoked；异步关闭本身不依赖业务 Context 仍有效。 */
-Task<CleanupReport> CommandHandle::close() const
+Task<void> detail::CommandControl::readyCommand()
 {
-    auto held = control_;
+    return effect->ready();
+}
+
+/** @brief 错误线程不得更改 revoked；异步关闭本身不依赖业务 Context 仍有效。 */
+Task<CleanupReport> detail::CommandControl::closeCommand()
+{
+    auto held = shared_from_this();
     if (!held->scheduler->isCurrentThread()) return held->effect->close();
     held->revoked = true;
     return held->effect->close();
 }
 /** @brief 快照只在 owner 读取，blocked 使用原子值接受投递错误诊断。 */
-Result<CommandSnapshot> CommandHandle::snapshot() const
+Result<CommandSnapshot> detail::CommandControl::inspectCommand()
 {
-    if (!control_->scheduler->isCurrentThread()) return Result<CommandSnapshot>::failure(makeError(ErrorCode::WrongThread, "command snapshot requires owner thread"));
-    return Result<CommandSnapshot>::success(control_->snapshot());
+    if (!scheduler->isCurrentThread()) return Result<CommandSnapshot>::failure(makeError(ErrorCode::WrongThread, "command snapshot requires owner thread"));
+    return Result<CommandSnapshot>::success(snapshot());
 }
 /** @brief 调用方 Context 只用于当次校验，通知记录不保存它或插件服务租约。 */
-Result<std::uint64_t> NotificationService::post(const Context& owner, Notification notification) const
+Result<std::uint64_t> detail::ServicesControl::postNotification(const Context& owner, Notification notification)
 {
-    auto host = control_.lock();
-    if (!host) return Result<std::uint64_t>::failure(makeError(ErrorCode::ContextClosing, "notification host expired"));
+    auto host = shared_from_this();
     auto checked = host->thread();
     if (!checked.hasValue()) return Result<std::uint64_t>::failure(checked.error());
     if (!host->open)
@@ -592,10 +605,9 @@ Result<std::uint64_t> NotificationService::post(const Context& owner, Notificati
                                       std::move(source));
 }
 /** @brief 返回值复制历史，不附带任何插件对象或观察者回调。 */
-Result<std::vector<NotificationSnapshot>> NotificationService::snapshot() const
+Result<std::vector<NotificationSnapshot>> detail::ServicesControl::notificationSnapshots()
 {
-    auto host = control_.lock();
-    if (!host) return Result<std::vector<NotificationSnapshot>>::success({});
+    auto host = shared_from_this();
     return detail::notificationSnapshot(host->notifications);
 }
 } // namespace eve::ui

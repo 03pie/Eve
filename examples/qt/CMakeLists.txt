@@ -32,7 +32,7 @@ endif()
 
 if(TARGET eve_ui)
     add_executable(eve_ela_demo ela_demo.cpp)
-    target_link_libraries(eve_ela_demo PRIVATE Eve::Ui Ela::WidgetTools)
+    target_link_libraries(eve_ela_demo PRIVATE eve_desktop_impl Ela::WidgetTools)
     set_target_properties(eve_ela_demo PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     eve_target_defaults(eve_ela_demo)
 

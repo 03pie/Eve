@@ -2,10 +2,12 @@
  * @brief 装配工作区的模块、配置会话与 UI 服务，协调保存和关闭。
  */
 #include "workbench.hpp"
+#include "qt_system_p.hpp"
+#include "runtime_log_archive_p.hpp"
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QStandardPaths>
-#include "runtime_log_archive_p.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <eve/loader/kernel_driver.hpp>
@@ -65,6 +67,25 @@ ErrorInfo preflightDiagnostic(ErrorInfo error)
         error.phase = "QT_MANIFEST_INVALID";
     else
         error.phase = "QT_MODULE_PREFLIGHT_FAILED";
+    return error;
+}
+
+/** @brief 仅系统清单装配使用此分类。保留底层错误用于 stderr，持久日志使用固定说明。 */
+ErrorInfo desktopDiagnostic(ErrorInfo error)
+{
+    const QDir bundled(QDir(QCoreApplication::applicationDirPath()).filePath("system/desktop"));
+    if (!QFileInfo::exists(bundled.filePath("module.json")))
+        error.phase = "WORKBENCH_DESKTOP_MANIFEST_MISSING";
+    else if (error.phase == "workbench.desktop.identity")
+        error.phase = "WORKBENCH_DESKTOP_IDENTITY_INVALID";
+    else if (error.phase == "module.hash" && !QFileInfo::exists(bundled.filePath("eve_desktop.dll")))
+        error.phase = "WORKBENCH_DESKTOP_LIBRARY_MISSING";
+    else if (error.phase == "module.hash")
+        error.phase = "WORKBENCH_DESKTOP_HASH_INVALID";
+    else if (error.code == ErrorCode::AbiMismatch || error.phase == "module.image")
+        error.phase = "WORKBENCH_DESKTOP_INCOMPATIBLE";
+    else
+        error.phase = "WORKBENCH_DESKTOP_LOAD_FAILED";
     return error;
 }
 
@@ -160,18 +181,29 @@ Task<void> Workbench::open(const std::optional<QString>& manifestPath, const QSt
         };
         publish(schedulerService, std::make_shared<std::shared_ptr<qt::QtScheduler>>(scheduler));
         publish(desktopBootstrapKey, bootstrap_);
-        auto contract = desktopContract();
-        auto runtime = checked(kernel->registerPlugin(contract.id, activateDesktop,
-            std::move(contract.dependencies), std::move(contract.outputs)));
+        const auto loaded = module::detail::loadSystemDesktopModule();
+        if (!loaded.hasValue()) throw StartupError(desktopDiagnostic(loaded.error()));
+        auto negotiated = module::qtRuntime(loaded.value().generation, desktopContract(), scheduler);
+        if (!negotiated.hasValue()) throw StartupError(desktopDiagnostic(negotiated.error()));
+        auto runtime = checked(kernel->registerRuntime(desktopId, negotiated.value()));
         desktopRuntime_ = runtime.id();
         const auto instance = checked(kernel->mount(runtime));
-        instance.ready().thenOn(scheduler, [this, ready, manifestPath, workspaceDir](const Result<void>& active) {
-            if (!active.hasValue()) { ready.reject(active.error()); return; }
+        instance.ready().thenOn(scheduler, [this, ready, manifestPath, workspaceDir,
+                generation = loaded.value().generation](const Result<void>& active) {
+            if (!active.hasValue()) {
+                auto error = active.error();
+                error.phase = "WORKBENCH_DESKTOP_ACTIVATION_FAILED";
+                ready.reject(std::move(error));
+                return;
+            }
             if (closing_ || !desktop()) {
                 ready.reject(makeError(ErrorCode::ContextClosing, "Desktop unavailable while opening workspace."));
                 return;
             }
             try {
+                checked(writeOutput(std::string(desktopId) + " · 模块 " + desktopModuleId
+                    + " · 加载代 " + std::to_string(generation.value()), ui::OutputLevel::Info,
+                    {{}, "WORKBENCH_DESKTOP_ACTIVE"}));
                 openWorkspace(manifestPath, workspaceDir).thenOn(scheduler, [ready](const Result<void>& outcome) {
                     if (outcome.hasValue()) ready.resolve();
                     else ready.reject(outcome.error());
@@ -230,11 +262,9 @@ Task<void> Workbench::openWorkspace(const std::optional<QString>& manifestPath, 
         if (!pages.hasValue()) return failedTask(pages.error());
         auto view = desktop();
         if (!view) return failedTask(makeError(ErrorCode::ContextClosing, "Desktop unavailable."));
-        Task<void> ready = completedTask();
-        auto access = pages.value().withService([&](ui::UiPagesService& service) {
-            ready = view->addConfigurationPage(ctx, service);
+        return pages.value().invoke([view, ctx](ui::UiPagesService& service) {
+            return view->addConfigurationPage(ctx, service);
         });
-        return access.hasValue() ? ready : failedTask(access.error());
     }, {ServiceRequirement::of<ui::UiPagesService>({pagesService})}));
     protectedRuntimes.push_back(configuration.id());
     checked(desktop()->bindWorkspace(kernel, session, initial_, std::move(protectedRuntimes)));

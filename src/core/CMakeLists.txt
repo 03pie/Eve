@@ -31,7 +31,7 @@ add_library(Eve::Core ALIAS eve_core)
 target_include_directories(eve_core PUBLIC
     "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/sdk/include>"
 )
-target_compile_definitions(eve_core PRIVATE EVE_PROJECT_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(eve_core PRIVATE EVE_SDK_VERSION="${EVE_SDK_VERSION}")
 target_link_libraries(eve_core PUBLIC Threads::Threads)
 eve_target_defaults(eve_core)
 

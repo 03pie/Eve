@@ -11,7 +11,7 @@
 
 class QWidget;
 namespace eve::ui {
-namespace detail { struct PageControl; struct ShellControl; }
+namespace detail { struct PagesEndpoint; struct PageEndpoint; struct PageControl; struct ShellControl; }
 class ElaShell;
 /** @brief 工厂须在应用线程返回无 parent、未启用自动删除的 QWidget；只调用一次，呈现由宿主负责。 */
 using PageFactory = std::function<std::unique_ptr<QWidget>()>;
@@ -46,10 +46,10 @@ public:
     /** @brief owner 读取保留的诊断，贡献释放后仍可查询。 */
     Result<PageSnapshot> snapshot() const;
 private:
-    friend class UiPagesService;
+    friend struct detail::ShellControl;
     /** @brief 仅由成功登记的服务创建句柄。 */
-    explicit PageHandle(std::shared_ptr<detail::PageControl> control) : control_(std::move(control)) {}
-    std::shared_ptr<detail::PageControl> control_;
+    explicit PageHandle(std::shared_ptr<detail::PageEndpoint> control) : control_(std::move(control)) {}
+    std::shared_ptr<detail::PageEndpoint> control_;
 };
 /** @brief 普通插件只通过此服务贡献页面，不接触宿主 ElaWindow 或导航内部对象。 */
 class UiPagesService {
@@ -61,7 +61,7 @@ public:
 private:
     friend class ElaShell;
     /** @brief 服务借用 shell 控制块，避免服务绑定与窗口互相强持。 */
-    explicit UiPagesService(std::weak_ptr<detail::ShellControl> control) : control_(std::move(control)) {}
-    std::weak_ptr<detail::ShellControl> control_;
+    explicit UiPagesService(std::weak_ptr<detail::PagesEndpoint> control) : control_(std::move(control)) {}
+    std::weak_ptr<detail::PagesEndpoint> control_;
 };
 } // namespace eve::ui

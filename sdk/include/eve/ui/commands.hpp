@@ -11,7 +11,7 @@
 #include <vector>
 
 namespace eve::ui {
-namespace detail { struct CommandControl; struct ServicesControl; }
+namespace detail { struct CommandsEndpoint; struct CommandEndpoint; struct CommandControl; struct ServicesControl; }
 class ElaShell;
 /** @brief id 限定在实例/epoch；execute 的 Task 完成代表本次工作结束，不得等待自身关闭。
  * enabled 可省略；谓词和执行回调都在 owner 运行，不得长时间阻塞。
@@ -47,10 +47,10 @@ public:
     /** @brief owner 读取历史诊断，不求值 enabled，也不授予重新执行能力。 */
     Result<CommandSnapshot> snapshot() const;
 private:
-    friend class CommandService;
+    friend struct detail::ServicesControl;
     /** @brief 仅成功登记后创建命令句柄。 */
-    explicit CommandHandle(std::shared_ptr<detail::CommandControl> control) : control_(std::move(control)) {}
-    std::shared_ptr<detail::CommandControl> control_;
+    explicit CommandHandle(std::shared_ptr<detail::CommandEndpoint> control) : control_(std::move(control)) {}
+    std::shared_ptr<detail::CommandEndpoint> control_;
 };
 /** @brief ui.commands/v1；普通插件不获得 QListWidget、QAction 或 ElaWindow。 */
 class CommandService {
@@ -62,7 +62,7 @@ public:
 private:
     friend class ElaShell;
     /** @brief 服务借用宿主控制块，生命周期由外壳与 effect 管理。 */
-    explicit CommandService(std::weak_ptr<detail::ServicesControl> control) : control_(std::move(control)) {}
-    std::weak_ptr<detail::ServicesControl> control_;
+    explicit CommandService(std::weak_ptr<detail::CommandsEndpoint> control) : control_(std::move(control)) {}
+    std::weak_ptr<detail::CommandsEndpoint> control_;
 };
 } // namespace eve::ui

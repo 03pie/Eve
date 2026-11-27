@@ -26,6 +26,13 @@ StartupDiagnostic startupDiagnostic(const ErrorInfo& error)
         {"QT_MANIFEST_INVALID", "模块清单格式或字段校验失败。"},
         {"QT_MODULE_PREFLIGHT_FAILED", "模块产物或元数据未通过预检。"},
         {"WORKBENCH_RESERVED_PLUGIN", "工作区配置引用了受保护的系统插件。"},
+        {"WORKBENCH_DESKTOP_MANIFEST_MISSING", "缺少官方桌面清单 system/desktop/module.json。"},
+        {"WORKBENCH_DESKTOP_LIBRARY_MISSING", "缺少官方桌面组件 eve_desktop.dll。"},
+        {"WORKBENCH_DESKTOP_IDENTITY_INVALID", "系统桌面的模块或插件标识与官方安装布局不符。"},
+        {"WORKBENCH_DESKTOP_HASH_INVALID", "系统桌面文件未通过完整性校验。"},
+        {"WORKBENCH_DESKTOP_INCOMPATIBLE", "系统桌面的映像、Qt 元数据或 SDK 契约与宿主不兼容。"},
+        {"WORKBENCH_DESKTOP_LOAD_FAILED", "系统桌面装载失败，请检查安装文件及运行库。"},
+        {"WORKBENCH_DESKTOP_ACTIVATION_FAILED", "系统桌面实例未能完成激活。"},
     };
     for (const auto& entry : known)
         if (error.phase == entry.code) return entry;

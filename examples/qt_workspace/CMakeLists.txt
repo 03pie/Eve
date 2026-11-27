@@ -72,7 +72,7 @@ if(BUILD_TESTING)
         "${PROJECT_SOURCE_DIR}/tests/qt/notebook_state_runtime.cpp"
         "${PROJECT_SOURCE_DIR}/tests/qt/notebook_state_protocol.cpp")
     target_link_libraries(eve_notebook_state_tests PRIVATE
-        Eve::ModuleQt Eve::ModuleQtPreflight Eve::Ui Qt5::Test Ela::WidgetTools)
+        Eve::ModuleQt Eve::ModuleQtPreflight eve_desktop_impl Qt5::Test Ela::WidgetTools)
     set_target_properties(eve_notebook_state_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     eve_target_defaults(eve_notebook_state_tests)
     add_dependencies(eve_notebook_state_tests eve_example_notebook eve_example_notebook_a eve_example_notebook_b)

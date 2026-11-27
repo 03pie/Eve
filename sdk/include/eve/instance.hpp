@@ -78,7 +78,7 @@ struct ContextSource {
     /** @brief 仅当前作用域的真实隔离候选上下文有值，普通/已发布上下文为空。 */
     std::optional<OperationId> replacement;
 };
-namespace ui { class UiPagesService; class CommandService; class NotificationService; class OutputService; }
+namespace ui::detail { struct ShellControl; struct ServicesControl; struct OutputControl; }
 namespace qt {
 class QtConnection;
 class QtWorker;
@@ -133,16 +133,15 @@ public:
         return Result<ServiceRef<T>>::success(ServiceRef<T>(std::weak_ptr<detail::CommittedLease>(lease.value())));
     }
 private:
-    friend class ui::UiPagesService;
+    friend struct ui::detail::ShellControl;
     friend struct module::detail::NativeServices;
     friend class module::NativeModule;
     Result<ServiceRegistry> managedRegistry() const;
     Result<void> adoptOutput(ProviderHandle output, std::type_index type) const;
     Result<std::vector<std::pair<ServiceKey, std::shared_ptr<detail::CommittedLease>>>>
     inputs(std::type_index type) const;
-    friend class ui::CommandService;
-    friend class ui::NotificationService;
-    friend class ui::OutputService;
+    friend struct ui::detail::ServicesControl;
+    friend struct ui::detail::OutputControl;
     friend class qt::QtConnection;
     friend class qt::QtWorker;
     template<class T> friend class EventBus;

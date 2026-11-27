@@ -13,6 +13,8 @@ namespace eve::module { struct NativeLogEvent; }
 namespace eve::ui::detail
 {
 struct OutputControl;
+struct OutputEndpoint;
+std::weak_ptr<OutputEndpoint> outputEndpoint(const std::shared_ptr<OutputControl>& control);
 class WorkbenchReturnPoint;
 class RuntimeLogArchive;
 QPlainTextEdit* createOutputEditor(QWidget* parent);

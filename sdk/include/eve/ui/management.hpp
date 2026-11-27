@@ -15,7 +15,7 @@
 #include <vector>
 
 namespace eve::ui {
-namespace detail { struct ManagementControl; }
+namespace detail { struct DiagnosticsEndpoint; struct ManagementControl; }
 class ElaShell;
 /** @brief 手动停止/重试/加载操作实例；配置启停/协调操作目标路径。 */
 enum class ManagementAction { Stop, Retry, Load, SetEnabled, Reconcile };
@@ -134,8 +134,8 @@ public:
 private:
     friend class ElaShell;
     /** @brief 外壳拥有后端，服务只借用弱控制块。 */
-    explicit DiagnosticsService(std::weak_ptr<detail::ManagementControl> control) : control_(std::move(control)) {}
-    std::weak_ptr<detail::ManagementControl> control_;
+    explicit DiagnosticsService(std::weak_ptr<detail::DiagnosticsEndpoint> control) : control_(std::move(control)) {}
+    std::weak_ptr<detail::DiagnosticsEndpoint> control_;
 };
 /** @brief 仅宿主持有的管理入口；每个手动实例或配置路径最多一个在途请求，派发时重校验。 */
 class ManagementController {

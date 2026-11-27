@@ -14,6 +14,10 @@ class QAction;
 class QWidget;
 namespace eve::ui::detail {
 struct ServicesControl;
+struct NotificationsEndpoint;
+std::weak_ptr<NotificationsEndpoint> notificationsEndpoint(const std::shared_ptr<ServicesControl>& control);
+struct CommandsEndpoint;
+std::weak_ptr<CommandsEndpoint> commandsEndpoint(const std::shared_ptr<ServicesControl>& control);
 void configureNotificationCenter(const std::shared_ptr<ServicesControl>& control, QWidget* window,
                                  std::function<QString(InstanceId)> sourceName = {});
 Result<void> showNotificationCenter(const std::shared_ptr<ServicesControl>& control, QWidget* origin = nullptr);

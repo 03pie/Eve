@@ -24,8 +24,7 @@ function(eve_add_qt_ui_plugin target)
     endif()
     get_filename_component(stem "${source}" NAME_WE)
     set(directory "${CMAKE_CURRENT_BINARY_DIR}/eve-plugin/${target}")
-    # The legacy metadata producer reads PROJECT_VERSION; scope it to the SDK, not this consumer project.
-    set(PROJECT_VERSION "${Eve_VERSION}")
+    set(EVE_SDK_VERSION "${Eve_VERSION}")
     eve_qt_toolchain_json(toolchain)
     file(GENERATE OUTPUT "${directory}/eve_plugin_metadata.json"
         CONTENT "{\"moduleId\":\"${plugin_MODULE_ID}\",\"moduleVersion\":\"${plugin_MODULE_VERSION}\",\"plugins\":[\"${plugin_PLUGIN_ID}\"],\"toolchain\":${toolchain}}\n")

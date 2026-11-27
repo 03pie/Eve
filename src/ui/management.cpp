@@ -1,6 +1,7 @@
 /** @file management.cpp
  * @brief 以宿主值快照驱动管理页，排队校验停止/重试，不把管理能力交给普通插件。
  */
+#include "contribution_backend_p.hpp"
 #include "appearance_p.hpp"
 #include "fixed_tabs_p.hpp"
 #include "management_p.hpp"
@@ -164,7 +165,7 @@ struct ManagementAuthority {
     }
 };
 /** @brief 后端弱持 Kernel；Qt 控件由外壳拥有，诊断服务和控制器只借用本控制块。 */
-struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
+struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<ManagementControl> {
     std::shared_ptr<qt::QtScheduler> scheduler;
     std::weak_ptr<Kernel> kernel;
     bool attached = false;
@@ -657,7 +658,7 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         return Output::success(std::move(authority));
     }
     /** @brief 复制 core/UI 值快照，不获取服务对象或运行命令谓词。 */
-    Result<DiagnosticsSnapshot> capture()
+    Result<DiagnosticsSnapshot> capture() override
     {
         auto authority = readAuthority();
         if (!authority.hasValue())
@@ -1883,16 +1884,14 @@ Task<void> closeManagement(const std::shared_ptr<ManagementControl>& control)
     }
     return control->uiClosed.task();
 }
+std::weak_ptr<DiagnosticsEndpoint> diagnosticsEndpoint(const std::shared_ptr<ManagementControl>& control)
+{
+    return control;
+}
 } // namespace eve::ui::detail
 
 namespace eve::ui {
-/** @brief 只读服务不授予停止/重试能力，Kernel 生命周期独立于服务。 */
-Result<DiagnosticsSnapshot> DiagnosticsService::snapshot() const
-{
-    auto control = control_.lock();
-    if (!control) return Result<DiagnosticsSnapshot>::failure(makeError(ErrorCode::ContextClosing, "management expired"));
-    return control->capture();
-}
+
 /** @brief 宿主只绑定一次，禁止重定向尚有排队请求的管理控制器。 */
 Result<void> ManagementController::attach(const std::shared_ptr<Kernel>& kernel) const
 {

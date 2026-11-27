@@ -119,6 +119,20 @@ void openEmpty(const QString& workspace, const QString& marker, bool exerciseWin
     const auto owner = std::find_if(instances.begin(), instances.end(),
                                     [&](const auto& instance) { return instance.runtime == desktop->id; });
     REQUIRE(owner != instances.end() && owner->state == eve::InstanceState::Active);
+    // Protected system runtimes are visible in the diagnostic kernel snapshot only:
+    // the management table (and its stop, retry and load controls) excludes them.
+    REQUIRE(diagnostics.instances.empty());
+    const eve::module::ModuleManager modules;
+    const auto origin = modules.runtimeOrigin(desktop->id).value();
+    REQUIRE(origin && origin->pluginId == "eve.desktop" && origin->moduleId == "org.eve.desktop");
+    const auto generations = modules.snapshot().value();
+    const auto loaded = std::find_if(generations.begin(), generations.end(), [&](const auto& generation) {
+        return generation.generation == origin->generation;
+    });
+    REQUIRE(loaded != generations.end() && loaded->nativeMapped && loaded->businessAccepted);
+    const auto officialFile = QDir(QCoreApplication::applicationDirPath()).filePath("system/desktop/eve_desktop.dll");
+    REQUIRE(QFileInfo(QString::fromStdString(loaded->libraryPath)).canonicalFilePath() ==
+            QFileInfo(officialFile).canonicalFilePath());
     const auto graph = scene.host.kernel->services().dependencyGraph().value();
     for (const char* service : {"ui.pages", "ui.commands", "ui.output", "ui.notifications"}) {
         REQUIRE(std::count_if(graph.bindings.begin(), graph.bindings.end(), [&](const auto& binding) {
@@ -195,12 +209,10 @@ void verifyWorkbenchDataPaths(const QDir& root)
     }
 }
 
-void rejectModuleWorkspace(const QString& workspace)
+void rejectModuleWorkspace(const QString& workspace, const QByteArray& original, const char* expectedPhase)
 {
     REQUIRE(QDir().mkpath(workspace));
     const auto file = QDir(workspace).filePath("session.yaml");
-    const QByteArray original = "formatVersion: 1\nmodules: {extension: {manifest: module.json}}\n"
-                                "plugins: [{id: existing, plugin: fixture.external, module: extension, config: {}}]\n";
     {
         QFile config(file);
         REQUIRE(config.open(QIODevice::WriteOnly));
@@ -212,7 +224,7 @@ void rejectModuleWorkspace(const QString& workspace)
     until([&] { return opened.isReady(); });
     const auto result = opened.tryResult();
     REQUIRE(result && !result->hasValue());
-    REQUIRE(result->error().message.find("--module") != std::string::npos);
+    REQUIRE(result->error().phase == expectedPhase);
     REQUIRE(!scene.host.session && readFile(file) == original);
     scene.close();
     REQUIRE(readFile(file) == original);
@@ -236,7 +248,14 @@ int main(int argc, char** argv)
         openEmpty(workspace, "PLATFORM_EMPTY_REOPEN", false);
         REQUIRE(readFile(file) == saved);
         verifyClosedRuns(workspace);
-        rejectModuleWorkspace(temp.filePath("external"));
+        rejectModuleWorkspace(temp.filePath("external"),
+            "formatVersion: 1\nmodules: {extension: {manifest: module.json}}\n"
+            "plugins: [{id: existing, plugin: fixture.external, module: extension, config: {}}]\n",
+            "WORKBENCH_MODULE_REQUIRED");
+        rejectModuleWorkspace(temp.filePath("reserved"),
+            "formatVersion: 1\nplugins: [{id: parent, plugin: external, disabled: true, "
+            "children: [{id: system, plugin: eve.desktop, disabled: true}]}]\n",
+            "WORKBENCH_RESERVED_PLUGIN");
         verifyWorkbenchDataPaths(QDir(temp.path()));
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {

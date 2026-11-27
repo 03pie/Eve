@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
-project(Eve VERSION 0.2.0 LANGUAGES C CXX)
+project(Eve VERSION 0.2.1 LANGUAGES C CXX)
+# The desktop product and the exact-toolchain business plugin SDK evolve independently.
+set(EVE_SDK_VERSION 0.2.0)
 
 set(EVE_MSVC_SHOWINCLUDES_PREFIX "" CACHE STRING "Override a misdecoded MSVC /showIncludes prefix")
 if(MSVC AND EVE_MSVC_SHOWINCLUDES_PREFIX)

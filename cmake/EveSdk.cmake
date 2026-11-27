@@ -39,7 +39,7 @@ install(DIRECTORY "${PROJECT_SOURCE_DIR}/sdk/include/" DESTINATION "${CMAKE_INST
 configure_package_config_file("${CMAKE_CURRENT_LIST_DIR}/EveConfig.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/EveConfig.cmake" INSTALL_DESTINATION "${eve_sdk_cmake_dir}")
 write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/EveConfigVersion.cmake"
-    VERSION "${PROJECT_VERSION}" COMPATIBILITY ExactVersion)
+    VERSION "${EVE_SDK_VERSION}" COMPATIBILITY ExactVersion)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/EveConfig.cmake" "${CMAKE_CURRENT_BINARY_DIR}/EveConfigVersion.cmake"
     "${CMAKE_CURRENT_LIST_DIR}/EvePlugin.cmake" "${CMAKE_CURRENT_LIST_DIR}/QtPluginContract.cmake"
     "${CMAKE_CURRENT_LIST_DIR}/ModuleIdentity.cmake"

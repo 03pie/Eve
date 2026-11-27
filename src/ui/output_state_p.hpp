@@ -2,6 +2,7 @@
  * @brief 输出服务和工作台共享的宿主状态。候选值、已接纳值与可重建的显示位置分别持有。
  */
 #pragma once
+#include "contribution_backend_p.hpp"
 #include "output_p.hpp"
 #include "pending_values_p.hpp"
 #include "runtime_log_query_p.hpp"
@@ -20,7 +21,9 @@ struct QtOutputOrigin {
     GenerationId generation;
     QString moduleId, moduleVersion, pluginId;
 };
-struct OutputControl {
+struct OutputControl : OutputEndpoint, std::enable_shared_from_this<OutputControl> {
+    Result<std::uint64_t> writeOutput(const Context& owner, std::string channel, std::string text, OutputLevel level) override;
+    Result<std::vector<OutputEntry>> outputSnapshot() override;
     std::shared_ptr<qt::QtScheduler> scheduler;
     QPointer<QPlainTextEdit> editor;
     QPointer<ElaComboBox> targets, runs, levels, instances;

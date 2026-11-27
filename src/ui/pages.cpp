@@ -1,6 +1,7 @@
 /** @file pages.cpp
  * @brief 在 Ela 原生导航外壳中托管动态页面，按撤销贡献、完整删除和闭包释放的顺序清理。
  */
+#include "contribution_backend_p.hpp"
 #include "brand_p.hpp"
 #include "fixed_tabs_p.hpp"
 #include "management_p.hpp"
@@ -111,7 +112,11 @@ protected:
 using Key = std::tuple<InstanceId, Epoch, std::string>;
 struct ShellControl;
 /** @brief 每个贡献保留独立工厂与 effect，不把 Qt parent 当作清理完成证明。 */
-struct PageControl : std::enable_shared_from_this<PageControl> {
+struct PageControl : PageEndpoint, std::enable_shared_from_this<PageControl> {
+    Task<void> readyPage() override;
+    Result<void> navigatePage() override;
+    Task<CleanupReport> closePage() override;
+    Result<PageSnapshot> inspectPage() override;
     std::weak_ptr<ShellControl> shell;
     ContextIdentity owner;
     PageSpec spec;
@@ -166,7 +171,9 @@ private:
     std::shared_ptr<ShellControl> state_;
 };
 /** @brief 全部 UI 账目只由应用线程修改，关闭失败不能强制删除窗口。 */
-struct ShellControl : std::enable_shared_from_this<ShellControl> {
+struct ShellControl : PagesEndpoint, std::enable_shared_from_this<ShellControl> {
+    Result<PageHandle> addPage(const Context& owner, PageSpec spec) override;
+    Result<std::vector<PageSnapshot>> pageSnapshots() override;
     std::shared_ptr<qt::QtScheduler> scheduler;
     std::shared_ptr<ServicesControl> services;
     std::shared_ptr<OutputControl> output;
@@ -562,10 +569,9 @@ Task<void> PageControl::retire()
 
 namespace eve::ui {
 /** @brief owner 和 Context 门禁验证在预留 id 之前完成，工厂由 effect setup 捕获调用。 */
-Result<PageHandle> UiPagesService::add(const Context& owner, PageSpec spec) const
+Result<PageHandle> detail::ShellControl::addPage(const Context& owner, PageSpec spec)
 {
-    auto state = control_.lock();
-    if (!state) return Result<PageHandle>::failure(makeError(ErrorCode::ContextClosing, "UI shell expired"));
+    auto state = shared_from_this();
     if (!state->scheduler->isCurrentThread()) return Result<PageHandle>::failure(makeError(ErrorCode::WrongThread, "UI add requires owner thread"));
     auto identity = owner.identity();
     if (!identity.hasValue()) return Result<PageHandle>::failure(identity.error());
@@ -681,29 +687,32 @@ Result<PageHandle> UiPagesService::add(const Context& owner, PageSpec spec) cons
     return Result<PageHandle>::success(PageHandle(page));
 }
 /** @brief 查询不创建新页面，不授予导航或清理权限。 */
-Result<std::vector<PageSnapshot>> UiPagesService::snapshot() const
+Result<std::vector<PageSnapshot>> detail::ShellControl::pageSnapshots()
 {
-    auto state = control_.lock();
-    if (!state) return Result<std::vector<PageSnapshot>>::success({});
+    auto state = shared_from_this();
     if (!state->scheduler->isCurrentThread()) return Result<std::vector<PageSnapshot>>::failure(makeError(ErrorCode::WrongThread, "UI snapshot requires owner thread"));
     std::vector<PageSnapshot> result;
     for (const auto& item : state->pages) result.push_back(item.second->snapshot());
     return Result<std::vector<PageSnapshot>>::success(std::move(result));
 }
 /** @brief effect 的历史 ready 结果不授予当前业务能力。 */
-Task<void> PageHandle::ready() const { return control_->effect->ready(); }
-/** @brief 同线程也重查 epoch，避免旧句柄在提供者恢复后重新导航。 */
-Result<void> PageHandle::navigate() const
+Task<void> detail::PageControl::readyPage()
 {
-    auto state = control_->shell.lock();
-    if (!state) return Result<void>::failure(makeError(ErrorCode::StaleContext, "page shell expired"));
+    return effect->ready();
+}
+/** @brief 同线程也重查 epoch，避免旧句柄在提供者恢复后重新导航。 */
+Result<void> detail::PageControl::navigatePage()
+{
+    auto state = shell.lock();
+    if (!state)
+        return Result<void>::failure(makeError(ErrorCode::StaleContext, "page shell expired"));
     if (!state->scheduler->isCurrentThread()) return Result<void>::failure(makeError(ErrorCode::WrongThread, "navigation requires owner thread"));
-    return state->navigate(control_);
+    return state->navigate(shared_from_this());
 }
 /** @brief 清理不要求业务 guard 仍有效，停用后的 Context 资源也必须能完成撤销。 */
-Task<CleanupReport> PageHandle::close() const
+Task<CleanupReport> detail::PageControl::closePage()
 {
-    auto page = control_;
+    auto page = shared_from_this();
     if (auto state = page->shell.lock()) {
         if (!state->scheduler->isCurrentThread()) {
             Promise<CleanupReport> rejected;
@@ -716,11 +725,11 @@ Task<CleanupReport> PageHandle::close() const
     return page->effect->close();
 }
 /** @brief 已释放句柄仍保留 owner/id，但不保留页面与工厂。 */
-Result<PageSnapshot> PageHandle::snapshot() const
+Result<PageSnapshot> detail::PageControl::inspectPage()
 {
-    auto state = control_->shell.lock();
+    auto state = shell.lock();
     if (state && !state->scheduler->isCurrentThread()) return Result<PageSnapshot>::failure(makeError(ErrorCode::WrongThread, "page snapshot requires owner thread"));
-    return Result<PageSnapshot>::success(control_->snapshot());
+    return Result<PageSnapshot>::success(snapshot());
 }
 /** @brief 外壳资源在构造时即登记 QObject 屏障；第三方全局资源由固定进程生命周期持有。 */
 ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string preferencesFile)
@@ -816,10 +825,10 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
         }
     };
     control_->output = detail::createOutput(control_->scheduler, output, outputAccess);
-    output_ = std::shared_ptr<OutputService>(new OutputService(control_->output));
+    output_ = std::shared_ptr<OutputService>(new OutputService(detail::outputEndpoint(control_->output)));
     pages_ = std::shared_ptr<UiPagesService>(new UiPagesService(control_));
-    commands_ = std::shared_ptr<CommandService>(new CommandService(control_->services));
-    notifications_ = std::shared_ptr<NotificationService>(new NotificationService(control_->services));
+    commands_ = std::shared_ptr<CommandService>(new CommandService(detail::commandsEndpoint(control_->services)));
+    notifications_ = std::shared_ptr<NotificationService>(new NotificationService(detail::notificationsEndpoint(control_->services)));
     control_->management =
         detail::createManagement(window.get(), control_->scheduler, pages_, commands_, notifications_,
                                  [outputWeak](QWidget* origin) {
@@ -838,7 +847,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     control_->managementKey = "eve:management";
     window->addFooterNode(QString::fromUtf8("输出与问题"), control_->commandsKey, 0, ElaIconType::Terminal);
     management_ = std::shared_ptr<ManagementController>(new ManagementController(control_->management));
-    diagnostics_ = std::shared_ptr<DiagnosticsService>(new DiagnosticsService(control_->management));
+    diagnostics_ = std::shared_ptr<DiagnosticsService>(new DiagnosticsService(detail::diagnosticsEndpoint(control_->management)));
     ElaActionCommander::getInstance()->setIsMessageDisplayEnable(false);
     std::weak_ptr<detail::ShellControl> weak = control_;
     control_->workbench = detail::createWorkbench(

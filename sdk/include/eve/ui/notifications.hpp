@@ -11,7 +11,7 @@
 #include <vector>
 
 namespace eve::ui {
-namespace detail { struct ServicesControl; }
+namespace detail { struct NotificationsEndpoint; struct ServicesControl; }
 class ElaShell;
 /** @brief 通知级别只控制宿主展示，不允许嵌入任意 QWidget 或回调。 */
 enum class NotificationLevel { Info, Warning, Error };
@@ -43,7 +43,7 @@ public:
 private:
     friend class ElaShell;
     /** @brief 服务本身不强持窗口，也不保存调用方 Context。 */
-    explicit NotificationService(std::weak_ptr<detail::ServicesControl> control) : control_(std::move(control)) {}
-    std::weak_ptr<detail::ServicesControl> control_;
+    explicit NotificationService(std::weak_ptr<detail::NotificationsEndpoint> control) : control_(std::move(control)) {}
+    std::weak_ptr<detail::NotificationsEndpoint> control_;
 };
 } // namespace eve::ui

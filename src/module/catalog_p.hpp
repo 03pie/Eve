@@ -54,6 +54,8 @@ Result<GenerationReservation> reserveGeneration(VerifiedSource& source, Generati
 std::shared_ptr<Generation> findGeneration(GenerationId id);
 std::vector<std::shared_ptr<Generation>> allGenerations();
 Result<ModuleLoadReport> failGeneration(const std::shared_ptr<Generation>& generation, ErrorInfo failure);
+enum class ImageDependencies { ModuleDirectory, ApplicationBundle };
 /** @brief 受限搜索取得本目录映射，按首次策略 PIN 并核对实际映像；不能在目录锁内调用。 */
-Result<void> mapGenerationImage(const std::shared_ptr<Generation>& generation);
+Result<void> mapGenerationImage(const std::shared_ptr<Generation>& generation,
+                                ImageDependencies dependencies);
 } // namespace eve::module::detail

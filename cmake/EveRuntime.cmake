@@ -17,6 +17,9 @@ foreach(target IN ITEMS eve_plugin_workbench eve_log_query eve_core eve_qt eve_u
     install(FILES "$<TARGET_FILE:${target}>" DESTINATION "." ${runtime_component})
 endforeach()
 
+install(FILES "$<TARGET_FILE:eve_desktop>" "$<TARGET_FILE_DIR:eve_desktop>/module.json"
+    DESTINATION "system/desktop" ${runtime_component})
+
 get_target_property(qmake Qt5::qmake IMPORTED_LOCATION)
 execute_process(COMMAND "${qmake}" -query QT_INSTALL_PLUGINS OUTPUT_VARIABLE qt_plugins
     OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)

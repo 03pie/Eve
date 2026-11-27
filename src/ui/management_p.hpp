@@ -12,6 +12,8 @@
 class QWidget;
 namespace eve::ui::detail {
 struct ManagementControl;
+struct DiagnosticsEndpoint;
+std::weak_ptr<DiagnosticsEndpoint> diagnosticsEndpoint(const std::shared_ptr<ManagementControl>& control);
 // Optional host adapter. Validation is side-effect-free and uses the same payload grammar as submission.
 struct ConfigurationPayloadValidator {
     virtual ~ConfigurationPayloadValidator() = default;

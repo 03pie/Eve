@@ -9,7 +9,7 @@
 
 namespace eve {
 /**
- * @brief 描述当前构建的版本、编译器和指针宽度。
+ * @brief 描述共享 Core 对应的 SDK 契约版本、编译器和指针宽度。
  */
 struct BuildInfo {
     std::string_view version;

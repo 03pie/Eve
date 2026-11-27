@@ -258,17 +258,18 @@ void closeOutput(const std::shared_ptr<OutputControl>& self)
     self->open = false;
     self->access = {};
 }
+std::weak_ptr<OutputEndpoint> outputEndpoint(const std::shared_ptr<OutputControl>& control)
+{
+    return control;
+}
 } // namespace eve::ui::detail
 
 namespace eve::ui
 {
-Result<std::uint64_t> OutputService::write(const Context& owner, std::string channel, std::string text,
-                                           OutputLevel level) const
+Result<std::uint64_t> detail::OutputControl::writeOutput(const Context& owner, std::string channel, std::string text, OutputLevel level)
 {
     using Output = Result<std::uint64_t>;
-    auto state = control_.lock();
-    if (!state)
-        return Output::failure(makeError(ErrorCode::ContextClosing, "output host expired"));
+    auto state = shared_from_this();
     const auto guard = owner.eventGuard(state->scheduler);
     if (!guard.hasValue())
         return Output::failure(guard.error());
@@ -306,9 +307,9 @@ Result<std::uint64_t> OutputService::write(const Context& owner, std::string cha
     const auto decision = source->decision();
     if (!decision.hasValue())
         return Output::failure(decision.error());
-    const auto sequence = state->sequence + 1;
-    row.entry.sequence = sequence;
-    row.sourceSequence = sequence;
+    const auto nextSequence = state->sequence + 1;
+    row.entry.sequence = nextSequence;
+    row.sourceSequence = nextSequence;
     if (!decision.value().has_value()) {
         const auto target = row.entry.channel;
         const auto metadataBytes = static_cast<std::size_t>(row.sourceName.size() + row.moduleId.size() +
@@ -322,16 +323,14 @@ Result<std::uint64_t> OutputService::write(const Context& owner, std::string cha
         state->admit(std::move(row));
     else
         return Output::failure(makeError(ErrorCode::ContextClosing, "output publication aborted"));
-    state->sequence = sequence;
+    state->sequence = nextSequence;
     detail::presentIncoming(state);
-    return Output::success(sequence);
+    return Output::success(nextSequence);
 }
-Result<std::vector<OutputEntry>> OutputService::snapshot() const
+Result<std::vector<OutputEntry>> detail::OutputControl::outputSnapshot()
 {
     using Output = Result<std::vector<OutputEntry>>;
-    auto state = control_.lock();
-    if (!state)
-        return Output::success({});
+    auto state = shared_from_this();
     if (!state->scheduler->isCurrentThread())
         return Output::failure(makeError(ErrorCode::WrongThread, "output snapshot requires owner"));
     detail::settleOutput(state, false);

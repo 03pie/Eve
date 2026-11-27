@@ -136,7 +136,7 @@ Result<ModuleLoadReport> ModuleManager::loadGeneration(const std::string& plugin
     const auto generation = reserved.value().generation;
     if (!reserved.value().created)
         return Result<ModuleLoadReport>::success({generation->data.generation, true});
-    auto mapped = mapGenerationImage(generation);
+    auto mapped = mapGenerationImage(generation, ImageDependencies::ModuleDirectory);
     if (!mapped.hasValue())
         return failGeneration(generation, mapped.error());
     auto lease = generation->ledger.acquire(ResourceKind::Call, "module.discovery");
