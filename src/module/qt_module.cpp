@@ -39,8 +39,15 @@ bool isSystemDesktop(const PreflightArtifact& artifact, const std::string& root)
            matches(artifact.manifestPath(), desktopManifest) && matches(artifact.libraryPath(), desktopLibrary);
 }
 
+struct InstalledIdentity {
+    const std::string& module;
+    const std::string& plugin;
+    const std::string& digest;
+};
+
 Result<ModuleLoadReport> loadGeneration(const std::string& root, const std::string& path, PreflightLimits limits,
-                                        GenerationId predecessor, ImageDependencies dependencies)
+                                        GenerationId predecessor, ImageDependencies dependencies,
+                                        const InstalledIdentity* selected = nullptr)
 {
     using Output = Result<ModuleLoadReport>;
     auto app = QCoreApplication::instance();
@@ -56,6 +63,12 @@ Result<ModuleLoadReport> loadGeneration(const std::string& root, const std::stri
     if (!source.hasValue())
         return Output::failure(source.error());
     const auto& artifact = source.value()->artifact;
+    const auto& identity = artifact.manifest();
+    if (selected && (identity.moduleId != selected->module || identity.plugins.size() != 1 ||
+        identity.plugins.front() != selected->plugin || identity.moduleId == detail::systemDesktopModuleId ||
+        identity.plugins.front() == detail::systemDesktopPluginId || identity.plugins.front() == "host.configuration" ||
+        identity.sha256 != selected->digest))
+        return Output::failure(error(ErrorCode::AbiMismatch, "Installed module differs from the verified catalogue artifact."));
     if (dependencies == ImageDependencies::ApplicationBundle && !isSystemDesktop(artifact, root)) {
         auto failure = error(ErrorCode::AbiMismatch, "The installed desktop module has an unexpected identity or path.");
         failure.phase = "workbench.desktop.identity";
@@ -135,6 +148,12 @@ Result<ModuleLoadReport> detail::loadSystemDesktopModule()
 Result<ModuleLoadReport> loadQtModule(const std::string& root, const std::string& path, PreflightLimits limits)
 {
     return loadGeneration(root, path, limits, {}, ImageDependencies::ModuleDirectory);
+}
+Result<ModuleLoadReport> detail::loadInstalledQtModule(const std::string& root, const std::string& moduleId,
+    const std::string& pluginId, const std::string& digest)
+{
+    const InstalledIdentity selected{moduleId, pluginId, digest};
+    return loadGeneration(root, "module.json", {}, {}, ImageDependencies::ModuleDirectory, &selected);
 }
 Result<ModuleLoadReport> stageQtModule(const std::string& root, const std::string& path, GenerationId predecessor,
                                        PreflightLimits limits)

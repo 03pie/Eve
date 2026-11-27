@@ -209,7 +209,7 @@ void verifyWorkbenchDataPaths(const QDir& root)
     }
 }
 
-void rejectModuleWorkspace(const QString& workspace, const QByteArray& original, const char* expectedPhase)
+void openModuleWorkspace(const QString& workspace, const QByteArray& original, const char* expectedFailure = nullptr)
 {
     REQUIRE(QDir().mkpath(workspace));
     const auto file = QDir(workspace).filePath("session.yaml");
@@ -223,11 +223,22 @@ void rejectModuleWorkspace(const QString& workspace, const QByteArray& original,
     const auto opened = scene.host.open(std::nullopt, workspace);
     until([&] { return opened.isReady(); });
     const auto result = opened.tryResult();
-    REQUIRE(result && !result->hasValue());
-    REQUIRE(result->error().phase == expectedPhase);
-    REQUIRE(!scene.host.session && readFile(file) == original);
+    REQUIRE(result);
+    if (expectedFailure) {
+        REQUIRE(!result->hasValue() && result->error().phase == expectedFailure);
+        REQUIRE(!scene.host.session && readFile(file) == original);
+    } else {
+        REQUIRE(result->hasValue());
+        REQUIRE(await(scene.host.applyInitial().settled)->value().outcome == eve::loader::PlanOutcome::Applied);
+        const auto items = scene.host.extensionControls()->list().value();
+        REQUIRE(std::any_of(items.begin(), items.end(), [](const auto& item) {
+            return item.legacyReference && item.missing && item.pluginId == "fixture.external" && item.instances == 1;
+        }));
+        REQUIRE(scene.host.session->snapshot().value().coordinator.running.empty());
+    }
     scene.close();
-    REQUIRE(readFile(file) == original);
+    REQUIRE(eve::loader::parseConfiguration(readFile(file).toStdString()).value().normalizedYaml() ==
+            eve::loader::parseConfiguration(original.toStdString()).value().normalizedYaml());
 }
 }
 
@@ -248,11 +259,10 @@ int main(int argc, char** argv)
         openEmpty(workspace, "PLATFORM_EMPTY_REOPEN", false);
         REQUIRE(readFile(file) == saved);
         verifyClosedRuns(workspace);
-        rejectModuleWorkspace(temp.filePath("external"),
+        openModuleWorkspace(temp.filePath("external"),
             "formatVersion: 1\nmodules: {extension: {manifest: module.json}}\n"
-            "plugins: [{id: existing, plugin: fixture.external, module: extension, config: {}}]\n",
-            "WORKBENCH_MODULE_REQUIRED");
-        rejectModuleWorkspace(temp.filePath("reserved"),
+            "plugins: [{id: existing, plugin: fixture.external, module: extension, config: {}}]\n");
+        openModuleWorkspace(temp.filePath("reserved"),
             "formatVersion: 1\nplugins: [{id: parent, plugin: external, disabled: true, "
             "children: [{id: system, plugin: eve.desktop, disabled: true}]}]\n",
             "WORKBENCH_RESERVED_PLUGIN");

@@ -2,11 +2,13 @@
  * @brief 选择桌面工作区，驱动宿主启动、关闭和 Qt 事件循环。
  */
 #include "workbench.hpp"
+#include "desktop_selection.hpp"
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
 #include <QFileInfo>
 #include <QMessageBox>
+#include <QProcess>
 #include <QStandardPaths>
 #include <QTimer>
 #include <iostream>
@@ -20,7 +22,6 @@ struct StartupDiagnostic { const char* code; const char* message; };
 StartupDiagnostic startupDiagnostic(const ErrorInfo& error)
 {
     static constexpr StartupDiagnostic known[] = {
-        {"WORKBENCH_MODULE_REQUIRED", "该工作区引用外部模块。请使用 --module 指定清单，或通过 --workspace 打开另一个工作区。"},
         {"QT_MANIFEST_READ_FAILED", "无法读取或完整校验模块清单。"},
         {"QT_MODULE_INCOMPATIBLE", "模块预检发现 ABI、加载器或工具链不兼容。"},
         {"QT_MANIFEST_INVALID", "模块清单格式或字段校验失败。"},
@@ -33,6 +34,7 @@ StartupDiagnostic startupDiagnostic(const ErrorInfo& error)
         {"WORKBENCH_DESKTOP_INCOMPATIBLE", "系统桌面的映像、Qt 元数据或 SDK 契约与宿主不兼容。"},
         {"WORKBENCH_DESKTOP_LOAD_FAILED", "系统桌面装载失败，请检查安装文件及运行库。"},
         {"WORKBENCH_DESKTOP_ACTIVATION_FAILED", "系统桌面实例未能完成激活。"},
+        {"WORKBENCH_SELECTED_DESKTOP_FAILED", "所选桌面启动失败，将恢复内置 Ela 桌面。"},
     };
     for (const auto& entry : known)
         if (error.phase == entry.code) return entry;
@@ -61,6 +63,7 @@ int main(int argc, char** argv)
     cli.addHelpOption();
     cli.addOption({{"m", "module"}, "Optional trusted external Qt UI module manifest.", "module.json"});
     cli.addOption({{"w", "workspace"}, "Writable workbench data directory.", "directory"});
+    cli.addOption({"safe-desktop", "Start with the bundled Ela desktop."});
     cli.process(application);
     if (!cli.positionalArguments().isEmpty()) cli.showHelp(1);
     const auto bundled = QDir(application.applicationDirPath()).filePath("plugins/current/module.json");
@@ -73,13 +76,20 @@ int main(int argc, char** argv)
     const auto workspace = cli.isSet("workspace") ? cli.value("workspace")
         : QFileInfo(workbench::workbenchDataFile(data, manifest ? QStringLiteral("session.yaml")
                                                   : QStringLiteral("platform-workspace/session.yaml"))).absolutePath();
-    workbench::Workbench host;
+    workbench::Workbench host(cli.isSet("safe-desktop"));
     int status = EXIT_SUCCESS;
+    enum class Restart { None, Requested, Recovery };
+    auto restart = Restart::None;
+    bool stopping = false;
     auto close = [&] {
+        if (stopping) return;
+        stopping = true;
         host.close().thenOn(host.scheduler, [&](const Result<void>& outcome) {
             if (!outcome.hasValue()) {
                 std::cerr << outcome.error().message << '\n';
                 if (status == EXIT_SUCCESS && host.canRetryClose()) {
+                    stopping = false;
+                    restart = Restart::None;
                     recordFailure(host, outcome.error(), "工作区未关闭。", "WORKBENCH_CLOSE_FAILED");
                     (void)host.desktop()->cancelCloseRequest();
                     QMessageBox::warning(nullptr, QString::fromUtf8("工作区未关闭"),
@@ -90,21 +100,59 @@ int main(int argc, char** argv)
             }
             QTimer::singleShot(0, &application, [&] {
                 const auto stopped = host.scheduler->close();
-                application.exit(stopped.hasValue() ? status : EXIT_FAILURE);
+                if (!stopped.hasValue()) status = EXIT_FAILURE;
+                if ((restart == Restart::Requested && status == EXIT_SUCCESS) || restart == Restart::Recovery) {
+                    auto args = QCoreApplication::arguments().mid(1);
+                    args.removeAll("--safe-desktop");
+                    if (restart == Restart::Recovery) args.append("--safe-desktop");
+                    if (!QProcess::startDetached(application.applicationFilePath(), args)) {
+                        std::cerr << "Could not restart Eve. Reopen it using --safe-desktop for recovery.\n";
+                        status = EXIT_FAILURE;
+                    }
+                }
+                application.exit(status);
             });
         });
     };
+    host.restartRequested = [&] { if (!stopping) { restart = Restart::Requested; close(); } };
     auto failed = [&](const ErrorInfo& error) {
         const auto diagnostic = startupDiagnostic(error);
         const auto text = std::string(diagnostic.code) + ": " + diagnostic.message;
         recordFailure(host, error, text.c_str(), diagnostic.code);
+        if (error.phase == "WORKBENCH_SELECTED_DESKTOP_FAILED" && !cli.isSet("safe-desktop")) {
+            const auto reset = host.selection().recover();
+            if (!reset.hasValue()) std::cerr << reset.error().message << '\n';
+            restart = Restart::Recovery;
+        } else if (host.selection().attemptedExternal()) {
+            const auto deferred = host.selection().defer();
+            if (!deferred.hasValue()) std::cerr << deferred.error().message << '\n';
+        }
         std::cerr << "Eve: " << error.message << '\n';
         status = EXIT_FAILURE;
         QTimer::singleShot(0, &application, close);
     };
     host.open(manifest, workspace).thenOn(host.scheduler, [&](const Result<void>& opened) {
         if (!opened.hasValue()) { failed(opened.error()); return; }
-        try {
+        auto view = host.desktop();
+        auto bound = view->onCloseRequested(close);
+        if (!bound.hasValue()) { failed(bound.error()); return; }
+        auto shown = view->show();
+        if (!shown.hasValue()) {
+            failed(host.selection().attemptedExternal() ? workbench::selectedDesktopFailure(shown.error()) : shown.error());
+            return;
+        }
+        QTimer::singleShot(0, &application, [&] {
+          if (stopping) return;
+          try {
+            if (host.selection().attemptedExternal()) {
+                if (!host.desktop() || !host.desktop()->externalLayoutVisible()) {
+                    failed(workbench::selectedDesktopFailure(makeError(ErrorCode::ActivationFailed,
+                        "Selected desktop did not present a visible workbench.")));
+                    return;
+                }
+                auto confirmed = host.selection().confirm();
+                if (!confirmed.hasValue()) { failed(workbench::selectedDesktopFailure(confirmed.error())); return; }
+            }
             const auto applied = host.applyInitial();
             applied.settled.thenOn(host.scheduler, [&](const Result<loader::PlanReport>& result) {
                 if (!result.hasValue())
@@ -113,14 +161,10 @@ int main(int argc, char** argv)
                     recordFailure(host, error, "工作区目标启动失败。", "WORKBENCH_TARGET_FAILED");
                 if (auto view = host.desktop()) (void)view->refresh();
             });
-            auto view = host.desktop();
-            auto bound = view->onCloseRequested(close);
-            if (!bound.hasValue()) { failed(bound.error()); return; }
-            auto shown = view->show();
-            if (!shown.hasValue()) failed(shown.error());
-        } catch (const std::exception& error) {
+          } catch (const std::exception& error) {
             failed(makeError(ErrorCode::ActivationFailed, error.what()));
-        }
+          }
+        });
     });
     return application.exec();
 }

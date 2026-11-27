@@ -1,6 +1,7 @@
 add_subdirectory(abi)
 if(TARGET eve_external_workbench)
     add_subdirectory(logging)
+    add_subdirectory(extensions)
 endif()
 if(EVE_INSTALL_SDK)
     add_subdirectory(sdk)

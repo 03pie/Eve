@@ -1,8 +1,8 @@
-add_library(eve_external_workbench STATIC workbench.cpp)
+add_library(eve_external_workbench STATIC workbench.cpp workspace_extensions.cpp desktop_selection.cpp)
 target_include_directories(eve_external_workbench PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}"
     PRIVATE "${PROJECT_SOURCE_DIR}/src/ui" "${PROJECT_SOURCE_DIR}/src/module")
 target_link_libraries(eve_external_workbench PUBLIC Eve::ModuleQt Eve::ModuleQtPreflight
-    Eve::Ui Eve::ConfigSession Eve::ConfigKernel Eve::ConfigStoreQt)
+    Eve::Ui Eve::Extensions Eve::ConfigSession Eve::ConfigKernel Eve::ConfigStoreQt)
 add_dependencies(eve_external_workbench eve_desktop)
 eve_target_defaults(eve_external_workbench)
 target_compile_definitions(eve_external_workbench PRIVATE EVE_PRODUCT_VERSION="${PROJECT_VERSION}")

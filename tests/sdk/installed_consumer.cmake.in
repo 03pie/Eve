@@ -65,6 +65,29 @@ foreach(mode IN ITEMS create reopen)
         COMMAND_ERROR_IS_FATAL ANY)
 endforeach()
 
+# Compile a desktop using only the staged public SDK and install its generated archive.
+set(desktop_build "${scratch}/desktop-build")
+execute_process(COMMAND "${CMAKE_COMMAND}" -S "${share}/templates/desktop" -B "${desktop_build}" -G "${HOST_GENERATOR}"
+    "-DCMAKE_MAKE_PROGRAM=${HOST_MAKE_PROGRAM}" "-DCMAKE_CXX_COMPILER=${HOST_CXX_COMPILER}"
+    "-DCMAKE_BUILD_TYPE=${HOST_CONFIG}" "-DQt5_DIR=${HOST_QT_DIR}" "-DEve_DIR=${eve_dir}"
+    COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND "${CMAKE_COMMAND}" --build "${desktop_build}" --target external_desktop_package
+    COMMAND_ERROR_IS_FATAL ANY)
+foreach(mode IN ITEMS install safe selected selected unacknowledged recovered)
+    execute_process(COMMAND "${DESKTOP_TEST_EXE}" "${desktop_build}/external_desktop.evepkg" "${scratch}/desktop-workspace" "${mode}"
+        COMMAND_ERROR_IS_FATAL ANY)
+endforeach()
+
+# A normal Qt factory with a valid image/manifest cannot impersonate the desktop contract.
+file(READ "${consumer}/package.json" descriptor)
+string(REPLACE "\"business\"" "\"desktop\"" descriptor "${descriptor}")
+file(WRITE "${consumer}/package.json" "${descriptor}")
+execute_process(COMMAND "${CMAKE_COMMAND}" --build "${build}" --target external_page_package COMMAND_ERROR_IS_FATAL ANY)
+foreach(mode IN ITEMS install incompatible recovered)
+    execute_process(COMMAND "${DESKTOP_TEST_EXE}" "${build}/external_page.evepkg" "${scratch}/desktop-workspace" "${mode}"
+        COMMAND_ERROR_IS_FATAL ANY)
+endforeach()
+
 file(REAL_PATH "${scratch}" actual_scratch)
 if(NOT actual_scratch STREQUAL scratch)
     message(FATAL_ERROR "The SDK consumer test directory moved: ${scratch}")
