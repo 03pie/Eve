@@ -1,5 +1,9 @@
 # Eve 仓库外插件 SDK
 
+## 从 Cordis 0.1.x 迁移
+
+使用 Eve 0.2.0 SDK 时，将工程改为 `find_package(Eve 0.2.0 EXACT CONFIG REQUIRED COMPONENTS QtUiPluginSdk)`，通过 `eve_add_qt_ui_plugin` 构建。C++ 头路径使用 `<eve/...>`，命名空间使用 `eve::`。以新版模板重新生成 Qt metadata 和工厂 IID。对于 Native 模块，使用 `<eve_abi/...>` 的声明重建并导出 `eve_module_query_v1`、`eve_query_v1` 和所实现的可选扩展。最后由构建助手重新生成与产物匹配的清单及 SHA-256。插件作者原来分配的模块 ID 和插件 ID 可继续使用，已有工作区通过这些身份关联实例。
+
 当前交付面向 Windows x64、匹配 MSVC、动态 CRT 与 Qt 5.15.2 的共享 C++ 插件。安装模板的 CMakeLists 指定生产该 SDK 的精确版本。插件和实际宿主使用兼容的同一组 Core/Qt/Ui 共享库，Qt 加载器检查实际 Core 身份和 metadata。
 
 第一方代码的公开许可证待确定。随源码使用的第三方依赖及其来源见[第三方声明](../THIRD_PARTY_NOTICES.md)。

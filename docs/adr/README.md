@@ -83,5 +83,8 @@
 
 - [ADR-0067 Windows 工作台运行时的安装边界](0067-windows-runtime.md)
 - [ADR-0068 Windows 桌面安装器](0068-windows-installer.md)
+- [ADR-0069 Eve 平台与开发接口命名](0069-eve-platform-identity.md)
+
+0068 及以前的记录沿用决策时的 Cordis 项目名和接口名；当前模块名称与开发入口见[平台架构](../architecture.md)。
 
 内部交付和验收记录可在 Git 历史中查看。
