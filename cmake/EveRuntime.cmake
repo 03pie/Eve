@@ -46,7 +46,7 @@ endforeach()
 
 set(notices "${PROJECT_SOURCE_DIR}/packaging/windows/licenses")
 install(FILES "${notices}/Runtime-Notices.txt" "${notices}/Qt-5.15.2.txt" DESTINATION licenses ${runtime_component})
-foreach(component IN ITEMS ela libyaml)
+foreach(component IN ITEMS ela libyaml miniz)
     install(FILES "${PROJECT_SOURCE_DIR}/third_party/${component}/LICENSE"
         DESTINATION "licenses/${component}" ${runtime_component})
 endforeach()

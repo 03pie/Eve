@@ -32,6 +32,7 @@ private:
 
 /** @brief 锁文件以 CREATE_NEW 和 DELETE_ON_CLOSE 获得；不删除其他进程遗留或占有的锁。 */
 Result<std::unique_ptr<InstallHandle>> lockModuleInstall(const QString& store, const std::string& hash);
+bool renameDirectoryWithoutReplacement(HANDLE directory, const QString& destination);
 
 class InstallDirectory {
 public:

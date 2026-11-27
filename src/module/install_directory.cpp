@@ -133,11 +133,8 @@ Result<void> InstallDirectory::copy(const OpenedPath& source, const QString& nam
         return Result<void>::failure(failure("module.install.copy", "flush or fixed source confirmation failed"));
     return Result<void>::success();
 }
-Result<void> InstallDirectory::publish(const QString& destination)
+bool renameDirectoryWithoutReplacement(HANDLE directory, const QString& destination)
 {
-    if (published_ || cleanupAttempted_ || files_.size() != 2 || QDir::cleanPath(destination) != destination ||
-        QFileInfo(destination).absolutePath() != QFileInfo(path_).absolutePath())
-        return Result<void>::failure(failure("module.install.publish", "incomplete installation ownership"));
     // 同卷绝对路径，ReplaceIfExists=FALSE。必须先关闭子文件读句柄，Windows 才能重命名目录。
     const auto target = nativeModulePath(destination);
     const auto bytes = target.size() * sizeof(wchar_t);
@@ -148,7 +145,14 @@ Result<void> InstallDirectory::publish(const QString& destination)
     rename->RootDirectory = nullptr;
     rename->FileNameLength = static_cast<DWORD>(bytes);
     std::memcpy(rename->FileName, target.data(), bytes);
-    if (!SetFileInformationByHandle(directory_.get(), FileRenameInfo, rename, static_cast<DWORD>(buffer.size())))
+    return SetFileInformationByHandle(directory, FileRenameInfo, rename, static_cast<DWORD>(buffer.size())) != FALSE;
+}
+Result<void> InstallDirectory::publish(const QString& destination)
+{
+    if (published_ || cleanupAttempted_ || files_.size() != 2 || QDir::cleanPath(destination) != destination ||
+        QFileInfo(destination).absolutePath() != QFileInfo(path_).absolutePath())
+        return Result<void>::failure(failure("module.install.publish", "incomplete installation ownership"));
+    if (!renameDirectoryWithoutReplacement(directory_.get(), destination))
         return Result<void>::failure(
             failure("module.install.publish", "cannot publish without replacing existing content", GetLastError()));
     published_ = true;

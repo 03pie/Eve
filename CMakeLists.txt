@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(Eve VERSION 0.2.1 LANGUAGES C CXX)
+project(Eve VERSION 0.3.0 LANGUAGES C CXX)
 # The desktop product and the exact-toolchain business plugin SDK evolve independently.
 set(EVE_SDK_VERSION 0.2.0)
 
@@ -67,6 +67,9 @@ if(EVE_REQUIRE_QT5152)
     add_subdirectory(src/qt)
 endif()
 add_subdirectory(src/module)
+if(TARGET eve_module_qt)
+    add_subdirectory(src/extensions)
+endif()
 if(TARGET eve_module_native)
     add_subdirectory(src/replacement)
 endif()

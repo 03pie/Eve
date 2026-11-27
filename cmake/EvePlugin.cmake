@@ -57,3 +57,22 @@ function(eve_add_qt_ui_plugin target)
             "-DPLUGIN_ID=${plugin_PLUGIN_ID}" "-DMODULE_VERSION=${plugin_MODULE_VERSION}"
             -DLOADER=qt-ui -DUNLOAD_POLICY=resident -P "${manifest_writer}" VERBATIM)
 endfunction()
+
+# Package a built Qt module without renaming the DLL or duplicating its identity in package.json.
+function(eve_add_extension_package target)
+    cmake_parse_arguments(PARSE_ARGV 1 pkg "" "PACKAGE_JSON;ICON" "")
+    if(NOT TARGET "${target}" OR NOT pkg_PACKAGE_JSON OR pkg_UNPARSED_ARGUMENTS OR pkg_KEYWORDS_MISSING_VALUES)
+        message(FATAL_ERROR "Expected eve_add_extension_package(<target> PACKAGE_JSON <path> [ICON <path>])")
+    endif()
+    get_filename_component(descriptor "${pkg_PACKAGE_JSON}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+    set(icon "")
+    if(pkg_ICON)
+        get_filename_component(icon "${pkg_ICON}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+    endif()
+    set(output "${CMAKE_CURRENT_BINARY_DIR}/${target}.evepkg")
+    add_custom_target(${target}_package
+        COMMAND "${CMAKE_COMMAND}" "-DLIBRARY=$<TARGET_FILE:${target}>" "-DPACKAGE_JSON=${descriptor}"
+            "-DICON=${icon}" "-DOUTPUT=${output}" -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/WriteExtensionPackage.cmake"
+        DEPENDS ${target} "${descriptor}" ${icon}
+        BYPRODUCTS "${output}" VERBATIM)
+endfunction()

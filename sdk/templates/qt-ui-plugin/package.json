@@ -1,0 +1,7 @@
+{
+  "formatVersion": 1,
+  "kind": "business",
+  "name": "SDK page",
+  "publisher": "SDK example",
+  "description": "A page contributed by an independently built Qt extension."
+}
