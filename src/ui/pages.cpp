@@ -9,6 +9,7 @@
 #include "appearance_p.hpp"
 #include "home_p.hpp"
 #include "extension_dialog_p.hpp"
+#include "extension_features_p.hpp"
 #include "panel_p.hpp"
 #include "preferences_p.hpp"
 #include "runtime_log_archive_p.hpp"
@@ -240,10 +241,12 @@ struct ShellControl : PagesEndpoint, std::enable_shared_from_this<ShellControl> 
             (void)appendOutput(output, {}, "platform", items.error().message, OutputLevel::Error);
             return;
         }
+        const auto dialog = extensionDialog;
         setWorkbenchHomeExtensions(workbench, items.value(),
-            [dialog = extensionDialog](const QString& id, const QString& instance) {
+            [dialog](const QString& id, const QString& instance) {
                 if (dialog) dialog->openItem(id, instance);
             });
+        if (open && dialog) dialog->syncInventory(items.value());
     }
     /** @brief 原生导航和页签共享稳定 key，反向同步选择不再次派发导航。 */
     void syncSelection(const QString& key)
@@ -614,6 +617,52 @@ Task<void> PageControl::retire()
     });
     return closed.task();
 }
+
+namespace {
+ExtensionWorkspace extensionWorkspace(const ShellControl& shell, const DiagnosticsSnapshot& snapshot,
+                                      const QString& plugin)
+{
+    ExtensionWorkspace workspace;
+    const auto pluginId = plugin.toStdString();
+    const auto& kernel = snapshot.kernel;
+    const auto runtime = std::find_if(kernel.names.begin(), kernel.names.end(),
+        [&](const auto& named) { return named.name == pluginId; });
+    std::map<std::pair<InstanceId, Epoch>, QString> owners;
+    if (runtime != kernel.names.end())
+        for (const auto& row : kernel.instances)
+            if (row.runtime == runtime->id && row.state == InstanceState::Active)
+                owners.emplace(std::make_pair(row.instance, row.epoch), QObject::tr("实例 #%1").arg(row.instance.value()));
+
+    if (snapshot.configuration)
+        for (const auto& entry : snapshot.configuration->entries) {
+            if (entry.plugin != pluginId) continue;
+            const auto path = QString::fromStdString(entry.path);
+            workspace.paths << path;
+            if (!entry.hasActual) continue;
+            const auto active = owners.find({entry.instance, entry.epoch});
+            if (active != owners.end()) active->second = path;
+        }
+
+    for (const auto& page : snapshot.pages) {
+        const auto owner = owners.find({page.owner.instance, page.owner.epoch});
+        if (owner == owners.end() || page.retiring || !page.widgetAlive) continue;
+        const auto found = shell.pages.find({page.owner.instance, page.owner.epoch, page.id});
+        if (found == shell.pages.end()) continue;
+        const auto& record = *found->second;
+        const bool window = record.dialog && record.presentable();
+        if (!page.navigationPresent && !window) continue;
+        workspace.pages.push_back({QString::fromStdString(page.id), QString::fromStdString(record.spec.title),
+                                   owner->second, window});
+    }
+    for (const auto& command : snapshot.commands) {
+        const auto owner = owners.find({command.owner.instance, command.owner.epoch});
+        if (owner != owners.end() && isPublishedCommand(shell.services, command))
+            workspace.commands.push_back({QString::fromStdString(command.id), QString::fromStdString(command.title),
+                                          owner->second});
+    }
+    return workspace;
+}
+} // namespace
 } // namespace eve::ui::detail
 
 namespace eve::ui {
@@ -927,7 +976,13 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
              catalogue.allowFallback = home.allowContributions;
              for (const auto id : home.hidden)
                  catalogue.hidden.insert(QString::number(id.value()));
-             if (!home.diagnostics)
+             if (auto dialog = state->extensionDialog) {
+                 const auto plugin = dialog->visibleFeaturePlugin();
+                 if (!plugin.isEmpty())
+                     dialog->refreshFeatures(plugin, home.diagnostics
+                         ? detail::extensionWorkspace(*state, *home.diagnostics, plugin) : detail::ExtensionWorkspace{});
+             }
+             if (!state->open || !home.diagnostics)
                  return catalogue;
              const auto& snapshot = *home.diagnostics;
              if (state->extensions && snapshot.configuration &&
@@ -1229,17 +1284,16 @@ Result<void> ElaShell::bindExtensions(std::shared_ptr<ExtensionControls> control
     if (!controls || !controls->list || !controls->preview || !controls->apply || control_->extensions)
         return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "invalid or duplicate extension binding"));
     std::weak_ptr<detail::ShellControl> weak = control_;
-    const auto instances = [weak](const QString& plugin) {
-        QStringList paths;
+    const auto readWorkspace = [weak](const QString& plugin) {
         if (auto state = weak.lock(); state && state->open) {
-            auto snapshot = detail::managementHomeSnapshot(state->management);
-            if (snapshot.diagnostics && snapshot.diagnostics->configuration)
-                for (const auto& entry : snapshot.diagnostics->configuration->entries)
-                    if (QString::fromStdString(entry.plugin) == plugin) paths << QString::fromStdString(entry.path);
+            detail::ShellControl::NavigationAccess access(*state);
+            const auto snapshot = detail::managementHomeSnapshot(state->management);
+            if (state->open && snapshot.diagnostics)
+                return detail::extensionWorkspace(*state, *snapshot.diagnostics, plugin);
         }
-        return paths;
+        return detail::ExtensionWorkspace{};
     };
-    auto present = [weak, instances](ExtensionAction action, const QString& plugin, const QString& path) {
+    auto present = [weak, readWorkspace](ExtensionAction action, const QString& plugin, const QString& path) {
         auto state = weak.lock();
         if (!state || !state->open) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closing"));
         detail::ShellControl::NavigationAccess access(*state);
@@ -1249,14 +1303,14 @@ Result<void> ElaShell::bindExtensions(std::shared_ptr<ExtensionControls> control
             return Result<void>::success();
         }
         if (action == ExtensionAction::AddInstance) return detail::showAddPluginDialog(state->management, plugin);
-        if (action == ExtensionAction::Configure && !path.isEmpty() && instances(plugin).contains(path))
+        if (action == ExtensionAction::Configure && !path.isEmpty() && readWorkspace(plugin).paths.contains(path))
             return detail::showManagementDialog(state->management, "configuration:" + path, true);
         return Result<void>::failure(makeError(ErrorCode::StaleContext, "工作区实例不可用，请刷新后重试。"));
     };
     detail::ShellControl::NavigationAccess access(*control_);
     const auto refresh = [weak] { if (auto state = weak.lock()) state->refreshExtensions(); };
     control_->extensions = controls;
-    control_->extensionDialog = new detail::ExtensionDialog(control_->scheduler, controls, instances, present,
+    control_->extensionDialog = new detail::ExtensionDialog(control_->scheduler, controls, readWorkspace, present,
                                                            refresh, control_->window);
     detail::registerPlatformCommands(control_->services,
         detail::bindWorkbenchExtensions(control_->workbench, control_->extensionDialog, controls, refresh));

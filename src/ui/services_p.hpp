@@ -4,6 +4,7 @@
 #pragma once
 #include <eve/qt/scheduler.hpp>
 #include <eve/task.hpp>
+#include <eve/ui/commands.hpp>
 #include <memory>
 #include "output_p.hpp"
 #include <vector>
@@ -18,6 +19,8 @@ struct NotificationsEndpoint;
 std::weak_ptr<NotificationsEndpoint> notificationsEndpoint(const std::shared_ptr<ServicesControl>& control);
 struct CommandsEndpoint;
 std::weak_ptr<CommandsEndpoint> commandsEndpoint(const std::shared_ptr<ServicesControl>& control);
+/** Uses the same pure presentation gate as the command palette, without running enabled(). */
+bool isPublishedCommand(const std::shared_ptr<ServicesControl>& control, const CommandSnapshot& command);
 void configureNotificationCenter(const std::shared_ptr<ServicesControl>& control, QWidget* window,
                                  std::function<QString(InstanceId)> sourceName = {});
 Result<void> showNotificationCenter(const std::shared_ptr<ServicesControl>& control, QWidget* origin = nullptr);

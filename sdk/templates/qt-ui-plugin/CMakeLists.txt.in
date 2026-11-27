@@ -7,4 +7,4 @@ eve_add_qt_ui_plugin(external_page
     MODULE_ID org.example.eve.page
     PLUGIN_ID example.page
     MODULE_VERSION ${PROJECT_VERSION})
-eve_add_extension_package(external_page PACKAGE_JSON package.json)
+eve_add_extension_package(external_page PACKAGE_JSON package.json README README.md)

@@ -20,7 +20,8 @@ public:
 private:
     enum class Activation { AfterInstall, Enable, Disable };
     std::vector<ui::ExtensionItem> inventory() const;
-    Task<void> apply(ui::ExtensionAction action, const QString& id, const QString& path, const QString& digest);
+    Task<void> apply(ui::ExtensionAction action, const QString& id, const QString& path, const QString& digest,
+                     std::optional<QString> expectedInstalledHash);
     loader::ConfiguredPlugin attach(const extensions::Package& package, const std::string& alias, bool pinned);
     Task<void> updateInstances(const extensions::Package& package, Activation action);
     Task<void> reconcile(const loader::ParsedConfiguration& desired);

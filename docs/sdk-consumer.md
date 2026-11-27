@@ -50,13 +50,17 @@ eve_add_qt_ui_plugin(my_plugin
 
 ### 制作离线扩展包
 
-在调用 `eve_add_qt_ui_plugin` 后加入以下构建声明。可选的 `ICON` 参数指定包内展示的 PNG 图标。
+在调用 `eve_add_qt_ui_plugin` 后加入以下构建声明。`README` 指定详情介绍，`CHANGELOG` 指定版本变更记录，`ICON` 指定 PNG 图标，三项均可省略。
 
 ```cmake
-eve_add_extension_package(my_plugin PACKAGE_JSON package.json)
+eve_add_extension_package(my_plugin PACKAGE_JSON package.json README README.md CHANGELOG CHANGELOG.md)
 ```
 
-下面是业务扩展的 `package.json`。模块 ID、插件 ID、模块版本和 DLL 的 SHA-256 都取自生成的 `module.json`。展示名称与发布者由作者填写，`description` 和默认实例配置 `defaultConfig` 可以省略。
+两份文档均使用 UTF-8 编码，每份最多 256 KiB，打包后位于包根目录的 `README.md` 或 `CHANGELOG.md`。工作台在确认安装前即可展示文档，安装后仍可离线阅读。修改已发布版本的说明文档时也需要递增版本号。
+
+向已发布的 0.3.1 及更早支持离线包的工作台分发时，省略 `README` 和 `CHANGELOG` 并保留对应的安装包。那些读取器只接受包描述、模块清单、DLL 和可选 PNG 图标。SDK 的 `find_package` 版本约束描述插件接口兼容性，能否读取新增包成员取决于工作台。打包助手检查文档存在和长度，发布前可用目标工作台打开成品，预览名称、正文和变更记录并检查编码。
+
+下面是业务扩展的 `package.json`。模块 ID、插件 ID、模块版本和 DLL 的 SHA-256 都取自生成的 `module.json`。展示名称与发布者由作者填写，单行摘要 `description` 和默认实例配置 `defaultConfig` 可以省略。
 
 ```json
 {
@@ -64,10 +68,13 @@ eve_add_extension_package(my_plugin PACKAGE_JSON package.json)
   "kind": "business",
   "name": "项目面板",
   "publisher": "示例团队",
+  "categories": ["工作区"],
   "description": "为当前工作区提供项目面板。",
   "defaultConfig": {}
 }
 ```
+
+可选字段 `categories` 最多允许 32 个分类，每项最多 64 个字符。同名分类忽略大小写、保留首次出现的名称与顺序。`homepage` 使用网页 URL，`repository` 和 `bugs` 可以使用 URL 字符串或含 `url` 属性的对象。所有资源链接都须是无登录凭据的 HTTP 或 HTTPS 地址。`license` 可填写简短的许可证标识、SPDX 表达式或许可证网页地址。这些字段和 README 一起参与发布内容校验。
 
 执行 `cmake --build build --target my_plugin_package`。将 `build/my_plugin.evepkg` 交给用户，在首页选择安装包，检查详情并确认安装。业务实例由工作区配置保存。更新时递增 CMake 的 `MODULE_VERSION`。平台会检查映像摘要和本机工具链兼容性。
 

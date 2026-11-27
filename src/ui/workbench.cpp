@@ -851,6 +851,13 @@ std::vector<QAction*> bindWorkbenchExtensions(const std::shared_ptr<WorkbenchCon
         [guarded](WorkbenchControl& state) {
             if (state.open && guarded) guarded->choosePackage();
         });
+    dialog->categorySelected = [show = QPointer<QAction>(open), window = control->window](const QString& category) {
+        if (!show) return;
+        show->trigger();
+        if (window)
+            if (auto home = dynamic_cast<HomePage*>(window->findChild<QWidget*>("EveWelcomePage")))
+                home->focusExtensions(category);
+    };
     if (auto button = control->window->findChild<QAbstractButton*>("EveHomeInstallExtension")) {
         button->show();
         QObject::connect(button, &QAbstractButton::clicked, install, &QAction::trigger);

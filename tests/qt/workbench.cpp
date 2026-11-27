@@ -786,6 +786,7 @@ void pageLayout()
 }
 
 void extensionDetails();
+void extensionFeatures();
 /** @brief 按场景隔离进程，测试真实 Qt/Ela 而非模拟布局。 */
 int main(int argc, char** argv)
 {
@@ -803,6 +804,8 @@ int main(int argc, char** argv)
             history();
         else if (name == "extensions")
             extensionDetails();
+        else if (name == "extension_features")
+            extensionFeatures();
         else if (name == "tabs")
             tabs();
         else if (name == "search")

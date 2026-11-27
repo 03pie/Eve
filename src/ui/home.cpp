@@ -7,6 +7,7 @@
 #include <ElaFlowLayout.h>
 #include <ElaIcon.h>
 #include <ElaImageCard.h>
+#include <ElaLineEdit.h>
 #include <ElaPushButton.h>
 #include <ElaScrollPageArea.h>
 #include <ElaText.h>
@@ -28,6 +29,7 @@
 #include <QString>
 #include <QVBoxLayout>
 #include <QVariant>
+#include <algorithm>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -86,6 +88,14 @@ struct HomeCard {
     bool instance = true;
     QString instancePath{};
     QString packageName{};
+    QString publisher{};
+    QStringList categories{};
+
+    QString searchText() const
+    {
+        return (QStringList{plugin.title, packageName, publisher, extensionId, plugin.pluginId, instancePath, plugin.id} + categories)
+            .join(QLatin1Char('\n'));
+    }
 };
 
 std::vector<HomeCard> homeCards(const std::vector<HomePlugin>& instances, const std::vector<ExtensionItem>& extensions)
@@ -105,6 +115,8 @@ std::vector<HomeCard> homeCards(const std::vector<HomePlugin>& instances, const 
             card.extensionId = extension->id;
             card.icon = extension->icon;
             card.packageName = extension->name;
+            card.publisher = extension->publisher;
+            card.categories = extension->categories;
             if (extension->missing || extension->pending) {
                 card.plugin.subtitle = extension->state;
                 card.plugin.needsAttention = true;
@@ -116,6 +128,7 @@ std::vector<HomeCard> homeCards(const std::vector<HomePlugin>& instances, const 
     for (const auto& extension : extensions) {
         if (represented.contains(extension.id)) continue;
         HomePlugin plugin{QStringLiteral("extension:") + extension.id, extension.name, extension.state};
+        plugin.pluginId = extension.pluginId;
         QStringList identity;
         if (extension.builtin) identity << QObject::tr("内置桌面");
         else if (extension.kind == ExtensionKind::Desktop) identity << QObject::tr("桌面扩展");
@@ -125,7 +138,8 @@ std::vector<HomeCard> homeCards(const std::vector<HomePlugin>& instances, const 
         plugin.needsAttention = extension.missing || extension.pending;
         plugin.status.icon = plugin.needsAttention ? ElaIconType::TriangleExclamation :
                              extension.current ? ElaIconType::CircleCheck : ElaIconType::PuzzlePiece;
-        cards.push_back({std::move(plugin), extension.id, extension.icon, extension.builtin, false});
+        cards.push_back({std::move(plugin), extension.id, extension.icon, extension.builtin, false, {}, {}, extension.publisher,
+                         extension.categories});
     }
     return cards;
 }
@@ -215,7 +229,18 @@ HomePage::HomePage()
     layout->addWidget(hero);
     auto label = new ElaText(QString::fromUtf8("插件"), 20, content);
     label->setIsBold(true);
-    layout->addWidget(label);
+    auto heading = new QHBoxLayout;
+    heading->addWidget(label);
+    heading->addStretch();
+    search_ = new ElaLineEdit(content);
+    search_->setObjectName("EveHomeExtensionSearch");
+    search_->setAccessibleName(tr("搜索插件"));
+    search_->setPlaceholderText(tr("按名称、发布者或标识搜索"));
+    search_->setMaximumWidth(420);
+    search_->setClearButtonEnabled(true);
+    search_->hide();
+    heading->addWidget(search_, 1);
+    layout->addLayout(heading);
     error_ = new ElaText(content);
     error_->setObjectName("EveHomeError");
     error_->setTextFormat(Qt::PlainText);
@@ -237,7 +262,13 @@ HomePage::HomePage()
     emptyRow_->addWidget(emptyText);
     emptyRow_->addStretch();
     layout->addWidget(empty_);
+    noMatches_ = new ElaText(tr("未找到匹配的插件。"), 14, content);
+    noMatches_->setObjectName("EveHomeNoMatchingExtensions");
+    secondaryText(noMatches_);
+    noMatches_->hide();
+    layout->addWidget(noMatches_);
     layout->addStretch();
+    connect(search_, &QLineEdit::textChanged, this, [this] { applyExtensionSearch(false); });
     addCentralWidget(content);
 }
 
@@ -248,17 +279,17 @@ void HomePage::setExtensions(std::vector<ExtensionItem> inventory,
     showDetails_ = std::move(showDetails);
     install_->setVisible(bool(showDetails_));
     add_->setVisible(!showDetails_);
+    search_->setVisible(bool(showDetails_));
 }
 
-void HomePage::focusExtensions()
+void HomePage::focusExtensions(const QString& category)
 {
-    for (int i = 0; i < flow_->count(); ++i) {
-        auto card = flow_->itemAt(i)->widget();
-        if (card && card->isVisible() && !card->property("EveExtensionId").toString().isEmpty()) {
-            if (auto scroll = findChild<QScrollArea*>()) scroll->ensureWidgetVisible(card);
-            card->setFocus(Qt::ShortcutFocusReason);
-            return;
-        }
+    if (!category.isEmpty()) search_->setText(QStringLiteral("category:") + category);
+    if (search_->isVisible()) {
+        if (auto scroll = findChild<QScrollArea*>()) scroll->ensureWidgetVisible(search_);
+        search_->setFocus(Qt::ShortcutFocusReason);
+        search_->selectAll();
+        return;
     }
     if (install_->isVisible()) install_->setFocus(Qt::ShortcutFocusReason);
 }
@@ -266,6 +297,7 @@ void HomePage::focusExtensions()
 void HomePage::focusInstance(const QString& key)
 {
     if (auto card = items_.value(key)) {
+        if (card->isHidden()) search_->clear();
         if (auto manage = card->findChild<QPushButton*>("EvePluginManage")) {
             if (auto scroll = findChild<QScrollArea*>())
                 scroll->ensureWidgetVisible(manage);
@@ -280,6 +312,34 @@ void HomePage::resizeEvent(QResizeEvent* event)
     const auto direction = width() < 560 ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight;
     bannerRow_->setDirection(direction);
     emptyRow_->setDirection(direction);
+}
+
+void HomePage::applyExtensionSearch(bool layoutChanged)
+{
+    const auto query = showDetails_ ? search_->text().trimmed() : QString{};
+    const auto terms = query.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    const bool filterCategory = query.startsWith(QStringLiteral("category:"), Qt::CaseInsensitive);
+    const auto category = query.mid(9).trimmed();
+    bool hasMatch = false;
+    for (auto card : items_) {
+        if (!card) continue;
+        const auto text = card->property("EveExtensionSearchText").toString();
+        const bool matches = filterCategory ? card->property("EveExtensionCategories").toStringList().contains(category, Qt::CaseInsensitive) :
+            std::all_of(terms.begin(), terms.end(), [&](const QString& term) {
+            return text.contains(term, Qt::CaseInsensitive);
+        });
+        hasMatch |= matches;
+        layoutChanged |= card->isHidden() == matches;
+        // Set visibility explicitly for newly added cards before the layout's deferred show.
+        card->setVisible(matches);
+    }
+    cards_->setVisible(hasMatch);
+    empty_->setVisible(items_.isEmpty() && terms.isEmpty());
+    noMatches_->setVisible(!hasMatch && !terms.isEmpty());
+    if (layoutChanged) {
+        flow_->invalidate();
+        cards_->updateGeometry();
+    }
 }
 
 void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
@@ -440,6 +500,8 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
         const bool canOpen = !card.extensionId.isEmpty() || plugin.canInspect;
         item->setProperty("EveExtensionId", card.extensionId);
         item->setProperty("EveInstancePath", card.instancePath);
+        item->setProperty("EveExtensionSearchText", card.searchText());
+        item->setProperty("EveExtensionCategories", card.categories);
         item->setFocusPolicy(canOpen ? Qt::StrongFocus : Qt::NoFocus);
         item->setCursor(canOpen ? Qt::PointingHandCursor : Qt::ArrowCursor);
         item->setAccessibleName(plugin.title);
@@ -531,10 +593,6 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
         emptyRow_->insertWidget(1, add_, 0, Qt::AlignLeft);
     else if (!cards.empty() && bannerRow_->indexOf(add_) < 0)
         bannerRow_->addWidget(add_, 0, Qt::AlignLeft | Qt::AlignVCenter);
-    empty_->setVisible(cards.empty());
-    if (layoutChanged) {
-        flow_->invalidate();
-        cards_->updateGeometry();
-    }
+    applyExtensionSearch(layoutChanged);
 }
 } // namespace eve::ui::detail

@@ -9,6 +9,7 @@
 #include <functional>
 #include <vector>
 class ElaFlowLayout;
+class ElaLineEdit;
 class ElaScrollPageArea;
 class ElaText;
 class QBoxLayout;
@@ -20,7 +21,7 @@ public:
     /** @brief 复用 Ela 背景卡、流布局和区域组件创建首页。 */
     HomePage();
     void focusInstance(const QString& key);
-    void focusExtensions();
+    void focusExtensions(const QString& category = {});
     void setExtensions(std::vector<ExtensionItem> inventory,
                        std::function<void(const QString&, const QString&)> showDetails);
     /** @brief 增量更新卡片，未变化的实例保持悬停、布局和焦点。 */
@@ -31,9 +32,12 @@ public:
 
 private:
     void resizeEvent(QResizeEvent* event) override;
+    void applyExtensionSearch(bool layoutChanged);
     QPointer<QWidget> cards_;
     QPointer<ElaText> count_;
     QPointer<QWidget> empty_;
+    ElaLineEdit* search_ = nullptr;
+    ElaText* noMatches_ = nullptr;
     ElaPushButton* add_ = nullptr;
     ElaPushButton* install_ = nullptr;
     QBoxLayout* bannerRow_ = nullptr;

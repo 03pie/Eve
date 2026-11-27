@@ -5,4 +5,4 @@ find_package(Eve @EVE_SDK_VERSION@ EXACT CONFIG REQUIRED COMPONENTS DesktopSdk)
 eve_add_qt_ui_plugin(external_desktop SOURCE plugin.cpp
     MODULE_ID org.example.eve.desktop PLUGIN_ID example.desktop MODULE_VERSION ${PROJECT_VERSION})
 target_link_libraries(external_desktop PRIVATE Eve::DesktopSdk)
-eve_add_extension_package(external_desktop PACKAGE_JSON package.json)
+eve_add_extension_package(external_desktop PACKAGE_JSON package.json README README.md)

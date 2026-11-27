@@ -24,6 +24,16 @@ ExtensionItem describe(const Package& package)
     item.name = package.name.isEmpty() ? package.moduleId : package.name;
     item.publisher = package.publisher;
     item.description = package.description;
+    item.readme = package.readme;
+    item.changelog = package.changelog;
+    item.defaultConfig = package.defaultConfig;
+    item.categories = package.categories;
+    item.homepage = package.homepage;
+    item.repository = package.repository;
+    item.issues = package.issues;
+    item.license = package.license;
+    item.packageBytes = package.packageBytes;
+    item.installedAt = package.installedAt;
     item.version = package.version;
     item.packageHash = package.packageHash;
     item.icon = package.icon;
@@ -57,17 +67,32 @@ WorkspaceExtensions::WorkspaceExtensions(Workbench& host)
             return reply.task();
         }
         const auto preview = extensions::Catalog::preview(path);
-        if (preview.hasValue()) reply.resolve({describe(preview.value()), path, preview.value().packageHash});
-        else {
+        if (preview.hasValue()) {
+            const auto inventory = catalog_.installed();
+            if (!inventory.hasValue()) {
+                reply.reject(inventory.error());
+                return reply.task();
+            }
+            const auto& package = preview.value();
+            ui::ExtensionPreview review{describe(package), path, package.packageHash, {}, {}};
+            for (const auto& installed : inventory.value()) {
+                if (installed.moduleId != package.moduleId) continue;
+                review.installedVersion = installed.version;
+                review.installedHash = installed.packageHash;
+                break;
+            }
+            reply.resolve(std::move(review));
+        } else {
             (void)host_.writeOutput("扩展安装包未通过预检。", ui::OutputLevel::Error, {{}, "EXTENSION_PREVIEW_FAILED"});
             reply.reject(preview.error());
         }
         return reply.task();
     };
-    controls_->apply = [this, lifetime](auto action, const QString& id, const QString& path, const QString& digest) {
+    const auto submit = [this, lifetime](ExtensionAction action, const QString& id, const QString& path,
+                                        const QString& digest, std::optional<QString> expected) {
         if (lifetime.expired()) return failedTask(unavailable("Workspace closed."));
         try {
-            auto task = apply(action, id, path, digest);
+            auto task = apply(action, id, path, digest, std::move(expected));
             task.thenOn(host_.scheduler, [this, id, lifetime](const Result<void>& result) {
                 if (lifetime.expired()) return;
                 const auto text = result.hasValue() ? QStringLiteral("扩展操作已完成 · ") : QStringLiteral("扩展操作失败 · ");
@@ -80,6 +105,12 @@ WorkspaceExtensions::WorkspaceExtensions(Workbench& host)
             (void)host_.writeOutput("扩展操作未完成。", ui::OutputLevel::Error, {{}, "EXTENSION_ACTION_FAILED"});
             return failedTask(error.detail);
         }
+    };
+    controls_->apply = [submit](auto action, const QString& id, const QString& path, const QString& digest) {
+        return submit(action, id, path, digest, std::nullopt);
+    };
+    controls_->installReviewed = [submit](const ui::ExtensionPreview& review) {
+        return submit(ExtensionAction::Install, review.item.id, review.path, review.sha256, review.installedHash);
     };
 }
 
@@ -166,11 +197,24 @@ std::vector<ExtensionItem> WorkspaceExtensions::inventory() const
     ela.id = desktopModuleId;
     ela.name = QStringLiteral("Ela 桌面");
     ela.description = QStringLiteral("Eve 内置工作台桌面");
+    ela.readme = QStringLiteral(
+        "## 工作区\n\n"
+        "首页显示当前工作区的插件实例。点击卡片可查看详情；实例开关控制该实例是否运行。\n\n"
+        "## 管理扩展\n\n"
+        "1. 按 `Ctrl+Shift+X` 回到插件区。\n"
+        "2. 选择 **安装扩展**，打开本地 `.evepkg` 文件。\n"
+        "3. 核对发布者、版本和文件摘要后确认安装。\n\n"
+        "## 切换桌面\n\n"
+        "在设置中选择已安装的桌面扩展，打开详情并设为下次启动的桌面，重启后生效。");
     ela.publisher = "Eve";
+    ela.categories = QStringList{QStringLiteral("桌面")};
+    ela.repository = QStringLiteral("https://github.com/03pie/Eve");
     ela.version = EVE_PRODUCT_VERSION;
     ela.pluginId = desktopId;
     ela.builtin = true;
     ela.kind = ui::ExtensionKind::Desktop;
+    for (const auto& service : desktopContract().outputs)
+        ela.desktopServices << QString::fromStdString(service.key.name);
     const auto desktopStatus = [&](ExtensionItem& item) {
         item.current = item.id == current;
         item.pending = (item.id == next && current != next) || (item.current && !item.builtin &&
@@ -213,7 +257,9 @@ std::vector<ExtensionItem> WorkspaceExtensions::inventory() const
             } else if (item.missing) {
                 item.state = QStringLiteral("需要修复");
             } else {
-                item.state = enabled ? QStringLiteral("当前工作区已启用") : item.instances ? QStringLiteral("当前工作区已禁用") : QStringLiteral("已安装");
+                if (enabled && disabled) item.state = QStringLiteral("部分实例已启用");
+                else if (enabled) item.state = QStringLiteral("当前工作区已启用");
+                else item.state = item.instances ? QStringLiteral("当前工作区已禁用") : QStringLiteral("已安装");
                 if (!item.instances || disabled) item.actions.push_back(A::Enable);
                 if (live != resident_.end()) item.actions.push_back(A::AddInstance);
                 if (item.instances) item.actions.push_back(A::Configure);
@@ -341,7 +387,8 @@ Task<void> WorkspaceExtensions::updateInstances(const Package& package, Activati
     return reconcile(*changed);
 }
 
-Task<void> WorkspaceExtensions::apply(ExtensionAction action, const QString& id, const QString& path, const QString& digest)
+Task<void> WorkspaceExtensions::apply(ExtensionAction action, const QString& id, const QString& path, const QString& digest,
+                                      std::optional<QString> expectedInstalledHash)
 {
     using A = ExtensionAction;
     if (host_.closing_ || !host_.session || !driver_) return failedTask(unavailable("Workspace is unavailable."));
@@ -359,7 +406,7 @@ Task<void> WorkspaceExtensions::apply(ExtensionAction action, const QString& id,
     }
     if (id == desktopModuleId || id.isEmpty()) return failedTask(unavailable("Protected or missing extension identity."));
     if (action == A::Install) {
-        const auto installed = checked(catalog_.install(path, digest, id));
+        const auto installed = checked(catalog_.install(path, digest, id, std::move(expectedInstalledHash)));
         return installed.kind == "business" ? updateInstances(installed, Activation::AfterInstall) : completedTask();
     }
     const auto inventory = checked(catalog_.installed());

@@ -3,5 +3,6 @@
   "kind": "business",
   "name": "SDK page",
   "publisher": "SDK example",
+  "categories": ["Workspace"],
   "description": "A page contributed by an independently built Qt extension."
 }

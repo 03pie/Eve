@@ -25,6 +25,10 @@ int ElaFlowLayoutPrivate::_doLayout(const QRect& rect, bool testOnly) const
     for (QLayoutItem* item: _itemList)
     {
         const QWidget* wid = item->widget();
+        if (wid && wid->isHidden())
+        {
+            continue;
+        }
         int spaceX = q->horizontalSpacing();
         if (spaceX == -1)
         {

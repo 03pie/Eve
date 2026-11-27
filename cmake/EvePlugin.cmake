@@ -60,19 +60,24 @@ endfunction()
 
 # Package a built Qt module without renaming the DLL or duplicating its identity in package.json.
 function(eve_add_extension_package target)
-    cmake_parse_arguments(PARSE_ARGV 1 pkg "" "PACKAGE_JSON;ICON" "")
+    cmake_parse_arguments(PARSE_ARGV 1 pkg "" "PACKAGE_JSON;ICON;README;CHANGELOG" "")
     if(NOT TARGET "${target}" OR NOT pkg_PACKAGE_JSON OR pkg_UNPARSED_ARGUMENTS OR pkg_KEYWORDS_MISSING_VALUES)
-        message(FATAL_ERROR "Expected eve_add_extension_package(<target> PACKAGE_JSON <path> [ICON <path>])")
+        message(FATAL_ERROR "Expected eve_add_extension_package(<target> PACKAGE_JSON <path> [ICON <path>] [README <path>] [CHANGELOG <path>])")
     endif()
     get_filename_component(descriptor "${pkg_PACKAGE_JSON}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-    set(icon "")
-    if(pkg_ICON)
-        get_filename_component(icon "${pkg_ICON}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-    endif()
+    set(asset_arguments)
+    set(asset_dependencies)
+    foreach(asset IN ITEMS ICON README CHANGELOG)
+        if(DEFINED pkg_${asset})
+            get_filename_component(path "${pkg_${asset}}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+            list(APPEND asset_arguments "-D${asset}=${path}")
+            list(APPEND asset_dependencies "${path}")
+        endif()
+    endforeach()
     set(output "${CMAKE_CURRENT_BINARY_DIR}/${target}.evepkg")
     add_custom_target(${target}_package
         COMMAND "${CMAKE_COMMAND}" "-DLIBRARY=$<TARGET_FILE:${target}>" "-DPACKAGE_JSON=${descriptor}"
-            "-DICON=${icon}" "-DOUTPUT=${output}" -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/WriteExtensionPackage.cmake"
-        DEPENDS ${target} "${descriptor}" ${icon}
+            ${asset_arguments} "-DOUTPUT=${output}" -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/WriteExtensionPackage.cmake"
+        DEPENDS ${target} "${descriptor}" ${asset_dependencies}
         BYPRODUCTS "${output}" VERBATIM)
 endfunction()

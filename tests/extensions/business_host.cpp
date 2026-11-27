@@ -62,7 +62,10 @@ struct Scene {
     {
         auto preview = wait(controls->preview(path))->value();
         CHECK(preview.item.kind == ui::ExtensionKind::Business && !preview.item.builtin);
-        wait(controls->apply(ExtensionAction::Install, preview.item.id, preview.path, preview.sha256));
+        wait(controls->installReviewed(preview));
+        const auto installed = item(preview.item.id);
+        CHECK(installed.readme == preview.item.readme && installed.packageBytes == QFileInfo(path).size());
+        CHECK(installed.installedAt.isValid() && !preview.item.installedAt.isValid());
     }
     void apply(ExtensionAction action, const QString& id)
     {
@@ -127,6 +130,7 @@ void installAndUpdate(Scene& s, const QDir& base)
     const auto other = s.running(logPlugin);
     s.install(base.filePath("notes.evepkg"));
     const auto original = s.running(notesPlugin);
+    CHECK(s.item(notesId).readme.startsWith("# Notebook"));
     s.install(base.filePath("notes.evepkg"));
     CHECK(s.running(notesPlugin).instance == original.instance && s.running(logPlugin).instance == other.instance);
     CHECK(s.item(logId).instances == 1 && s.item(notesId).instances == 1);
@@ -146,7 +150,12 @@ void installAndUpdate(Scene& s, const QDir& base)
     s.install(base.filePath("notes.evepkg"));
     CHECK(s.running(notesPlugin).configuration.config == customConfig);
     CHECK(s.running(notesPlugin).path == original.path && s.running(logPlugin).instance == other.instance);
+    const auto oldReview = wait(s.controls->preview(base.filePath("notes.evepkg")))->value();
+    CHECK(oldReview.installedVersion == "1.0.0" && oldReview.installedHash == s.item(notesId).packageHash);
     s.install(base.filePath("update.evepkg"));
+    const auto stale = s.controls->installReviewed(oldReview).tryResult();
+    CHECK(stale && !stale->hasValue() && stale->error().code == ErrorCode::ConfigConflict);
+    CHECK(s.item(notesId).version == "1.1.0");
     CHECK(s.item(notesId).pending && mapped(notesId, "1.0.0") && !mapped(notesId, "1.1.0"));
     CHECK(s.snapshot().running.size() == 2 && s.running(logPlugin).instance == other.instance);
 }
@@ -185,7 +194,8 @@ void checkInstanceCards(Scene& scene)
     auto tabs = dialog->findChild<QTabWidget*>("EveExtensionTabs");
     auto instances = dialog->findChild<QComboBox*>("EveExtensionInstance");
     CHECK(tabs && instances);
-    tabs->setCurrentIndex(1);
+    for (int i = 0; i < tabs->count(); ++i)
+        if (tabs->tabText(i) == QStringLiteral("工作区实例")) tabs->setCurrentIndex(i);
     CHECK(instances->isVisible() && instances->count() == 2 && instances->currentText() == "second-logger");
     dialog->close();
 }
@@ -231,14 +241,16 @@ void orchestrate(const QStringList& args)
     const auto logManifest = files::install(args[3], base.filePath("fixture"), logId, {logPlugin}, "qt-ui");
     const auto logger = QFileInfo(logManifest).dir().filePath("module.dll");
     const auto descriptor = base.filePath("package.json");
-    const auto pack = [&](const QString& dll, const QString& name, const QString& output) {
+    const auto readme = base.filePath("README.md");
+    files::write(readme, "# Notebook\n\nKeep notes in your workspace.\n");
+    const auto pack = [&](const QString& dll, const QString& name, const QString& output, const QString& documentation = {}) {
         files::write(descriptor, QJsonDocument(QJsonObject{{"formatVersion", 1}, {"kind", "business"},
             {"name", name}, {"publisher", "Eve tests"}}).toJson());
-        run(args[1], {"-DLIBRARY=" + dll, "-DPACKAGE_JSON=" + descriptor, "-DOUTPUT=" + base.filePath(output),
+        run(args[1], {"-DLIBRARY=" + dll, "-DPACKAGE_JSON=" + descriptor, "-DREADME=" + documentation, "-DOUTPUT=" + base.filePath(output),
                       "-P", args[2]});
     };
     pack(logger, "Logging fixture", "logging.evepkg");
-    pack(args[4], "Notebook fixture", "notes.evepkg");
+    pack(args[4], "Notebook fixture", "notes.evepkg", readme);
     pack(args[5], "Notebook fixture", "update.evepkg");
     const auto name = "Eve-Extensions-Test-" + QUuid::createUuid().toString(QUuid::WithoutBraces);
     QCoreApplication::setApplicationName(name);

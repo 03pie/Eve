@@ -559,6 +559,12 @@ Result<std::vector<CommandSnapshot>> detail::ServicesControl::commandSnapshots()
     for (const auto& item : host->records) result.push_back(item.second->snapshot());
     return Result<std::vector<CommandSnapshot>>::success(std::move(result));
 }
+bool detail::isPublishedCommand(const std::shared_ptr<ServicesControl>& control, const CommandSnapshot& command)
+{
+    if (!control->open || !control->scheduler->isCurrentThread()) return false;
+    const auto found = control->records.find({command.owner.instance, command.owner.epoch, command.id});
+    return found != control->records.end() && found->second->row && found->second->presentable();
+}
 /** @brief ready 只观察历史结果，不重新开放命令。 */
 Task<void> detail::CommandControl::readyCommand()
 {

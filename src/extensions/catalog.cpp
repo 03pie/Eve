@@ -35,17 +35,29 @@ ErrorInfo indexError(const QString& message, ErrorCode code = ErrorCode::ConfigI
     return result;
 }
 
-QJsonObject serialize(const Package& p)
+enum class ReleaseFields { Current, BeforeResources };
+
+QJsonObject serialize(const Package& p, ReleaseFields fields = ReleaseFields::Current)
 {
-    return {{"formatVersion", 1}, {"kind", p.kind}, {"name", p.name}, {"publisher", p.publisher},
+    QJsonObject json{{"formatVersion", 1}, {"kind", p.kind}, {"name", p.name}, {"publisher", p.publisher},
         {"description", p.description}, {"defaultConfig", QJsonDocument::fromJson(p.defaultConfig.toUtf8()).object()},
         {"moduleId", p.moduleId}, {"pluginId", p.pluginId}, {"version", p.version}, {"sha256", p.sha256},
         {"packageHash", p.packageHash}, {"icon", QString::fromLatin1(p.icon.toBase64())}};
+    // Omit absent metadata to retain the fingerprints of previously published releases.
+    for (const auto& member : detail::markdownMembers)
+        if (!(p.*member.text).isEmpty()) json.insert(member.catalogKey, p.*member.text);
+    if (fields == ReleaseFields::BeforeResources) return json;
+    if (!p.categories.isEmpty()) json.insert("categories", QJsonArray::fromStringList(p.categories));
+    if (!p.homepage.isEmpty()) json.insert("homepage", p.homepage);
+    if (!p.repository.isEmpty()) json.insert("repository", p.repository);
+    if (!p.issues.isEmpty()) json.insert("bugs", p.issues);
+    if (!p.license.isEmpty()) json.insert("license", p.license);
+    return json;
 }
 
-QString fingerprint(const Package& p)
+QString fingerprint(const Package& p, ReleaseFields fields = ReleaseFields::Current)
 {
-    auto json = serialize(p);
+    auto json = serialize(p, fields);
     json.remove("packageHash"); // A ZIP timestamp alone must not change release identity.
     return QString::fromLatin1(QCryptographicHash::hash(QJsonDocument(json).toJson(QJsonDocument::Compact),
                                                        QCryptographicHash::Sha256).toHex());
@@ -63,6 +75,12 @@ Result<Package> deserialize(const QJsonObject& object, const QDir& root)
     Package p;
     const auto read = detail::readPresentation(object, p);
     if (!read.hasValue()) return Result<Package>::failure(read.error());
+    for (const auto& member : detail::markdownMembers) {
+        if (!object.contains(member.catalogKey)) continue;
+        const auto text = detail::decodeMarkdown(object.value(member.catalogKey).toString().toUtf8(), member);
+        if (!text.hasValue()) return Result<Package>::failure(text.error());
+        p.*member.text = text.value();
+    }
     p.moduleId = object.value("moduleId").toString();
     p.pluginId = object.value("pluginId").toString();
     p.version = object.value("version").toString();
@@ -79,6 +97,16 @@ Result<Package> deserialize(const QJsonObject& object, const QDir& root)
         p.icon = QByteArray::fromBase64(encoded);
         if (!detail::validIcon(p.icon) || p.icon.toBase64() != encoded)
             return Result<Package>::failure(indexError("Invalid icon in the extension catalog."));
+    }
+    if (object.contains("packageBytes")) {
+        p.packageBytes = object.value("packageBytes").toInt(-1);
+        if (p.packageBytes <= 0)
+            return Result<Package>::failure(indexError("Invalid archive size in the extension catalog."));
+    }
+    if (object.contains("installedAt")) {
+        p.installedAt = QDateTime::fromString(object.value("installedAt").toString(), Qt::ISODateWithMs);
+        if (!p.installedAt.isValid() || p.installedAt.timeSpec() != Qt::UTC)
+            return Result<Package>::failure(indexError("Invalid UTC installation time in the extension catalog."));
     }
     // Only a validated digest, never a path from mutable catalog JSON, forms the artifact location.
     p.manifestPath = root.filePath("artifacts/" + p.sha256 + "/module.json");
@@ -124,7 +152,13 @@ Result<Index> load(const QDir& root)
 Result<void> save(const QDir& root, const Index& index)
 {
     QJsonArray records;
-    for (const auto& p : index.current) records.append(serialize(p));
+    for (const auto& p : index.current) {
+        auto record = serialize(p);
+        // Local installation facts must not change release identity.
+        if (p.packageBytes > 0) record.insert("packageBytes", static_cast<double>(p.packageBytes));
+        if (p.installedAt.isValid()) record.insert("installedAt", p.installedAt.toString(Qt::ISODateWithMs));
+        records.append(record);
+    }
     QJsonArray retired;
     for (const auto& hash : index.retired) retired.append(hash);
     const auto bytes = QJsonDocument(QJsonObject{{"formatVersion", 1}, {"extensions", records},
@@ -175,7 +209,8 @@ Result<QVector<Package>> Catalog::installed() const
     return Result<QVector<Package>>::success(index.value().current.values().toVector());
 }
 
-Result<Package> Catalog::install(const QString& file, const QString& expectedPackageHash, const QString& expectedModuleId)
+Result<Package> Catalog::install(const QString& file, const QString& expectedPackageHash, const QString& expectedModuleId,
+                                 std::optional<QString> expectedInstalledHash)
 {
     using Output = Result<Package>;
     QTemporaryDir staging;
@@ -195,9 +230,20 @@ Result<Package> Catalog::install(const QString& file, const QString& expectedPac
     auto loaded = load(root);
     if (!loaded.hasValue()) return Output::failure(loaded.error());
     auto index = std::move(loaded).value();
+    const auto selected = index.current.constFind(p.moduleId);
+    if (expectedInstalledHash && *expectedInstalledHash !=
+            (selected == index.current.cend() ? QString{} : selected->packageHash))
+        return Output::failure(indexError(QStringLiteral("已安装的版本在预览后发生变化，请重新核对安装包。"), ErrorCode::ConfigConflict));
     const auto identity = fingerprint(p);
-    if (index.releases.contains(releaseKey(p)) && index.releases.value(releaseKey(p)).toString() != identity)
-        return Output::failure(indexError("This module version was already published with different contents."));
+    const auto published = index.releases.value(releaseKey(p));
+    if (!published.isUndefined() && published.toString() != identity) {
+        // load() has already checked the selected record against this release fingerprint.
+        // An identical archive may now expose fields that the previous reader didn't record.
+        const bool sameLegacyRelease = selected != index.current.cend() && selected->version == p.version &&
+            selected->packageHash == p.packageHash && published.toString() == fingerprint(p, ReleaseFields::BeforeResources);
+        if (!sameLegacyRelease)
+            return Output::failure(indexError("This module version was already published with different contents."));
+    }
     for (const auto& current : index.current) {
         if (current.moduleId == p.moduleId && (current.pluginId != p.pluginId || current.kind != p.kind))
             return Output::failure(indexError("An update cannot change the extension's plugin ID or kind."));
@@ -222,6 +268,8 @@ Result<Package> Catalog::install(const QString& file, const QString& expectedPac
     if (!artifact.hasValue()) return Output::failure(artifact.error());
     p.manifestPath = QString::fromStdString(artifact.value().artifact().manifestPath());
     const auto previous = index.current.constFind(p.moduleId);
+    const bool sameArchive = previous != index.current.cend() && previous->packageHash == p.packageHash;
+    p.installedAt = sameArchive && previous->installedAt.isValid() ? previous->installedAt : QDateTime::currentDateTimeUtc();
     if (previous != index.current.cend() && previous->sha256 != p.sha256) index.retired.insert(previous->sha256);
     index.retired.remove(p.sha256);
     index.releases.insert(releaseKey(p), identity);
@@ -245,7 +293,8 @@ Result<void> Catalog::remove(const QString& moduleId, const QString& expectedPac
     auto current = index.current.find(moduleId);
     if (current == index.current.end()) return Result<void>::success();
     if (current->packageHash != expectedPackageHash)
-        return Result<void>::failure(indexError("The installed package changed since selection."));
+        return Result<void>::failure(indexError(QStringLiteral("已安装的版本发生变化，请核对当前版本后重新确认卸载。"),
+                                                ErrorCode::ConfigConflict));
     // Commit desired membership first. Other workspaces can keep their mapped image until exit.
     index.retired.insert(current->sha256);
     index.current.erase(current);

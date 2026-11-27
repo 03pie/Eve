@@ -355,11 +355,11 @@ if(EVE_BUILD_ELA_UI)
     endforeach()
     set_tests_properties(p3.panel_throughput PROPERTIES TIMEOUT 120)
     target_link_libraries(eve_workbench_tests PRIVATE eve_desktop_impl Qt5::Test Ela::WidgetTools)
-    target_sources(eve_workbench_tests PRIVATE qt/extension_details.cpp)
+    target_sources(eve_workbench_tests PRIVATE qt/extension_details.cpp qt/extension_features.cpp)
     set_target_properties(eve_workbench_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     eve_target_defaults(eve_workbench_tests)
     foreach(case IN ITEMS
-        history tabs search menus status isolation suggestion_reentry navigation_reentry layout extensions
+        history tabs search menus status isolation suggestion_reentry navigation_reentry layout extensions extension_features
         empty activation cards power power_busy home_refresh_reentry tab_fallback search_normalization card_area_lifetime)
         add_test(NAME p3.workbench_${case} COMMAND eve_workbench_tests ${case})
         set_tests_properties(p3.workbench_${case} PROPERTIES LABELS "p3;ui;ela;workbench" TIMEOUT 20 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

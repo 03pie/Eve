@@ -7,15 +7,19 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QMap>
+#include <QRegularExpression>
 #include <QTemporaryDir>
+#include <QUrl>
 #include <QtEndian>
 
 namespace eve::extensions::detail {
 namespace {
 constexpr int maxManifest = 64 * 1024;
 constexpr int maxIcon = 256 * 1024;
+constexpr int maxMarkdown = 256 * 1024;
 constexpr int maxLibrary = 256 * 1024 * 1024;
 constexpr int maxPackage = maxLibrary + 2 * 1024 * 1024;
 struct Entry { mz_uint index; mz_uint64 bytes; };
@@ -30,8 +34,8 @@ public:
     Result<void> index()
     {
         const auto count = mz_zip_reader_get_num_files(&zip_);
-        if (!open_ || count < 3 || count > 4)
-            return Result<void>::failure(packageError("Expected 3 or 4 regular files in an Eve ZIP package."));
+        if (!open_ || count < 3 || count > 6)
+            return Result<void>::failure(packageError("Expected module files with optional icon.png, README.md and CHANGELOG.md."));
         for (mz_uint i = 0; i < count; ++i) {
             mz_zip_archive_file_stat stat{};
             const auto nameSize = mz_zip_reader_get_filename(&zip_, i, nullptr, 0);
@@ -92,6 +96,49 @@ bool validText(const QString& value, int limit)
     for (const auto ch : value) if (ch.category() == QChar::Other_Control || ch.category() == QChar::Other_Format) return false;
     return true;
 }
+
+bool webLink(const QString& text)
+{
+    if (!validText(text, 2048)) return false;
+    const QUrl url(text, QUrl::StrictMode);
+    return url.isValid() && (url.scheme() == "https" || url.scheme() == "http") &&
+           !url.host().isEmpty() && !url.authority(QUrl::FullyEncoded).contains(QLatin1Char('@'));
+}
+
+bool readLink(QJsonValue value, QString& link, bool acceptsObject)
+{
+    if (value.isUndefined()) return true;
+    if (acceptsObject && value.isObject()) value = value.toObject().value("url");
+    link = value.toString();
+    return webLink(link);
+}
+
+Result<void> readResources(const QJsonObject& json, Package& p)
+{
+    if (json.contains("categories")) {
+        const auto categories = json.value("categories");
+        if (!categories.isArray() || categories.toArray().size() > 32)
+            return Result<void>::failure(packageError("categories must be an array of at most 32 names."));
+        for (const auto& entry : categories.toArray()) {
+            const auto category = entry.toString().trimmed();
+            if (!validText(entry.toString(), 64))
+                return Result<void>::failure(packageError("Invalid extension category."));
+            if (!p.categories.contains(category, Qt::CaseInsensitive)) p.categories.append(category);
+        }
+    }
+    if (!readLink(json.value("homepage"), p.homepage, false) ||
+        !readLink(json.value("repository"), p.repository, true) ||
+        !readLink(json.value("bugs"), p.issues, true))
+        return Result<void>::failure(packageError("Extension resource links must be HTTP(S) URLs without credentials."));
+    if (json.contains("license")) {
+        p.license = json.value("license").toString();
+        // Allow printable license identifiers and SPDX expressions, or a link to the license text.
+        static const QRegularExpression expression(QStringLiteral("\\A[A-Za-z0-9(+][A-Za-z0-9 .()+-]*\\z"));
+        if (!(validText(p.license, 256) && expression.match(p.license).hasMatch()) && !webLink(p.license))
+            return Result<void>::failure(packageError("license must be a license expression or an HTTP(S) URL."));
+    }
+    return Result<void>::success();
+}
 }
 
 ErrorInfo packageError(const QString& message, ErrorCode code)
@@ -116,6 +163,21 @@ bool protectedIdentity(const Package& p)
         p.pluginId.compare("eve.desktop", Qt::CaseInsensitive) == 0 ||
         p.pluginId.compare("host.configuration", Qt::CaseInsensitive) == 0;
 }
+Result<QString> decodeMarkdown(const QByteArray& bytes, const MarkdownMember& member)
+{
+    const auto name = QString::fromLatin1(member.filename);
+    if (bytes.size() > maxMarkdown)
+        return Result<QString>::failure(packageError(name + " exceeds 256 KiB."));
+    const auto utf8 = bytes.startsWith("\xef\xbb\xbf") ? bytes.mid(3) : bytes;
+    const auto text = QString::fromUtf8(utf8.constData(), utf8.size());
+    if (text.trimmed().isEmpty() || text.toUtf8() != utf8)
+        return Result<QString>::failure(packageError(name + " must contain UTF-8 text."));
+    for (const auto ch : text) {
+        if (ch.category() == QChar::Other_Control && ch != '\t' && ch != '\r' && ch != '\n')
+            return Result<QString>::failure(packageError("Unexpected control character in " + name));
+    }
+    return Result<QString>::success(text);
+}
 Result<void> readPresentation(const QJsonObject& json, Package& p)
 {
     if (json.value("formatVersion") != QJsonValue(1))
@@ -130,7 +192,7 @@ Result<void> readPresentation(const QJsonObject& json, Package& p)
         (json.contains("defaultConfig") && !json.value("defaultConfig").isObject()))
         return Result<void>::failure(packageError("Invalid extension type, display metadata or default configuration."));
     p.defaultConfig = QString::fromUtf8(QJsonDocument(json.value("defaultConfig").toObject()).toJson(QJsonDocument::Compact));
-    return Result<void>::success();
+    return readResources(json, p);
 }
 
 Result<Package> unpack(const QString& path, const QString& destination)
@@ -166,10 +228,22 @@ Result<Package> unpack(const QString& path, const QString& destination)
     p.version = QString::fromStdString(module.moduleVersion);
     p.sha256 = QString::fromStdString(module.sha256);
     p.packageHash = QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
+    p.packageBytes = bytes.size();
     const auto library = QByteArray::fromStdString(module.library);
-    if (!archive.entries.contains(library) || (archive.entries.size() == 4 && !archive.entries.contains("icon.png")))
+    const bool hasIcon = archive.entries.contains("icon.png");
+    int expectedMembers = 3 + int(hasIcon);
+    for (const auto& member : markdownMembers) {
+        if (!archive.entries.contains(member.filename)) continue;
+        ++expectedMembers;
+        auto bytesRead = archive.read(member.filename, maxMarkdown);
+        if (!bytesRead.hasValue()) return ResultType::failure(bytesRead.error());
+        auto text = decodeMarkdown(bytesRead.value(), member);
+        if (!text.hasValue()) return ResultType::failure(text.error());
+        p.*member.text = std::move(text).value();
+    }
+    if (!archive.entries.contains(library) || archive.entries.size() != expectedMembers)
         return ResultType::failure(packageError("Package contents differ from the declared payload."));
-    if (archive.entries.contains("icon.png")) {
+    if (hasIcon) {
         auto icon = archive.read("icon.png", maxIcon);
         if (!icon.hasValue()) return ResultType::failure(icon.error());
         if (!validIcon(icon.value())) return ResultType::failure(packageError("Expected a PNG icon no larger than 512 x 512."));

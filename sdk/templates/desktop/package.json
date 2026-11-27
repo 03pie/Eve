@@ -3,5 +3,6 @@
   "kind": "desktop",
   "name": "Workshop Desktop",
   "publisher": "SDK example",
+  "categories": ["Desktop"],
   "description": "A Qt workbench with its own top-level window and navigation toolbar."
 }

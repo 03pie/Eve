@@ -38,7 +38,7 @@ foreach(document IN ITEMS sdk-consumer.md docs/sdk-consumer.md THIRD_PARTY_NOTIC
     endwhile()
 endforeach()
 
-# 只修改外部工程中的构建声明，检查边界长度和 CMake 布尔文字均能传到真实工厂。
+# 在外部工程检查边界长度的模块标识和与 CMake 布尔常量同名的插件标识、资源路径。
 set(consumer "${scratch}/consumer")
 file(COPY "${template}/" DESTINATION "${consumer}")
 file(READ "${consumer}/CMakeLists.txt" project)
@@ -46,6 +46,9 @@ string(REPEAT "x" 127 tail)
 set(module_id "A${tail}")
 string(REPLACE "MODULE_ID org.example.eve.page" "MODULE_ID ${module_id}" project "${project}")
 string(REPLACE "PLUGIN_ID example.page" "PLUGIN_ID OFF" project "${project}")
+file(RENAME "${consumer}/README.md" "${consumer}/OFF")
+file(WRITE "${consumer}/0" "## 1.0.0\n\nInitial release.\n")
+string(REPLACE "README README.md" "README OFF CHANGELOG 0" project "${project}")
 file(WRITE "${consumer}/CMakeLists.txt" "${project}")
 execute_process(COMMAND "${CMAKE_COMMAND}" -S "${consumer}" -B "${build}" -G "${HOST_GENERATOR}"
     "-DCMAKE_MAKE_PROGRAM=${HOST_MAKE_PROGRAM}" "-DCMAKE_CXX_COMPILER=${HOST_CXX_COMPILER}"
@@ -83,6 +86,15 @@ file(READ "${consumer}/package.json" descriptor)
 string(REPLACE "\"business\"" "\"desktop\"" descriptor "${descriptor}")
 file(WRITE "${consumer}/package.json" "${descriptor}")
 execute_process(COMMAND "${CMAKE_COMMAND}" --build "${build}" --target external_page_package COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND "${CMAKE_COMMAND}" -E tar tf "${build}/external_page.evepkg"
+    OUTPUT_VARIABLE page_entries COMMAND_ERROR_IS_FATAL ANY)
+string(REPLACE "\r" "" page_entries "${page_entries}")
+string(REPLACE "\n" ";" page_entries "${page_entries}")
+foreach(document IN ITEMS README.md CHANGELOG.md)
+    if(NOT document IN_LIST page_entries)
+        message(FATAL_ERROR "The external SDK package is missing ${document}: ${page_entries}")
+    endif()
+endforeach()
 foreach(mode IN ITEMS install incompatible recovered)
     execute_process(COMMAND "${DESKTOP_TEST_EXE}" "${build}/external_page.evepkg" "${scratch}/desktop-workspace" "${mode}"
         COMMAND_ERROR_IS_FATAL ANY)
