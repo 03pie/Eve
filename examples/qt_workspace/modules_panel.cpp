@@ -28,7 +28,7 @@ class ModuleTabs final : public ElaTabWidget {
 public:
     explicit ModuleTabs(QWidget* parent) : ElaTabWidget(parent)
     {
-        setObjectName("CordisModuleTabs");
+        setObjectName("EveModuleTabs");
         setMovable(false);
         setTabsClosable(false);
         setIsContainerAcceptDrops(false);
@@ -52,7 +52,7 @@ class ModulesPanel final : public QWidget {
 public:
     explicit ModulesPanel(std::weak_ptr<Workspace> workspace) : workspace_(std::move(workspace))
     {
-        setObjectName("CordisModuleDiagnostics");
+        setObjectName("EveModuleDiagnostics");
         setMinimumSize(840, 620);
         auto layout = new QVBoxLayout(this);
         layout->setContentsMargins(20, 20, 20, 20);
@@ -64,7 +64,7 @@ public:
         description->setTextFormat(Qt::PlainText);
         layout->addWidget(description);
         table_ = new ElaTableView(this);
-        table_->setObjectName("CordisModuleTable");
+        table_->setObjectName("EveModuleTable");
         table_->setSelectionBehavior(QAbstractItemView::SelectRows);
         table_->setSelectionMode(QAbstractItemView::SingleSelection);
         table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -86,7 +86,7 @@ public:
         status_->setTextPixelSize(13);
         status_->setWordWrap(true);
         status_->setTextFormat(Qt::PlainText);
-        status_->setObjectName("CordisModuleStatus");
+        status_->setObjectName("EveModuleStatus");
         layout->addWidget(status_);
         auto tabs = new ModuleTabs(this);
         upgrade_ = new UpgradePanel(workspace_, tabs, [this] { refreshView(); });
@@ -95,11 +95,11 @@ public:
         tabs->addTab(retirement_, QString::fromUtf8("资源与诊断"));
         layout->addWidget(tabs, 1);
         auto refresh = new ElaPushButton(QString::fromUtf8("刷新"), this);
-        refresh->setObjectName("CordisModuleDiagnosticsRefresh");
+        refresh->setObjectName("EveModuleDiagnosticsRefresh");
         layout->addWidget(refresh);
         QObject::connect(refresh, &QPushButton::clicked, this, [this] { refreshView(); });
         timer_ = new QTimer(this);
-        timer_->setObjectName("CordisModulesRefreshTimer");
+        timer_->setObjectName("EveModulesRefreshTimer");
         timer_->setInterval(250);
         QObject::connect(timer_, &QTimer::timeout, this, [this] { refreshView(); });
         refreshView();
@@ -149,7 +149,7 @@ private:
             QString version, policy;
             if (generation != snapshot.generations.end()) {
                 version = QString::fromStdString(generation->manifest.moduleVersion);
-                policy = generation->loadPolicy == cordis::module::ModuleLoadPolicy::ApprovedNative
+                policy = generation->loadPolicy == eve::module::ModuleLoadPolicy::ApprovedNative
                              ? QString::fromUtf8("支持按需回收")
                              : QString::fromUtf8("进程驻留");
             }

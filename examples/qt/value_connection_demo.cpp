@@ -5,9 +5,9 @@
 #include <QObject>
 #include <QTimer>
 #include <chrono>
-#include <cordis/kernel.hpp>
-#include <cordis/qt/clock.hpp>
-#include <cordis/qt/connection.hpp>
+#include <eve/kernel.hpp>
+#include <eve/qt/clock.hpp>
+#include <eve/qt/connection.hpp>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
@@ -25,8 +25,8 @@ Q_SIGNALS:
 /** @brief headless 示例以真实任务和清理回执退出，超时只作为失败保护。 */
 int main(int argc, char** argv)
 {
-    using namespace cordis;
-    using namespace cordis::qt;
+    using namespace eve;
+    using namespace eve::qt;
     try {
         QCoreApplication app(argc, argv);
         PacketSource source;

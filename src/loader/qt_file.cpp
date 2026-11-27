@@ -1,7 +1,7 @@
 /** @file qt_file.cpp
  * @brief 使用有界读取、原始字节哈希、协作锁及禁止直接写回退的 QSaveFile 完成文件事务。
  */
-#include <cordis/loader/qt_file.hpp>
+#include <eve/loader/qt_file.hpp>
 #include <QByteArray>
 #include <QCryptographicHash>
 #include <QDir>
@@ -21,7 +21,7 @@
 #include <system_error>
 #include <utility>
 
-namespace cordis::loader {
+namespace eve::loader {
 namespace {
 /** @brief 文件阶段错误不混同于 YAML/schema 校验；不输出配置负载。 */
 ErrorInfo fileError(ErrorCode code, std::string phase, std::string message)
@@ -155,6 +155,7 @@ Result<ConfigurationFileCommit> commitConfigurationFile(const QString& path, con
     });
     if (expected.path != nativePath || (expected.exists ? !validHash : !expected.sha256.empty()))
         return Result<ConfigurationFileCommit>::failure(fileError(ErrorCode::InvalidArgument, "loader.file.baseline", "invalid or differently bound disk baseline"));
+    // 旧宿主与 Eve 可能同时保存同一个工作区，文件锁名是跨版本协议。
     QLockFile lock(destination + QStringLiteral(".cordis.lock"));
     lock.setStaleLockTime(0);
     if (!lock.tryLock(0))
@@ -210,4 +211,4 @@ Result<ConfigurationFileCommit> commitConfigurationFile(const QString& path, con
         return Result<ConfigurationFileCommit>::failure(fileError(ErrorCode::ConfigIo, "loader.file.commit", "configuration temporary file commit failed"));
     }
 }
-} // namespace cordis::loader
+} // namespace eve::loader

@@ -1,9 +1,9 @@
 /** @file platform_demo.cpp
  * @brief 演示服务恢复、父子所有权、事件在途屏障与失败残留的内核闭环。
  */
-#include <cordis/event.hpp>
-#include <cordis/kernel.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/event.hpp>
+#include <eve/kernel.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -13,7 +13,7 @@
 #include <vector>
 
 namespace {
-using namespace cordis;
+using namespace eve;
 using Decision = EventDecision<std::string>;
 
 /** @brief 将示例中的协议断言转为非零退出，供 CTest 验收。 */

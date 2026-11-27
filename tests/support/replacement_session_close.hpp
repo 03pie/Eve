@@ -6,19 +6,19 @@
 #include <QCoreApplication>
 #include <QEvent>
 #include <algorithm>
-#include <cordis/loader/qt_file.hpp>
+#include <eve/loader/qt_file.hpp>
 #include <exception>
 #include <functional>
 #include <optional>
 
 template <class SceneType, class Wait>
-bool operationSessionCloseCase(SceneType& scene, const cordis::Runtime& old, const cordis::Runtime& next,
-                               const std::shared_ptr<cordis::IScheduler>& scheduler,
-                               const std::shared_ptr<cordis::Kernel>& kernel, Wait waitFor, const QString& mode)
+bool operationSessionCloseCase(SceneType& scene, const eve::Runtime& old, const eve::Runtime& next,
+                               const std::shared_ptr<eve::IScheduler>& scheduler,
+                               const std::shared_ptr<eve::Kernel>& kernel, Wait waitFor, const QString& mode)
 {
-    using namespace cordis;
-    using namespace cordis::loader;
-    const auto id = scene.qt ? "org.cordis.qt.page" : "org.cordis.plugin";
+    using namespace eve;
+    using namespace eve::loader;
+    const auto id = scene.qt ? "org.eve.qt.page" : "org.eve.plugin";
     const bool prepared = mode.endsWith("_prepared"), stopping = mode.endsWith("_stopping");
     const bool atCommit = mode.endsWith("_commit"), failedRecovery = mode.endsWith("_recovery_failure");
     const bool recoveryCommit = mode.endsWith("_recovery_commit");

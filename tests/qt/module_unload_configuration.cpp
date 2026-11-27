@@ -5,14 +5,14 @@
 #include <QDir>
 #include <algorithm>
 #include <array>
-#include <cordis/loader/qt_store.hpp>
+#include <eve/loader/qt_store.hpp>
 #include <map>
 #include <set>
 #include <vector>
 
 namespace unload_test {
 namespace {
-using namespace cordis::loader;
+using namespace eve::loader;
 
 thread_local unsigned failedReleases = 0;
 thread_local HMODULE failedImage = nullptr;
@@ -33,9 +33,9 @@ void configured(Scene& scene, bool keepDefinitions, bool releaseFailure)
     const auto nextManifest = QDir(scene.root).relativeFilePath(subject.image(1).manifest).toStdString();
     auto schema = [](const std::string&) { return Result<void>::success(); };
     auto oldDefinitions = requireValue(ConfigurationDefinitions::create(
-        {{{"org.cordis.plugin", {}, schema, {"business", previousManifest}}, *subject.previous}}));
+        {{{"org.eve.plugin", {}, schema, {"business", previousManifest}}, *subject.previous}}));
     auto newDefinitions = requireValue(
-        oldDefinitions->replacing({{{"org.cordis.plugin", {}, schema, {"business", nextManifest}}, *subject.next}}));
+        oldDefinitions->replacing({{{"org.eve.plugin", {}, schema, {"business", nextManifest}}, *subject.next}}));
     auto driver = KernelReconcileDriver::configured(subject.scheduler, subject.kernel, oldDefinitions);
     const auto file = scene.root + "/configuration.yaml";
     auto session =
@@ -43,8 +43,8 @@ void configured(Scene& scene, bool keepDefinitions, bool releaseFailure)
                                                requireValue(readConfigurationFile(file)));
     auto text = [](const std::string& manifest) {
         return "formatVersion: 1\nmodules: {business: {manifest: " + manifest +
-               "}}\nplugins: [{id: alpha, plugin: org.cordis.plugin, module: business, config: sync}, "
-               "{id: beta, plugin: org.cordis.plugin, module: business, config: sync}]\n";
+               "}}\nplugins: [{id: alpha, plugin: org.eve.plugin, module: business, config: sync}, "
+               "{id: beta, plugin: org.eve.plugin, module: business, config: sync}]\n";
     };
     // Draft、目标和已终结任务均保留，不能将纯历史值误当成旧工厂拥有者。
     const auto initialDraft = requireValue(session->preview(text(previousManifest)));
@@ -122,7 +122,7 @@ void configured(Scene& scene, bool keepDefinitions, bool releaseFailure)
         for (std::size_t i = 0; i != rows.size(); ++i) {
             const auto& row = rows[i];
             CHECK(row.path == after[i].path && row.instance == after[i].instance && row.epoch == after[i].epoch &&
-                  row.state == InstanceState::Active && row.configuration.plugin == "org.cordis.plugin" &&
+                  row.state == InstanceState::Active && row.configuration.plugin == "org.eve.plugin" &&
                   row.configuration.module == "business" && row.configuration.config == "\"sync\"");
             const auto previous =
                 std::find_if(before.begin(), before.end(), [&](const auto& entry) { return entry.path == row.path; });
@@ -165,7 +165,7 @@ void configured(Scene& scene, bool keepDefinitions, bool releaseFailure)
         CHECK(oldDefinitions.use_count() == 1 && held.resources.pinReasons.empty() &&
               held.resources.records.size() == 1 &&
               held.resources.records.front().kind == ResourceKind::ExternalHandle &&
-              held.resources.records.front().label == "runtime.definition.org.cordis.plugin");
+              held.resources.records.front().label == "runtime.definition.org.eve.plugin");
         const auto origin = requireValue(scene.manager.runtimeOrigin(previousRuntime));
         CHECK(origin && origin->generation == subject.image(0).generation);
         scene.blocked(subject.image(0));

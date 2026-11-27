@@ -7,12 +7,12 @@
 #include <QDateTime>
 #include <QPlainTextEdit>
 #include <QTimer>
-#include <cordis/module/native.hpp>
-#include <cordis_abi/plugin.h>
+#include <eve/module/native.hpp>
+#include <eve_abi/plugin.h>
 #include <algorithm>
 #include <limits>
 #include <utility>
-namespace cordis::ui::detail
+namespace eve::ui::detail
 {
 namespace
 {
@@ -255,12 +255,12 @@ Result<std::uint64_t> appendNativeOutput(const std::shared_ptr<OutputControl>& s
         return Output::failure(makeError(ErrorCode::WrongThread, "output requires owner thread"));
     if (!self->open || !self->scheduler->isOpen())
         return Output::failure(makeError(ErrorCode::ContextClosing, "output closed"));
-    if (event.record.level > CORDIS_LOG_ERROR || !event.sourceSequence || event.moduleId.empty() || event.pluginId.empty())
+    if (event.record.level > EVE_LOG_ERROR || !event.sourceSequence || event.moduleId.empty() || event.pluginId.empty())
         return Output::failure(makeError(ErrorCode::InvalidArgument, "invalid native output identity or level"));
     settleOutput(self, false);
     if (self->sequence == std::numeric_limits<std::uint64_t>::max())
         return Output::failure(makeError(ErrorCode::InvalidArgument, "output sequence exhausted"));
-    const auto severity = static_cast<int>(event.record.level) - static_cast<int>(CORDIS_LOG_INFO);
+    const auto severity = static_cast<int>(event.record.level) - static_cast<int>(EVE_LOG_INFO);
     auto sequence = ++self->sequence;
     LogRecord row{};
     row.moduleId = QString::fromStdString(event.moduleId);
@@ -289,9 +289,9 @@ void closeOutput(const std::shared_ptr<OutputControl>& self)
     self->open = false;
     self->access = {};
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail
 
-namespace cordis::ui
+namespace eve::ui
 {
 Result<std::uint64_t> OutputService::write(const Context& owner, std::string channel, std::string text,
                                            OutputLevel level) const
@@ -376,4 +376,4 @@ Result<std::vector<OutputEntry>> OutputService::snapshot() const
         snapshot.push_back(row.entry);
     return Output::success(std::move(snapshot));
 }
-} // namespace cordis::ui
+} // namespace eve::ui

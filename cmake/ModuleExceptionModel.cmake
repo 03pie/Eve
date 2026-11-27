@@ -1,5 +1,5 @@
 # 保留模块 C 边界的同步 C++ 展开；只修改调用目录的编译选项副本。
-function(cordis_module_exception_model)
+function(eve_module_exception_model)
     if(NOT MSVC)
         return()
     endif()

@@ -4,8 +4,8 @@ string(RANDOM LENGTH 12 ALPHABET 0123456789abcdef suffix)
 set(scratch "${test_dir}/consumer-${suffix}")
 set(sdk "${scratch}/sdk")
 set(build "${scratch}/build")
-set(cordis_dir "${sdk}/@CMAKE_INSTALL_LIBDIR@/cmake/Cordis")
-set(share "${sdk}/@CMAKE_INSTALL_DATADIR@/Cordis")
+set(eve_dir "${sdk}/@CMAKE_INSTALL_LIBDIR@/cmake/Eve")
+set(share "${sdk}/@CMAKE_INSTALL_DATADIR@/Eve")
 set(template "${share}/templates/qt-ui-plugin")
 foreach(directory IN ITEMS "@CMAKE_INSTALL_BINDIR@" "@CMAKE_INSTALL_LIBDIR@" "@CMAKE_INSTALL_INCLUDEDIR@" "@CMAKE_INSTALL_DATADIR@")
     cmake_path(APPEND sdk "${directory}" OUTPUT_VARIABLE destination)
@@ -21,7 +21,7 @@ message(STATUS "SDK consumer test directory: ${scratch}")
 
 execute_process(COMMAND "${CMAKE_COMMAND}" --install "${HOST_BUILD}" --config "${HOST_CONFIG}"
     --prefix "${sdk}" COMMAND_ERROR_IS_FATAL ANY)
-if(NOT EXISTS "${cordis_dir}/CordisConfig.cmake" OR NOT EXISTS "${template}/CMakeLists.txt")
+if(NOT EXISTS "${eve_dir}/EveConfig.cmake" OR NOT EXISTS "${template}/CMakeLists.txt")
     message(FATAL_ERROR "The staged SDK is missing its package config or Qt plugin template.")
 endif()
 
@@ -44,12 +44,12 @@ file(COPY "${template}/" DESTINATION "${consumer}")
 file(READ "${consumer}/CMakeLists.txt" project)
 string(REPEAT "x" 127 tail)
 set(module_id "A${tail}")
-string(REPLACE "MODULE_ID org.example.cordis.page" "MODULE_ID ${module_id}" project "${project}")
+string(REPLACE "MODULE_ID org.example.eve.page" "MODULE_ID ${module_id}" project "${project}")
 string(REPLACE "PLUGIN_ID example.page" "PLUGIN_ID OFF" project "${project}")
 file(WRITE "${consumer}/CMakeLists.txt" "${project}")
 execute_process(COMMAND "${CMAKE_COMMAND}" -S "${consumer}" -B "${build}" -G "${HOST_GENERATOR}"
     "-DCMAKE_MAKE_PROGRAM=${HOST_MAKE_PROGRAM}" "-DCMAKE_CXX_COMPILER=${HOST_CXX_COMPILER}"
-    "-DCMAKE_BUILD_TYPE=${HOST_CONFIG}" "-DQt5_DIR=${HOST_QT_DIR}" "-DCordis_DIR=${cordis_dir}"
+    "-DCMAKE_BUILD_TYPE=${HOST_CONFIG}" "-DQt5_DIR=${HOST_QT_DIR}" "-DEve_DIR=${eve_dir}"
     COMMAND_ERROR_IS_FATAL ANY)
 execute_process(COMMAND "${CMAKE_COMMAND}" --build "${build}" --config "${HOST_CONFIG}"
     COMMAND_ERROR_IS_FATAL ANY)

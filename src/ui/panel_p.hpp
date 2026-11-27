@@ -4,10 +4,10 @@
 #pragma once
 #include "output_p.hpp"
 #include <QString>
-#include <cordis/ui/management.hpp>
+#include <eve/ui/management.hpp>
 class QListView;
 class QTabWidget;
-namespace cordis::ui::detail
+namespace eve::ui::detail
 {
 /** @brief 创建搜索、命令列表、执行按钮和结果区；后台由 services 接入。 */
 QWidget* createCommandPanel(QWidget* parent, QListView*& list);
@@ -17,4 +17,4 @@ void dismissCommandPanel(QWidget* list);
 void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService> diagnostics,
                           std::shared_ptr<OutputControl> output, WindowAccess access,
                           std::function<Result<void>(InstanceId, const QString&)> locate);
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

@@ -4,7 +4,7 @@
 #include <QDir>
 #include <vector>
 
-namespace cordis::ui::detail
+namespace eve::ui::detail
 {
 struct LogRetentionPolicy {
     int maxAgeDays = 14;
@@ -27,4 +27,4 @@ LogRetentionResult pruneClosedLogRuns(const QDir& root, const LogRetentionPolicy
 std::vector<LogEventRange> readLogExpirations(const QDir& root, const QString& run);
 bool readLogExpiration(const QDir& root, const QString& run, quint64 event);
 bool hasLogExpirations(const QDir& root, const QString& run);
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

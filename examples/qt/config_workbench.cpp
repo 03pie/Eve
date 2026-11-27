@@ -15,17 +15,17 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QVBoxLayout>
-#include <cordis/loader/kernel_driver.hpp>
-#include <cordis/loader/qt_watcher.hpp>
-#include <cordis/ui/configuration.hpp>
-#include <cordis/ui/ela_shell.hpp>
+#include <eve/loader/kernel_driver.hpp>
+#include <eve/loader/qt_watcher.hpp>
+#include <eve/ui/configuration.hpp>
+#include <eve/ui/ela_shell.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
-using namespace cordis;
-using namespace cordis::loader;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::loader;
+using namespace eve::ui;
 namespace {
 /** @brief 宿主保留会话，页面和 Runtime 只借用宿主，退出顺序不可逆转。 */
 struct Workbench : std::enable_shared_from_this<Workbench> {
@@ -263,8 +263,8 @@ struct Workbench : std::enable_shared_from_this<Workbench> {
                 timer->setInterval(10);
                 QObject::connect(timer, &QTimer::timeout, self->configurationWidget, [self, timer] {
                     if (self->smokeStage == 0) {
-                        self->configurationWidget->findChild<QPushButton*>("CordisConfigPreview")->click();
-                        self->configurationWidget->findChild<QPushButton*>("CordisConfigApply")->click();
+                        self->configurationWidget->findChild<QPushButton*>("EveConfigPreview")->click();
+                        self->configurationWidget->findChild<QPushButton*>("EveConfigApply")->click();
                         ++self->smokeStage;
                     } else if (self->smokeStage == 1) {
                         auto state = self->session->snapshot().value();
@@ -274,11 +274,11 @@ struct Workbench : std::enable_shared_from_this<Workbench> {
                             self->fail("target not applied");
                             return;
                         }
-                        self->configurationWidget->findChild<QPushButton*>("CordisConfigSave")->click();
+                        self->configurationWidget->findChild<QPushButton*>("EveConfigSave")->click();
                         ++self->smokeStage;
                     } else if (!self->session->snapshot().value().store.dirty) {
                         const auto store = self->session->snapshot().value().store;
-                        auto summary = self->configurationWidget->findChild<QLabel*>("CordisConfigSaveStatus");
+                        auto summary = self->configurationWidget->findChild<QLabel*>("EveConfigSaveStatus");
                         if (store.persistedRevision != 1 || store.writing || !summary ||
                             !summary->text().contains(QString::fromUtf8("已保存")))
                             return;
@@ -305,7 +305,7 @@ int main(int argc, char** argv)
     try {
         QApplication app(argc, argv);
         app.setQuitOnLastWindowClosed(false);
-        app.setApplicationName("CordisConfigWorkbench");
+        app.setApplicationName("EveConfigWorkbench");
         bool smoke = false, dark = false;
         QString path;
         const auto arguments = app.arguments();
@@ -323,13 +323,13 @@ int main(int argc, char** argv)
         if (smoke) {
             if (!path.isEmpty() || !temporary.isValid())
                 throw std::invalid_argument("smoke requires its own temporary file");
-            path = temporary.filePath("cordis.yaml");
+            path = temporary.filePath("eve.yaml");
         }
         if (path.isEmpty()) {
             auto directory = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
             if (!QDir().mkpath(directory))
                 throw std::runtime_error("cannot create configuration directory");
-            path = directory + "/cordis.yaml";
+            path = directory + "/eve.yaml";
         }
         path = QFileInfo(path).absoluteFilePath();
         eTheme->setThemeMode(dark ? ElaThemeType::Dark : ElaThemeType::Light);

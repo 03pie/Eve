@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace cordis::detail {
+namespace eve::detail {
 namespace {
 ErrorInfo error(ErrorCode code, const char* message)
 {
@@ -124,4 +124,4 @@ Result<std::optional<StateSnapshot>> EpochState::capture() const
         return Output::failure(error(ErrorCode::InvalidArgument, "captured state exceeds payload budget"));
     return Output::success(StateSnapshot{contract_->schema, std::move(json).value()});
 }
-} // namespace cordis::detail
+} // namespace eve::detail

@@ -11,7 +11,7 @@
 #include <QTimer>
 #include <chrono>
 #include <condition_variable>
-#include <cordis/loader/qt_watcher.hpp>
+#include <eve/loader/qt_watcher.hpp>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -20,8 +20,8 @@
 #include <stdexcept>
 #include <thread>
 #include <vector>
-using namespace cordis;
-using namespace cordis::loader;
+using namespace eve;
+using namespace eve::loader;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -344,7 +344,7 @@ template <class T> void waitWorker(const Task<T>& task)
         bool completed = false;
     };
     auto gate = std::make_shared<Gate>();
-    cordis::detail::TaskAccess::observe(task, [gate](typename Task<T>::Snapshot) {
+    eve::detail::TaskAccess::observe(task, [gate](typename Task<T>::Snapshot) {
         std::lock_guard<std::mutex> lock(gate->mutex);
         gate->completed = true;
         gate->ready.notify_one();

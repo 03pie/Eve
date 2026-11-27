@@ -27,8 +27,8 @@ private:
     ElaPushButton* retry_ = nullptr;
     ElaText* status_ = nullptr;
     ElaPlainTextEdit* details_ = nullptr;
-    cordis::GenerationId selected_, attempted_;
-    std::optional<cordis::Result<WorkspaceRetirementReport>> lastAttempt_;
+    eve::GenerationId selected_, attempted_;
+    std::optional<eve::Result<WorkspaceRetirementReport>> lastAttempt_;
     bool rendering_ = false, acting_ = false;
 
     void selectionChanged();

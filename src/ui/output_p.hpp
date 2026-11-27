@@ -2,15 +2,15 @@
  * @brief 宿主输出路由及目标选择控件；插件只使用纯值 OutputService。
  */
 #pragma once
-#include <cordis/qt/scheduler.hpp>
-#include <cordis/ui/output.hpp>
+#include <eve/qt/scheduler.hpp>
+#include <eve/ui/output.hpp>
 #include <functional>
 #include <QString>
 class QPlainTextEdit;
 class QTabWidget;
 class QWidget;
-namespace cordis::module { struct NativeLogEvent; }
-namespace cordis::ui::detail
+namespace eve::module { struct NativeLogEvent; }
+namespace eve::ui::detail
 {
 struct OutputControl;
 class WorkbenchReturnPoint;
@@ -50,4 +50,4 @@ QString currentOutputText(const std::shared_ptr<OutputControl>& control);
 /** @brief 在发出任何控件信号前清空捕获的目标，容忍显示期间切换目标。 */
 void clearOutput(const std::shared_ptr<OutputControl>& control);
 void closeOutput(const std::shared_ptr<OutputControl>& control);
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

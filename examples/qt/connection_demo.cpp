@@ -4,17 +4,17 @@
 #include <QCoreApplication>
 #include <QTimer>
 #include <chrono>
-#include <cordis/kernel.hpp>
-#include <cordis/qt/clock.hpp>
-#include <cordis/qt/connection.hpp>
+#include <eve/kernel.hpp>
+#include <eve/qt/clock.hpp>
+#include <eve/qt/connection.hpp>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
 #include <memory>
 #include <optional>
 namespace {
-using namespace cordis;
-using namespace cordis::qt;
+using namespace eve;
+using namespace eve::qt;
 /** @brief 宿主明确拥有资源，插件只捕获弱宿主，避免把模块逻辑放进原生信号连接。 */
 struct Demo : std::enable_shared_from_this<Demo> {
     std::shared_ptr<QtScheduler> scheduler = std::make_shared<QtScheduler>();

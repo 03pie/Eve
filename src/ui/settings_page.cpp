@@ -14,7 +14,7 @@
 #include <QTimer>
 #include <utility>
 
-namespace cordis::ui::detail
+namespace eve::ui::detail
 {
 namespace
 {
@@ -48,7 +48,7 @@ class SettingsRow final : public ElaScrollPageArea
 SettingsPage::SettingsPage(QWidget *parent, Guard guard) : QWidget(parent), guard_(std::move(guard))
 {
     setWindowTitle(tr("设置"));
-    setObjectName("CordisSettingsPage");
+    setObjectName("EveSettingsPage");
     auto outer = new QVBoxLayout(this);
     outer->setContentsMargins(16, 12, 16, 12);
     auto title = new ElaText(tr("设置"), 24, this);
@@ -56,13 +56,13 @@ SettingsPage::SettingsPage(QWidget *parent, Guard guard) : QWidget(parent), guar
     outer->addWidget(title);
     auto header = new QHBoxLayout;
     search_ = new ElaLineEdit(this);
-    search_->setObjectName("CordisSettingsSearch");
+    search_->setObjectName("EveSettingsSearch");
     search_->setAccessibleName(tr("搜索工作台设置"));
     search_->setPlaceholderText(tr("查找设置　Ctrl+F"));
     search_->setClearButtonEnabled(true);
     header->addWidget(search_, 1);
     status_ = new ElaText(this);
-    status_->setObjectName("CordisPreferencesStatus");
+    status_->setObjectName("EvePreferencesStatus");
     status_->setTextPixelSize(12);
     status_->setWordWrap(true);
     secondaryText(status_);
@@ -70,7 +70,7 @@ SettingsPage::SettingsPage(QWidget *parent, Guard guard) : QWidget(parent), guar
     outer->addLayout(header);
     body_ = new QBoxLayout(QBoxLayout::LeftToRight);
     nav_ = new ElaListView(this);
-    nav_->setObjectName("CordisSettingsNavigation");
+    nav_->setObjectName("EveSettingsNavigation");
     nav_->setAccessibleName(tr("设置导航"));
     nav_->setIsTransparent(true);
     nav_->setFrameShape(QFrame::NoFrame);
@@ -97,7 +97,7 @@ SettingsPage::SettingsPage(QWidget *parent, Guard guard) : QWidget(parent), guar
     body_->addWidget(scroll_, 1);
     outer->addLayout(body_, 1);
     empty_ = new ElaText(tr("没有匹配的设置。清空搜索可显示全部设置。"), 14, document_);
-    empty_->setObjectName("CordisSettingsSearchEmpty");
+    empty_->setObjectName("EveSettingsSearchEmpty");
     empty_->hide();
     sections_->addWidget(empty_);
     connect(nav_, &QListView::clicked, this, [this](QModelIndex item) { jump(item.row(), true); });
@@ -108,16 +108,16 @@ SettingsPage::SettingsPage(QWidget *parent, Guard guard) : QWidget(parent), guar
             for (auto &row : group.rows)
                 if (!row.card->isHidden()) {
                     auto target = row.target;
-                    if (row.card->findChild<QWidget *>("CordisBackgroundPicker") &&
+                    if (row.card->findChild<QWidget *>("EveBackgroundPicker") &&
                         (search_->text().contains(tr("背景")) || search_->text().contains(tr("壁纸"))))
-                        target = row.card->findChild<QWidget *>("CordisBackgroundPicker");
+                        target = row.card->findChild<QWidget *>("EveBackgroundPicker");
                     scroll_->ensureWidgetVisible(target);
                     target->setFocus(Qt::ShortcutFocusReason);
                     return;
                 }
     });
     auto find = new QAction(this);
-    find->setObjectName("CordisFindSettings");
+    find->setObjectName("EveFindSettings");
     find->setShortcut(QKeySequence::Find);
     find->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     addAction(find);
@@ -126,7 +126,7 @@ SettingsPage::SettingsPage(QWidget *parent, Guard guard) : QWidget(parent), guar
         search_->selectAll();
     });
     auto clear = new QAction(search_);
-    clear->setObjectName("CordisClearSettingsSearch");
+    clear->setObjectName("EveClearSettingsSearch");
     clear->setShortcut(Qt::Key_Escape);
     clear->setShortcutContext(Qt::WidgetShortcut);
     search_->addAction(clear);
@@ -244,4 +244,4 @@ void SettingsPage::resizeEvent(QResizeEvent *event)
     nav_->setMinimumSize(narrow ? QSize(0, 50) : QSize(150, 0));
     nav_->setMaximumSize(narrow ? QSize(QWIDGETSIZE_MAX, 50) : QSize(150, QWIDGETSIZE_MAX));
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

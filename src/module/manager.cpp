@@ -5,12 +5,12 @@
 #include "native_source_p.hpp"
 #include "unload_p.hpp"
 #include <algorithm>
-#include <cordis/module/manager.hpp>
-#include <cordis_abi/module_query.h>
+#include <eve/module/manager.hpp>
+#include <eve_abi/module_query.h>
 #include <cstring>
 #include <set>
 
-namespace cordis::module {
+namespace eve::module {
 namespace {
 using namespace detail;
 ErrorInfo error(ErrorCode code, std::string phase, std::string message)
@@ -24,7 +24,7 @@ ErrorInfo ownerError()
     return error(ErrorCode::WrongThread, "module.owner", "module manager called outside its owner thread");
 }
 /** @brief 仅复制有界借用值，不保留 DLL 字符串或数组地址。模块属于同进程可信代码。 */
-bool matches(CordisQueryBytesV1 bytes, const std::string& expected, std::uint64_t maximum)
+bool matches(EveQueryBytesV1 bytes, const std::string& expected, std::uint64_t maximum)
 {
     return bytes.data && bytes.size > 0 && bytes.size <= maximum && bytes.size == expected.size() &&
            std::memcmp(bytes.data, expected.data(), expected.size()) == 0;
@@ -43,32 +43,32 @@ Result<ModuleLoadPolicy> selectPolicy(const ModuleManifest& manifest, const Nati
 }
 Result<void> describe(HMODULE image, const ModuleManifest& manifest, ModuleLoadPolicy policy)
 {
-    const auto address = GetProcAddress(image, "cordis_module_query_v1");
+    const auto address = GetProcAddress(image, "eve_module_query_v1");
     if (!address)
         return Result<void>::failure(
-            error(ErrorCode::AbiMismatch, "module.query", "missing cordis_module_query_v1 export"));
-    CordisModuleQueryFnV1 query = nullptr;
+            error(ErrorCode::AbiMismatch, "module.query", "missing eve_module_query_v1 export"));
+    EveModuleQueryFnV1 query = nullptr;
     static_assert(sizeof(query) == sizeof(address), "Windows function pointer layout");
     std::memcpy(&query, &address, sizeof(query));
-    const auto minor = policy == ModuleLoadPolicy::ApprovedNative ? CORDIS_MODULE_QUERY_EXPLICIT_UNLOAD_MINOR
-                                                                  : CORDIS_MODULE_QUERY_MINOR;
+    const auto minor = policy == ModuleLoadPolicy::ApprovedNative ? EVE_MODULE_QUERY_EXPLICIT_UNLOAD_MINOR
+                                                                  : EVE_MODULE_QUERY_MINOR;
     const auto flags =
-        policy == ModuleLoadPolicy::ApprovedNative ? CORDIS_MODULE_EXPLICIT_UNLOAD : CORDIS_MODULE_RESIDENT;
-    CordisModuleQueryV1 request{{sizeof(request), CORDIS_MODULE_QUERY_MAJOR, minor, 0}, 1, 0, 0};
-    CordisModuleDescriptorV1 descriptor{};
+        policy == ModuleLoadPolicy::ApprovedNative ? EVE_MODULE_EXPLICIT_UNLOAD : EVE_MODULE_RESIDENT;
+    EveModuleQueryV1 request{{sizeof(request), EVE_MODULE_QUERY_MAJOR, minor, 0}, 1, 0, 0};
+    EveModuleDescriptorV1 descriptor{};
     descriptor.header.struct_size = sizeof(descriptor);
-    CordisQueryStatus status;
+    EveQueryStatus status;
     try {
         status = query(&request, &descriptor);
     } catch (...) {
         return Result<void>::failure(
             error(ErrorCode::AbiProtocol, "module.query", "exception escaped module discovery boundary"));
     }
-    if (status != CORDIS_QUERY_OK)
+    if (status != EVE_QUERY_OK)
         return Result<void>::failure(error(ErrorCode::AbiMismatch, "module.query",
                                            "module query rejected discovery, status " + std::to_string(status)));
     if (descriptor.header.struct_size < sizeof(descriptor) ||
-        descriptor.header.query_major != CORDIS_MODULE_QUERY_MAJOR || descriptor.header.query_minor != minor ||
+        descriptor.header.query_major != EVE_MODULE_QUERY_MAJOR || descriptor.header.query_minor != minor ||
         descriptor.header.reserved != 0 || descriptor.runtime_abi_major != 1 || descriptor.runtime_abi_minor != 0 ||
         descriptor.reserved != 0 || descriptor.flags != flags)
         return Result<void>::failure(
@@ -177,9 +177,9 @@ Result<void> ModuleManager::tryUnload(GenerationId id)
         return Result<void>::failure(ownerError());
     return detail::unloadGeneration(id);
 }
-} // namespace cordis::module
+} // namespace eve::module
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 Result<NativeSource> acquireNativeSource(GenerationId id)
 {
     const auto generation = findGeneration(id);
@@ -205,12 +205,12 @@ Result<NativeSource> acquireNativeSource(GenerationId id)
     auto session = generation->ledger.acquire(ResourceKind::ExternalHandle, "native.host");
     if (!session.hasValue())
         return Result<NativeSource>::failure(session.error());
-    const auto address = GetProcAddress(generation->image, "cordis_query_v1");
-    CordisQueryFnV1 query = nullptr;
+    const auto address = GetProcAddress(generation->image, "eve_query_v1");
+    EveQueryFnV1 query = nullptr;
     static_assert(sizeof(query) == sizeof(address), "business entry pointer");
     std::memcpy(&query, &address, sizeof(query));
-    const auto stateAddress = GetProcAddress(generation->image, "cordis_query_state_v1");
-    CordisQueryStateFnV1 queryState = nullptr;
+    const auto stateAddress = GetProcAddress(generation->image, "eve_query_state_v1");
+    EveQueryStateFnV1 queryState = nullptr;
     static_assert(sizeof(queryState) == sizeof(stateAddress), "state entry pointer");
     std::memcpy(&queryState, &stateAddress, sizeof(queryState));
     return Result<NativeSource>::success(
@@ -265,4 +265,4 @@ Result<void> retainNativeBackend(GenerationId id, const std::shared_ptr<BackendR
     generation->backend = backend;
     return Result<void>::success();
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

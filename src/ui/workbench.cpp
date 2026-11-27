@@ -8,7 +8,7 @@
 #include "home_p.hpp"
 #include "preferences_p.hpp"
 #include "settings_page_p.hpp"
-#include <cordis/build_info.hpp>
+#include <eve/build_info.hpp>
 #include <ElaComboBox.h>
 #include <ElaLineEdit.h>
 #include <ElaMenu.h>
@@ -46,7 +46,7 @@
 #include <utility>
 #include <vector>
 
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 namespace {
 // QTabWidget calculates the corner position from sizeHint(), including while
 // secondary actions are hidden. Keep its size and hit targets in agreement.
@@ -106,7 +106,7 @@ private:
             return;
         const int width = host->width();
         const bool compact = width < 980;
-        for (const auto id : {"CordisNavigateBack", "CordisNavigateForward"})
+        for (const auto id : {"EveNavigateBack", "EveNavigateForward"})
             if (auto button = findChild<QToolButton*>(id))
                 button->setVisible(!compact);
         const bool showWindowTools = width >= 790;
@@ -315,7 +315,7 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
     {
         if (!open || !window)
             return;
-        auto page = dynamic_cast<HomePage*>(window->findChild<QWidget*>("CordisWelcomePage"));
+        auto page = dynamic_cast<HomePage*>(window->findChild<QWidget*>("EveWelcomePage"));
         if (!page)
             return;
         if (configurationFileAction)
@@ -415,7 +415,7 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
         }
         auto menu = new ElaMenu(window);
         tabContextMenu = menu;
-        menu->setObjectName("CordisTabContextMenu");
+        menu->setObjectName("EveTabContextMenu");
         menu->setAttribute(Qt::WA_DeleteOnClose);
         const auto add = [&](const QString& text, const char* name, std::vector<TabReference> keys, bool keepAnchor) {
             auto item = menu->addAction(text);
@@ -443,11 +443,11 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
                         });
                 });
         };
-        add(QString::fromUtf8("关闭页签"), "CordisTabClose", {anchor}, false);
+        add(QString::fromUtf8("关闭页签"), "EveTabClose", {anchor}, false);
         menu->addSeparator();
-        add(QString::fromUtf8("关闭其他页签"), "CordisTabCloseOthers", std::move(others), true);
-        add(QString::fromUtf8("关闭右侧页签"), "CordisTabCloseRight", std::move(right), false);
-        add(QString::fromUtf8("关闭全部页签"), "CordisTabCloseAll", std::move(all), false);
+        add(QString::fromUtf8("关闭其他页签"), "EveTabCloseOthers", std::move(others), true);
+        add(QString::fromUtf8("关闭右侧页签"), "EveTabCloseRight", std::move(right), false);
+        add(QString::fromUtf8("关闭全部页签"), "EveTabCloseAll", std::move(all), false);
         menu->popup(globalPosition);
     }
     /** @brief 菜单命令和快捷键使用同一个开放门禁；根窗口自动销毁 QAction。 */
@@ -477,13 +477,13 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
         settings = createSettingsPage(window, panel, preferences, [weak](const std::function<void()>& operation) {
             if (auto self = weak.lock()) self->withWindowAccess(operation);
         });
-        auto info = scrollPage(QString::fromUtf8("关于 Cordis"), window);
+        auto info = scrollPage(QString::fromUtf8("关于 Eve"), window);
         about = info;
-        info->setObjectName("CordisAboutPage");
+        info->setObjectName("EveAboutPage");
         auto infoContent = new QWidget;
         auto infoLayout = new QVBoxLayout(infoContent);
         infoLayout->setSizeConstraint(QLayout::SetMinimumSize);
-        card(infoLayout, QString::fromUtf8("Cordis 插件平台"),
+        card(infoLayout, QString::fromUtf8("Eve 插件平台"),
              QString::fromUtf8(
                  "版本 %1\nC++17 插件工作台").arg(QString::fromStdString(std::string(buildInfo().version))));
         card(infoLayout, QString::fromUtf8("运行环境"),
@@ -532,7 +532,7 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     }
     auto bar = new ElaMenuBar(window);
     self->menuBar = bar;
-    bar->setObjectName("CordisMenuBar");
+    bar->setObjectName("EveMenuBar");
     bar->setFixedHeight(30);
     auto file = bar->addMenu(QString::fromUtf8("文件(&F)"));
     auto view = bar->addMenu(QString::fromUtf8("视图(&V)"));
@@ -541,20 +541,20 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     bar->setFixedWidth(bar->sizeHint().width());
     window->setCustomWidget(ElaAppBarType::LeftArea, bar);
     auto center = new CommandCenter(window);
-    center->setObjectName("CordisCommandCenter");
+    center->setObjectName("EveCommandCenter");
     auto centerLayout = new QHBoxLayout(center);
     centerLayout->setContentsMargins(0, 0, 0, 0);
     centerLayout->setSpacing(4);
     auto back = new ElaToolButton(center);
     self->back = back;
-    back->setObjectName("CordisNavigateBack");
+    back->setObjectName("EveNavigateBack");
     back->setElaIcon(ElaIconType::ArrowLeft);
     back->setToolTip(QString::fromUtf8("后退（Alt+←）"));
     back->setAccessibleName(QString::fromUtf8("后退"));
     back->setFixedSize(32, 30);
     auto forward = new ElaToolButton(center);
     self->forward = forward;
-    forward->setObjectName("CordisNavigateForward");
+    forward->setObjectName("EveNavigateForward");
     forward->setElaIcon(ElaIconType::ArrowRight);
     forward->setToolTip(QString::fromUtf8("前进（Alt+→）"));
     forward->setAccessibleName(QString::fromUtf8("前进"));
@@ -563,9 +563,9 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     self->search = search;
     search->setSuggestionFilter([weak](const ElaSuggestBox::SuggestData& data) {
         auto self = weak.lock();
-        return self && self->open && self->contains(data.getSuggestData().value("CordisPageKey").toString());
+        return self && self->open && self->contains(data.getSuggestData().value("EvePageKey").toString());
     });
-    search->setObjectName("CordisPageSearch");
+    search->setObjectName("EvePageSearch");
     search->setFixedHeight(30);
     center->setSearch(search);
     search->setPlaceholderText(QString::fromUtf8("搜索页面  Ctrl+P"));
@@ -573,7 +573,7 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     centerLayout->addWidget(forward);
     centerLayout->addWidget(search);
     auto paletteButton = new ElaToolButton(center);
-    paletteButton->setObjectName("CordisTitleCommands");
+    paletteButton->setObjectName("EveTitleCommands");
     paletteButton->setElaIcon(ElaIconType::Terminal);
     paletteButton->setAccessibleName(QString::fromUtf8("搜索命令"));
     paletteButton->setToolTip(QString::fromUtf8("搜索命令（Ctrl+Shift+P）"));
@@ -590,7 +590,7 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     });
     QObject::connect(search, &ElaSuggestBox::suggestionClicked, window, [weak](const ElaSuggestBox::SuggestData& data) {
         if (auto control = weak.lock())
-            control->navigate(data.getSuggestData().value("CordisPageKey").toString());
+            control->navigate(data.getSuggestData().value("EvePageKey").toString());
     });
     tabs->setTabsClosable(true);
     tabs->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -604,22 +604,22 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
         if (auto control = weak.lock())
             control->closeTab(index);
     });
-    self->action(file, QString::fromUtf8("关闭当前页签"), "CordisCloseView", QKeySequence("Ctrl+W"),
+    self->action(file, QString::fromUtf8("关闭当前页签"), "EveCloseView", QKeySequence("Ctrl+W"),
                  [](WorkbenchControl& state) {
                      if (state.tabs)
                          state.closeTab(state.tabs->currentIndex());
                  });
-    self->action(file, QString::fromUtf8("设置"), "CordisOpenSettings", QKeySequence("Ctrl+,"),
+    self->action(file, QString::fromUtf8("设置"), "EveOpenSettings", QKeySequence("Ctrl+,"),
                  [](WorkbenchControl& state) {
                      if (state.settings)
                          state.navigate(state.settings->property("ElaPageKey").toString());
                  });
     file->addSeparator();
-    self->action(file, QString::fromUtf8("关闭窗口"), "CordisCloseWindow", {}, [](WorkbenchControl& state) {
+    self->action(file, QString::fromUtf8("关闭窗口"), "EveCloseWindow", {}, [](WorkbenchControl& state) {
         if (state.window)
             state.window->close();
     });
-    self->action(view, QString::fromUtf8("展开 / 收起插件导航"), "CordisViewNavigation", QKeySequence("Ctrl+B"),
+    self->action(view, QString::fromUtf8("展开 / 收起插件导航"), "EveViewNavigation", QKeySequence("Ctrl+B"),
                  [](WorkbenchControl& state) {
                      if (state.window)
                          state.window->setNavigationBarDisplayMode(state.window->getNavigationBarDisplayMode() ==
@@ -627,62 +627,62 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
                                                                        ? ElaNavigationType::Compact
                                                                        : ElaNavigationType::Maximal);
                  });
-    self->action(view, QString::fromUtf8("显示 / 隐藏底部工作区"), "CordisViewPanel", {}, [](WorkbenchControl& state) {
+    self->action(view, QString::fromUtf8("显示 / 隐藏底部工作区"), "EveViewPanel", {}, [](WorkbenchControl& state) {
         if (state.togglePanel)
             state.togglePanel->click();
     });
-    auto openCommands = self->action(view, QString::fromUtf8("搜索命令"), "CordisOpenCommands", QKeySequence("Ctrl+Shift+P"),
+    auto openCommands = self->action(view, QString::fromUtf8("搜索命令"), "EveOpenCommands", QKeySequence("Ctrl+Shift+P"),
                  [](WorkbenchControl& state) { showCommandPanel(state.window, state.search); });
     QObject::connect(paletteButton, &QToolButton::clicked, openCommands, &QAction::trigger);
-    self->action(view, QString::fromUtf8("输出"), "CordisOpenOutput", {}, [](WorkbenchControl& state) {
+    self->action(view, QString::fromUtf8("输出"), "EveOpenOutput", {}, [](WorkbenchControl& state) {
         showOutput(state.logs, {}, {}, QApplication::focusWidget());
     });
-    self->action(view, QString::fromUtf8("查看上次运行日志"), "CordisPreviousOutput", {}, [](WorkbenchControl& state) {
+    self->action(view, QString::fromUtf8("查看上次运行日志"), "EvePreviousOutput", {}, [](WorkbenchControl& state) {
         showPreviousOutput(state.logs, QApplication::focusWidget());
     });
-    self->action(view, QString::fromUtf8("打开日志目录"), "CordisOpenLogDirectory", {}, [](WorkbenchControl& state) {
+    self->action(view, QString::fromUtf8("打开日志目录"), "EveOpenLogDirectory", {}, [](WorkbenchControl& state) {
         openOutputDirectory(state.logs);
     });
-    self->action(view, QString::fromUtf8("清空输出"), "CordisClearOutput", {}, [](WorkbenchControl& state) {
+    self->action(view, QString::fromUtf8("清空输出"), "EveClearOutput", {}, [](WorkbenchControl& state) {
         if (state.logs)
             clearOutput(state.logs);
         else if (state.output)
             state.output->clear();
     });
-    self->action(view, QString::fromUtf8("复制全部输出"), "CordisCopyOutput", {}, [](WorkbenchControl& state) {
+    self->action(view, QString::fromUtf8("复制全部输出"), "EveCopyOutput", {}, [](WorkbenchControl& state) {
         if (state.logs)
             QApplication::clipboard()->setText(currentOutputText(state.logs));
         else if (state.output)
             QApplication::clipboard()->setText(state.output->toPlainText());
     });
     view->addSeparator();
-    auto stayTop = self->action(view, QString::fromUtf8("窗口置顶"), "CordisStayTop", {}, [](WorkbenchControl& state) {
+    auto stayTop = self->action(view, QString::fromUtf8("窗口置顶"), "EveStayTop", {}, [](WorkbenchControl& state) {
         state.window->setIsStayTop(!state.window->getIsStayTop());
     });
     stayTop->setCheckable(true);
     stayTop->setChecked(window->getIsStayTop());
     QObject::connect(window, &ElaWindow::pIsStayTopChanged, stayTop,
                      [window, stayTop] { stayTop->setChecked(window->getIsStayTop()); });
-    self->action(view, QString::fromUtf8("切换明暗主题"), "CordisToggleTheme", {}, [](WorkbenchControl&) {
+    self->action(view, QString::fromUtf8("切换明暗主题"), "EveToggleTheme", {}, [](WorkbenchControl&) {
         eTheme->setThemeMode(eTheme->getThemeMode() == ElaThemeType::Light ? ElaThemeType::Dark : ElaThemeType::Light);
     });
-    self->action(view, QString::fromUtf8("刷新插件状态"), "CordisRefreshPlugins", QKeySequence("F5"),
+    self->action(view, QString::fromUtf8("刷新插件状态"), "EveRefreshPlugins", QKeySequence("F5"),
                  [](WorkbenchControl& state) {
                      if (state.callbacks.refresh) {
                          auto refresh = state.callbacks.refresh;
                          refresh();
                      }
                  });
-    self->backAction = self->action(go, QString::fromUtf8("后退"), "CordisMenuBack", QKeySequence("Alt+Left"),
+    self->backAction = self->action(go, QString::fromUtf8("后退"), "EveMenuBack", QKeySequence("Alt+Left"),
                                     [](WorkbenchControl& state) { state.traverse(-1); });
-    self->forwardAction = self->action(go, QString::fromUtf8("前进"), "CordisMenuForward", QKeySequence("Alt+Right"),
+    self->forwardAction = self->action(go, QString::fromUtf8("前进"), "EveMenuForward", QKeySequence("Alt+Right"),
                                        [](WorkbenchControl& state) { state.traverse(1); });
-    self->action(go, QString::fromUtf8("搜索页面"), "CordisQuickOpen", QKeySequence("Ctrl+P"),
+    self->action(go, QString::fromUtf8("搜索页面"), "EveQuickOpen", QKeySequence("Ctrl+P"),
                  [](WorkbenchControl& state) {
                      if (state.search)
                          state.search->focusSearch();
                  });
-    self->action(go, QString::fromUtf8("插件管理"), "CordisOpenPlugins", {},
+    self->action(go, QString::fromUtf8("插件管理"), "EveOpenPlugins", {},
                  [](WorkbenchControl& state) {
                      if (state.callbacks.navigate)
                          state.callbacks.navigate(state.managementKey, false);
@@ -706,10 +706,10 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
             self->configurationFileAction = action;
     };
     file->addSeparator();
-    platformAction(QString::fromUtf8("添加插件实例…"), "CordisAddPlugin", true);
-    platformAction(QString::fromUtf8("工作区配置…"), "CordisConfigurationFile", false);
+    platformAction(QString::fromUtf8("添加插件实例…"), "EveAddPlugin", true);
+    platformAction(QString::fromUtf8("工作区配置…"), "EveConfigurationFile", false);
     self->modulesAction =
-        self->action(file, QString::fromUtf8("模块管理…"), "CordisOpenModules", {}, [](WorkbenchControl& state) {
+        self->action(file, QString::fromUtf8("模块管理…"), "EveOpenModules", {}, [](WorkbenchControl& state) {
             const auto callback = state.callbacks.modules;
             if (!callback)
                 return;
@@ -719,10 +719,10 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
         });
     self->modulesAction->setEnabled(false);
     self->modulesAction->setToolTip(QString::fromUtf8("打开宿主提供的模块管理窗口。"));
-    self->action(go, QString::fromUtf8("欢迎页"), "CordisOpenHome", {},
+    self->action(go, QString::fromUtf8("欢迎页"), "EveOpenHome", {},
                  [](WorkbenchControl& state) { state.navigate(state.homeKey); });
     auto notifications =
-        self->action(go, QString::fromUtf8("通知历史"), "CordisOpenNotifications", {}, [](WorkbenchControl& state) {
+        self->action(go, QString::fromUtf8("通知历史"), "EveOpenNotifications", {}, [](WorkbenchControl& state) {
             if (!state.open || !state.callbacks.showNotifications)
                 return;
             const auto show = state.callbacks.showNotifications;
@@ -730,12 +730,12 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
             if (!result.hasValue() && state.open && state.logs)
                 (void)appendOutput(state.logs, {}, "platform", result.error().message, OutputLevel::Error);
         });
-    self->action(help, QString::fromUtf8("关于 Cordis"), "CordisOpenAbout", {}, [](WorkbenchControl& state) {
+    self->action(help, QString::fromUtf8("关于 Eve"), "EveOpenAbout", {}, [](WorkbenchControl& state) {
         if (state.about)
             state.navigate(state.about->property("ElaPageKey").toString());
     });
     self->createSettings();
-    if (auto button = window->findChild<QAbstractButton*>("CordisWelcomePlugins")) {
+    if (auto button = window->findChild<QAbstractButton*>("EveWelcomePlugins")) {
         auto action = self->addPluginAction.data();
         if (action) {
             QObject::connect(button, &QAbstractButton::clicked, action, &QAction::trigger);
@@ -748,15 +748,15 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
         }
     }
     auto panelTools = new PanelTools(panel);
-    panelTools->setObjectName("CordisPanelTools");
+    panelTools->setObjectName("EvePanelTools");
     auto toolsLayout = new QHBoxLayout(panelTools);
     toolsLayout->setContentsMargins(0, 0, 4, 0);
     toolsLayout->setSpacing(2);
     toolsLayout->setAlignment(Qt::AlignRight|Qt::AlignVCenter);
-    for (const auto& entry : {std::make_pair("CordisCopyPanelOutput", "CordisCopyOutput"),
-                              std::make_pair("CordisClearPanelOutput", "CordisClearOutput")}) {
+    for (const auto& entry : {std::make_pair("EveCopyPanelOutput", "EveCopyOutput"),
+                              std::make_pair("EveClearPanelOutput", "EveClearOutput")}) {
         auto button = new ElaToolButton(panelTools);
-        const bool copy = QString::fromLatin1(entry.first) == "CordisCopyPanelOutput";
+        const bool copy = QString::fromLatin1(entry.first) == "EveCopyPanelOutput";
         button->setObjectName(QString::fromLatin1(entry.first));
         button->setElaIcon(copy ? ElaIconType::Copy : ElaIconType::TrashCan);
         button->setFixedSize(28, 28);
@@ -776,7 +776,7 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
         sync(panel->currentIndex());
     }
     auto corner = new ElaToolButton(panelTools);
-    corner->setObjectName("CordisHidePanel");
+    corner->setObjectName("EveHidePanel");
     corner->setElaIcon(ElaIconType::Xmark);
     corner->setToolTip(QString::fromUtf8("隐藏工作区（Ctrl+J）"));
     corner->setAccessibleName(QString::fromUtf8("隐藏底部工作区"));
@@ -795,11 +795,11 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     contextLayout->setSpacing(10);
     auto location = new StatusBarText(QStringLiteral("工作台"), contextStrip);
     self->location = location;
-    location->setObjectName("CordisCurrentPage");
+    location->setObjectName("EveCurrentPage");
     location->setMaximumWidth(220);
     contextLayout->addWidget(location, 0, Qt::AlignVCenter);
     auto historyButton = new StatusBellButton(contextStrip);
-    historyButton->setObjectName("CordisShowNotifications");
+    historyButton->setObjectName("EveShowNotifications");
     historyButton->setElaIcon(ElaIconType::Bell);
     historyButton->setIconSize(QSize(19, 19));
     historyButton->setFont(location->font());
@@ -848,7 +848,7 @@ void registerWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, con
     const auto label = category.isEmpty() ? title : title + QString::fromUtf8(" · ") + category;
     // Entry 在建议登记前已带初始门禁；模型通知重入也不能看到 Held 贡献。
     control->entries.push_back({key, title, {}, plugin, std::move(presentation)});
-    const auto suggestion = control->search->addSuggestion(label, {{"CordisPageKey", key}});
+    const auto suggestion = control->search->addSuggestion(label, {{"EvePageKey", key}});
     auto entry = std::find_if(control->entries.begin(), control->entries.end(),
                               [&](const WorkbenchControl::Entry& item) { return item.key == key; });
     if (entry == control->entries.end())
@@ -989,7 +989,7 @@ void closeWorkbench(const std::shared_ptr<WorkbenchControl>& control)
     if (control->homeTimer)
         control->homeTimer->stop();
     if (control->window)
-        if (auto page = control->window->findChild<QWidget*>("CordisWelcomePage"))
+        if (auto page = control->window->findChild<QWidget*>("EveWelcomePage"))
             page->setEnabled(false);
     if (control->settings)
         control->settings->setEnabled(false);
@@ -999,4 +999,4 @@ void closeWorkbench(const std::shared_ptr<WorkbenchControl>& control)
         control->togglePanel->setEnabled(false);
     control->updateHistory();
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

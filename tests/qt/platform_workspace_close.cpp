@@ -225,7 +225,7 @@ void cleanupFailure(const QString& sourceBin)
     PLATFORM_CHECK(scene.pages().empty() && take(scene.state->shell.commands()->snapshot()).empty());
     const auto modules = take(scene.state->manager->snapshot());
     for (const auto& row : modules)
-        if (row.manifest.moduleId != "org.cordis.example.reporter")
+        if (row.manifest.moduleId != "org.eve.example.reporter")
             PLATFORM_CHECK(std::any_of(row.resources.records.begin(), row.resources.records.end(),
                                        [](const auto& record) { return record.kind == ResourceKind::Instance; }));
     std::weak_ptr<notebook::Workspace> workspace = scene.state;

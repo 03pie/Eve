@@ -10,8 +10,8 @@
 #include <QPushButton>
 #include <QVariant>
 #include <algorithm>
-#include <cordis/module/qt_manifest.hpp>
-#include <cordis/module/qt_state_plugin.hpp>
+#include <eve/module/qt_manifest.hpp>
+#include <eve/module/qt_state_plugin.hpp>
 #include <iostream>
 
 namespace notebook_test {
@@ -19,7 +19,7 @@ Scene::Scene(const QString& root, const QString& variant)
 {
     const auto inspection = take(module::inspectQtModule(root.toUtf8().toStdString(), manifest(variant)));
     const auto& expected = inspection.artifact.manifest();
-    NOTEBOOK_CHECK(expected.moduleId == "org.cordis.example.notebook" &&
+    NOTEBOOK_CHECK(expected.moduleId == "org.eve.example.notebook" &&
                    expected.moduleVersion == (variant == "a"   ? "1.1.0"
                                               : variant == "b" ? "1.2.0"
                                                                : "1.0.0") &&
@@ -81,7 +81,7 @@ ReplacementScope Scene::freeze() const
 StateSnapshot Scene::capture(const Instance& instance) const
 {
     auto scope = freeze();
-    const auto captured = take(cordis::detail::InstanceStateAccess::capture(scope, instance));
+    const auto captured = take(eve::detail::InstanceStateAccess::capture(scope, instance));
     NOTEBOOK_CHECK(captured && captured->schema.id == schemaId && captured->schema.version == 1);
     take(scope.release());
     barrier(scheduler);
@@ -91,8 +91,8 @@ QWidget* Scene::page(const Instance& instance) const
 {
     const auto id = take(instance.snapshot()).instance;
     for (auto* widget : QApplication::allWidgets())
-        if (widget->objectName() == "CordisNotebookPage" &&
-            widget->property("cordis.instance").toULongLong() == id.value())
+        if (widget->objectName() == "EveNotebookPage" &&
+            widget->property("eve.instance").toULongLong() == id.value())
             return widget;
     return nullptr;
 }
@@ -100,7 +100,7 @@ QPlainTextEdit* Scene::editor(const Instance& instance) const
 {
     const auto widget = page(instance);
     NOTEBOOK_CHECK(widget);
-    auto* found = widget->findChild<QPlainTextEdit*>("CordisNotebookEditor");
+    auto* found = widget->findChild<QPlainTextEdit*>("EveNotebookEditor");
     NOTEBOOK_CHECK(found);
     return found;
 }
@@ -108,7 +108,7 @@ QPushButton* Scene::publish(const Instance& instance) const
 {
     const auto widget = page(instance);
     NOTEBOOK_CHECK(widget);
-    auto* found = widget->findChild<QPushButton*>("CordisNotebookPublish");
+    auto* found = widget->findChild<QPushButton*>("EveNotebookPublish");
     NOTEBOOK_CHECK(found);
     return found;
 }

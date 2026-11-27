@@ -4,9 +4,9 @@
 #include <QCoreApplication>
 #include <QTimer>
 #include <atomic>
-#include <cordis/kernel.hpp>
-#include <cordis/qt/connection.hpp>
-#include <cordis/qt/worker.hpp>
+#include <eve/kernel.hpp>
+#include <eve/qt/connection.hpp>
+#include <eve/qt/worker.hpp>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
@@ -14,8 +14,8 @@
 #include <optional>
 #include <thread>
 namespace {
-using namespace cordis;
-using namespace cordis::qt;
+using namespace eve;
+using namespace eve::qt;
 /** @brief 示例宿主强持资源，插件工作只捕获线程安全的宿主状态。 */
 struct Demo : std::enable_shared_from_this<Demo> {
     std::shared_ptr<QtScheduler> scheduler = std::make_shared<QtScheduler>();

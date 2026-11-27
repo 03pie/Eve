@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <map>
 #include <set>
-namespace cordis::detail {
+namespace eve::detail {
 Result<std::vector<std::string>> planServices(const std::vector<ServicePlanNode>& nodes,
                                               const std::vector<ServiceOutput>& external, MissingServicePolicy missing,
                                               bool validateProviders)
@@ -84,4 +84,4 @@ Result<std::vector<std::string>> planServices(const std::vector<ServicePlanNode>
         return fail(ErrorCode::DependencyCycle, "service plan dependency cycle");
     return Output::success(std::move(order));
 }
-} // namespace cordis::detail
+} // namespace eve::detail

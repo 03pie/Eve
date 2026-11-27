@@ -38,14 +38,14 @@ QModelIndex modulesCommand(QListView* list)
 {
     for (int row = 0; row != list->model()->rowCount(); ++row) {
         const auto index = list->model()->index(row, 0);
-        if (index.data(Qt::UserRole + 1).toString().contains("CordisOpenModules"))
+        if (index.data(Qt::UserRole + 1).toString().contains("EveOpenModules"))
             return index;
     }
     throw std::runtime_error("platform modules command missing");
 }
 void activateModulesCommand()
 {
-    auto* list = find<QListView>("CordisCommandList");
+    auto* list = find<QListView>("EveCommandList");
     const auto index = modulesCommand(list);
     PLATFORM_CHECK(QMetaObject::invokeMethod(list, "activated", Qt::DirectConnection, Q_ARG(QModelIndex, index)));
 }
@@ -53,15 +53,15 @@ std::size_t panelCount()
 {
     const auto widgets = QApplication::allWidgets();
     return static_cast<std::size_t>(std::count_if(widgets.begin(), widgets.end(), [](const auto* widget) {
-        return widget->objectName() == "CordisModuleDiagnostics";
+        return widget->objectName() == "EveModuleDiagnostics";
     }));
 }
 QWidget* openModules(Scene& scene)
 {
-    auto* action = find<QAction>("CordisOpenModules");
+    auto* action = find<QAction>("EveOpenModules");
     PLATFORM_CHECK(action->isVisible() && action->isEnabled() && scene.state->modulesPage);
     action->trigger();
-    auto* panel = find<QWidget>("CordisModuleDiagnostics");
+    auto* panel = find<QWidget>("EveModuleDiagnostics");
     until([&] { return panel->isVisible(); });
     PLATFORM_CHECK(panelCount() == 1);
     return panel;
@@ -96,8 +96,8 @@ void bareMenu()
 {
     const auto scheduler = std::make_shared<qt::QtScheduler>();
     ElaShell shell(scheduler);
-    auto* action = find<QAction>("CordisOpenModules");
-    QPointer<QWidget> window = find<QListView>("CordisCommandList")->window();
+    auto* action = find<QAction>("EveOpenModules");
+    QPointer<QWidget> window = find<QListView>("EveCommandList")->window();
     PLATFORM_CHECK(action->isVisible() && !action->isEnabled());
     activateModulesCommand();
     PLATFORM_CHECK(!shell.onModulesRequested({}).hasValue());
@@ -145,8 +145,8 @@ void menu(const QString& sourceBin)
     scene.apply(scene.state->initial);
     QPointer<QWidget> panel = openModules(scene);
     auto* dialog = panel->window();
-    find<QAction>("CordisOpenModules")->trigger();
-    PLATFORM_CHECK(panelCount() == 1 && find<QWidget>("CordisModuleDiagnostics") == panel);
+    find<QAction>("EveOpenModules")->trigger();
+    PLATFORM_CHECK(panelCount() == 1 && find<QWidget>("EveModuleDiagnostics") == panel);
     dialog->close();
     PLATFORM_CHECK(panel && !panel->isVisible() && !take(scene.state->kernel->snapshot()).closing);
     activateModulesCommand();
@@ -212,7 +212,7 @@ void catalogue(const QString& sourceBin)
                    take(scene.state->driver->configurationDefinitions()->module("example.notebook")).manifest ==
                        locator);
     auto* panel = openModules(scene);
-    auto* table = panel->findChild<QTableView*>("CordisModuleTable");
+    auto* table = panel->findChild<QTableView*>("EveModuleTable");
     PLATFORM_CHECK(table && table->inherits("ElaTableView") && table->model()->rowCount() == 3 &&
                    table->model()->columnCount() == 4);
     QString cells;
@@ -223,7 +223,7 @@ void catalogue(const QString& sourceBin)
             cells += value + '\n';
         }
     PLATFORM_CHECK(cells.contains("example.notebook") && cells.contains("1.2.0") && cells.contains("extra") &&
-                   cells.contains("other") && panel->findChild<QPlainTextEdit*>("CordisModuleDiagnosticsText"));
+                   cells.contains("other") && panel->findChild<QPlainTextEdit*>("EveModuleDiagnosticsText"));
     bool notebookRow = false;
     for (int row = 0; row != table->model()->rowCount(); ++row) {
         const auto name = table->model()->index(row, 0);
@@ -251,10 +251,10 @@ void legacy(const QString& sourceBin)
                    snapshot.generations.front().manifest.moduleVersion == "1.0.0" &&
                    snapshot.current.front().paths == std::vector<std::string>{"notes"});
     auto* panel = openModules(scene);
-    auto* table = panel->findChild<QTableView*>("CordisModuleTable");
+    auto* table = panel->findChild<QTableView*>("EveModuleTable");
     PLATFORM_CHECK(table && table->model()->rowCount() == 1);
-    auto* source = panel->findChild<QLineEdit*>("CordisUpgradeSource");
-    auto* save = panel->findChild<QPushButton*>("CordisUpgradeSave");
+    auto* source = panel->findChild<QLineEdit*>("EveUpgradeSource");
+    auto* save = panel->findChild<QPushButton*>("EveUpgradeSave");
     PLATFORM_CHECK(source && !source->isEnabled() && save && save->isEnabled() && snapshot.dirty);
     save->click();
     until([&] {

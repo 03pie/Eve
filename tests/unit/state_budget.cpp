@@ -7,8 +7,8 @@
 #include <limits>
 #include <thread>
 #include <vector>
-using namespace cordis;
-using namespace cordis::detail;
+using namespace eve;
+using namespace eve::detail;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

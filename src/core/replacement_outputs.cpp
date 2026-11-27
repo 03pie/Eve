@@ -3,7 +3,7 @@
  */
 #include "replacement_scope_p.hpp"
 #include "service_p.hpp"
-namespace cordis::detail {
+namespace eve::detail {
 namespace {
 ErrorInfo outputError(ErrorCode code, const char* message, OperationId operation)
 {
@@ -88,4 +88,4 @@ Result<void> CoreReplacementAccess::sealPlan(const ReplacementScope& scope, cons
         return Result<void>::failure(makeError(ErrorCode::ConfigConflict, "output plan requires actual scope Kernel"));
     return scope.control_->sealPlan(keys, candidate, recovery);
 }
-} // namespace cordis::detail
+} // namespace eve::detail

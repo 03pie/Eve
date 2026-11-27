@@ -17,12 +17,12 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QWidget>
-#include <cordis/loader/kernel_driver.hpp>
-#include <cordis/loader/qt_watcher.hpp>
-#include <cordis/qt/connection.hpp>
-#include <cordis/qt/worker.hpp>
-#include <cordis/ui/configuration.hpp>
-#include <cordis/ui/ela_shell.hpp>
+#include <eve/loader/kernel_driver.hpp>
+#include <eve/loader/qt_watcher.hpp>
+#include <eve/qt/connection.hpp>
+#include <eve/qt/worker.hpp>
+#include <eve/ui/configuration.hpp>
+#include <eve/ui/ela_shell.hpp>
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -40,9 +40,9 @@
 #include <qt_windows.h>
 #endif
 
-using namespace cordis;
-using namespace cordis::loader;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::loader;
+using namespace eve::ui;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -156,10 +156,10 @@ struct Scene {
     /** @brief 通过真实配置页按钮接受候选，返回当前目标修订。 */
     std::uint64_t apply(const std::string& entries)
     {
-        auto editor = editorPage->findChild<QPlainTextEdit*>("CordisConfigEditor");
+        auto editor = editorPage->findChild<QPlainTextEdit*>("EveConfigEditor");
         editor->setPlainText(QString::fromStdString("formatVersion: 1\nplugins: " + entries));
-        editorPage->findChild<QPushButton*>("CordisConfigPreview")->click();
-        auto button = editorPage->findChild<QPushButton*>("CordisConfigApply");
+        editorPage->findChild<QPushButton*>("EveConfigPreview")->click();
+        auto button = editorPage->findChild<QPushButton*>("EveConfigApply");
         CHECK(button->isEnabled());
         const auto previous = session->snapshot().value().coordinator.desiredRevision;
         button->click();
@@ -218,11 +218,11 @@ void invalidCandidate()
             CHECK(checked.error().phase == "loader.schema" && checked.error().entryPath == "a");
             CHECK(checked.error().causes.size() == 1 && checked.error().causes.front().entryPath == "config.title");
         }
-        scene.editorPage->findChild<QPlainTextEdit*>("CordisConfigEditor")->setPlainText(QString::fromStdString(invalid[i]));
-        scene.editorPage->findChild<QPushButton*>("CordisConfigPreview")->click();
-        CHECK(!scene.editorPage->findChild<QPushButton*>("CordisConfigApply")->isEnabled());
+        scene.editorPage->findChild<QPlainTextEdit*>("EveConfigEditor")->setPlainText(QString::fromStdString(invalid[i]));
+        scene.editorPage->findChild<QPushButton*>("EveConfigPreview")->click();
+        CHECK(!scene.editorPage->findChild<QPushButton*>("EveConfigApply")->isEnabled());
         if (i == 1)
-            CHECK(scene.editorPage->findChild<QPlainTextEdit*>("CordisConfigDetails")->toPlainText().contains("config.title"));
+            CHECK(scene.editorPage->findChild<QPlainTextEdit*>("EveConfigDetails")->toPlainText().contains("config.title"));
         const auto after = scene.session->snapshot().value();
         CHECK(after.coordinator.desired == before.coordinator.desired &&
               after.coordinator.desiredRevision == before.coordinator.desiredRevision &&
@@ -287,7 +287,7 @@ void partialFailure()
     CHECK(state.coordinator.running.size() == 2 && state.coordinator.running[0].state == InstanceState::Active &&
           state.coordinator.running[1].state == InstanceState::Failed);
     until([&] {
-        return scene.editorPage->findChild<QLabel*>("CordisConfigSummary")
+        return scene.editorPage->findChild<QLabel*>("EveConfigSummary")
             ->text()
             .contains(QString::fromUtf8("执行失败"));
     });
@@ -301,7 +301,7 @@ void partialFailure()
         const auto failed = scene.save();
         CHECK(failed.outcome == SaveOutcome::Failed && failed.error && failed.error->code == ErrorCode::ConfigIo);
         until([&] {
-            return scene.editorPage->findChild<QLabel*>("CordisConfigSaveStatus")
+            return scene.editorPage->findChild<QLabel*>("EveConfigSaveStatus")
                 ->text()
                 .contains(QString::fromUtf8("保存失败"));
         });
@@ -312,7 +312,7 @@ void partialFailure()
     }
     CHECK(scene.save().outcome == SaveOutcome::Written);
     until([&] {
-        return scene.editorPage->findChild<QLabel*>("CordisConfigSaveStatus")
+        return scene.editorPage->findChild<QLabel*>("EveConfigSaveStatus")
             ->text()
             .contains(QString::fromUtf8("已保存 R2"));
     });

@@ -7,17 +7,17 @@
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QThread>
-#include <cordis/kernel.hpp>
-#include <cordis/module/manager.hpp>
-#include <cordis/module/qt_module.hpp>
-#include <cordis/module/runtime.hpp>
-#include <cordis/qt/scheduler.hpp>
+#include <eve/kernel.hpp>
+#include <eve/module/manager.hpp>
+#include <eve/module/qt_module.hpp>
+#include <eve/module/runtime.hpp>
+#include <eve/qt/scheduler.hpp>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
-using namespace cordis;
-using namespace cordis::module;
-namespace files = cordis::testing::modules;
+using namespace eve;
+using namespace eve::module;
+namespace files = eve::testing::modules;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -47,17 +47,17 @@ int main(int argc, char** argv)
         ModuleManager manager;
         auto install = [&](int index, const char* folder, const char* id, bool qt, const char* version) {
             return files::install(dlls[index], args[2] + '/' + folder, id,
-                                  qt ? QJsonArray{"org.cordis.qt.page", "org.cordis.qt.settings"}
-                                     : QJsonArray{"org.cordis.plugin"},
+                                  qt ? QJsonArray{"org.eve.qt.page", "org.eve.qt.settings"}
+                                     : QJsonArray{"org.eve.plugin"},
                                   qt ? "qt-ui" : "c-abi", version)
                 .toStdString();
         };
-        const auto aPath = install(0, "a", "org.cordis.business", false, "1.0.0");
-        const auto aNextPath = install(1, "a-next", "org.cordis.business", false, "2.0.0");
-        const auto cPath = install(2, "c", "org.cordis.qt.example", true, "1.0.0");
-        const auto cNextPath = install(3, "c-next", "org.cordis.qt.example", true, "2.0.0");
-        const auto bPath = install(4, "b", "org.cordis.usage", false, "1.0.0");
-        const auto bNextPath = install(5, "b-next", "org.cordis.usage", false, "2.0.0");
+        const auto aPath = install(0, "a", "org.eve.business", false, "1.0.0");
+        const auto aNextPath = install(1, "a-next", "org.eve.business", false, "2.0.0");
+        const auto cPath = install(2, "c", "org.eve.qt.example", true, "1.0.0");
+        const auto cNextPath = install(3, "c-next", "org.eve.qt.example", true, "2.0.0");
+        const auto bPath = install(4, "b", "org.eve.usage", false, "1.0.0");
+        const auto bNextPath = install(5, "b-next", "org.eve.usage", false, "2.0.0");
         const auto root = args[2].toStdString();
         const auto a = manager.load(root, aPath).value().generation;
         const auto aNext = manager.stage(root, aNextPath, a).value().generation;
@@ -69,9 +69,9 @@ int main(int argc, char** argv)
         Kernel kernel(scheduler), other(scheduler);
         auto moduleA = NativeModule::open(manager, a, scheduler, kernel.services()).value();
         auto moduleB = NativeModule::open(manager, b, scheduler, kernel.services()).value();
-        auto factoryA = moduleA.runtime({"org.cordis.plugin", {}, {}}).value();
-        auto factoryB = moduleB.runtime({"org.cordis.plugin", {}, {}}).value();
-        auto factoryC = qtRuntime(c, {"org.cordis.qt.page", {}, {}}, scheduler).value();
+        auto factoryA = moduleA.runtime({"org.eve.plugin", {}, {}}).value();
+        auto factoryB = moduleB.runtime({"org.eve.plugin", {}, {}}).value();
+        auto factoryC = qtRuntime(c, {"org.eve.qt.page", {}, {}}, scheduler).value();
         kernel.registerRuntime("a", factoryA).value();
         kernel.registerRuntime("b", factoryB).value();
         kernel.registerRuntime("c", factoryC).value();
@@ -130,7 +130,7 @@ int main(int argc, char** argv)
         auto retryScope = std::move(requested).value();
         auto denied = manager.reserveReplacement(a, aNext, retryScope);
         CHECK(!denied.hasValue() && denied.error().code == ErrorCode::ConfigConflict);
-        CHECK(moduleA.runtime({"org.cordis.plugin", {}, {}}).hasValue());
+        CHECK(moduleA.runtime({"org.eve.plugin", {}, {}}).hasValue());
         available.reset();
         auto rebound = manager.reserveReplacement(a, aNext, retryScope);
         if (!rebound.hasValue())
@@ -143,7 +143,7 @@ int main(int argc, char** argv)
         CHECK(wait(retryParent.stop())->value().quiescent);
         // 原闭包没有 B/C；候选实际新增两种后端的业务，丢弃后仍要保留使用意图直到操作结束。
         auto candidateModuleA = NativeModule::open(manager, aNext, scheduler, kernel.services()).value();
-        auto candidateFactoryA = candidateModuleA.runtime({"org.cordis.plugin", {}, {}}).value();
+        auto candidateFactoryA = candidateModuleA.runtime({"org.eve.plugin", {}, {}}).value();
         auto dynamic = kernel.reserveReplacement({factoryA.id()}).value();
         CHECK(dynamic.inputs().value().empty());
         dynamic.prepareDefinitions({{factoryA.id(), candidateFactoryA}}).value();
@@ -155,7 +155,7 @@ int main(int argc, char** argv)
         CHECK(wait(extraA.ready())->hasValue() && wait(extraB.ready())->hasValue() && wait(extraC.ready())->hasValue());
         dynamic.prepareCommit().value();
         if (failure) {
-            auto bad = moduleB.create("org.cordis.plugin", "\"create-null\"", InstanceId{900002}, 1);
+            auto bad = moduleB.create("org.eve.plugin", "\"create-null\"", InstanceId{900002}, 1);
             CHECK(!bad.hasValue() && bad.error().code == ErrorCode::AbiProtocol);
             auto rejected = module::detail::ReplacementAccess::prepare(dynamicGuard, dynamic);
             CHECK(!rejected.hasValue() && rejected.error().code == ErrorCode::AbiProtocol);

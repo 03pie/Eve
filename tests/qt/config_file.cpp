@@ -1,7 +1,7 @@
 /** @file config_file.cpp
  * @brief 使用真实临时目录验证配置文件版本、冲突、协作写入和提交失败保护。
  */
-#include <cordis/loader/qt_file.hpp>
+#include <eve/loader/qt_file.hpp>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -23,8 +23,8 @@
 #include <thread>
 #include <utility>
 
-using namespace cordis;
-using namespace cordis::loader;
+using namespace eve;
+using namespace eve::loader;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__)); } while (false)
 /** @brief 候选经过真实解析/schema 校验，文件层不执行 Runtime。 */
 ValidatedCandidate target(const std::string& text = "one")

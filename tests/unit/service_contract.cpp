@@ -1,8 +1,8 @@
 /** @file service_contract.cpp
  * @brief 验证 W4 输出描述、继承域视图、版本能力及异步调用租约。
  */
-#include <cordis/kernel.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/kernel.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -12,8 +12,8 @@
 #include <thread>
 #include <vector>
 
-using namespace cordis;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using eve::testing::FakeScheduler;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(#x); } while (false)
 
 /** @brief 缺少必供输出时全部回滚不发布，可选输出可缺席，错误输出不能被忽略。 */

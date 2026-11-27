@@ -26,14 +26,14 @@
 #include <QThread>
 #include <QTimer>
 #include <QVBoxLayout>
-#include <cordis/loader/qt_watcher.hpp>
-#include <cordis/ui/configuration.hpp>
+#include <eve/loader/qt_watcher.hpp>
+#include <eve/ui/configuration.hpp>
 #include <map>
 #include <optional>
 #include <stdexcept>
 #include <utility>
 
-namespace cordis::ui {
+namespace eve::ui {
 namespace {
 using namespace loader;
 /** @brief 错误只按纯文本显示，不执行配置里的富文本或链接。 */
@@ -99,7 +99,7 @@ public:
                        std::shared_ptr<QtConfigurationWatcher> watcher)
         : session_(session), watcher_(watcher)
     {
-        setObjectName("CordisConfigurationPage");
+        setObjectName("EveConfigurationPage");
         auto layout = new QVBoxLayout(this);
         layout->setContentsMargins(24, 20, 24, 16);
         layout->setSpacing(8);
@@ -115,16 +115,16 @@ public:
         detail::secondaryText(help);
         layout->addWidget(help);
         summary_ = new ElaText(this);
-        summary_->setObjectName("CordisConfigSummary");
+        summary_->setObjectName("EveConfigSummary");
         summary_->setWordWrap(true);
         summary_->setTextPixelSize(13);
         summary_->setTextFormat(Qt::PlainText);
         auto states = new QHBoxLayout;
         states->setSpacing(16);
         editStatus_ = new ElaText(this);
-        editStatus_->setObjectName("CordisConfigEditStatus");
+        editStatus_->setObjectName("EveConfigEditStatus");
         saveStatus_ = new ElaText(this);
-        saveStatus_->setObjectName("CordisConfigSaveStatus");
+        saveStatus_->setObjectName("EveConfigSaveStatus");
         for (auto statusLabel : {editStatus_, summary_, saveStatus_}) {
             statusLabel->setTextPixelSize(13);
             statusLabel->setTextFormat(Qt::PlainText);
@@ -135,25 +135,25 @@ public:
         auto buttons = new ElaFlowLayout(0, 8, 4);
         buttons->setIsAnimation(false);
         preview_ = new detail::ActionButton(QString::fromUtf8("检查差异"), this);
-        preview_->setObjectName("CordisConfigPreview");
+        preview_->setObjectName("EveConfigPreview");
         apply_ = new detail::ActionButton(QString::fromUtf8("应用"), this);
-        apply_->setObjectName("CordisConfigApply");
+        apply_->setObjectName("EveConfigApply");
         detail::primaryButton(apply_);
         apply_->setToolTip(QString::fromUtf8("将已检查的配置应用到工作台；保存到磁盘需另行操作。"));
         save_ = new detail::ActionButton(QString::fromUtf8("保存"), this);
-        save_->setObjectName("CordisConfigSave");
+        save_->setObjectName("EveConfigSave");
         reset_ = new detail::ActionButton(QString::fromUtf8("还原编辑"), this);
-        reset_->setObjectName("CordisConfigReset");
+        reset_->setObjectName("EveConfigReset");
         reset_->setToolTip(QString::fromUtf8("使用已应用目标替换编辑区，放弃尚未应用的编辑。"));
         rebase_ = new detail::ActionButton(QString::fromUtf8("采用冲突基线"), this);
-        rebase_->setObjectName("CordisConfigRebase");
+        rebase_->setObjectName("EveConfigRebase");
         rebase_->setToolTip(QString::fromUtf8("保留当前目标，只采用下方展示的磁盘版本为新基线；之后仍需点击保存。"));
         for (auto button : {preview_, apply_, save_}) {
             button->setMinimumHeight(32);
             buttons->addWidget(button);
         }
         viewLog_ = new detail::ActionButton(QStringLiteral("查看相关日志"), this);
-        viewLog_->setObjectName("CordisConfigOpenLog");
+        viewLog_->setObjectName("EveConfigOpenLog");
         viewLog_->hide();
         buttons->addWidget(viewLog_);
         QObject::connect(viewLog_, &QPushButton::clicked, this, [this] {
@@ -173,10 +173,10 @@ public:
         diskStatus_->setTextPixelSize(12);
         diskStatus_->setTextFormat(Qt::PlainText);
         diskStatus_->setWordWrap(true);
-        diskStatus_->setObjectName("CordisConfigDiskStatus");
+        diskStatus_->setObjectName("EveConfigDiskStatus");
         detail::secondaryText(diskStatus_);
         diskLoad_ = new detail::ActionButton(QString::fromUtf8("载入磁盘版本"), diskRow_);
-        diskLoad_->setObjectName("CordisConfigDiskLoad");
+        diskLoad_->setObjectName("EveConfigDiskLoad");
         diskLoad_->setToolTip(QString::fromUtf8("将通知中的磁盘原文载入编辑区；不会自动应用或改变保存基线。"));
         diskLayout->addWidget(diskStatus_, 1);
         diskLayout->addWidget(diskLoad_);
@@ -204,20 +204,20 @@ public:
             });
         });
         region_ = new ElaComboBox(this);
-        region_->setObjectName("CordisConfigRegion");
+        region_->setObjectName("EveConfigRegion");
         region_->setAccessibleName(QStringLiteral("配置区域"));
         region_->addItems(
             {QStringLiteral("配置源文件"), QStringLiteral("期望与运行状态"), QStringLiteral("差异与执行结果")});
         layout->addWidget(region_);
         auto split = new QSplitter(Qt::Horizontal, this);
-        split->setObjectName("CordisConfigSplitter");
+        split->setObjectName("EveConfigSplitter");
         split_ = split;
         split->setChildrenCollapsible(false);
         split->setHandleWidth(8);
         const auto applyTheme = [this, split](ElaThemeType::ThemeMode mode) {
             setPalette(detail::workbenchPalette(palette(), mode));
             // Keep the full hit target transparent over the backdrop and draw only its dividing edge.
-            split->setStyleSheet(QStringLiteral("QSplitter#CordisConfigSplitter::handle:horizontal {"
+            split->setStyleSheet(QStringLiteral("QSplitter#EveConfigSplitter::handle:horizontal {"
                                                 "background: transparent; border-left: 1px solid %1; }")
                                      .arg(eTheme->getThemeColor(mode, ElaThemeType::BasicBorder).name(QColor::HexArgb)));
         };
@@ -232,7 +232,7 @@ public:
         sourceTitle->setIsBold(true);
         sourceLayout->addWidget(sourceTitle);
         filePath_ = new ElaText(source);
-        filePath_->setObjectName("CordisConfigFilePath");
+        filePath_->setObjectName("EveConfigFilePath");
         filePath_->setTextPixelSize(12);
         filePath_->setTextFormat(Qt::PlainText);
         filePath_->setWordWrap(false);
@@ -240,7 +240,7 @@ public:
         detail::secondaryText(filePath_);
         sourceLayout->addWidget(filePath_);
         editor_ = new ElaPlainTextEdit(source);
-        editor_->setObjectName("CordisConfigEditor");
+        editor_->setObjectName("EveConfigEditor");
         auto textFont = QApplication::font();
         textFont.setPixelSize(14);
         editor_->setFont(textFont);
@@ -259,7 +259,7 @@ public:
         detail::secondaryText(runningHelp);
         sideLayout->addWidget(runningHelp);
         table_ = new ElaTableView(side);
-        table_->setObjectName("CordisConfigEntries");
+        table_->setObjectName("EveConfigEntries");
         model_ = new QStandardItemModel(table_);
         model_->setHorizontalHeaderLabels({QString::fromUtf8("条目"), QString::fromUtf8("期望"),
                                            QString::fromUtf8("运行"), QString::fromUtf8("实例")});
@@ -285,7 +285,7 @@ public:
         selected_->setTextPixelSize(14);
         selected_->setTextFormat(Qt::PlainText);
         enabled_ = new detail::KeyboardToggleSwitch(side);
-        enabled_->setObjectName("CordisConfigEnabled");
+        enabled_->setObjectName("EveConfigEnabled");
         selected->addWidget(selected_, 1);
         selected->addWidget(enabled_);
         sideLayout->addLayout(selected);
@@ -296,7 +296,7 @@ public:
         resultTitle->setIsBold(true);
         layout->addWidget(resultTitle);
         details_ = new ElaPlainTextEdit(this);
-        details_->setObjectName("CordisConfigDetails");
+        details_->setObjectName("EveConfigDetails");
         details_->setFont(textFont);
         details_->setReadOnly(true);
         details_->setPlaceholderText(
@@ -870,4 +870,4 @@ std::unique_ptr<QWidget> createConfigurationPage(const std::shared_ptr<loader::C
         throw std::invalid_argument("configuration page requires application thread and owner session");
     return std::make_unique<ConfigurationPanel>(session, std::move(text), std::move(watcher));
 }
-} // namespace cordis::ui
+} // namespace eve::ui

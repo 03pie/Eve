@@ -2,15 +2,15 @@
  * @brief 验证模块账目与实际资源释放、跨线程租约及排空门禁的一致性。
  */
 #include <atomic>
-#include <cordis/module/ledger.hpp>
+#include <eve/module/ledger.hpp>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
 #include <type_traits>
 #include <utility>
 
-using namespace cordis;
-using namespace cordis::module;
+using namespace eve;
+using namespace eve::module;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

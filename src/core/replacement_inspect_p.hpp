@@ -4,12 +4,12 @@
 #pragma once
 #include "replacement_state_p.hpp"
 #include <atomic>
-#include <cordis/kernel.hpp>
-#include <cordis/replacement_builder.hpp>
+#include <eve/kernel.hpp>
+#include <eve/replacement_builder.hpp>
 #include <functional>
 #include <set>
 #include <typeindex>
-namespace cordis::detail {
+namespace eve::detail {
 struct PreparedReplacementStamp;
 struct ReplacementInstanceInput {
     Instance instance;
@@ -77,4 +77,4 @@ struct CoreReplacementAccess {
     /** @brief 当前准备身份的纯重验；不借用 facade 地址，拒绝丢弃后重新准备的旧视图。 */
     static bool current(const PreparedReplacementView& view) noexcept;
 };
-} // namespace cordis::detail
+} // namespace eve::detail

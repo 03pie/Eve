@@ -9,9 +9,9 @@
 #include <QThread>
 #include <QVariant>
 #include <algorithm>
-#include <cordis/module/qt_module.hpp>
-#include <cordis/qt/scheduler.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/module/qt_module.hpp>
+#include <eve/qt/scheduler.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <cstring>
 #include <iostream>
 #include <thread>
@@ -19,9 +19,9 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
-using namespace cordis;
-using namespace cordis::module;
-namespace files = cordis::testing::modules;
+using namespace eve;
+using namespace eve::module;
+namespace files = eve::testing::modules;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -55,18 +55,18 @@ struct Probe {
         std::memcpy(&result, &address, sizeof(result));
         return result;
     }
-    int count(int index) const { return function<int(__cdecl*)(int)>("cordis_qt_business_count")(index); }
+    int count(int index) const { return function<int(__cdecl*)(int)>("eve_qt_business_count")(index); }
     void release(int index, bool cleanup) const
     {
-        function<void(__cdecl*)(int, int)>("cordis_qt_business_release")(index, cleanup);
+        function<void(__cdecl*)(int, int)>("eve_qt_business_release")(index, cleanup);
     }
-    QObject* object(int index) const { return function<QObject*(__cdecl*)(int)>("cordis_qt_business_object")(index); }
-    bool context(int index) const { return function<int(__cdecl*)(int)>("cordis_qt_business_context")(index) != 0; }
+    QObject* object(int index) const { return function<QObject*(__cdecl*)(int)>("eve_qt_business_object")(index); }
+    bool context(int index) const { return function<int(__cdecl*)(int)>("eve_qt_business_context")(index) != 0; }
     std::uint64_t childId(int index) const
     {
-        return function<std::uint64_t(__cdecl*)(int)>("cordis_qt_business_child_id")(index);
+        return function<std::uint64_t(__cdecl*)(int)>("eve_qt_business_child_id")(index);
     }
-    std::uint64_t runtimeId() const { return function<std::uint64_t(__cdecl*)()>("cordis_qt_business_runtime_id")(); }
+    std::uint64_t runtimeId() const { return function<std::uint64_t(__cdecl*)()>("eve_qt_business_runtime_id")(); }
 };
 std::size_t records(ModuleManager& manager, ResourceKind kind)
 {
@@ -81,20 +81,20 @@ int main(int argc, char** argv)
         const auto args = app.arguments();
         CHECK(args.size() == 4);
         const auto name = args[1];
-        app.setProperty("cordis.qt.factoryMode", name);
+        app.setProperty("eve.qt.factoryMode", name);
         QTemporaryDir temporary(args[2] + "/run-XXXXXX");
         CHECK(temporary.isValid());
         temporary.setAutoRemove(false);
         const auto root = temporary.path();
-        const auto path = files::install(args[3], root + "/plugin", "org.cordis.qt.example",
-                                         QJsonArray{"org.cordis.qt.page", "org.cordis.qt.settings"}, "qt-ui");
+        const auto path = files::install(args[3], root + "/plugin", "org.eve.qt.example",
+                                         QJsonArray{"org.eve.qt.page", "org.eve.qt.settings"}, "qt-ui");
         auto loaded = loadQtModule(root.toStdString(), path.toStdString());
         CHECK(loaded.hasValue());
         auto scheduler = std::make_shared<qt::QtScheduler>();
         ModuleManager manager;
         CHECK(!manager.snapshot().value()[0].descriptorAccepted);
         if (name == "missing_factory") {
-            auto rejected = qtRuntime(loaded.value().generation, {"org.cordis.qt.page", {}, {}}, scheduler);
+            auto rejected = qtRuntime(loaded.value().generation, {"org.eve.qt.page", {}, {}}, scheduler);
             CHECK(!rejected.hasValue() && rejected.error().code == ErrorCode::AbiMismatch);
             CHECK(manager.snapshot().value()[0].state == ModuleState::Failed &&
                   records(manager, ResourceKind::QObject) == 1);
@@ -103,12 +103,12 @@ int main(int argc, char** argv)
         }
         Probe probe(root + "/plugin/module.dll");
         if (name == "guards") {
-            CHECK(!qtRuntime({}, {"org.cordis.qt.page", {}, {}}, scheduler).hasValue());
+            CHECK(!qtRuntime({}, {"org.eve.qt.page", {}, {}}, scheduler).hasValue());
             CHECK(!qtRuntime(loaded.value().generation, {"unknown", {}, {}}, scheduler).hasValue());
-            CHECK(!qtRuntime(loaded.value().generation, {"org.cordis.qt.page", {}, {}}, {}).hasValue());
+            CHECK(!qtRuntime(loaded.value().generation, {"org.eve.qt.page", {}, {}}, {}).hasValue());
             bool rejected = false;
             std::thread worker([&] {
-                auto value = qtRuntime(loaded.value().generation, {"org.cordis.qt.page", {}, {}}, scheduler);
+                auto value = qtRuntime(loaded.value().generation, {"org.eve.qt.page", {}, {}}, scheduler);
                 rejected = !value.hasValue() && value.error().code == ErrorCode::WrongThread;
             });
             worker.join();
@@ -116,7 +116,7 @@ int main(int argc, char** argv)
             CHECK(scheduler->close().hasValue());
             return 0;
         }
-        QtPlugin contract{"org.cordis.qt.page", {}, {}};
+        QtPlugin contract{"org.eve.qt.page", {}, {}};
         std::shared_ptr<ServiceRegistry> services;
         if (name == "output") {
             contract.outputs.push_back(ServiceOutput::of<int>({"qt.value"}));
@@ -243,7 +243,7 @@ int main(int argc, char** argv)
                 Qt::DirectConnection);
             if (name == "multi" || name == "duplicate") {
                 auto secondDefinition = name == "multi" ? qtRuntime(loaded.value().generation,
-                                                                    {"org.cordis.qt.settings", {}, {}}, scheduler)
+                                                                    {"org.eve.qt.settings", {}, {}}, scheduler)
                                                         : Result<Runtime>::success(*runtime);
                 CHECK(secondDefinition.hasValue());
                 auto second = Instance::mount(secondDefinition.value(), scheduler);
@@ -253,8 +253,8 @@ int main(int argc, char** argv)
                     CHECK(probe.count(2) == 1);
                 } else {
                     CHECK(wait(second.ready())->hasValue());
-                    CHECK(probe.object(0)->property("pluginId").toString() == "org.cordis.qt.page" &&
-                          probe.object(1)->property("pluginId").toString() == "org.cordis.qt.settings");
+                    CHECK(probe.object(0)->property("pluginId").toString() == "org.eve.qt.page" &&
+                          probe.object(1)->property("pluginId").toString() == "org.eve.qt.settings");
                     CHECK(probe.object(0) != probe.object(1) &&
                           second.snapshot().value().instance != instance.snapshot().value().instance);
                     CHECK(probe.count(1) == 1 && records(manager, ResourceKind::Instance) == 2);

@@ -1,14 +1,14 @@
 /** @file events.cpp
  * @brief 验证事件协议、快照失活、同步 Next 及异步资源屏障。
  */
-#include <cordis/event.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/event.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <thread>
 
-using namespace cordis;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using eve::testing::FakeScheduler;
 using Decision = EventDecision<int>;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(#x); } while (false)
 

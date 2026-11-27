@@ -10,8 +10,8 @@
 
 namespace workspace_endurance_test {
 namespace {
-using namespace cordis;
-using namespace cordis::module;
+using namespace eve;
+using namespace eve::module;
 using platform_workspace_test::take;
 
 QString text(const std::string& value)

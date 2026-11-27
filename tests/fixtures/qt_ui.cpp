@@ -5,13 +5,13 @@
 #include <QObject>
 #include <QVBoxLayout>
 #include <QWidget>
-#include <cordis/module/qt_plugin.hpp>
-#include <cordis/qt/scheduler.hpp>
-#include <cordis/ui/pages.hpp>
+#include <eve/module/qt_plugin.hpp>
+#include <eve/qt/scheduler.hpp>
+#include <eve/ui/pages.hpp>
 #include <optional>
-using namespace cordis;
-using namespace cordis::module;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::module;
+using namespace eve::ui;
 namespace {
 // business create/activate, page/child/capture/business destruction, order errors, jobs/discards
 int counts[9] = {};
@@ -45,7 +45,7 @@ class Page final : public QWidget {
 public:
     Page(const std::shared_ptr<Lifetime>& life, const std::string& config)
     {
-        setObjectName(QStringLiteral("cordis.dll.page"));
+        setObjectName(QStringLiteral("eve.dll.page"));
         auto layout = new QVBoxLayout(this);
         layout->addWidget(new ElaText(QString::fromUtf8("来自插件 DLL 的页面"), 24, this));
         auto text = new ElaText(QString::fromStdString(config), this);
@@ -59,7 +59,7 @@ public:
 } // namespace
 class UiBusiness final : public QObject, public IQtInstanceV1 {
     Q_OBJECT
-    Q_INTERFACES(cordis::module::IQtInstanceV1)
+    Q_INTERFACES(eve::module::IQtInstanceV1)
 public:
     UiBusiness() { ++counts[0]; }
     ~UiBusiness() override
@@ -95,18 +95,18 @@ private:
 };
 class UiFactory final : public QObject, public IQtPluginV1 {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID "org.cordis.IQtPluginV1/1.0" FILE "qt_metadata.json")
-    Q_INTERFACES(cordis::module::IQtPluginV1)
+    Q_PLUGIN_METADATA(IID "org.eve.IQtPluginV1/1.0" FILE "qt_metadata.json")
+    Q_INTERFACES(eve::module::IQtPluginV1)
 public:
-    QStringList pluginIds() const override { return {"org.cordis.qt.page", "org.cordis.qt.settings"}; }
+    QStringList pluginIds() const override { return {"org.eve.qt.page", "org.eve.qt.settings"}; }
     QObject* create(const QString& id) override { return pluginIds().contains(id) ? new UiBusiness : nullptr; }
 };
-extern "C" __declspec(dllexport) int __cdecl cordis_qt_ui_count(int index)
+extern "C" __declspec(dllexport) int __cdecl eve_qt_ui_count(int index)
 {
     return index >= 0 && index < 9 ? counts[index] : -1;
 }
 /** @brief 通过 final 具体类型调用，真实覆盖 DLL 中可能去虚化的 SDK 调用。 */
-extern "C" __declspec(dllexport) int __cdecl cordis_qt_ui_post(qt::QtScheduler* scheduler)
+extern "C" __declspec(dllexport) int __cdecl eve_qt_ui_post(qt::QtScheduler* scheduler)
 {
     return scheduler->post({[] { ++counts[7]; }, [] { ++counts[8]; }}) ? 1 : 0;
 }

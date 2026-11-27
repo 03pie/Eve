@@ -6,7 +6,7 @@
 #include <algorithm>
 
 namespace notebook::detail {
-using namespace cordis;
+using namespace eve;
 void WorkspaceUpgradeExecution::retire()
 {
     if (retiring)
@@ -107,7 +107,7 @@ void WorkspaceUpgradeExecution::finish()
 } // namespace notebook::detail
 
 namespace notebook {
-using namespace cordis;
+using namespace eve;
 void Workspace::closeAfterUpgrade()
 {
     if (!upgrade_) {

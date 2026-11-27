@@ -14,12 +14,12 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QUuid>
-#include <cordis/module/qt_module.hpp>
+#include <eve/module/qt_module.hpp>
 #include <iostream>
 
-using namespace cordis;
-using namespace cordis::ui;
-namespace files = cordis::testing::modules;
+using namespace eve;
+using namespace eve::ui;
+namespace files = eve::testing::modules;
 
 namespace {
 void check(bool value, const char* reason)
@@ -78,7 +78,7 @@ struct Host {
 void run(const QString& dll, const QDir& evidence)
 {
     const QStringList ids{"test.logs.alpha", "test.logs.bravo"};
-    const auto manifest = files::install(dll, evidence.filePath("module"), "org.cordis.test.logs",
+    const auto manifest = files::install(dll, evidence.filePath("module"), "org.eve.test.logs",
                                          QJsonArray::fromStringList(ids), "qt-ui");
     const auto loaded = take(module::loadQtModule(evidence.path().toStdString(), manifest.toStdString()));
     Host host;
@@ -105,14 +105,14 @@ void run(const QString& dll, const QDir& evidence)
     check(window, "missing shell");
     window->setAttribute(Qt::WA_ShowWithoutActivating);
     take(host.app.shell.show());
-    control<QAction>(window, "CordisOpenOutput")->trigger();
-    auto* editor = control<QPlainTextEdit>(window, "CordisWorkbenchOutput");
-    auto* selector = control<QComboBox>(window, "CordisOutputTarget");
-    auto* commandFilter = control<QLineEdit>(window, "CordisCommandFilter");
-    auto* list = control<QListView>(window, "CordisCommandList");
-    auto* openCommands = control<QAction>(window, "CordisOpenCommands");
-    auto* runCommand = control<QPushButton>(window, "CordisRunCommand");
-    const auto runId = control<QComboBox>(window, "CordisOutputRun")->currentData().toString();
+    control<QAction>(window, "EveOpenOutput")->trigger();
+    auto* editor = control<QPlainTextEdit>(window, "EveWorkbenchOutput");
+    auto* selector = control<QComboBox>(window, "EveOutputTarget");
+    auto* commandFilter = control<QLineEdit>(window, "EveCommandFilter");
+    auto* list = control<QListView>(window, "EveCommandList");
+    auto* openCommands = control<QAction>(window, "EveOpenCommands");
+    auto* runCommand = control<QPushButton>(window, "EveRunCommand");
+    const auto runId = control<QComboBox>(window, "EveOutputRun")->currentData().toString();
     check(!QUuid(runId).isNull(), "missing archive run ID");
     check(selector->findData("plugin/test.logs.alpha") < 0 && selector->findData("plugin/test.logs.bravo") < 0, "silent source visible");
     for (const auto& marker : markers) {
@@ -132,7 +132,7 @@ void run(const QString& dll, const QDir& evidence)
     check(all.size() == markers.size(), "unexpected count of interleaved events");
     for (int i = 0; i < markers.size(); ++i)
         check(all[i].endsWith("Interleaved log " + markers[i]), "interleaved output ordering");
-    control<QLineEdit>(window, "CordisOutputSearch")->setText("Interleaved log");
+    control<QLineEdit>(window, "EveOutputSearch")->setText("Interleaved log");
     until([&] { return editor->toPlainText().trimmed() == all.join('\n'); }, "visible search missed an event");
     for (const auto& id : ids) {
         const auto index = selector->findData("plugin/" + id);
@@ -146,7 +146,7 @@ void run(const QString& dll, const QDir& evidence)
     selector->setCurrentIndex(0);
     until([&] { return eventLines(editor).join('\n') == all.join('\n'); }, "return to all sources failed");
     host.close();
-    const QDir archive(evidence.filePath("workspace/.cordis/logs/" + runId));
+    const QDir archive(evidence.filePath("workspace/.eve/logs/" + runId));
     const auto run = QJsonDocument::fromJson(files::read(archive.filePath("run.json"))).object();
     check(run.contains("ended"), "archive was not closed normally");
     int eventCount = 0;
@@ -188,7 +188,7 @@ int main(int argc, char** argv)
         check(evidence.isValid(), "cannot create evidence directory");
         evidence.setAutoRemove(false);
         QStandardPaths::setTestModeEnabled(true);
-        application.setApplicationName("CordisInterleaved-" + QFileInfo(evidence.path()).fileName());
+        application.setApplicationName("EveInterleaved-" + QFileInfo(evidence.path()).fileName());
         std::cout << evidence.path().toStdString() << std::endl;
         run(args[1], QDir(evidence.path()));
         return 0;

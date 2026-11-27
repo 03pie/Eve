@@ -26,7 +26,7 @@ try {
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try { $hash = [System.BitConverter]::ToString($sha.ComputeHash($payload)).Replace('-','').ToLowerInvariant() }
     finally { $sha.Dispose() }
-    $manifest = @{manifestVersion=1;moduleId='org.cordis.example';moduleVersion='1.0.0';loader='c-abi';library='example.dll';sha256=$hash;platform='windows-x64';abi=@{major=1;minor=0};plugins=@('org.cordis.notes');unloadPolicy='resident'} | ConvertTo-Json -Depth 4
+    $manifest = @{manifestVersion=1;moduleId='org.eve.example';moduleVersion='1.0.0';loader='c-abi';library='example.dll';sha256=$hash;platform='windows-x64';abi=@{major=1;minor=0};plugins=@('org.eve.notes');unloadPolicy='resident'} | ConvertTo-Json -Depth 4
     [System.IO.File]::WriteAllText((Join-Path $outside 'module.json'),$manifest,[System.Text.UTF8Encoding]::new($false))
     New-Item -ItemType Junction -Path $escape -Target $outside | Out-Null
     Check-Inspect $pluginRoot 'escape/module.json' 1

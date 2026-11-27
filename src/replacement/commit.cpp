@@ -2,7 +2,7 @@
  * @brief 基于最新接受目标准备全部账目，退出模块锁后才解除预约和通知。
  */
 #include "operation_p.hpp"
-namespace cordis::detail {
+namespace eve::detail {
 void ReplacementOperationControl::commit()
 {
     using namespace loader::detail;
@@ -123,4 +123,4 @@ void ReplacementOperationControl::commit()
                       : ReplacementOutcome::Applied,
            false);
 }
-} // namespace cordis::detail
+} // namespace eve::detail

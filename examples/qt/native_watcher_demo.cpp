@@ -9,10 +9,10 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <chrono>
-#include <cordis/kernel.hpp>
-#include <cordis/qt/clock.hpp>
-#include <cordis/qt/connection.hpp>
-#include <cordis/qt/object.hpp>
+#include <eve/kernel.hpp>
+#include <eve/qt/clock.hpp>
+#include <eve/qt/connection.hpp>
+#include <eve/qt/object.hpp>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
@@ -35,8 +35,8 @@ void writeTemporaryFile(const QString& path, const QByteArray& bytes, bool initi
 /** @brief 不依赖 Ela，以实际原生通知和资源确认结束；超时仅为故障保护。 */
 int main(int argc, char** argv)
 {
-    using namespace cordis;
-    using namespace cordis::qt;
+    using namespace eve;
+    using namespace eve::qt;
     try {
         QCoreApplication app(argc, argv);
         QTemporaryDir temporary;

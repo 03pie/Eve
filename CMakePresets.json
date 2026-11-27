@@ -10,7 +10,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "BUILD_TESTING": "ON",
-        "CORDIS_WARNINGS_AS_ERRORS": "ON"
+        "EVE_WARNINGS_AS_ERRORS": "ON"
       }
     },
     {
@@ -47,8 +47,8 @@
       "inherits": "core-msvc-debug",
       "displayName": "Qt 5.15.2 / MSVC / Debug",
       "cacheVariables": {
-        "CORDIS_REQUIRE_QT5152": "ON",
-        "CMAKE_PREFIX_PATH": "$env{CORDIS_QT5152_ROOT}"
+        "EVE_REQUIRE_QT5152": "ON",
+        "CMAKE_PREFIX_PATH": "$env{EVE_QT5152_ROOT}"
       }
     },
     {
@@ -63,7 +63,7 @@
       "name": "ela-msvc-debug",
       "inherits": "qt-msvc-debug",
       "displayName": "Ela shell / Qt 5.15.2 / MSVC / Debug",
-      "cacheVariables": { "CORDIS_BUILD_ELA_UI": "ON" }
+      "cacheVariables": { "EVE_BUILD_ELA_UI": "ON" }
     },
     {
       "name": "ela-msvc-release",
@@ -79,8 +79,8 @@
       "displayName": "Windows x64 desktop installer / Release",
       "cacheVariables": {
         "BUILD_TESTING": "OFF",
-        "CORDIS_BUILD_EXAMPLES": "OFF",
-        "CORDIS_INSTALL_RUNTIME": "ON"
+        "EVE_BUILD_EXAMPLES": "OFF",
+        "EVE_INSTALL_RUNTIME": "ON"
       }
     }
   ],
@@ -93,7 +93,7 @@
     { "name": "qt-msvc-release", "configurePreset": "qt-msvc-release" },
     { "name": "ela-msvc-debug", "configurePreset": "ela-msvc-debug" },
     { "name": "ela-msvc-release", "configurePreset": "ela-msvc-release" },
-    { "name": "ela-installer-msvc-release", "configurePreset": "ela-installer-msvc-release", "targets": ["cordis_windows_installer"] }
+    { "name": "ela-installer-msvc-release", "configurePreset": "ela-installer-msvc-release", "targets": ["eve_windows_installer"] }
   ],
   "testPresets": [
     { "name": "core-gcc-debug", "configurePreset": "core-gcc-debug", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },

@@ -1,7 +1,7 @@
 /** @file config_yaml.cpp
  * @brief 验证真实 YAML 解析、资源预算、规范文本及内置插件 schema/依赖联合。
  */
-#include <cordis/loader/yaml.hpp>
+#include <eve/loader/yaml.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -9,8 +9,8 @@
 #include <string>
 #include <vector>
 
-using namespace cordis;
-using namespace cordis::loader;
+using namespace eve;
+using namespace eve::loader;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__)); } while (false)
 /** @brief 使用显式格式版本和条目列表包装单个 YAML 条目。 */
 std::string document(const std::string& fields)

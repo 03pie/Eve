@@ -7,7 +7,7 @@
 #include <atomic>
 #include <limits>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 namespace {
 class ResourceScheduler final : public IScheduler {
 public:
@@ -48,29 +48,29 @@ private:
     std::weak_ptr<IScheduler> scheduler;
     const std::thread::id ownerThread = std::this_thread::get_id();
 };
-CordisStatus copySpan(CordisBytesV1 source, std::string& target, bool json, std::size_t limit)
+EveStatus copySpan(EveBytesV1 source, std::string& target, bool json, std::size_t limit)
 {
     if (source.size > limit)
-        return CORDIS_E_LIMIT;
+        return EVE_E_LIMIT;
     if (source.size && !source.data)
-        return CORDIS_E_INVALID_ARGUMENT;
+        return EVE_E_INVALID_ARGUMENT;
     if (source.size)
         target.assign(reinterpret_cast<const char*>(source.data), static_cast<std::size_t>(source.size));
-    return (json ? validAbiJson(target) : validAbiUtf8(target)) ? CORDIS_OK : CORDIS_E_INVALID_ARGUMENT;
+    return (json ? validAbiJson(target) : validAbiUtf8(target)) ? EVE_OK : EVE_E_INVALID_ARGUMENT;
 }
-CordisHandle allocateEffectHandle()
+EveHandle allocateEffectHandle()
 {
-    static std::atomic<CordisHandle> next{1};
+    static std::atomic<EveHandle> next{1};
     auto value = next.load();
     do {
-        if (value == std::numeric_limits<CordisHandle>::max())
+        if (value == std::numeric_limits<EveHandle>::max())
             return 0;
     } while (!next.compare_exchange_weak(value, value + 1));
     return value;
 }
 } // namespace
 struct NativeEffect {
-    CordisHandle id, callback;
+    EveHandle id, callback;
     Promise<void> setup;
     std::optional<EffectToken> token;
     bool ready = false, succeeded = false, closed = false, cleanupPending = false, withdrawing = false;
@@ -134,28 +134,28 @@ void NativeResources::retired(std::size_t bytes)
     payloadBytes -= bytes;
     checkClosed();
 }
-CordisStatus NativeResources::allowed(bool cleanup) const
+EveStatus NativeResources::allowed(bool cleanup) const
 {
     auto self = owner.lock();
     if (!self)
-        return CORDIS_E_CLOSED;
+        return EVE_E_CLOSED;
     if (!self->ownerThread())
-        return CORDIS_E_WRONG_THREAD;
+        return EVE_E_WRONG_THREAD;
     {
         std::lock_guard<std::mutex> lock(self->mutex);
         if (self->uncertain || self->callbacksClosing || self->state == NativeInstanceState::Destroyed ||
             (!cleanup && (self->closing || closing)))
-            return CORDIS_E_CLOSED;
+            return EVE_E_CLOSED;
     }
     {
         std::lock_guard<std::mutex> lock(self->root->mutex);
         if (!cleanup && (self->root->closing || self->root->faulted))
-            return CORDIS_E_CLOSED;
+            return EVE_E_CLOSED;
     }
     if (!cleanup && self->managed && !self->managed->identity().hasValue())
-        return CORDIS_E_CLOSED;
+        return EVE_E_CLOSED;
     auto target = self->root->scheduler.lock();
-    return target && target->isOpen() ? CORDIS_OK : CORDIS_E_CLOSED;
+    return target && target->isOpen() ? EVE_OK : EVE_E_CLOSED;
 }
 Result<std::shared_ptr<HostOperation>> NativeResources::operation(bool business, std::string payload,
                                                                   std::string method)
@@ -181,42 +181,42 @@ Result<std::shared_ptr<HostOperation>> NativeResources::operation(bool business,
     operations.emplace(value->id, value);
     return Output::success(std::move(value));
 }
-CordisStatus NativeResources::dispatch(CordisHandle callback, CordisBytesV1 payload, CordisRequestId* output)
+EveStatus NativeResources::dispatch(EveHandle callback, EveBytesV1 payload, EveRequestId* output)
 {
     if (!output)
-        return CORDIS_E_INVALID_ARGUMENT;
+        return EVE_E_INVALID_ARGUMENT;
     *output = 0;
     const auto access = allowed(false);
-    if (access != CORDIS_OK)
+    if (access != EVE_OK)
         return access;
     auto self = owner.lock();
     if (!callback || !self->startIssued || !self->native)
-        return CORDIS_E_INVALID_ARGUMENT;
+        return EVE_E_INVALID_ARGUMENT;
     std::string data;
-    const auto copied = copySpan(payload, data, true, CORDIS_MAX_JSON_BYTES);
-    if (copied != CORDIS_OK)
+    const auto copied = copySpan(payload, data, true, EVE_MAX_JSON_BYTES);
+    if (copied != EVE_OK)
         return copied;
     auto accepted = operation(true, std::move(data));
     if (!accepted.hasValue())
-        return CORDIS_E_LIMIT;
+        return EVE_E_LIMIT;
     auto op = accepted.value();
     auto resources = shared_from_this();
     self->observe(completedTask(), [resources, op, callback](NativeInstanceControl&, const Result<void>&) {
         resources->dispatchOne(op, callback);
     });
     *output = op->id;
-    return CORDIS_PENDING;
+    return EVE_PENDING;
 }
-void NativeResources::dispatchOne(const std::shared_ptr<HostOperation>& op, CordisHandle callback)
+void NativeResources::dispatchOne(const std::shared_ptr<HostOperation>& op, EveHandle callback)
 {
-    if (op->cancelled || allowed(false) != CORDIS_OK) {
-        deliver(op, CORDIS_E_CANCELLED);
+    if (op->cancelled || allowed(false) != EVE_OK) {
+        deliver(op, EVE_E_CANCELLED);
         return;
     }
     auto self = owner.lock();
     op->entered = true;
     op->targetOwner = self;
-    auto source = self->invoke(NativeRequestKind::Callback, "native.dispatch", [&](CordisRequestId request) {
+    auto source = self->invoke(NativeRequestKind::Callback, "native.dispatch", [&](EveRequestId request) {
         op->target = request;
         return self->root->record->api->table.dispatch(self->native, callback, bytes(op->payload), request);
     });
@@ -235,7 +235,7 @@ void NativeResources::dispatchOne(const std::shared_ptr<HostOperation>& op, Cord
         resources->deliver(op, outcome.value().status, outcome.value().json);
     });
 }
-void NativeResources::deliver(const std::shared_ptr<HostOperation>& op, CordisStatus status, std::string json)
+void NativeResources::deliver(const std::shared_ptr<HostOperation>& op, EveStatus status, std::string json)
 {
     if (op->delivering)
         return;
@@ -247,7 +247,7 @@ void NativeResources::deliver(const std::shared_ptr<HostOperation>& op, CordisSt
         self->quarantine(call.error());
         return;
     }
-    CordisStatus returned;
+    EveStatus returned;
     try {
         returned = self->root->record->api->table.request_complete(self->native, op->id, status, bytes(json));
     } catch (...) {
@@ -260,7 +260,7 @@ void NativeResources::deliver(const std::shared_ptr<HostOperation>& op, CordisSt
         if (self->uncertain)
             return;
     }
-    if (returned != CORDIS_OK || !state.hasValue() || state.value().faulted) {
+    if (returned != EVE_OK || !state.hasValue() || state.value().faulted) {
         self->quarantine(hostError(ErrorCode::AbiProtocol, "native operation ACK rejected"));
         return;
     }
@@ -272,40 +272,40 @@ void NativeResources::deliver(const std::shared_ptr<HostOperation>& op, CordisSt
     checkClosed();
     self->advanceClose();
 }
-CordisStatus NativeResources::cancel(CordisRequestId request)
+EveStatus NativeResources::cancel(EveRequestId request)
 {
     const auto access = allowed(true);
-    if (access != CORDIS_OK)
+    if (access != EVE_OK)
         return access;
     const auto found = operations.find(request);
     if (found == operations.end())
-        return CORDIS_E_NOT_FOUND;
+        return EVE_E_NOT_FOUND;
     auto op = found->second;
     if (op->delivering || op->cancelled || (op->source && op->source->isReady()))
-        return CORDIS_OK;
+        return EVE_OK;
     op->cancelled = true;
     if (!op->entered || !op->target)
-        return CORDIS_OK;
+        return EVE_OK;
     auto self = owner.lock();
     auto target = op->targetOwner.lock();
     if (!target) {
         self->quarantine(hostError(ErrorCode::StaleContext, "native target disappeared"));
-        return CORDIS_E_CLOSED;
+        return EVE_E_CLOSED;
     }
     auto requested = target->channel.cancel(op->target);
     if (!requested.hasValue()) {
         target->quarantine(requested.error());
         self->quarantine(requested.error());
-        return CORDIS_E_ABI_PROTOCOL;
+        return EVE_E_ABI_PROTOCOL;
     }
     if (!requested.value())
-        return CORDIS_OK;
+        return EVE_OK;
     auto call = target->root->source.ledger.acquire(ResourceKind::Call, "native.operation.cancel");
     if (!call.hasValue()) {
         self->quarantine(call.error());
-        return CORDIS_E_LIMIT;
+        return EVE_E_LIMIT;
     }
-    CordisStatus status;
+    EveStatus status;
     try {
         status = target->root->record->api->table.cancel_request(target->native, op->target);
     } catch (...) {
@@ -315,7 +315,7 @@ CordisStatus NativeResources::cancel(CordisRequestId request)
         auto error = hostError(ErrorCode::AbiProtocol, "native operation cancel protocol fault");
         target->quarantine(error);
         self->quarantine(std::move(error));
-        return CORDIS_E_ABI_PROTOCOL;
+        return EVE_E_ABI_PROTOCOL;
     }
     return status;
 }
@@ -337,39 +337,39 @@ bool NativeResources::empty() const
 void NativeResources::cancelBusiness()
 {
     services->retireAll();
-    std::vector<CordisRequestId> requests;
+    std::vector<EveRequestId> requests;
     for (const auto& pair : operations)
         if (pair.second->business)
             requests.push_back(pair.first);
     for (auto request : requests)
         (void)cancel(request);
 }
-CordisStatus NativeResources::effectCreate(CordisBytesV1 label, CordisHandle callback, CordisHandle* output)
+EveStatus NativeResources::effectCreate(EveBytesV1 label, EveHandle callback, EveHandle* output)
 {
     if (!output)
-        return CORDIS_E_INVALID_ARGUMENT;
+        return EVE_E_INVALID_ARGUMENT;
     *output = 0;
     const auto access = allowed(false);
-    if (access != CORDIS_OK)
+    if (access != EVE_OK)
         return access;
     if (!callback)
-        return CORDIS_E_INVALID_ARGUMENT;
+        return EVE_E_INVALID_ARGUMENT;
     if (effects.size() >= 128)
-        return CORDIS_E_LIMIT;
+        return EVE_E_LIMIT;
     std::string name;
-    auto copied = copySpan(label, name, false, CORDIS_MAX_LABEL_BYTES);
-    if (copied != CORDIS_OK || name.empty())
-        return copied == CORDIS_OK ? CORDIS_E_INVALID_ARGUMENT : copied;
+    auto copied = copySpan(label, name, false, EVE_MAX_LABEL_BYTES);
+    if (copied != EVE_OK || name.empty())
+        return copied == EVE_OK ? EVE_E_INVALID_ARGUMENT : copied;
     auto self = owner.lock();
     auto setup = self->root->source.ledger.acquire(ResourceKind::SetupTask, "native.effect.setup");
     auto cleanup = self->root->source.ledger.acquire(ResourceKind::Callback, "native.effect.cleanup");
     if (!setup.hasValue() || !cleanup.hasValue())
-        return CORDIS_E_LIMIT;
+        return EVE_E_LIMIT;
     auto effect = std::make_shared<NativeEffect>();
     effect->id = allocateEffectHandle();
     effect->callback = callback;
     if (!effect->id)
-        return CORDIS_E_LIMIT;
+        return EVE_E_LIMIT;
     effect->setupLease = std::move(setup.value());
     effect->callbackLease = std::move(cleanup.value());
     effect->retired = retirement();
@@ -385,7 +385,7 @@ CordisStatus NativeResources::effectCreate(CordisBytesV1 label, CordisHandle cal
         },
         std::move(name));
     if (!token.hasValue())
-        return CORDIS_E_CLOSED;
+        return EVE_E_CLOSED;
     effect->token = token.value();
     effects.emplace(effect->id, effect);
     self->observe(effect->token->ready(), [weak](NativeInstanceControl&, const Result<void>&) {
@@ -393,35 +393,35 @@ CordisStatus NativeResources::effectCreate(CordisBytesV1 label, CordisHandle cal
             resources->services->publishReady();
     });
     *output = effect->id;
-    return CORDIS_OK;
+    return EVE_OK;
 }
-CordisStatus NativeResources::effectReady(CordisHandle id, CordisStatus status, CordisBytesV1 details)
+EveStatus NativeResources::effectReady(EveHandle id, EveStatus status, EveBytesV1 details)
 {
     const auto access = allowed(true);
-    if (access != CORDIS_OK)
+    if (access != EVE_OK)
         return access;
     const auto found = effects.find(id);
     if (found == effects.end())
-        return CORDIS_E_NOT_FOUND;
+        return EVE_E_NOT_FOUND;
     auto effect = found->second;
     if (effect->ready || !finalStatus(status)) {
         owner.lock()->quarantine(hostError(ErrorCode::AbiProtocol, "native effect setup reported twice or nonfinal"));
-        return CORDIS_E_ABI_PROTOCOL;
+        return EVE_E_ABI_PROTOCOL;
     }
     std::string json;
     if (details.size) {
-        const auto copied = copySpan(details, json, true, CORDIS_MAX_JSON_BYTES);
-        if (copied != CORDIS_OK)
+        const auto copied = copySpan(details, json, true, EVE_MAX_JSON_BYTES);
+        if (copied != EVE_OK)
             return copied;
     }
     effect->ready = true;
-    effect->succeeded = status == CORDIS_OK;
+    effect->succeeded = status == EVE_OK;
     effect->setupLease.reset();
-    if (status == CORDIS_OK)
+    if (status == EVE_OK)
         effect->setup.resolve();
     else
         effect->setup.reject(operationError(status, false, json));
-    return CORDIS_OK;
+    return EVE_OK;
 }
 Task<void> NativeResources::cleanup(const std::shared_ptr<NativeEffect>& effect)
 {
@@ -437,7 +437,7 @@ Task<void> NativeResources::cleanup(const std::shared_ptr<NativeEffect>& effect)
             done.reject(unused.error());
             return;
         }
-        auto task = instance.invoke(NativeRequestKind::Cleanup, "native.effect.cleanup", [&](CordisRequestId request) {
+        auto task = instance.invoke(NativeRequestKind::Cleanup, "native.effect.cleanup", [&](EveRequestId request) {
             return instance.root->record->api->table.request_cleanup(instance.native, effect->id, effect->callback,
                                                                      request);
         });
@@ -450,7 +450,7 @@ Task<void> NativeResources::cleanup(const std::shared_ptr<NativeEffect>& effect)
                 done.reject(std::move(error));
             } else {
                 effect->cleanupPending = false;
-                if (result.value().status != CORDIS_OK)
+                if (result.value().status != EVE_OK)
                     done.reject(operationError(result.value().status, true, result.value().json));
                 else
                     done.resolve();
@@ -460,23 +460,23 @@ Task<void> NativeResources::cleanup(const std::shared_ptr<NativeEffect>& effect)
     });
     return done.task();
 }
-CordisStatus NativeResources::effectClose(CordisHandle id, CordisRequestId* output)
+EveStatus NativeResources::effectClose(EveHandle id, EveRequestId* output)
 {
     if (!output)
-        return CORDIS_E_INVALID_ARGUMENT;
+        return EVE_E_INVALID_ARGUMENT;
     *output = 0;
     const auto access = allowed(true);
-    if (access != CORDIS_OK)
+    if (access != EVE_OK)
         return access;
     const auto found = effects.find(id);
     if (found == effects.end())
-        return CORDIS_E_NOT_FOUND;
+        return EVE_E_NOT_FOUND;
     auto servicesAllowed = services->retirementAccess(id);
     if (!servicesAllowed.hasValue())
         return statusOf(servicesAllowed.error());
     auto accepted = operation(false, {});
     if (!accepted.hasValue())
-        return CORDIS_E_LIMIT;
+        return EVE_E_LIMIT;
     auto op = accepted.value();
     op->entered = true;
     auto resources = shared_from_this();
@@ -488,7 +488,7 @@ CordisStatus NativeResources::effectClose(CordisHandle id, CordisRequestId* outp
                               if (result.hasValue() && result.value().quiescent) {
                                   effect->closed = true;
                                   resources->effects.erase(effect->id);
-                                  resources->deliver(op, CORDIS_OK);
+                                  resources->deliver(op, EVE_OK);
                               } else {
                                   auto error = hostError(ErrorCode::CleanupFailed, "native effect retained resources");
                                   if (result.hasValue())
@@ -496,11 +496,11 @@ CordisStatus NativeResources::effectClose(CordisHandle id, CordisRequestId* outp
                                   else
                                       error.causes.push_back(result.error());
                                   resources->failure = std::move(error);
-                                  resources->deliver(op, CORDIS_E_FAILED);
+                                  resources->deliver(op, EVE_E_FAILED);
                               }
                           });
     *output = op->id;
-    return CORDIS_PENDING;
+    return EVE_PENDING;
 }
 Task<void> NativeResources::close()
 {
@@ -557,13 +557,13 @@ Result<ScopeSnapshot> NativeResources::snapshot() const
 {
     return scope.snapshot();
 }
-bool NativeResources::serviceEffectExists(CordisHandle id) const
+bool NativeResources::serviceEffectExists(EveHandle id) const
 {
     const auto found = effects.find(id);
     return found != effects.end() && !found->second->closed && !found->second->withdrawing &&
            !found->second->cleanupPending;
 }
-bool NativeResources::serviceEffectReady(CordisHandle id) const
+bool NativeResources::serviceEffectReady(EveHandle id) const
 {
     if (!serviceEffectExists(id))
         return false;
@@ -594,7 +594,7 @@ Task<void> NativeResources::ready() const
     Promise<void> done;
     auto remaining = std::make_shared<std::atomic_size_t>(tasks.size());
     for (const auto& task : tasks)
-        cordis::detail::TaskAccess::observe(task, [done, remaining](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(task, [done, remaining](Task<void>::Snapshot result) {
             if (!result->hasValue())
                 done.reject(result->error());
             if (remaining->fetch_sub(1) == 1)
@@ -602,4 +602,4 @@ Task<void> NativeResources::ready() const
         });
     return done.task();
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

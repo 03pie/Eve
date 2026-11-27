@@ -4,9 +4,9 @@
 #pragma once
 #include "notebook_state_p.hpp"
 #include <QPointer>
-#include <cordis/kernel.hpp>
-#include <cordis/module/qt_module.hpp>
-#include <cordis/ui/ela_shell.hpp>
+#include <eve/kernel.hpp>
+#include <eve/module/qt_module.hpp>
+#include <eve/ui/ela_shell.hpp>
 #include <optional>
 #include <vector>
 

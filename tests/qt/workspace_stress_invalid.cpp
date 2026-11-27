@@ -6,7 +6,7 @@
 #include <QDir>
 #include <QJsonDocument>
 #include <QSaveFile>
-#include <cordis_abi/state.h>
+#include <eve_abi/state.h>
 #include <set>
 
 namespace workspace_stress_test {
@@ -32,9 +32,9 @@ bool captureLimit(const QJsonValue& value)
                 return true;
     } else if (value.isObject()) {
         const auto object = value.toObject();
-        if (object["code"] == decimal(static_cast<std::uint64_t>(cordis::ErrorCode::InvalidArgument)) &&
+        if (object["code"] == decimal(static_cast<std::uint64_t>(eve::ErrorCode::InvalidArgument)) &&
             object["phase"] == "module.state" &&
-            object["message"] == "state operation rejected, status " + QString::number(CORDIS_E_LIMIT))
+            object["message"] == "state operation rejected, status " + QString::number(EVE_E_LIMIT))
             return true;
         for (auto item = object.begin(); item != object.end(); ++item)
             if (captureLimit(item.value()))
@@ -101,7 +101,7 @@ void invalidTraceProof(const QString& sourceBin, const QString& outputDirectory)
         changed.insert(field, value);
         check(name, canonical(changed), false);
     };
-    mutate("unknown-schema", "schema", "cordis.workspace.actions/999");
+    mutate("unknown-schema", "schema", "eve.workspace.actions/999");
     mutate("unknown-generator", "generator", "splitmix64/999");
     mutate("extra-root-field", "unknown", true);
     {

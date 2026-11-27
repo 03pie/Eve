@@ -11,8 +11,8 @@
 #include <QThread>
 #include <QTimer>
 #include <QWidget>
-#include <cordis/event.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/event.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -31,9 +31,9 @@ int main(int argc, char** argv)
     widget.reset();
     if (!widgetDestroyed.isValid() || widgetDestroyed.count() != 1) return EXIT_FAILURE;
     // QT_NO_KEYWORDS 保证 Qt 的 emit 宏不会破坏类型化事件 SDK。
-    auto scheduler = std::make_shared<cordis::testing::FakeScheduler>();
-    cordis::EventBus<int> events(scheduler);
-    if (!events.declare({"probe"}, cordis::EventMode::Emit).hasValue() || !events.emit({"probe"}, 1).hasValue()) return EXIT_FAILURE;
+    auto scheduler = std::make_shared<eve::testing::FakeScheduler>();
+    eve::EventBus<int> events(scheduler);
+    if (!events.declare({"probe"}, eve::EventMode::Emit).hasValue() || !events.emit({"probe"}, 1).hasValue()) return EXIT_FAILURE;
     QObject receiver;
     QPointer<QObject> deferred = new QObject;
     QSignalSpy deferredDestroyed(deferred.data(), &QObject::destroyed);

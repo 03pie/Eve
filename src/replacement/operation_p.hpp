@@ -8,11 +8,11 @@
 #include "../module/replacement_commit_p.hpp"
 #include "state_p.hpp"
 #include <atomic>
-#include <cordis/replacement_operation.hpp>
+#include <eve/replacement_operation.hpp>
 #include <deque>
 #include <set>
 #include <thread>
-namespace cordis::detail {
+namespace eve::detail {
 struct OperationDelivery {
     std::atomic_bool blocked{false}, terminal{false};
     std::shared_ptr<std::atomic_bool> scopeFailure;
@@ -164,4 +164,4 @@ inline ErrorInfo replacementError(ErrorCode code, const char* message)
     error.phase = "replacement.operation";
     return error;
 }
-} // namespace cordis::detail
+} // namespace eve::detail

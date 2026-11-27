@@ -1,16 +1,16 @@
 /** @file children.cpp
  * @brief 验证可选依赖子实例、父代屏障与所有权联合环诊断。
  */
-#include <cordis/kernel.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/kernel.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <thread>
 
-using namespace cordis;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using eve::testing::FakeScheduler;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(#x); } while (false)
 
 /** @brief 可选子能力独立 Pending/恢复，不重启父代，父停止后不能恢复或再注入。 */

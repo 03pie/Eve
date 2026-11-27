@@ -7,18 +7,18 @@
 #include "native_source_p.hpp"
 #include "native_state_p.hpp"
 #include "request_p.hpp"
-#include <cordis/module/native.hpp>
-#include <cordis/module/runtime.hpp>
+#include <eve/module/native.hpp>
+#include <eve/module/runtime.hpp>
 #include <map>
 #include <mutex>
 #include <thread>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 struct NativeResources;
 ErrorInfo hostError(ErrorCode code, const char* message);
-bool finalStatus(CordisStatus status);
-CordisBytesV1 bytes(const std::string& value);
-ErrorInfo operationError(CordisStatus status, bool stopping, const std::string& details = {});
+bool finalStatus(EveStatus status);
+EveBytesV1 bytes(const std::string& value);
+ErrorInfo operationError(EveStatus status, bool stopping, const std::string& details = {});
 /** @brief 由 Generation 的 Native backend 持有；会话关闭断开 active，物理退役才清函数表。 */
 struct BusinessRecord {
     std::optional<BusinessApi> api;
@@ -47,7 +47,7 @@ struct NativeModuleControl : std::enable_shared_from_this<NativeModuleControl> {
     std::size_t waiting = 0;
     std::size_t stateCalls = 0;
     CleanupReport report{true, {}};
-    std::map<CordisHandle, std::shared_ptr<NativeInstanceControl>> instances;
+    std::map<EveHandle, std::shared_ptr<NativeInstanceControl>> instances;
     Promise<CleanupReport> stopped;
     bool ownerThread() const { return owner == std::this_thread::get_id(); }
     void finishOne(const Result<CleanupReport>& value);
@@ -71,9 +71,9 @@ struct NativeInstanceControl : std::enable_shared_from_this<NativeInstanceContro
     const Epoch epoch;
     mutable std::mutex mutex;
     NativeInstanceState state = NativeInstanceState::Created;
-    CordisHandle native = 0;
-    CordisRequestId startRequest = 0;
-    CordisStatus startReturn = CORDIS_PENDING;
+    EveHandle native = 0;
+    EveRequestId startRequest = 0;
+    EveStatus startReturn = EVE_PENDING;
     std::optional<Task<NativeOutcome>> startWire;
     bool startIssued = false, startSettled = false, stopIssued = false;
     bool closing = false, uncertain = false, blocked = false;
@@ -128,10 +128,10 @@ struct NativeInstanceControl : std::enable_shared_from_this<NativeInstanceContro
     void settleStart(std::optional<ErrorInfo> error);
     void closeResources();
     Task<NativeOutcome> invoke(NativeRequestKind kind, const char* label,
-                               const std::function<CordisStatus(CordisRequestId)>& action);
+                               const std::function<EveStatus(EveRequestId)>& action);
     void callbackDrain();
     void destroy();
     Result<NativeInstanceSnapshot> snapshot() const;
 };
 
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

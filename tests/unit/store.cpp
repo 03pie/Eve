@@ -1,9 +1,9 @@
 /** @file store.cpp
  * @brief 用显式 gate 验证 Store 的目标/保存分离、单写队列、冲突决策和退出排空。
  */
-#include <cordis/loader/store.hpp>
-#include <cordis/loader/coordinator.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/loader/store.hpp>
+#include <eve/loader/coordinator.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <algorithm>
 #include <cstdlib>
 #include <functional>
@@ -16,9 +16,9 @@
 #include <utility>
 #include <vector>
 
-using namespace cordis;
-using namespace cordis::loader;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using namespace eve::loader;
+using eve::testing::FakeScheduler;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__)); } while (false)
 /** @brief 所有目标经过真实解析及内置定义校验。 */
 std::shared_ptr<const ValidatedCandidate> target(const std::string& value = "one")

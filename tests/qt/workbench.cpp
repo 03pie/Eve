@@ -1,8 +1,8 @@
 /** @file workbench.cpp
  * @brief 用真实 Qt/Ela 验证窗口历史、搜索、页签及设置与贡献生命周期的协作。
  */
-#include <cordis/kernel.hpp>
-#include <cordis/ui/ela_shell.hpp>
+#include <eve/kernel.hpp>
+#include <eve/ui/ela_shell.hpp>
 
 #include <ElaMenu.h>
 #include <ElaMenuBar.h>
@@ -47,8 +47,8 @@
 #include <utility>
 #include <vector>
 
-using namespace cordis;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::ui;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -159,22 +159,22 @@ struct Scene {
 void history()
 {
     Scene scene;
-    auto back = scene.find<QToolButton>("CordisNavigateBack");
-    auto forward = scene.find<QToolButton>("CordisNavigateForward");
+    auto back = scene.find<QToolButton>("EveNavigateBack");
+    auto forward = scene.find<QToolButton>("EveNavigateForward");
     CHECK(!back->isEnabled() && !forward->isEnabled());
     scene.first->navigate().value();
     scene.second->navigate().value();
     back->click();
     CHECK(scene.first->snapshot().value().current && forward->isEnabled());
     scene.first->navigate().value();
-    scene.action("CordisMenuForward");
+    scene.action("EveMenuForward");
     CHECK(scene.second->snapshot().value().current);
-    scene.action("CordisMenuBack");
+    scene.action("EveMenuBack");
     CHECK(scene.first->snapshot().value().current);
     scene.shell.showManagement().value();
     CHECK(forward->isEnabled() && scene.first->snapshot().value().current);
-    scene.action("CordisOpenAbout");
-    CHECK(!forward->isEnabled() && !scene.find<QAction>("CordisMenuForward")->isEnabled());
+    scene.action("EveOpenAbout");
+    CHECK(!forward->isEnabled() && !scene.find<QAction>("EveMenuForward")->isEnabled());
     back->click();
     CHECK(scene.first->snapshot().value().current);
     scene.close();
@@ -184,20 +184,20 @@ void history()
 void tabs()
 {
     Scene scene;
-    auto tabs = scene.find<QTabBar>("CordisPageTabs");
+    auto tabs = scene.find<QTabBar>("EvePageTabs");
     CHECK(tabs->count() == 1);
     scene.first->navigate().value();
     const auto count = tabs->count();
     QPointer<QLineEdit> editor = scene.find<QLineEdit>("WorkbenchPluginEditor");
     editor->setText("unsaved plugin state");
-    scene.action("CordisCloseView");
+    scene.action("EveCloseView");
     CHECK(tabs->count() == count - 1 && scene.first->snapshot().value().widgetAlive);
     scene.first->navigate().value();
     CHECK(tabs->count() == count && scene.first->snapshot().value().current);
     CHECK(editor && scene.find<QLineEdit>("WorkbenchPluginEditor") == editor &&
           editor->text() == "unsaved plugin state");
-    scene.action("CordisOpenHome");
-    scene.action("CordisCloseView");
+    scene.action("EveOpenHome");
+    scene.action("EveCloseView");
     CHECK(tabs->count() == count - 1);
     scene.close();
 }
@@ -206,10 +206,10 @@ void tabs()
 void search()
 {
     Scene scene;
-    auto search = scene.find<ElaSuggestBox>("CordisPageSearch");
+    auto search = scene.find<ElaSuggestBox>("EvePageSearch");
     auto edit = search->findChild<QLineEdit*>();
     CHECK(edit);
-    scene.action("CordisQuickOpen");
+    scene.action("EveQuickOpen");
     QTest::keyClicks(edit, "Alpha");
     // 建议弹层应归整窗拥有，否则会被标题栏命令中心的 30 像素高度裁剪。
     bool ownsPopup = false;
@@ -231,7 +231,7 @@ void search()
     CHECK(!scene.first->snapshot().value().current);
     QTest::keyClick(edit, Qt::Key_Escape);
     CHECK(search->getSearchText().isEmpty());
-    scene.find<QToolButton>("CordisNavigateBack")->click();
+    scene.find<QToolButton>("EveNavigateBack")->click();
     CHECK(!scene.first->snapshot().value().current);
     scene.close();
 }
@@ -240,17 +240,17 @@ void search()
 void statusBarLayout()
 {
     Scene scene;
-    auto* bar = scene.find<QStatusBar>("CordisStatusBar");
-    auto* summary = scene.find<QLabel>("CordisNotification");
-    auto* location = scene.find<QLabel>("CordisCurrentPage");
-    auto* bell = scene.find<QToolButton>("CordisShowNotifications");
+    auto* bar = scene.find<QStatusBar>("EveStatusBar");
+    auto* summary = scene.find<QLabel>("EveNotification");
+    auto* location = scene.find<QLabel>("EveCurrentPage");
+    auto* bell = scene.find<QToolButton>("EveShowNotifications");
     const auto title = QStringLiteral("包含多段内容的较长插件页面标题 ").repeated(12).trimmed();
     const auto message = QStringLiteral("需要处理的工作区提示。").repeated(24);
     location->setText(title);
     location->setToolTip(title);
     summary->setText(message);
     CHECK(!bar->isSizeGripEnabled());
-    const QDir evidence(qEnvironmentVariable("CORDIS_STATUS_EVIDENCE"));
+    const QDir evidence(qEnvironmentVariable("EVE_STATUS_EVIDENCE"));
     for (auto theme : {ElaThemeType::Light, ElaThemeType::Dark}) {
         eTheme->setThemeMode(theme);
         for (const auto width : {700, 1180}) {
@@ -270,7 +270,7 @@ void statusBarLayout()
             CHECK(summary->text() == message && location->text() == title && location->toolTip() == title);
             CHECK(location->width() <= 220 && location->fontMetrics().horizontalAdvance(title) > location->width());
             CHECK(!bell->accessibleName().isEmpty() && bell->focusPolicy() != Qt::NoFocus);
-            if (qEnvironmentVariableIsSet("CORDIS_STATUS_EVIDENCE")) {
+            if (qEnvironmentVariableIsSet("EVE_STATUS_EVIDENCE")) {
                 CHECK(evidence.mkpath("."));
                 const auto name = QString("status-%1-%2-%3.png")
                     .arg(theme == ElaThemeType::Dark ? "dark" : "light")
@@ -290,9 +290,9 @@ void statusBarLayout()
 void menus()
 {
     Scene scene;
-    CHECK(!scene.window->findChild<QWidget*>("CordisResourceExplorer"));
-    CHECK(!scene.window->findChild<QWidget*>("CordisWorkbenchSidebar"));
-    auto menuBar = scene.find<ElaMenuBar>("CordisMenuBar");
+    CHECK(!scene.window->findChild<QWidget*>("EveResourceExplorer"));
+    CHECK(!scene.window->findChild<QWidget*>("EveWorkbenchSidebar"));
+    auto menuBar = scene.find<ElaMenuBar>("EveMenuBar");
     const auto initialPage = scene.window->getCurrentNavigationPageKey();
     const auto headers = menuBar->actions();
     CHECK(headers.size() == 4);
@@ -307,38 +307,38 @@ void menus()
         until([&] { return !popup->isVisible(); });
         CHECK(scene.window->getCurrentNavigationPageKey() == initialPage);
     }
-    scene.action("CordisOpenSettings");
-    scene.action("CordisViewNavigation");
+    scene.action("EveOpenSettings");
+    scene.action("EveViewNavigation");
     CHECK(scene.window->getNavigationBarDisplayMode() == ElaNavigationType::Maximal);
-    scene.action("CordisViewNavigation");
+    scene.action("EveViewNavigation");
     CHECK(scene.window->getNavigationBarDisplayMode() == ElaNavigationType::Compact);
-    auto theme = scene.find<QComboBox>("CordisSettingsTheme");
+    auto theme = scene.find<QComboBox>("EveSettingsTheme");
     theme->setCurrentIndex(1);
     CHECK(eTheme->getThemeMode() == ElaThemeType::Dark);
-    scene.action("CordisToggleTheme");
+    scene.action("EveToggleTheme");
     CHECK(theme->currentIndex() == 0);
-    auto panel = scene.find<QTabWidget>("CordisWorkbenchPanel");
+    auto panel = scene.find<QTabWidget>("EveWorkbenchPanel");
     CHECK(panel->isHidden());
-    scene.action("CordisViewPanel");
+    scene.action("EveViewPanel");
     CHECK(!panel->isHidden());
-    scene.action("CordisViewPanel");
+    scene.action("EveViewPanel");
     CHECK(panel->isHidden());
-    scene.action("CordisOpenCommands");
-    CHECK(panel->isHidden() && scene.find<QWidget>("CordisCommandPanel")->isVisible());
+    scene.action("EveOpenCommands");
+    CHECK(panel->isHidden() && scene.find<QWidget>("EveCommandPanel")->isVisible());
     CHECK(panel->count()==2 && panel->tabText(0)==QString::fromUtf8("输出"));
-    QTest::keyClick(scene.find<QLineEdit>("CordisCommandFilter"),Qt::Key_Escape);
-    scene.action("CordisOpenOutput");
+    QTest::keyClick(scene.find<QLineEdit>("EveCommandFilter"),Qt::Key_Escape);
+    scene.action("EveOpenOutput");
     CHECK(!panel->isHidden() && panel->currentIndex()==0);
-    auto output = scene.find<QPlainTextEdit>("CordisWorkbenchOutput");
+    auto output = scene.find<QPlainTextEdit>("EveWorkbenchOutput");
     scene.shell.writeOutput("<literal output>").value();
-    scene.action("CordisCopyOutput");
+    scene.action("EveCopyOutput");
     CHECK(QApplication::clipboard()->text() == output->toPlainText());
-    scene.action("CordisClearOutput");
+    scene.action("EveClearOutput");
     CHECK(output->toPlainText().isEmpty());
-    scene.action("CordisOpenAbout");
-    CHECK(scene.find<QWidget>("CordisAboutPage")->isVisible());
+    scene.action("EveOpenAbout");
+    CHECK(scene.find<QWidget>("EveAboutPage")->isVisible());
     auto closing = scene.shell.close();
-    CHECK(!scene.find<QAction>("CordisOpenSettings")->isEnabled());
+    CHECK(!scene.find<QAction>("EveOpenSettings")->isEnabled());
     wait(closing);
     scene.close();
 }
@@ -350,10 +350,10 @@ void isolation()
     first.first->navigate().value();
     second.second->navigate().value();
     first.second->navigate().value();
-    first.find<QToolButton>("CordisNavigateBack")->click();
+    first.find<QToolButton>("EveNavigateBack")->click();
     CHECK(first.first->snapshot().value().current && second.second->snapshot().value().current);
     first.close();
-    second.find<QToolButton>("CordisNavigateBack")->click();
+    second.find<QToolButton>("EveNavigateBack")->click();
     CHECK(!second.second->snapshot().value().current);
     second.close();
 }
@@ -374,9 +374,9 @@ void navigationReentry()
     });
     scene.first->navigate().value();
     CHECK(redirected && scene.second->snapshot().value().current);
-    auto tabs = scene.find<QTabBar>("CordisPageTabs");
+    auto tabs = scene.find<QTabBar>("EvePageTabs");
     CHECK(tabs->tabText(tabs->currentIndex()) == "Beta");
-    scene.find<QToolButton>("CordisNavigateBack")->click();
+    scene.find<QToolButton>("EveNavigateBack")->click();
     CHECK(!scene.first->snapshot().value().current && !scene.second->snapshot().value().current);
     scene.close();
 }
@@ -406,26 +406,26 @@ void suggestionReentry()
 void emptyWorkspace()
 {
     Scene scene;
-    auto tabs = scene.find<QTabBar>("CordisPageTabs");
-    scene.action("CordisCloseView");
+    auto tabs = scene.find<QTabBar>("EvePageTabs");
+    scene.action("EveCloseView");
     CHECK(tabs->count() == 0);
     CHECK(scene.find<QWidget>("ElaEmptyWorkbench")->isVisible());
     CHECK(scene.window->grab().save(QCoreApplication::applicationDirPath() + "/ela-empty-workbench.png"));
     CHECK(!scene.first->snapshot().value().current && scene.first->snapshot().value().widgetAlive);
-    scene.find<QToolButton>("CordisNavigateBack")->click();
+    scene.find<QToolButton>("EveNavigateBack")->click();
     CHECK(tabs->count() == 1);
-    for (auto action : {"CordisOpenPlugins", "CordisOpenSettings", "CordisOpenAbout"})
+    for (auto action : {"EveOpenPlugins", "EveOpenSettings", "EveOpenAbout"})
         scene.action(action);
     CHECK(tabs->count() == 3);
     while (tabs->count() > 0) {
         const auto before = tabs->count();
-        scene.action("CordisCloseView");
+        scene.action("EveCloseView");
         CHECK(tabs->count() == before - 1);
     }
     CHECK(scene.find<QWidget>("ElaEmptyWorkbench")->isVisible());
     wait(scene.instance->stop());
     CHECK(tabs->count() == 0);
-    scene.action("CordisOpenHome");
+    scene.action("EveOpenHome");
     CHECK(tabs->count() == 1);
     scene.close();
 }
@@ -447,7 +447,7 @@ void directActivation()
     menu->actions().back()->trigger();
     menu->hide();
     CHECK(scene.second->snapshot().value().current);
-    scene.action("CordisCloseView");
+    scene.action("EveCloseView");
     QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, view->visualRect(group).center());
     CHECK(scene.second->snapshot().value().current);
     wait(scene.second->close());
@@ -460,18 +460,18 @@ void directActivation()
 void homeCards()
 {
     Scene scene;
-    auto home = scene.find<QWidget>("CordisWelcomePage");
-    auto cards = home->findChildren<ElaScrollPageArea*>("CordisPluginCard");
+    auto home = scene.find<QWidget>("EveWelcomePage");
+    auto cards = home->findChildren<ElaScrollPageArea*>("EvePluginCard");
     CHECK(cards.size() == 1);
     QPointer<ElaScrollPageArea> card = cards.front();
     CHECK(card->width() == 280 && card->height() >= 144);
     QTest::mouseClick(card, Qt::LeftButton);
     CHECK(home->isVisible() && !scene.first->snapshot().value().current);
     scene.second->navigate().value();
-    scene.action("CordisOpenHome");
+    scene.action("EveOpenHome");
     QTest::mouseClick(card, Qt::LeftButton);
     CHECK(home->isVisible() && !scene.second->snapshot().value().current);
-    scene.action("CordisOpenHome");
+    scene.action("EveOpenHome");
     QEvent enter(QEvent::Enter);
     QCoreApplication::sendEvent(card, &enter);
     QTest::qWait(520);
@@ -479,7 +479,7 @@ void homeCards()
     CHECK(!floater);
     wait(scene.instance->stop());
     QTest::qWait(350);
-    CHECK(!card && !floater && home->findChildren<ElaScrollPageArea*>("CordisPluginCard").isEmpty());
+    CHECK(!card && !floater && home->findChildren<ElaScrollPageArea*>("EvePluginCard").isEmpty());
     scene.close();
     auto parent = std::make_unique<QWidget>();
     QPointer<ElaPopularCard> reentrant = new ElaPopularCard(parent.get());
@@ -524,8 +524,8 @@ void homePower()
     Scene scene;
     scene.shell.management()->attach(scene.kernel).value();
     const auto original = scene.instance->snapshot().value().instance;
-    auto home = scene.find<QWidget>("CordisWelcomePage");
-    QPointer<ElaToggleSwitch> button = scene.find<ElaToggleSwitch>("CordisPluginPower");
+    auto home = scene.find<QWidget>("EveWelcomePage");
+    QPointer<ElaToggleSwitch> button = scene.find<ElaToggleSwitch>("EvePluginPower");
     until([&] { return button && button->isEnabled() && button->getIsToggled(); });
     // 同一输入窗口连续派发真实按下/释放，避免 QTest 内部 qWait 在点击间推进整个 remount。
     auto click = [](const QPointer<ElaToggleSwitch>& target) {
@@ -554,11 +554,11 @@ void homePower()
     // 新身份重建卡片后旧按钮合法销毁，不能继续等待旧按钮的短暂禁用状态。
     until([&] { return !button; });
     until([&] {
-        auto current = scene.find<ElaToggleSwitch>("CordisPluginPower");
+        auto current = scene.find<ElaToggleSwitch>("EvePluginPower");
         return current->isEnabled() && current->getIsToggled();
     });
     CHECK(scene.shell.diagnostics()->snapshot().value().operations.size() == 2);
-    CHECK(home->isVisible() && scene.find<QTabBar>("CordisPageTabs")->count() == 1);
+    CHECK(home->isVisible() && scene.find<QTabBar>("EvePageTabs")->count() == 1);
     int calls = 0;
     auto runtime =
         scene.kernel
@@ -574,9 +574,9 @@ void homePower()
     const auto id = QString::number(failed.snapshot().value().instance.value());
     QPointer<ElaToggleSwitch> retry;
     until([&] {
-        for (auto card : home->findChildren<QWidget*>("CordisPluginCard"))
-            if (card->property("CordisPluginId").toString() == id)
-                retry = card->findChild<ElaToggleSwitch*>("CordisPluginPower");
+        for (auto card : home->findChildren<QWidget*>("EvePluginCard"))
+            if (card->property("EvePluginId").toString() == id)
+                retry = card->findChild<ElaToggleSwitch*>("EvePluginPower");
         return retry && retry->isEnabled();
     });
     CHECK(retry->accessibleName() == QString::fromUtf8("重试加载"));
@@ -605,12 +605,12 @@ void homePowerBusy()
     scene.shell.management()->load(original).value();
     until([&] { return scene.shell.diagnostics()->snapshot().value().operations.back().previousInstance == original; });
     const auto current = scene.shell.diagnostics()->snapshot().value().operations.back().instance;
-    auto home = scene.find<QWidget>("CordisWelcomePage");
+    auto home = scene.find<QWidget>("EveWelcomePage");
     QPointer<ElaToggleSwitch> toggle;
     until([&] {
-        for (auto card : home->findChildren<QWidget*>("CordisPluginCard"))
-            if (card->property("CordisPluginId").toString() == QString::number(current.value()))
-                toggle = card->findChild<ElaToggleSwitch*>("CordisPluginPower");
+        for (auto card : home->findChildren<QWidget*>("EvePluginCard"))
+            if (card->property("EvePluginId").toString() == QString::number(current.value()))
+                toggle = card->findChild<ElaToggleSwitch*>("EvePluginPower");
         return toggle && !toggle->isEnabled();
     });
     CHECK(scene.kernel->findInstance(current).value().snapshot().value().state == InstanceState::Loading);
@@ -625,7 +625,7 @@ void homePowerBusy()
 void homeRefreshReentry()
 {
     Scene scene;
-    auto card = scene.find<ElaToggleSwitch>("CordisPluginPower");
+    auto card = scene.find<ElaToggleSwitch>("EvePluginPower");
     scene.shell.management()->attach(scene.kernel).value();
     bool entered = false, retained = false;
     std::optional<Task<void>> closing;
@@ -663,10 +663,10 @@ void tabFallback()
     Scene scene;
     scene.first->navigate().value();
     scene.second->navigate().value();
-    scene.action("CordisOpenHome");
+    scene.action("EveOpenHome");
     auto stopping = scene.instance->stop();
-    scene.action("CordisCloseView");
-    auto tabs = scene.find<QTabBar>("CordisPageTabs");
+    scene.action("EveCloseView");
+    auto tabs = scene.find<QTabBar>("EvePageTabs");
     CHECK(tabs->count() == 0 || tabs->tabText(tabs->currentIndex()) != QString::fromUtf8("概览"));
     CHECK(scene.find<QWidget>("ElaEmptyWorkbench")->isVisible());
     wait(stopping);
@@ -731,9 +731,9 @@ void pageLayout()
     bool scrolled = false;
     for (bool dark : {false, true}) {
         eTheme->setThemeMode(dark ? ElaThemeType::Dark : ElaThemeType::Light);
-        for (const auto& entry : {std::make_pair("CordisOpenHome", "CordisWelcomePage"),
-                                  std::make_pair("CordisOpenSettings", "CordisSettingsPage"),
-                                  std::make_pair("CordisOpenAbout", "CordisAboutPage")}) {
+        for (const auto& entry : {std::make_pair("EveOpenHome", "EveWelcomePage"),
+                                  std::make_pair("EveOpenSettings", "EveSettingsPage"),
+                                  std::make_pair("EveOpenAbout", "EveAboutPage")}) {
             scene.action(entry.first);
             auto page = scene.find<QWidget>(entry.second);
             for (auto size : {QSize(1200, 800), QSize(1000, 520), QSize(1880, 900)}) {
@@ -746,7 +746,7 @@ void pageLayout()
                     CHECK(scene.window->grab().save(path));
                 }
                 const auto cards = page->findChildren<ElaScrollPageArea*>();
-                CHECK(!cards.isEmpty() || page->objectName() == "CordisWelcomePage");
+                CHECK(!cards.isEmpty() || page->objectName() == "EveWelcomePage");
                 for (auto card : cards) {
                     CHECK(card->layout());
                     checkCardLayout(card->layout(), card);

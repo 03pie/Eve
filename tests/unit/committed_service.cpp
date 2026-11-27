@@ -1,16 +1,16 @@
 /** @file committed_service.cpp
  * @brief 验证消费者 committed 账目、旧绑定清理调用及跨代失效。
  */
-#include <cordis/instance.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/instance.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <thread>
 
-using namespace cordis;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using eve::testing::FakeScheduler;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(#x); } while (false)
 
 /** @brief 提供者退役后旧服务保留到异步消费者清理完成，清理期间允许旧绑定调用。 */

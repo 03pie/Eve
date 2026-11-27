@@ -4,7 +4,7 @@
 #include <utility>
 #include <vector>
 
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 /** Focus and visible owned windows temporarily left by an explicit workbench navigation. */
 class WorkbenchReturnPoint {
 public:

@@ -1,14 +1,14 @@
 /** @file module_catalog.cpp
  * @brief 目录冻结、无副作用校验、Runtime 身份和可停用门禁。
  */
-#include <cordis/loader/kernel_driver.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/loader/kernel_driver.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
 
-using namespace cordis;
-using namespace cordis::loader;
+using namespace eve;
+using namespace eve::loader;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

@@ -14,7 +14,7 @@ struct Image {
     QString file;
     std::uintptr_t begin;
     std::size_t bytes;
-    explicit Image(const cordis::module::ModuleGenerationSnapshot& row)
+    explicit Image(const eve::module::ModuleGenerationSnapshot& row)
         : file(QDir::toNativeSeparators(QString::fromUtf8(row.libraryPath.c_str())))
     {
         const auto handle = GetModuleHandleW(reinterpret_cast<LPCWSTR>(file.utf16()));

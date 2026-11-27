@@ -1,8 +1,8 @@
 /** @file coordinator.cpp
  * @brief 以受控运行状态和显式 gate 验证 CAS、串行检查点、最新目标、故障及关闭协议。
  */
-#include <cordis/loader/coordinator.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/loader/coordinator.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <algorithm>
 #include <cstdlib>
 #include <functional>
@@ -12,9 +12,9 @@
 #include <thread>
 #include <utility>
 
-using namespace cordis;
-using namespace cordis::loader;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using namespace eve::loader;
+using eve::testing::FakeScheduler;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__)); } while (false)
 /** @brief 测试目标始终经过真实 YAML/内置定义校验。 */
 ValidatedCandidate target(const std::string& entries)

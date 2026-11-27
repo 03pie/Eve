@@ -4,7 +4,7 @@
 #pragma once
 #include <QIcon>
 
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 /** @brief 从内嵌透明 PNG 返回原版多尺寸图标，不依赖外部文件或 SVG 插件。 */
 QIcon eveApplicationIcon();
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

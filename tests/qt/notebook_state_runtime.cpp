@@ -86,7 +86,7 @@ void limits(const QString& root)
     scene.editor(instance)->setPlainText(oversized);
     {
         auto scope = scene.freeze();
-        const auto rejected = cordis::detail::InstanceStateAccess::capture(scope, instance);
+        const auto rejected = eve::detail::InstanceStateAccess::capture(scope, instance);
         NOTEBOOK_CHECK(!rejected.hasValue() && rejected.error().code == ErrorCode::InvalidArgument);
         NOTEBOOK_CHECK(scene.editor(instance)->toPlainText() == oversized);
         const auto state = scene.moduleState();
@@ -135,7 +135,7 @@ void frozen(const QString& root)
         QTest::keyClicks(editor, "physical input while frozen");
         NOTEBOOK_CHECK(editor->toPlainText() == projection);
         scene.publish(instance)->click();
-        const auto captured = take(cordis::detail::InstanceStateAccess::capture(scope, instance));
+        const auto captured = take(eve::detail::InstanceStateAccess::capture(scope, instance));
         NOTEBOOK_CHECK(captured && captured->json == draftJson(initial));
         NOTEBOOK_CHECK(take(scene.shell.output()->snapshot()).size() == before);
         take(scope.release());
@@ -199,7 +199,7 @@ void legacy(const QString& root)
     NOTEBOOK_CHECK(scene.pageCount() == 1 && scene.commandCount() == 1);
     {
         auto scope = scene.freeze();
-        NOTEBOOK_CHECK(!take(cordis::detail::InstanceStateAccess::capture(scope, instance)));
+        NOTEBOOK_CHECK(!take(eve::detail::InstanceStateAccess::capture(scope, instance)));
         take(scope.release());
     }
     scene.close();

@@ -5,7 +5,7 @@
 #include "service_p.hpp"
 #include <algorithm>
 
-namespace cordis::detail {
+namespace eve::detail {
 Result<CoreReplacementAccess::PlanningContext> ReplacementScopeControl::planningContext(bool recovery) const
 {
     using Output = Result<CoreReplacementAccess::PlanningContext>;
@@ -168,4 +168,4 @@ bool CoreReplacementAccess::current(const PreparedReplacementView& view) noexcep
            !control->kernel->closing_ &&
            control->inputsAvailable(control->preparedMode == ReplacementCommitMode::Recovery);
 }
-} // namespace cordis::detail
+} // namespace eve::detail

@@ -7,16 +7,16 @@
 namespace notebook::detail {
 struct BusinessArtifact {
     std::string alias, manifest;
-    cordis::module::ModuleManifest identity;
+    eve::module::ModuleManifest identity;
 };
 std::string businessPlugin(const std::string& alias);
-cordis::module::PreflightArtifact reviewBusinessArtifact(const std::string& alias, const std::string& root,
+eve::module::PreflightArtifact reviewBusinessArtifact(const std::string& alias, const std::string& root,
                                                          const std::string& manifest);
 std::vector<BusinessArtifact> businessArtifacts(const std::string& root);
-void requireApproved(const cordis::module::PreflightArtifact& artifact,
-                     const cordis::module::NativeUnloadWhitelist& approvals);
-cordis::loader::ConfiguredPlugin prepareNotebook(const std::shared_ptr<NotebookModule>& record,
-                                                 const std::shared_ptr<cordis::module::ModuleManager>& manager,
-                                                 const std::shared_ptr<cordis::qt::QtScheduler>& scheduler,
-                                                 cordis::loader::PluginModule source, bool stateful);
+void requireApproved(const eve::module::PreflightArtifact& artifact,
+                     const eve::module::NativeUnloadWhitelist& approvals);
+eve::loader::ConfiguredPlugin prepareNotebook(const std::shared_ptr<NotebookModule>& record,
+                                                 const std::shared_ptr<eve::module::ModuleManager>& manager,
+                                                 const std::shared_ptr<eve::qt::QtScheduler>& scheduler,
+                                                 eve::loader::PluginModule source, bool stateful);
 } // namespace notebook::detail

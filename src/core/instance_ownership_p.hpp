@@ -2,12 +2,12 @@
  * @brief 宿主运行拥有者的实际身份；不保存驱动、回调或第二套实例账目。
  */
 #pragma once
-#include <cordis/instance.hpp>
+#include <eve/instance.hpp>
 #include <thread>
-namespace cordis {
+namespace eve {
 class Kernel;
 }
-namespace cordis::detail {
+namespace eve::detail {
 struct InstanceOwnerIdentity final {
     const std::thread::id thread = std::this_thread::get_id();
 };
@@ -42,4 +42,4 @@ struct InstanceOwnershipAccess {
     // 准备真实子树的拥有权接纳；不能覆盖另一拥有者，发布时无分配/回调。
     static Result<PreparedInstanceOwnership> prepare(const Instance&, std::shared_ptr<const InstanceOwnerIdentity>);
 };
-} // namespace cordis::detail
+} // namespace eve::detail

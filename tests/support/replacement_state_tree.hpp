@@ -6,12 +6,12 @@
 #include "../../src/module/reservation_p.hpp"
 #include "replacement_owner.hpp"
 #include "replacement_peer.hpp"
-#include <cordis/loader/qt_store.hpp>
+#include <eve/loader/qt_store.hpp>
 #include <iostream>
 #include <limits>
 
 namespace replacement_state_tree {
-using namespace cordis;
+using namespace eve;
 
 struct Value {
     std::string name, json = "0", observed, dependency;
@@ -138,7 +138,7 @@ class Owner final : public IReplacementOwner {
                     if (--self->remaining == 0)
                         self->done.resolve(std::move(self->tree));
                 });
-            cordis::detail::TaskAccess::observe(receipt, [promise = done](Task<void>::Snapshot result) {
+            eve::detail::TaskAccess::observe(receipt, [promise = done](Task<void>::Snapshot result) {
                 if (!result->hasValue())
                     promise.reject(result->error());
             });
@@ -239,7 +239,7 @@ void configuredRemoval(SceneType& scene, const Runtime& old, const Runtime& next
 {
     using namespace loader;
     const auto child = kernel->registerPlugin("configured.child", [](Context) { return completedTask(); }).value();
-    const auto id = scene.qt ? "org.cordis.qt.page" : "org.cordis.plugin";
+    const auto id = scene.qt ? "org.eve.qt.page" : "org.eve.plugin";
     const auto schema = [](const std::string&) { return Result<void>::success(); };
     const auto original = ConfigurationDefinitions::create({{{id, {}, schema, {"business", "old/module.json"}}, old},
                                                             {{"configured.child", {}, schema}, child}})
@@ -288,11 +288,11 @@ void configuredRemoval(SceneType& scene, const Runtime& old, const Runtime& next
 } // namespace replacement_state_tree
 
 template <class SceneType, class Wait>
-bool operationStateTreeCase(SceneType& scene, const cordis::Runtime& old, const cordis::Runtime& next,
-                            const std::shared_ptr<cordis::IScheduler>& scheduler,
-                            const std::shared_ptr<cordis::Kernel>& kernel, Wait waitFor, const QString& mode)
+bool operationStateTreeCase(SceneType& scene, const eve::Runtime& old, const eve::Runtime& next,
+                            const std::shared_ptr<eve::IScheduler>& scheduler,
+                            const std::shared_ptr<eve::Kernel>& kernel, Wait waitFor, const QString& mode)
 {
-    using namespace cordis;
+    using namespace eve;
     using namespace replacement_state_tree;
     if (mode == "operation_state_tree_removed_config") {
         configuredRemoval(scene, old, next, scheduler, kernel, waitFor);
@@ -417,7 +417,7 @@ bool operationStateTreeCase(SceneType& scene, const cordis::Runtime& old, const 
                 for (const auto& member : scopes.front().closure.members)
                     CHECK(member.instance != externalParent && member.instance != externalProvider);
             // 直接读取实际预约，并调用生产的路线判定；不自行构造 required/original 标志。
-            auto& catalog = cordis::module::detail::moduleCatalog();
+            auto& catalog = eve::module::detail::moduleCatalog();
             {
                 std::lock_guard<std::mutex> lock(catalog.mutex);
                 const auto held =
@@ -425,12 +425,12 @@ bool operationStateTreeCase(SceneType& scene, const cordis::Runtime& old, const 
                         return entry.second->operation == scopes.front().operation;
                     });
                 CHECK(held != catalog.replacements.end());
-                CHECK(cordis::module::detail::requiresGeneration(*held->second, peer->previous, false) ==
+                CHECK(eve::module::detail::requiresGeneration(*held->second, peer->previous, false) ==
                       !recoverySource);
-                CHECK(cordis::module::detail::requiresGeneration(*held->second, peer->previous, true));
+                CHECK(eve::module::detail::requiresGeneration(*held->second, peer->previous, true));
             }
             const auto fault =
-                peer->previousModule.create("org.cordis.peer.plugin", "\"create-live-error\"", InstanceId{100001}, 1);
+                peer->previousModule.create("org.eve.peer.plugin", "\"create-live-error\"", InstanceId{100001}, 1);
             CHECK(!fault.hasValue() && fault.error().code == ErrorCode::AbiProtocol);
         };
     const auto started = ReplacementOperation::begin(std::move(request));

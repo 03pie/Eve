@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
      width="492" height="942" viewBox="0 0 492 942">
-  <title>Cordis installer</title>
+  <title>Eve installer</title>
   <!-- Export at intrinsic size. Set the root class to "dark" for welcome-dark.png. -->
   <style>
     .dark #sky stop:nth-child(1) { stop-color: #cedff5 }

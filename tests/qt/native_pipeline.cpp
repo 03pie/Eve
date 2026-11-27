@@ -14,8 +14,8 @@
 #include <thread>
 
 namespace {
-using namespace cordis;
-using namespace cordis::module;
+using namespace eve;
+using namespace eve::module;
 using namespace native_services;
 #define CHECK(value)                                                                                                   \
     do {                                                                                                               \

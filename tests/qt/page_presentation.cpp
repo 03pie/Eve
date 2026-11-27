@@ -9,7 +9,7 @@
 #include <QTest>
 #include <QTreeView>
 #include <algorithm>
-#include <cordis/replacement_scope.hpp>
+#include <eve/replacement_scope.hpp>
 #include <optional>
 #include <vector>
 
@@ -85,16 +85,16 @@ void held()
     CHECK(wait(instance.ready(), scene.scheduler)->hasValue());
     CHECK(take(instance.snapshot()).state == InstanceState::Active);
     hidden(scene, trace);
-    auto* search = scene.find<ElaSuggestBox>("CordisPageSearch");
+    auto* search = scene.find<ElaSuggestBox>("EvePageSearch");
     auto* suggestions = search->findChild<QAbstractItemModel*>();
     auto* edit = search->findChild<QLineEdit*>();
-    auto* tabs = scene.find<QTabBar>("CordisPageTabs");
+    auto* tabs = scene.find<QTabBar>("EvePageTabs");
     CHECK(suggestions && edit);
     const auto tabsBefore = tabs->count();
     search->setSearchText("candidate");
     CHECK(suggestions->rowCount() == 0);
     CHECK(QMetaObject::invokeMethod(edit, "returnPressed", Qt::DirectConnection));
-    CHECK(tabs->count() == tabsBefore && scene.window->findChildren<QWidget*>("CordisPluginCard").empty());
+    CHECK(tabs->count() == tabsBefore && scene.window->findChildren<QWidget*>("EvePluginCard").empty());
     auto normal = take(scene.kernel->mount(registered(scene, ordinary, "ordinary")));
     CHECK(wait(normal.ready(), scene.scheduler)->hasValue());
     take(ordinary.pages.front().navigate());
@@ -257,10 +257,10 @@ void home()
     auto group = take(scene.kernel->holdPublication());
     auto held = take(scene.kernel->mountHeld(group, definition));
     CHECK(wait(held.ready(), scene.scheduler)->hasValue());
-    until([&] { return scene.window->findChildren<QWidget*>("CordisPluginCard").size() == 1; });
+    until([&] { return scene.window->findChildren<QWidget*>("EvePluginCard").size() == 1; });
     CHECK(take(scene.shell.diagnostics()->snapshot()).instances.size() == 2);
     take(group.commit());
-    until([&] { return scene.window->findChildren<QWidget*>("CordisPluginCard").size() == 2; });
+    until([&] { return scene.window->findChildren<QWidget*>("EvePluginCard").size() == 2; });
     scene.close();
 }
 void dialog()
@@ -271,7 +271,7 @@ void dialog()
     auto instance =
         take(scene.kernel->mountHeld(group, registered(scene, trace, "dialog", false, 1, PagePresentation::Dialog)));
     CHECK(wait(instance.ready(), scene.scheduler)->hasValue());
-    const QPointer<QWidget> window = scene.find<QWidget>("CordisContributionDialog");
+    const QPointer<QWidget> window = scene.find<QWidget>("EveContributionDialog");
     CHECK(trace.created == 1 && !window->isVisible() && !trace.widgets.front()->isVisible());
     CHECK(!trace.pages.front().navigate().hasValue());
     take(group.commit());

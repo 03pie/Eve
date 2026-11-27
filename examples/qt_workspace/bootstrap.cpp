@@ -4,13 +4,13 @@
 #include "source_p.hpp"
 #include <QDir>
 #include <QFileInfo>
-#include <cordis/module/install.hpp>
+#include <eve/module/install.hpp>
 #include <algorithm>
 
 namespace notebook {
-using namespace cordis;
-using namespace cordis::loader;
-using namespace cordis::module;
+using namespace eve;
+using namespace eve::loader;
+using namespace eve::module;
 namespace {
 std::string initialPlatform(const std::map<std::string, std::string>& modules)
 {
@@ -48,7 +48,7 @@ void Workspace::registerQtOutputSource(RuntimeId runtime, GenerationId generatio
 void Workspace::initialize(const QString& root, const QString& store, const QString& file, SourceMode mode)
 {
     detail::require(shell.startOutputArchive(QFileInfo(file).absolutePath().toUtf8().toStdString(),
-                                             CORDIS_PRODUCT_VERSION));
+                                             EVE_PRODUCT_VERSION));
     publishUi();
     auto baseline = detail::require(readConfigurationFile(file));
     std::vector<ConfiguredPlugin> plugins;
@@ -104,7 +104,7 @@ void Workspace::initialize(const QString& root, const QString& store, const QStr
                                                                   nativeLogSink_));
             if (kind == native_services::ServiceKind::Counter) {
                 const auto& schema = record->runtime->stateSchema();
-                if (!schema || schema->id != "org.cordis.example.counter" || schema->version != 1)
+                if (!schema || schema->id != "org.eve.example.counter" || schema->version != 1)
                     throw detail::InitializationFailure{
                         makeError(ErrorCode::AbiMismatch, "business counter state schema differs")};
             }

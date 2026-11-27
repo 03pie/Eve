@@ -3,8 +3,8 @@
  */
 #include "../support/notification_scheduler.hpp"
 #include <algorithm>
-#include <cordis/kernel.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/kernel.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <exception>
 #include <iostream>
 #include <memory>
@@ -13,9 +13,9 @@
 #include <string>
 #include <thread>
 #include <utility>
-using namespace cordis;
-using cordis::test::NotificationScheduler;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using eve::test::NotificationScheduler;
+using eve::testing::FakeScheduler;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

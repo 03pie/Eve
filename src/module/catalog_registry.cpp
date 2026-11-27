@@ -4,7 +4,7 @@
 #include "catalog_registry_p.hpp"
 #include "replacement_commit_p.hpp"
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 ModuleCatalog& moduleCatalog()
 {
     // 默认驻留，不在静态析构期关闭插件引用或文件保护。
@@ -80,4 +80,4 @@ void recordBusinessFailure(GenerationId id, const ErrorInfo& error)
             notification.events->recovery.reject(failure);
     }
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

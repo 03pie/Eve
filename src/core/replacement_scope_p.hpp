@@ -9,7 +9,7 @@
 #include <set>
 #include <thread>
 
-namespace cordis::detail {
+namespace eve::detail {
 struct PreparedReplacementStamp {
     std::weak_ptr<ReplacementScopeControl> owner;
 };
@@ -119,4 +119,4 @@ Result<void> replacementProviderAccess(const std::shared_ptr<ServiceRegistryCont
 void invalidateReplacementInputs(const std::shared_ptr<BindingControl>&);
 void shutdownReplacementScopes(const std::shared_ptr<ServiceRegistryControl>& registry, bool finished,
                                const CleanupReport& outcome = {false, {}});
-} // namespace cordis::detail
+} // namespace eve::detail

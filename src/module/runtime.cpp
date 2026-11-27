@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace cordis::module {
+namespace eve::module {
 using namespace detail;
 ServiceRequirement nativeRequirement(NativeDependency dependency)
 {
@@ -36,13 +36,13 @@ Result<Runtime> NativeModule::runtime(NativePlugin plugin) const
         return Output::failure(admission.error());
     if (std::find(api.plugins.begin(), api.plugins.end(), plugin.id) == api.plugins.end() ||
         plugin.dependencies.size() > 128 || plugin.outputs.size() > 128 ||
-        ((!plugin.dependencies.empty() || !plugin.outputs.empty()) && !(api.table.capabilities & CORDIS_CAP_SERVICES)))
+        ((!plugin.dependencies.empty() || !plugin.outputs.empty()) && !(api.table.capabilities & EVE_CAP_SERVICES)))
         return Output::failure(hostError(ErrorCode::InvalidArgument, "invalid native plugin contract"));
     auto valid = [](const ServiceKey& key, const std::vector<std::string>& caps) {
-        if (key.name.size() > CORDIS_MAX_ID_BYTES || !validAbiUtf8(key.name) || caps.size() > 64)
+        if (key.name.size() > EVE_MAX_ID_BYTES || !validAbiUtf8(key.name) || caps.size() > 64)
             return false;
         return std::all_of(caps.begin(), caps.end(), [](const std::string& value) {
-            return value.size() <= CORDIS_MAX_ID_BYTES && validAbiUtf8(value);
+            return value.size() <= EVE_MAX_ID_BYTES && validAbiUtf8(value);
         });
     };
     std::vector<ServiceRequirement> requirements;
@@ -102,4 +102,4 @@ Result<Runtime> NativeModule::runtime(NativePlugin plugin) const
         return Output::failure(hostError(ErrorCode::InvalidArgument, error.what()));
     }
 }
-} // namespace cordis::module
+} // namespace eve::module

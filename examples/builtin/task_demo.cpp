@@ -2,8 +2,8 @@
  * @file task_demo.cpp
  * @brief 演示从工作线程完成任务并在所属线程执行回调。
  */
-#include <cordis/task.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/task.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <iostream>
 #include <memory>
 #include <thread>
@@ -14,10 +14,10 @@
  */
 int main()
 {
-    auto scheduler = std::make_shared<cordis::testing::FakeScheduler>();
-    cordis::Promise<int> producer;
+    auto scheduler = std::make_shared<eve::testing::FakeScheduler>();
+    eve::Promise<int> producer;
     bool handled = false;
-    auto receipt = producer.task().thenOn(scheduler, [&](const cordis::Result<int>& result) {
+    auto receipt = producer.task().thenOn(scheduler, [&](const eve::Result<int>& result) {
         std::cout << "Owner-thread continuation received: " << result.value() << '\n';
         handled = true;
     });

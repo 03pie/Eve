@@ -403,7 +403,7 @@ private:
                        runtimeOf(actual.instance) == notebookRuntime_ &&
                        checked(scene_.state->generation()) == notebookGeneration_ && notebookPage_ &&
                        scene_.page(actual.instance) == notebookPage_);
-        const auto editor = notebookPage_->findChild<QPlainTextEdit*>("CordisNotebookEditor");
+        const auto editor = notebookPage_->findChild<QPlainTextEdit*>("EveNotebookEditor");
         PLATFORM_CHECK(editor && editor->toPlainText() == draft);
         const auto commands = checked(scene_.state->shell.commands()->snapshot());
         PLATFORM_CHECK(commands.size() == 1 && commands.front().owner.instance == notebook_.instance &&

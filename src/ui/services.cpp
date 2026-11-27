@@ -14,8 +14,8 @@
 #include <QSortFilterProxyModel>
 #include <QStandardItemModel>
 #include <atomic>
-#include <cordis/ui/commands.hpp>
-#include <cordis/ui/notifications.hpp>
+#include <eve/ui/commands.hpp>
+#include <eve/ui/notifications.hpp>
 #include <exception>
 #include <functional>
 #include <map>
@@ -26,7 +26,7 @@
 #include <utility>
 #include <vector>
 
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 using CommandKey = std::tuple<InstanceId, Epoch, std::string>;
 /** @brief 原命令模型同时按搜索和宿主纯呈现门禁过滤，不求值插件谓词。 */
 class CommandFilter final : public QSortFilterProxyModel {
@@ -161,7 +161,7 @@ struct ServicesControl : std::enable_shared_from_this<ServicesControl> {
         record->revoked = true;
         ++waiting;
         auto self = shared_from_this();
-        cordis::detail::TaskAccess::observe(record->effect->close(), [self](Task<CleanupReport>::Snapshot result) {
+        eve::detail::TaskAccess::observe(record->effect->close(), [self](Task<CleanupReport>::Snapshot result) {
             --self->waiting;
             if (!result->hasValue() || !result->value().quiescent) {
                 self->failed = true;
@@ -193,7 +193,7 @@ struct CommandCall : std::enable_shared_from_this<CommandCall> {
     void watch(const Task<void>& receipt)
     {
         std::weak_ptr<CommandControl> weak = record;
-        cordis::detail::TaskAccess::observe(receipt, [weak](Task<void>::Snapshot outcome) {
+        eve::detail::TaskAccess::observe(receipt, [weak](Task<void>::Snapshot outcome) {
             if (!outcome->hasValue()) if (auto owner = weak.lock()) owner->blocked.store(true);
         });
     }
@@ -254,7 +254,7 @@ Task<void> CommandControl::retire()
     retiring = true;
     observation.reset();
     std::weak_ptr<CommandControl> weak = shared_from_this();
-    cordis::detail::TaskAccess::observe(effect->close(), [weak](Task<CleanupReport>::Snapshot report) {
+    eve::detail::TaskAccess::observe(effect->close(), [weak](Task<CleanupReport>::Snapshot report) {
         if (!report->hasValue() || !report->value().quiescent) return;
         if (auto record = weak.lock()) if (auto state = record->host.lock()) {
             state->records.erase(record->key());
@@ -397,7 +397,7 @@ void configureCommandPanel(const std::shared_ptr<ServicesControl>& state, QWidge
 {
     state->logs = std::move(output); state->windowAccess = std::move(access);
     configureNotifications(state->notifications, state->logs, state->windowAccess);
-    state->commandResult = page->findChild<QLabel*>("CordisCommandResult");
+    state->commandResult = page->findChild<QLabel*>("EveCommandResult");
     std::weak_ptr<ServicesControl> weak = state;
     for (auto action : actions) {
         if (!action || action->isSeparator() || !action->isVisible()) continue;
@@ -414,7 +414,7 @@ void configureCommandPanel(const std::shared_ptr<ServicesControl>& state, QWidge
         state->model->appendRow(row); sync();
         QObject::connect(action, &QAction::changed, page, sync);
     }
-    auto search = page->findChild<QLineEdit*>("CordisCommandFilter");
+    auto search = page->findChild<QLineEdit*>("EveCommandFilter");
     const auto select = [weak] {
         if (auto host = weak.lock(); host && host->open && host->commands && host->filter) {
             if (!host->commands->currentIndex().isValid()) host->commands->setCurrentIndex(host->filter->index(0, 0));
@@ -439,7 +439,7 @@ void configureCommandPanel(const std::shared_ptr<ServicesControl>& state, QWidge
             }
         });
     }
-    if (auto button = page->findChild<QPushButton*>("CordisRunCommand")) QObject::connect(button, &QPushButton::clicked, page, run);
+    if (auto button = page->findChild<QPushButton*>("EveRunCommand")) QObject::connect(button, &QPushButton::clicked, page, run);
     select();
 }
 /** @brief 先结算原输出，再结算通知镜像；外壳已关呈现门时不触发控件。 */
@@ -463,9 +463,9 @@ Task<void> closeUiServices(const std::shared_ptr<ServicesControl>& control)
     control->checkClosed();
     return control->closed.task();
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail
 
-namespace cordis::ui {
+namespace eve::ui {
 /** @brief 列表初始化纳入 effect setup，Qt 插入信号重入时清理也必须等初始化返回。 */
 Result<CommandHandle> CommandService::add(const Context& owner, CommandSpec spec) const
 {
@@ -598,4 +598,4 @@ Result<std::vector<NotificationSnapshot>> NotificationService::snapshot() const
     if (!host) return Result<std::vector<NotificationSnapshot>>::success({});
     return detail::notificationSnapshot(host->notifications);
 }
-} // namespace cordis::ui
+} // namespace eve::ui

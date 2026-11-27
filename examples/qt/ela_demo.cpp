@@ -23,8 +23,8 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
-#include <cordis/kernel.hpp>
-#include <cordis/ui/ela_shell.hpp>
+#include <eve/kernel.hpp>
+#include <eve/ui/ela_shell.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -34,8 +34,8 @@
 #include <utility>
 
 namespace {
-using namespace cordis;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::ui;
 /** @brief 资源树属于笔记插件的根 QWidget，只切换插件内部内容，不参与宿主导航。 */
 std::unique_ptr<QWidget> createNotesPage()
 {
@@ -43,10 +43,10 @@ std::unique_ptr<QWidget> createNotesPage()
     auto rootLayout = new QHBoxLayout(root.get()); rootLayout->setContentsMargins(0, 0, 0, 0);
     auto splitter = new QSplitter(Qt::Horizontal, root.get()); rootLayout->addWidget(splitter);
     auto sidebar = new QWidget(splitter); sidebar->setMinimumWidth(150);
-    sidebar->setObjectName("CordisDemoNotesSidebar");
+    sidebar->setObjectName("EveDemoNotesSidebar");
     auto sidebarLayout = new QVBoxLayout(sidebar);
     sidebarLayout->addWidget(new ElaText(QString::fromUtf8("笔记资源"), 14, sidebar));
-    auto tree = new ElaTreeView(sidebar); tree->setObjectName("CordisDemoNotesTree");
+    auto tree = new ElaTreeView(sidebar); tree->setObjectName("EveDemoNotesTree");
     tree->setHeaderHidden(true); tree->setEditTriggers(QAbstractItemView::NoEditTriggers);
     tree->setItemHeight(32); tree->setStyleSheet("ElaTreeView{background-color:transparent;border:0;}");
     auto model = new QStandardItemModel(tree); tree->setModel(model);
@@ -69,7 +69,7 @@ std::unique_ptr<QWidget> createNotesPage()
         button->setText(QString::fromUtf8("点击计数：%1").arg(++*count));
     });
     body->addWidget(label); body->addWidget(button); layout->addWidget(area);
-    auto editor = new ElaPlainTextEdit(content); editor->setObjectName("CordisDemoNotes");
+    auto editor = new ElaPlainTextEdit(content); editor->setObjectName("EveDemoNotes");
     editor->setStyleSheet("ElaPlainTextEdit{background-color:transparent;}");
     editor->setPlaceholderText(QString::fromUtf8("在这里输入临时笔记……"));
     editor->setMinimumHeight(180); layout->addWidget(editor); layout->addStretch();
@@ -205,15 +205,15 @@ struct Application : std::enable_shared_from_this<Application> {
         if (!data.hasValue() || data.value().instances.size() != 4 || waiting->snapshot().value().state != InstanceState::Pending || failed->snapshot().value().state != InstanceState::Failed) {
             fail("management diagnostics missing pending/failed examples"); return;
         }
-        for (auto window : QApplication::topLevelWidgets()) if (window->windowTitle() == QString::fromUtf8("Cordis 插件平台")) {
+        for (auto window : QApplication::topLevelWidgets()) if (window->windowTitle() == QString::fromUtf8("Eve 插件平台")) {
             if (!window->grab().save(QCoreApplication::applicationDirPath() + (eTheme->getThemeMode() == ElaThemeType::Dark ? "/ela-smoke-dark.png" : "/ela-smoke.png"))) { fail("preview capture failed"); return; }
             QPointer<QWidget> guarded(window);
             auto self = shared_from_this();
-            auto home = window->findChild<QAction*>("CordisOpenHome");
+            auto home = window->findChild<QAction*>("EveOpenHome");
             if (!home) { fail("home action missing"); return; }
             home->trigger();
             QTimer::singleShot(100, QCoreApplication::instance(), [self, guarded] {
-                if (!guarded || guarded->findChildren<QWidget*>("CordisPluginCard").size() != 4) {
+                if (!guarded || guarded->findChildren<QWidget*>("EvePluginCard").size() != 4) {
                     self->fail("home plugin catalogue incomplete");
                     return;
                 }
@@ -240,7 +240,7 @@ int main(int argc, char** argv)
     try {
         QApplication app(argc, argv);
         app.setQuitOnLastWindowClosed(false);
-        app.setApplicationName("CordisElaWorkbench");
+        app.setApplicationName("EveElaWorkbench");
         const bool dark = argc == 2 && std::string(argv[1]) == "--smoke-dark";
         const bool smoke = dark || (argc == 2 && std::string(argv[1]) == "--smoke");
         eTheme->setThemeMode(dark ? ElaThemeType::Dark : ElaThemeType::Light);

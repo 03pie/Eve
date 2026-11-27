@@ -4,16 +4,16 @@
 #include "../../src/core/instance_ownership_p.hpp"
 #include "../../src/loader/configuration_commit_p.hpp"
 #include <algorithm>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
 #include <utility>
-using namespace cordis;
-using namespace cordis::loader;
-using cordis::loader::detail::ConfigurationCommitAccess;
-using cordis::loader::detail::DriverCommitAccess;
-using cordis::loader::detail::ReplacementEntry;
+using namespace eve;
+using namespace eve::loader;
+using eve::loader::detail::ConfigurationCommitAccess;
+using eve::loader::detail::DriverCommitAccess;
+using eve::loader::detail::ReplacementEntry;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -214,12 +214,12 @@ void commit()
                                                        s.mapping(old, p, c), 1)
                         .value();
     CHECK(prepared.ready() && !s.session->snapshot().hasValue());
-    CHECK(!cordis::detail::InstanceOwnershipAccess::owner(p).value() &&
-          !cordis::detail::InstanceOwnershipAccess::owner(c).value());
+    CHECK(!eve::detail::InstanceOwnershipAccess::owner(p).value() &&
+          !eve::detail::InstanceOwnershipAccess::owner(c).value());
     auto accepted = *prepared.accepted();
     CHECK(accepted.revision == 2 && !accepted.settled.isReady());
     bool readableOnCompletion = false;
-    cordis::detail::TaskAccess::observe(accepted.settled, [&](Task<PlanReport>::Snapshot result) {
+    eve::detail::TaskAccess::observe(accepted.settled, [&](Task<PlanReport>::Snapshot result) {
         readableOnCompletion =
             result->hasValue() && s.session->snapshot().hasValue() && s.driver->snapshot().hasValue();
     });
@@ -351,7 +351,7 @@ void restamp()
     s.run();
     auto c = s.stageConsumer(scope, p, false);
     scope.prepareCommit().value();
-    std::optional<cordis::loader::detail::PreparedConfigurationCommit> prepared;
+    std::optional<eve::loader::detail::PreparedConfigurationCommit> prepared;
     prepared.emplace(ConfigurationCommitAccess::prepare(*s.session, *s.driver, scope, s.following, s.target(),
                                                         s.mapping(old, p, c), 1)
                          .value());
@@ -399,7 +399,7 @@ void preflight()
         CHECK(found != plan.ownership.end());
         return found->kind;
     };
-    using cordis::loader::detail::ReconstructionKind;
+    using eve::loader::detail::ReconstructionKind;
     CHECK(kind(manual.snapshot().value().instance) == ReconstructionKind::ManualRoot);
     CHECK(kind(manualChild.snapshot().value().instance) == ReconstructionKind::OwnerManagedChild);
     CHECK(kind(ownedChild.snapshot().value().instance) == ReconstructionKind::OwnerManagedChild);
@@ -422,7 +422,7 @@ void preflightForeign()
     s.run();
     CHECK(accepted.settled.tryResult()->value().outcome == PlanOutcome::Applied);
     auto scope = s.reserve();
-    using cordis::loader::detail::ConfigurationReconstructionAccess;
+    using eve::loader::detail::ConfigurationReconstructionAccess;
     CHECK(!ConfigurationReconstructionAccess::inspect(scope, {{s.driver, s.following, s.target()}}).hasValue());
     auto otherTarget = std::make_shared<const ValidatedCandidate>(
         s.following->validate(other.snapshot().value().coordinator.desired->source()).value());
@@ -482,7 +482,7 @@ void preflightGuards()
 }
 void preflightEmpty()
 {
-    using cordis::loader::detail::ConfigurationReconstructionAccess;
+    using eve::loader::detail::ConfigurationReconstructionAccess;
     Scene s;
     auto emptyDriver = KernelReconcileDriver::configured(s.scheduler, s.kernel, s.definitions);
     ConfigurationSession empty(s.scheduler, emptyDriver, s.writer, s.writer->disk);
@@ -526,7 +526,7 @@ void preflightContract()
 }
 void ownership()
 {
-    using cordis::detail::InstanceOwnershipAccess;
+    using eve::detail::InstanceOwnershipAccess;
     Scene s;
     auto p = s.kernel->findInstance(s.rows().at("p").instance).value();
     const auto owner = InstanceOwnershipAccess::owner(p).value();
@@ -598,7 +598,7 @@ void abandoned()
     s.run();
     auto c = s.stageConsumer(scope, p, false);
     scope.prepareCommit().value();
-    std::optional<cordis::loader::detail::PreparedConfigurationCommit> prepared;
+    std::optional<eve::loader::detail::PreparedConfigurationCommit> prepared;
     prepared.emplace(ConfigurationCommitAccess::prepare(*s.session, *s.driver, scope, s.following, s.target(),
                                                         s.mapping(old, p, c), 1)
                          .value());
@@ -723,7 +723,7 @@ void anchors()
     scheduler->runUntilIdle().value();
     const auto rootId = root.snapshot().value().instance;
     const auto otherId = other.snapshot().value().instance;
-    using cordis::detail::CoreReplacementAccess;
+    using eve::detail::CoreReplacementAccess;
     CHECK(!CoreReplacementAccess::reserve(kernel, {old.id()}, {otherId}).hasValue());
     CHECK(kernel.replacements().value().empty());
     auto scope = take(CoreReplacementAccess::reserve(kernel, {old.id()}, {rootId, rootId}), "logical owner reserve");
@@ -763,7 +763,7 @@ void claims()
     s.run();
     CHECK(stopped.tryResult()->value().quiescent);
     auto scope = s.reserve();
-    using cordis::loader::detail::DriverReplacementClaim;
+    using eve::loader::detail::DriverReplacementClaim;
     std::optional<DriverReplacementClaim> claim;
     claim.emplace(take(ConfigurationCommitAccess::reserve(*s.session, *s.driver, scope, s.following, s.target(), 1),
                        "claim paths"));
@@ -833,7 +833,7 @@ void emptyClaim()
     scope.prepareDefinitions({{old.id(), next}}).value();
     auto target =
         std::make_shared<const ValidatedCandidate>(after->validate(parseConfiguration(empty).value()).value());
-    std::optional<cordis::loader::detail::DriverReplacementClaim> claim;
+    std::optional<eve::loader::detail::DriverReplacementClaim> claim;
     claim.emplace(take(ConfigurationCommitAccess::reserve(session, *driver, scope, after, target, 1), "empty claim"));
     auto stopped = scope.stop();
     s.run();
@@ -855,9 +855,9 @@ void emptyClaim()
 }
 void sessionHold(bool deliveryFailure)
 {
-    using cordis::loader::detail::SessionCommitAccess;
-    using cordis::loader::detail::SessionReplacementHold;
-    using cordis::loader::detail::TargetCommitMode;
+    using eve::loader::detail::SessionCommitAccess;
+    using eve::loader::detail::SessionReplacementHold;
+    using eve::loader::detail::TargetCommitMode;
     Scene s;
     Promise<void> done, otherDone;
     auto hold = SessionCommitAccess::hold(*s.session, *s.driver, done.task()).value();

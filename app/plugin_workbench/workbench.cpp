@@ -7,12 +7,12 @@
 #include <QStandardPaths>
 #include <QWidget>
 #include <algorithm>
-#include <cordis/loader/qt_store.hpp>
-#include <cordis/loader/yaml.hpp>
-#include <cordis/module/qt_manifest.hpp>
-#include <cordis/module/qt_module.hpp>
+#include <eve/loader/qt_store.hpp>
+#include <eve/loader/yaml.hpp>
+#include <eve/module/qt_manifest.hpp>
+#include <eve/module/qt_module.hpp>
 
-namespace cordis::workbench {
+namespace eve::workbench {
 namespace {
 constexpr char pagesService[] = "ui.pages";
 constexpr char commandsService[] = "ui.commands";
@@ -117,10 +117,21 @@ ModulePreflightError::ModulePreflightError(const ErrorInfo& error)
 {
 }
 
+QString workbenchDataFile(const QString& applicationData, const QString& relativeFile)
+{
+    const QDir data(applicationData);
+    const auto current = data.filePath(relativeFile);
+    if (QFileInfo::exists(current) || data.dirName() != QStringLiteral("EvePluginWorkbench"))
+        return current;
+    // 按文件选择，避免首次保存某项偏好后遮住旧工作区。其它嵌入宿主仍使用自己的数据目录。
+    const auto previous = QDir::cleanPath(data.filePath(QStringLiteral("../CordisPluginWorkbench/") + relativeFile));
+    return QFileInfo(previous).isFile() ? previous : current;
+}
+
 Workbench::Workbench()
     : scheduler(std::make_shared<qt::QtScheduler>()), kernel(std::make_shared<Kernel>(scheduler)),
-      shell(scheduler, QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
-                           .filePath("preferences/workbench.json").toUtf8().toStdString())
+      shell(scheduler, workbenchDataFile(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation),
+                                         QStringLiteral("preferences/workbench.json")).toUtf8().toStdString())
 {
 }
 
@@ -129,7 +140,7 @@ void Workbench::open(const std::optional<QString>& manifestPath, const QString& 
     using namespace loader;
     if (session)
         throw std::logic_error("This workbench already owns a workspace.");
-    checked(shell.startOutputArchive(workspaceDir.toStdString(), CORDIS_PRODUCT_VERSION));
+    checked(shell.startOutputArchive(workspaceDir.toStdString(), EVE_PRODUCT_VERSION));
     const auto selected = manifestPath ? std::optional{inspectConfiguredModule(*manifestPath)} : std::nullopt;
     const QDir directory(workspaceDir);
     if (!directory.mkpath("."))
@@ -294,4 +305,4 @@ void Workbench::closeShell()
         closed_.resolve();
     });
 }
-} // namespace cordis::workbench
+} // namespace eve::workbench

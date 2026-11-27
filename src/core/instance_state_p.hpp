@@ -2,9 +2,9 @@
  * @brief 状态读取由真实 Frozen Scope 授权；纯编号或 Context 不能绕过冻结。
  */
 #pragma once
-#include <cordis/replacement_scope.hpp>
+#include <eve/replacement_scope.hpp>
 
-namespace cordis::detail {
+namespace eve::detail {
 struct StateImportReceipt {
     OperationId operation;
     std::size_t key;
@@ -15,4 +15,4 @@ struct InstanceStateAccess {
     static Result<std::optional<StateSnapshot>> capture(const ReplacementScope&, const Instance&);
     static Result<StateImportReceipt> receipt(const Instance&);
 };
-} // namespace cordis::detail
+} // namespace eve::detail

@@ -5,9 +5,9 @@
 #include "module_artifacts.hpp"
 #include <QStringList>
 #include <algorithm>
-#include <cordis/module/manager.hpp>
-#ifdef CORDIS_TEST_QT_RESERVATION
-#include <cordis/module/qt_module.hpp>
+#include <eve/module/manager.hpp>
+#ifdef EVE_TEST_QT_RESERVATION
+#include <eve/module/qt_module.hpp>
 #endif
 #include <memory>
 #include <stdexcept>
@@ -23,13 +23,13 @@
 #endif
 
 struct Scene {
-    std::shared_ptr<cordis::module::ModuleManager> managerOwner = std::make_shared<cordis::module::ModuleManager>();
-    cordis::module::ModuleManager& manager = *managerOwner;
+    std::shared_ptr<eve::module::ModuleManager> managerOwner = std::make_shared<eve::module::ModuleManager>();
+    eve::module::ModuleManager& manager = *managerOwner;
     bool qt;
     QString root;
     QStringList dlls;
     std::string oldPath, nextPath;
-    cordis::GenerationId current, candidate;
+    eve::GenerationId current, candidate;
     Scene(bool backend, QString directory, QStringList paths)
         : qt(backend), root(std::move(directory)), dlls(std::move(paths))
     {
@@ -41,28 +41,28 @@ struct Scene {
     }
     QString install(const QString& dll, const QString& dir, const QString& version = "1.0.0") const
     {
-        return cordis::testing::modules::install(
-            dll, root + '/' + dir, qt ? "org.cordis.qt.example" : "org.cordis.business",
-            qt ? QJsonArray{"org.cordis.qt.page", "org.cordis.qt.settings"} : QJsonArray{"org.cordis.plugin"},
+        return eve::testing::modules::install(
+            dll, root + '/' + dir, qt ? "org.eve.qt.example" : "org.eve.business",
+            qt ? QJsonArray{"org.eve.qt.page", "org.eve.qt.settings"} : QJsonArray{"org.eve.plugin"},
             qt ? "qt-ui" : "c-abi", version);
     }
-    cordis::Result<cordis::module::ModuleLoadReport> load(const std::string& path)
+    eve::Result<eve::module::ModuleLoadReport> load(const std::string& path)
     {
-#ifdef CORDIS_TEST_QT_RESERVATION
+#ifdef EVE_TEST_QT_RESERVATION
         if (qt)
-            return cordis::module::loadQtModule(root.toStdString(), path);
+            return eve::module::loadQtModule(root.toStdString(), path);
 #endif
         return manager.load(root.toStdString(), path);
     }
-    cordis::Result<cordis::module::ModuleLoadReport> stage(const std::string& path)
+    eve::Result<eve::module::ModuleLoadReport> stage(const std::string& path)
     {
-#ifdef CORDIS_TEST_QT_RESERVATION
+#ifdef EVE_TEST_QT_RESERVATION
         if (qt)
-            return cordis::module::stageQtModule(root.toStdString(), path, current);
+            return eve::module::stageQtModule(root.toStdString(), path, current);
 #endif
         return manager.stage(root.toStdString(), path, current);
     }
-    cordis::module::ModuleGenerationSnapshot state(cordis::GenerationId id) const
+    eve::module::ModuleGenerationSnapshot state(eve::GenerationId id) const
     {
         const auto values = manager.snapshot().value();
         const auto found =
@@ -70,7 +70,7 @@ struct Scene {
         CHECK(found != values.end());
         return *found;
     }
-    cordis::module::ReplacementReservation reserve() { return manager.reserveReplacement(current, candidate).value(); }
+    eve::module::ReplacementReservation reserve() { return manager.reserveReplacement(current, candidate).value(); }
     void checkReserved(bool reserved) const
     {
         for (const auto id : {current, candidate}) {
@@ -79,7 +79,7 @@ struct Scene {
             if (reserved)
                 CHECK(value.replacement->current == current && value.replacement->candidate == candidate);
         }
-        CHECK(state(current).role == cordis::module::GenerationRole::Current &&
-              state(candidate).role == cordis::module::GenerationRole::Candidate);
+        CHECK(state(current).role == eve::module::GenerationRole::Current &&
+              state(candidate).role == eve::module::GenerationRole::Candidate);
     }
 };

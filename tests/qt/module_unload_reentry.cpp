@@ -32,14 +32,14 @@ bool createReentry(Scene& scene, const QString& name)
     scheduler->onOpen = [&] {
         CHECK(!entered);
         entered = true;
-        CHECK(scene.call<unsigned(CORDIS_CALL*)()>(artifact, "cordis_business_fixture_creates") == 0);
+        CHECK(scene.call<unsigned(EVE_CALL*)()>(artifact, "eve_business_fixture_creates") == 0);
         const auto closed = module.close().tryResult();
         CHECK(closed && closed->hasValue() && closed->value().quiescent);
         CHECK(scene.manager.tryUnload(artifact.generation).hasValue());
         scene.gone(artifact);
         CHECK(scheduler->target->isOpen()); // 查询仍返回 true，必须由返回后的实际 root 门禁拒绝。
     };
-    const auto created = module.create("org.cordis.plugin", "null", InstanceId{1}, 1);
+    const auto created = module.create("org.eve.plugin", "null", InstanceId{1}, 1);
     CHECK(entered && !created.hasValue() && created.error().code == ErrorCode::ContextClosing);
     const auto closed = module.snapshot().value();
     CHECK(closed.closed && !closed.faulted && closed.instances.empty());

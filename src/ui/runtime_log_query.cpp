@@ -10,7 +10,7 @@
 #include <deque>
 #include <limits>
 
-namespace cordis::ui::detail
+namespace eve::ui::detail
 {
 namespace
 {
@@ -96,7 +96,7 @@ quint64 LogQuery::acceptedThrough(const QString& run) const
 
 std::vector<LogLossRange> LogQuery::expirations(const QString& run, quint64 after, quint64 through) const
 {
-    const auto directory = archive_ ? archive_->directory() : savedLogDirectory(workspace_, run);
+    const auto directory = archive_ ? archive_->directoryFor(run) : savedLogDirectory(workspace_, run);
     if (directory.isEmpty() || after >= through)
         return {};
     std::vector<LogLossRange> result;
@@ -306,4 +306,4 @@ std::optional<LogUpdate> LogSubscription::poll(const LogQuery& query, int limit)
     checkpoint_ = update.resume;
     return update;
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

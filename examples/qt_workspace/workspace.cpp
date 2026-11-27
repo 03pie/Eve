@@ -7,9 +7,9 @@
 #include <QWidget>
 
 namespace notebook {
-using namespace cordis;
-using namespace cordis::loader;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::loader;
+using namespace eve::ui;
 Workspace::Workspace(std::shared_ptr<qt::QtScheduler> target)
     : scheduler(std::move(target)), kernel(std::make_shared<Kernel>(scheduler)), shell(scheduler),
       manager(std::make_shared<module::ModuleManager>())

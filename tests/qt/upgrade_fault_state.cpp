@@ -14,7 +14,7 @@ QPlainTextEdit* editor(const Scene& scene, InstanceId instance)
 {
     auto* widget = scene.page(instance);
     PLATFORM_CHECK(widget);
-    auto* value = widget->findChild<QPlainTextEdit*>("CordisNotebookEditor");
+    auto* value = widget->findChild<QPlainTextEdit*>("EveNotebookEditor");
     PLATFORM_CHECK(value);
     return value;
 }

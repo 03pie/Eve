@@ -1,16 +1,16 @@
 /** @file service.cpp
  * @brief 验证服务索引的状态、隔离域、调用门禁和资源释放边界。
  */
-#include <cordis/service.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/service.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <thread>
 
-using namespace cordis;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using eve::testing::FakeScheduler;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(#x); } while (false)
 
 /** @brief Staged 不可见，退役键继续保留，释放后新绑定不复活旧引用。 */

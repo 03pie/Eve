@@ -3,14 +3,14 @@
  */
 #include <algorithm>
 #include <atomic>
-#include <cordis/module/ledger.hpp>
+#include <eve/module/ledger.hpp>
 #include <limits>
 #include <map>
 #include <mutex>
 #include <stdexcept>
 #include <utility>
 
-namespace cordis::module {
+namespace eve::module {
 namespace detail {
 struct LedgerControl {
     explicit LedgerControl(GenerationId value) : generation(value) {}
@@ -132,4 +132,4 @@ LedgerSnapshot GenerationLedger::snapshot() const
         result.records.push_back(pair.second);
     return result;
 }
-} // namespace cordis::module
+} // namespace eve::module

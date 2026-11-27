@@ -7,9 +7,9 @@
 #include <QIcon>
 #include <QStandardItem>
 #include <QString>
-#include <cordis/instance.hpp>
+#include <eve/instance.hpp>
 
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 /** @brief 呈现值不持有实例或回调，卡片和表格共享同一映射。 */
 struct StatusPresentation {
     QString text;
@@ -47,4 +47,4 @@ inline void decorateStatus(QStandardItem* item, const StatusPresentation& value)
     item->setIcon(statusIcon(value));
     item->setData(value.text, Qt::AccessibleDescriptionRole);
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

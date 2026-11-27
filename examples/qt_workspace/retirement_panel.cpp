@@ -18,14 +18,14 @@
 
 namespace notebook {
 namespace {
-cordis::GenerationId selectedGeneration(const ElaComboBox& selector)
+eve::GenerationId selectedGeneration(const ElaComboBox& selector)
 {
-    return cordis::GenerationId(selector.currentData().toULongLong());
+    return eve::GenerationId(selector.currentData().toULongLong());
 }
-QString generationText(const cordis::module::ModuleGenerationSnapshot& row)
+QString generationText(const eve::module::ModuleGenerationSnapshot& row)
 {
-    const char* role = row.role == cordis::module::GenerationRole::Current     ? "Current"
-                       : row.role == cordis::module::GenerationRole::Candidate ? "Candidate"
+    const char* role = row.role == eve::module::GenerationRole::Current     ? "Current"
+                       : row.role == eve::module::GenerationRole::Candidate ? "Candidate"
                                                                                : "Retired";
     return QString("#%1 · %2 · %3 · %4")
         .arg(row.generation.value())
@@ -40,7 +40,7 @@ RetirementPanel::RetirementPanel(std::weak_ptr<Workspace> workspace, QWidget* pa
 {
     if (!refreshOwner_)
         throw std::invalid_argument("retirement panel requires its parent refresh");
-    setObjectName("CordisRetirementPanel");
+    setObjectName("EveRetirementPanel");
     auto layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 8, 0, 0);
     auto hint =
@@ -50,22 +50,22 @@ RetirementPanel::RetirementPanel(std::weak_ptr<Workspace> workspace, QWidget* pa
     layout->addWidget(hint);
     auto row = new QHBoxLayout;
     generations_ = new ElaComboBox(this);
-    generations_->setObjectName("CordisRetirementGeneration");
+    generations_->setObjectName("EveRetirementGeneration");
     generations_->setAccessibleName(QString::fromUtf8("模块代次"));
     generations_->addItem(QString::fromUtf8("请选择代次"), QVariant::fromValue<qulonglong>(0));
     row->addWidget(generations_, 1);
     retry_ = new ElaPushButton(QString::fromUtf8("尝试物理回收"), this);
-    retry_->setObjectName("CordisRetirementRetry");
+    retry_->setObjectName("EveRetirementRetry");
     retry_->setEnabled(false);
     row->addWidget(retry_);
     layout->addLayout(row);
     status_ = new ElaText(this);
-    status_->setObjectName("CordisRetirementStatus");
+    status_->setObjectName("EveRetirementStatus");
     status_->setWordWrap(true);
     status_->setTextFormat(Qt::PlainText);
     layout->addWidget(status_);
     details_ = new ElaPlainTextEdit(this);
-    details_->setObjectName("CordisModuleDiagnosticsText");
+    details_->setObjectName("EveModuleDiagnosticsText");
     details_->setReadOnly(true);
     layout->addWidget(details_, 1);
     QObject::connect(generations_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
@@ -107,7 +107,7 @@ void RetirementPanel::refresh(const WorkspaceModulesSnapshot& modules, const Wor
             generations_->setItemText(index, label);
     }
     for (int index = generations_->count() - 1; index > 0; --index) {
-        const auto id = cordis::GenerationId(generations_->itemData(index).toULongLong());
+        const auto id = eve::GenerationId(generations_->itemData(index).toULongLong());
         const bool present = std::any_of(modules.generations.begin(), modules.generations.end(),
                                          [&](const auto& row) { return row.generation == id; });
         if (present)

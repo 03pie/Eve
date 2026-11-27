@@ -6,14 +6,14 @@
 #include "catalog_registry_p.hpp"
 #include <algorithm>
 #include <atomic>
-#include <cordis/instance.hpp>
+#include <eve/instance.hpp>
 #include <limits>
 #include <map>
 #include <set>
 #include <stdexcept>
 #include <utility>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 namespace {
 ErrorInfo error(ErrorCode code, std::string phase, std::string message)
 {
@@ -594,4 +594,4 @@ Result<void> mapGenerationImage(const std::shared_ptr<Generation>& generation)
             error(ErrorCode::ModuleLoad, "module.image", "loader mapped a different artifact"));
     return Result<void>::success();
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

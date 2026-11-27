@@ -4,7 +4,7 @@
 #include "replacement_scope_p.hpp"
 #include "service_p.hpp"
 #include <algorithm>
-namespace cordis::detail {
+namespace eve::detail {
 bool ReplacementScopeControl::readsDefinition(RuntimeId runtime) const noexcept
 {
     return borrowedRuntimes.count(runtime) ||
@@ -53,4 +53,4 @@ Result<void> ReplacementScopeControl::borrow(const std::vector<Runtime>& factori
     borrowedRuntimes.merge(additions);
     return Result<void>::success();
 }
-} // namespace cordis::detail
+} // namespace eve::detail

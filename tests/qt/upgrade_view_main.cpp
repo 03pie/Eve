@@ -24,11 +24,11 @@ template <class T> T* child(QWidget* owner, const char* name)
 QWidget* modules()
 {
     for (auto* window : QApplication::topLevelWidgets())
-        if (auto* action = window->findChild<QAction*>("CordisOpenModules")) {
+        if (auto* action = window->findChild<QAction*>("EveOpenModules")) {
             PLATFORM_CHECK(action->isEnabled());
             action->trigger();
             for (auto* widget : QApplication::allWidgets())
-                if (widget->objectName() == "CordisModuleDiagnostics")
+                if (widget->objectName() == "EveModuleDiagnostics")
                     return widget;
         }
     throw std::runtime_error("real module menu missing");
@@ -37,19 +37,19 @@ QWidget* modules()
 View::View(Scene& value) : scene(value), body(modules()), window(body->window())
 {
     PLATFORM_CHECK(body->isVisible());
-    child<QTimer>(body, "CordisModulesRefreshTimer")->stop();
-    table = child<QTableView>(body, "CordisModuleTable");
-    source = child<QLineEdit>(body, "CordisUpgradeSource");
-    browse = child<QPushButton>(body, "CordisUpgradeBrowse");
-    review = child<QPushButton>(body, "CordisUpgradePreview");
-    start = child<QPushButton>(body, "CordisUpgradeStart");
-    cancel = child<QPushButton>(body, "CordisUpgradeCancel");
-    save = child<QPushButton>(body, "CordisUpgradeSave");
-    refreshButton = child<QPushButton>(body, "CordisModuleDiagnosticsRefresh");
-    previewText = child<QPlainTextEdit>(body, "CordisUpgradePreviewText");
-    reportText = child<QPlainTextEdit>(body, "CordisUpgradeReportText");
-    status = child<QLabel>(body, "CordisUpgradeStatus");
-    saveStatus = child<QLabel>(body, "CordisUpgradeSaveStatus");
+    child<QTimer>(body, "EveModulesRefreshTimer")->stop();
+    table = child<QTableView>(body, "EveModuleTable");
+    source = child<QLineEdit>(body, "EveUpgradeSource");
+    browse = child<QPushButton>(body, "EveUpgradeBrowse");
+    review = child<QPushButton>(body, "EveUpgradePreview");
+    start = child<QPushButton>(body, "EveUpgradeStart");
+    cancel = child<QPushButton>(body, "EveUpgradeCancel");
+    save = child<QPushButton>(body, "EveUpgradeSave");
+    refreshButton = child<QPushButton>(body, "EveModuleDiagnosticsRefresh");
+    previewText = child<QPlainTextEdit>(body, "EveUpgradePreviewText");
+    reportText = child<QPlainTextEdit>(body, "EveUpgradeReportText");
+    status = child<QLabel>(body, "EveUpgradeStatus");
+    saveStatus = child<QLabel>(body, "EveUpgradeSaveStatus");
 }
 void View::refresh()
 {
@@ -141,7 +141,7 @@ void writeDisk(const Scene& scene, const QByteArray& text)
 QListView* commandList()
 {
     for (auto* window : QApplication::topLevelWidgets())
-        if (auto* list = window->findChild<QListView*>("CordisCommandList"))
+        if (auto* list = window->findChild<QListView*>("EveCommandList"))
             return list;
     throw std::runtime_error("actual command list missing");
 }

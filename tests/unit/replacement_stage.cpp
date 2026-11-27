@@ -1,13 +1,13 @@
 /** @file replacement_stage.cpp
  * @brief 真实 Core 实例在旧闭包静止后隔离创建；尚非模块/配置整体提交验收。
  */
-#include <cordis/kernel.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/kernel.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <thread>
-using namespace cordis;
+using namespace eve;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

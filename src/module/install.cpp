@@ -4,10 +4,10 @@
 #include "artifact_p.hpp"
 #include "install_directory_p.hpp"
 #include "path_p.hpp"
-#include <cordis/module/install.hpp>
+#include <eve/module/install.hpp>
 #include <stdexcept>
 
-namespace cordis::module {
+namespace eve::module {
 namespace detail {
 struct InstalledArtifactControl {
     std::unique_ptr<VerifiedSource> source;
@@ -153,4 +153,4 @@ Result<InstalledArtifact> installModuleArtifact(const std::string& sourceRoot, c
     }
     return Output::success(InstalledArtifact(std::move(installed).value()));
 }
-} // namespace cordis::module
+} // namespace eve::module

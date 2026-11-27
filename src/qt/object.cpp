@@ -7,13 +7,13 @@
 #include <QObject>
 #include <QPointer>
 #include <QThread>
-#include <cordis/qt/object.hpp>
+#include <eve/qt/object.hpp>
 #include <memory>
 #include <stdexcept>
 #include <thread>
 #include <utility>
 
-namespace cordis::qt::detail {
+namespace eve::qt::detail {
 /** @brief 全部可变状态只在应用线程访问，Promise 允许任意线程观察。 */
 struct ObjectControl {
     const std::thread::id owner = std::this_thread::get_id();
@@ -112,9 +112,9 @@ protected:
 private:
     std::shared_ptr<ObjectControl> control_;
 };
-} // namespace cordis::qt::detail
+} // namespace eve::qt::detail
 
-namespace cordis::qt {
+namespace eve::qt {
 /** @brief 先验证所有权与线程，再安装守卫；最后一步才转移调用方的 unique_ptr。 */
 QObjectResource::QObjectResource(std::unique_ptr<QObject>& object, std::shared_ptr<QtScheduler> scheduler)
 {
@@ -148,4 +148,4 @@ Result<ObjectSnapshot> QObjectResource::snapshot() const
         return Result<ObjectSnapshot>::failure(makeError(ErrorCode::WrongThread, "QObjectResource snapshot requires owner thread"));
     return Result<ObjectSnapshot>::success({control_->closing, !control_->object.isNull(), control_->observed, control_->confirmed});
 }
-} // namespace cordis::qt
+} // namespace eve::qt

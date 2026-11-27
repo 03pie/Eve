@@ -2,11 +2,11 @@
  * @brief Driver 私有逻辑占用；只保存权限与纯目标，不复制实例账目。
  */
 #pragma once
-#include <cordis/kernel.hpp>
-#include <cordis/loader/yaml.hpp>
+#include <eve/kernel.hpp>
+#include <eve/loader/yaml.hpp>
 #include <memory>
 #include <set>
-namespace cordis::loader::detail {
+namespace eve::loader::detail {
 struct DriverClaimControl;
 struct DriverClaimLedger;
 struct DriverCommitAccess;
@@ -40,4 +40,4 @@ public:
 private:
     std::shared_ptr<DriverClaimLedger> ledger_;
 };
-} // namespace cordis::loader::detail
+} // namespace eve::loader::detail

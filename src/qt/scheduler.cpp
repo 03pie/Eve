@@ -1,7 +1,7 @@
 /** @file scheduler.cpp
  * @brief 以宿主 FIFO 账目和 Qt 唤醒事件实现执行/丢弃仲裁及非重入调度。
  */
-#include <cordis/qt/scheduler.hpp>
+#include <eve/qt/scheduler.hpp>
 #include <QCoreApplication>
 #include <QEvent>
 #include <QObject>
@@ -12,7 +12,7 @@
 #include <thread>
 #include <utility>
 
-namespace cordis::qt::detail {
+namespace eve::qt::detail {
 /** @brief 每个进程注册一次独立的宿主队列唤醒类型。 */
 QEvent::Type wakeType()
 {
@@ -100,9 +100,9 @@ protected:
 private:
     std::shared_ptr<SchedulerControl> control_;
 };
-} // namespace cordis::qt::detail
+} // namespace eve::qt::detail
 
-namespace cordis::qt {
+namespace eve::qt {
 /** @brief 验证线程和应用，再创建应用线程的宿主接收对象。 */
 QtScheduler::QtScheduler(QObject* lifetime)
 {
@@ -158,4 +158,4 @@ Result<SchedulerSnapshot> QtScheduler::snapshot() const
     std::lock_guard<std::mutex> lock(control_->mutex);
     return Result<SchedulerSnapshot>::success({control_->open, control_->running, control_->jobs.size(), control_->accepted, control_->executed, control_->discarded, control_->errors});
 }
-} // namespace cordis::qt
+} // namespace eve::qt

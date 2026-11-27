@@ -1,8 +1,8 @@
 /** @file panel.cpp
  * @brief 真正执行已注册命令、隔离输出与恢复运行问题，不以演示文本代替行为。
  */
-#include <cordis/kernel.hpp>
-#include <cordis/ui/ela_shell.hpp>
+#include <eve/kernel.hpp>
+#include <eve/ui/ela_shell.hpp>
 #include <ElaTheme.h>
 #include <ElaWindow.h>
 #include <QAction>
@@ -50,8 +50,8 @@
 #include <windows.h>
 #endif
 
-using namespace cordis;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::ui;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__)); } while (false)
 void until(const std::function<bool()>& condition)
 {
@@ -75,7 +75,7 @@ struct Scene {
     template<class T> T* find(const char* name) { auto result = window->findChild<T*>(name); CHECK(result); return result; }
     void capture(const QString& name)
     {
-        window->resize(1000, 700); find<QTabWidget>("CordisWorkbenchPanel")->show();
+        window->resize(1000, 700); find<QTabWidget>("EveWorkbenchPanel")->show();
         find<QSplitter>("ElaWorkbenchPanelSplitter")->setSizes({360, 260}); QTest::qWait(40);
         CHECK(window->grab().save(QCoreApplication::applicationDirPath() + "/ui-panel-" + name + ".png"));
     }
@@ -89,19 +89,19 @@ void commands()
         return s.shell.commands()->add(ctx, {"panel.run", "真正执行", [&] { ++calls; return gate.task(); }, {}}).value().ready();
     }).value();
     auto instance = s.kernel->mount(runtime).value(); wait(instance.ready());
-    s.find<QAction>("CordisOpenCommands")->trigger();
-    auto filter = s.find<QLineEdit>("CordisCommandFilter"); auto list = s.find<QListView>("CordisCommandList");
+    s.find<QAction>("EveOpenCommands")->trigger();
+    auto filter = s.find<QLineEdit>("EveCommandFilter"); auto list = s.find<QListView>("EveCommandList");
     filter->setText("panel.run"); CHECK(list->model()->rowCount() == 1);
     QTest::keyClick(filter, Qt::Key_Return); CHECK(calls == 0);
     until([&] { return calls == 1; });
-    CHECK(s.find<QLabel>("CordisCommandResult")->text().contains(QString::fromUtf8("运行中")));
+    CHECK(s.find<QLabel>("EveCommandResult")->text().contains(QString::fromUtf8("运行中")));
     s.capture("commands");
-    gate.resolve(); until([&] { return s.find<QLabel>("CordisCommandResult")->text().contains(QString::fromUtf8("执行完成")); });
+    gate.resolve(); until([&] { return s.find<QLabel>("EveCommandResult")->text().contains(QString::fromUtf8("执行完成")); });
     const auto mode = eTheme->getThemeMode();
-    filter->setText("CordisToggleTheme"); CHECK(list->model()->rowCount() == 1);
-    s.find<QPushButton>("CordisRunCommand")->click(); CHECK(eTheme->getThemeMode() != mode);
+    filter->setText("EveToggleTheme"); CHECK(list->model()->rowCount() == 1);
+    s.find<QPushButton>("EveRunCommand")->click(); CHECK(eTheme->getThemeMode() != mode);
     filter->setText("nothing-matches"); CHECK(list->model()->rowCount() == 0);
-    s.find<QPushButton>("CordisRunCommand")->click(); CHECK(calls == 1);
+    s.find<QPushButton>("EveRunCommand")->click(); CHECK(calls == 1);
     wait(instance.stop()); filter->setText("panel.run"); CHECK(list->model()->rowCount() == 0);
     auto history = s.shell.output()->snapshot().value();
     CHECK(std::any_of(history.begin(), history.end(), [](const auto& entry) { return entry.text.find("panel.run") != std::string::npos || entry.text.find("执行完成") != std::string::npos; }));
@@ -114,7 +114,7 @@ void identity()
         return s.shell.commands()->add(ctx, {"same.id", "同名命令", [&, id = ctx.identity().value().instance] { called.push_back(id); return completedTask(); }, {}}).value().ready();
     }).value();
     auto first = s.kernel->mount(runtime).value(), second = s.kernel->mount(runtime).value(); wait(first.ready()); wait(second.ready());
-    auto filter = s.find<QLineEdit>("CordisCommandFilter"); auto list = s.find<QListView>("CordisCommandList");
+    auto filter = s.find<QLineEdit>("EveCommandFilter"); auto list = s.find<QListView>("EveCommandList");
     filter->setText("same.id"); CHECK(list->model()->rowCount() == 2);
     list->setCurrentIndex(list->model()->index(1, 0)); QTest::keyClick(filter, Qt::Key_Return);
     until([&] { return called.size() == 1; }); CHECK(called.back() == second.snapshot().value().instance);
@@ -131,18 +131,18 @@ void outputs()
     auto output = s.shell.output();
     output->write(contexts[0], "同名通道", "first <b>literal</b>").value();
     output->write(contexts[1], "同名通道", "second").value();
-    auto target = s.find<QComboBox>("CordisOutputTarget"); auto editor = s.find<QPlainTextEdit>("CordisWorkbenchOutput");
+    auto target = s.find<QComboBox>("EveOutputTarget"); auto editor = s.find<QPlainTextEdit>("EveWorkbenchOutput");
     CHECK(target->count()==3 && target->currentData().toString().isEmpty());
     const int plugin=target->findData("plugin/panel.output"); CHECK(plugin>=0);
     target->setCurrentIndex(plugin);
     CHECK(editor->toPlainText().contains("first <b>literal</b>") && editor->toPlainText().contains("second"));
-    auto scope=s.find<QComboBox>("CordisOutputInstance");
+    auto scope=s.find<QComboBox>("EveOutputInstance");
     scope->setCurrentIndex(scope->findData(QString::number(first.snapshot().value().instance.value())));
     CHECK(editor->toPlainText().contains("first <b>literal</b>") && !editor->toPlainText().contains("second"));
     scope->setCurrentIndex(scope->findData(QString::number(second.snapshot().value().instance.value())));
     CHECK(editor->toPlainText().contains("second") && !editor->toPlainText().contains("literal"));
-    s.find<QTabWidget>("CordisWorkbenchPanel")->setCurrentWidget(editor); s.capture("output");
-    s.find<QToolButton>("CordisOutputFollow")->setChecked(false);
+    s.find<QTabWidget>("EveWorkbenchPanel")->setCurrentWidget(editor); s.capture("output");
+    s.find<QToolButton>("EveOutputFollow")->setChecked(false);
     auto cursor = editor->textCursor(); cursor.setPosition(editor->toPlainText().indexOf("second"));
     cursor.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, 6); editor->setTextCursor(cursor);
     output->write(contexts[1], "同名通道", "append without losing selection").value();
@@ -169,8 +169,8 @@ void reentry()
     auto runtime = s.kernel->registerPlugin("reentry", [&](Context ctx) { context = ctx; return completedTask(); }).value();
     auto instance = s.kernel->mount(runtime).value(); wait(instance.ready());
     auto output = s.shell.output(); output->write(*context, "log", "seed").value();
-    s.find<QComboBox>("CordisOutputTarget")->setCurrentIndex(0);
-    auto editor = s.find<QPlainTextEdit>("CordisWorkbenchOutput");
+    s.find<QComboBox>("EveOutputTarget")->setCurrentIndex(0);
+    auto editor = s.find<QPlainTextEdit>("EveWorkbenchOutput");
     bool entered = false; std::uint64_t nested = 0;
     auto connection = QObject::connect(editor, &QPlainTextEdit::textChanged, editor, [&] {
         if (entered) return; entered = true; nested = output->write(*context, "log", "nested").value();
@@ -196,7 +196,7 @@ void limits()
     for (int i = 0; i < 1010; ++i) output->write(*context, "log", std::to_string(i)).value();
     CHECK(output->snapshot().value().size() == OutputService::historyLimit);
     for (int i = 0; i < 70; ++i) output->write(*context, std::to_string(i), "channel").value();
-    CHECK(s.find<QComboBox>("CordisOutputTarget")->findData("plugin/limits") >= 0);
+    CHECK(s.find<QComboBox>("EveOutputTarget")->findData("plugin/limits") >= 0);
     std::set<std::string> channels;
     const auto retained=output->snapshot().value();
     for (const auto& entry:retained) channels.insert(entry.channel);
@@ -212,15 +212,15 @@ void clearReentry()
     auto output = s.shell.output();
     output->write(*context,"a","clear-a").value();
     s.shell.writeOutput("retain-platform").value();
-    auto targets=s.find<QComboBox>("CordisOutputTarget");
+    auto targets=s.find<QComboBox>("EveOutputTarget");
     targets->setCurrentIndex(targets->findData("plugin/clear"));
-    auto editor=s.find<QPlainTextEdit>("CordisWorkbenchOutput");
+    auto editor=s.find<QPlainTextEdit>("EveWorkbenchOutput");
     bool entered=false;
     const auto connection=QObject::connect(editor,&QPlainTextEdit::textChanged,editor,[&]{
         if(entered) return;
         entered=true; targets->setCurrentIndex(targets->findData("platform"));
     });
-    s.find<QAction>("CordisClearOutput")->trigger();QObject::disconnect(connection);
+    s.find<QAction>("EveClearOutput")->trigger();QObject::disconnect(connection);
     CHECK(entered && editor->toPlainText().contains("retain-platform"));
     targets->setCurrentIndex(targets->findData("plugin/clear"));
     CHECK(!editor->toPlainText().contains("clear-a"));
@@ -231,13 +231,13 @@ void clearReentry()
 /** @brief 复制当前目标必须覆盖全部保留记录，不能只复制旧控件的 500 行窗口。 */
 void outputHistory()
 {
-    Scene s; s.find<QAction>("CordisClearOutput")->trigger();
+    Scene s; s.find<QAction>("EveClearOutput")->trigger();
     for (int i = 0; i < 600; ++i) s.shell.writeOutput("retained-line-" + std::to_string(i)).value();
-    s.find<QAction>("CordisCopyOutput")->trigger();
+    s.find<QAction>("EveCopyOutput")->trigger();
     const auto copied = QApplication::clipboard()->text();
     CHECK(copied.contains("retained-line-0\n") && copied.contains("retained-line-599"));
-    auto* editor = s.find<QPlainTextEdit>("CordisWorkbenchOutput");
-    auto* panel = s.find<QTabWidget>("CordisWorkbenchPanel");
+    auto* editor = s.find<QPlainTextEdit>("EveWorkbenchOutput");
+    auto* panel = s.find<QTabWidget>("EveWorkbenchPanel");
     panel->setCurrentWidget(editor);
     panel->show();
     until([&] { return editor->blockCount() == 600; });
@@ -246,7 +246,7 @@ void outputHistory()
     until([&] { return editor->blockCount() == 4999; });
     CHECK(editor->maximumBlockCount() == 5000);
 
-    s.find<QToolButton>("CordisOutputFollow")->setChecked(false);
+    s.find<QToolButton>("EveOutputFollow")->setChecked(false);
     const auto selection = editor->document()->find("retained-line-300");
     CHECK(!selection.isNull());
     editor->setTextCursor(selection);
@@ -272,7 +272,7 @@ void outputHistory()
     s.shell.writeOutput(std::string(600, '\n') + "partial-record").value();
     until([&] { return editor->toPlainText().endsWith("partial-record"); });
     CHECK(editor->blockCount() == 5000 && editor->textCursor().selectedText() == "middle");
-    s.find<QAction>("CordisCopyOutput")->trigger();
+    s.find<QAction>("EveCopyOutput")->trigger();
     CHECK(QApplication::clipboard()->text().contains("retained-line-0\n"));
     s.close();
 }
@@ -294,10 +294,10 @@ void problemUpdates()
     ManagedConfigurationEntry entry; entry.path = "path"; entry.plugin = "configured";
     entry.error = makeError(ErrorCode::ConfigConflict, "first problem"); source->value.entries.push_back(entry);
     s.shell.management()->attachConfiguration(source, {runtime.id()}).value();
-    auto tree = s.find<QTreeWidget>("CordisProblemsTree");
+    auto tree = s.find<QTreeWidget>("EveProblemsTree");
     until([&] { return tree->topLevelItemCount() > 0; });
     tree->setCurrentItem(tree->topLevelItem(0)->child(0));
-    auto detail = s.find<QPlainTextEdit>("CordisProblemDetails"); CHECK(detail->toPlainText().contains("first problem"));
+    auto detail = s.find<QPlainTextEdit>("EveProblemDetails"); CHECK(detail->toPlainText().contains("first problem"));
     source->value.entries[0].error = makeError(ErrorCode::ConfigConflict, "updated problem");
     until([&] { return tree->topLevelItem(0)->child(0)->text(1).contains("updated problem"); });
     CHECK(tree->currentItem() == tree->topLevelItem(0)->child(0));
@@ -312,20 +312,20 @@ void problems()
     }).value();
     auto instance = s.kernel->mount(runtime).value(); until([&] { return instance.ready().isReady(); });
     CHECK(!instance.ready().tryResult()->hasValue());
-    auto tree = s.find<QTreeWidget>("CordisProblemsTree");
+    auto tree = s.find<QTreeWidget>("EveProblemsTree");
     until([&] { return tree->topLevelItemCount() > 0; });
     CHECK(tree->topLevelItem(0)->childCount() == 1);
     auto item = tree->topLevelItem(0)->child(0); tree->setCurrentItem(item);
-    CHECK(s.find<QPlainTextEdit>("CordisProblemDetails")->toPlainText().contains("real activation failure"));
-    s.find<QTabWidget>("CordisWorkbenchPanel")->setCurrentWidget(s.find<QWidget>("CordisProblemsPanel")); s.capture("problems");
+    CHECK(s.find<QPlainTextEdit>("EveProblemDetails")->toPlainText().contains("real activation failure"));
+    s.find<QTabWidget>("EveWorkbenchPanel")->setCurrentWidget(s.find<QWidget>("EveProblemsPanel")); s.capture("problems");
     auto retry = instance.retry().value(); wait(retry.target);
     until([&] { return tree->topLevelItemCount() == 0; });
-    CHECK(s.find<QLabel>("CordisProblemsStatus")->text().contains(QString::fromUtf8("没有问题")));
+    CHECK(s.find<QLabel>("EveProblemsStatus")->text().contains(QString::fromUtf8("没有问题")));
     s.close();
 }
 QAction* outputMenuAction(Scene& scene,const QString& name)
 {
-    auto menu=scene.find<QToolButton>("CordisOutputMore")->menu();
+    auto menu=scene.find<QToolButton>("EveOutputMore")->menu();
     CHECK(QMetaObject::invokeMethod(menu,"aboutToShow",Qt::DirectConnection));
     for(auto a:menu->actions()) if(a->text()==name) return a;
     throw std::runtime_error("missing output action");
@@ -360,14 +360,14 @@ void historicalFilters()
     const auto before=digest();
     Scene s;
     s.shell.startOutputArchive(workspace.path().toStdString(),"test-b").value();
-    s.find<QAction>("CordisPreviousOutput")->trigger();
-    CHECK(s.find<QComboBox>("CordisOutputRun")->count()==2);
-    auto editor=s.find<QPlainTextEdit>("CordisWorkbenchOutput");
-    auto search=s.find<QLineEdit>("CordisOutputSearch");
-    auto level=s.find<QComboBox>("CordisOutputLevel");
-    auto sources=s.find<QComboBox>("CordisOutputTarget");
+    s.find<QAction>("EvePreviousOutput")->trigger();
+    CHECK(s.find<QComboBox>("EveOutputRun")->count()==2);
+    auto editor=s.find<QPlainTextEdit>("EveWorkbenchOutput");
+    auto search=s.find<QLineEdit>("EveOutputSearch");
+    auto level=s.find<QComboBox>("EveOutputLevel");
+    auto sources=s.find<QComboBox>("EveOutputTarget");
     sources->setCurrentIndex(sources->findData("plugin/archive.example"));
-    auto instances=s.find<QComboBox>("CordisOutputInstance");
+    auto instances=s.find<QComboBox>("EveOutputInstance");
     CHECK(!editor->toPlainText().contains("early instance only"));
     CHECK(instances->findData(firstId)>=0 && instances->findData(secondId)>=0);
     instances->setCurrentIndex(instances->findData(firstId+"/"+firstEpoch));
@@ -419,21 +419,21 @@ void historicalFilters()
     });
     outputMenuAction(s, QString::fromUtf8("导出已筛选记录…"))->trigger();
     CHECK(!QFileInfo::exists(archivePath));
-    s.find<QAction>("CordisClearOutput")->trigger();CHECK(editor->toPlainText().isEmpty());
-    s.find<QAction>("CordisPreviousOutput")->trigger();CHECK(editor->toPlainText().contains("sample-row-1311"));
+    s.find<QAction>("EveClearOutput")->trigger();CHECK(editor->toPlainText().isEmpty());
+    s.find<QAction>("EvePreviousOutput")->trigger();CHECK(editor->toPlainText().contains("sample-row-1311"));
     CHECK(digest()==before);
     s.close();
 }
 void responsive()
 {
-    Scene s;auto panel=s.find<QTabWidget>("CordisWorkbenchPanel");auto editor=s.find<QPlainTextEdit>("CordisWorkbenchOutput");
+    Scene s;auto panel=s.find<QTabWidget>("EveWorkbenchPanel");auto editor=s.find<QPlainTextEdit>("EveWorkbenchOutput");
     s.window->resize(700,700);
     QCoreApplication::processEvents();
-    const auto menu=s.find<QMenuBar>("CordisMenuBar");
-    const auto search=s.find<QWidget>("CordisPageSearch");
+    const auto menu=s.find<QMenuBar>("EveMenuBar");
+    const auto search=s.find<QWidget>("EvePageSearch");
     const auto endOfMenu=menu->actionGeometry(menu->actions().last()).topRight();
     CHECK(menu->mapTo(s.window,endOfMenu).x()<search->mapTo(s.window,QPoint(0,0)).x());
-    s.find<QAction>("CordisOpenOutput")->trigger();
+    s.find<QAction>("EveOpenOutput")->trigger();
     const auto seq=s.shell.writeOutput("buffer prepared\n[123] continuation").value();
     s.shell.showOutputEvent(seq,nullptr).value();
     const auto selected=editor->textCursor().selectedText();
@@ -444,15 +444,15 @@ void responsive()
         s.window->resize(width+200,800);QCoreApplication::processEvents();
         s.window->resize(s.window->width()+width-editor->width(),800);QCoreApplication::processEvents();
         CHECK(editor->width()==width);
-        CHECK(s.find<QComboBox>("CordisOutputRun")->isVisible()==(width>=760));
-        CHECK(s.find<QLineEdit>("CordisOutputSearch")->isVisible()==(width>=1080));
-        CHECK(s.find<QComboBox>("CordisOutputTarget")->isVisible() && s.find<QToolButton>("CordisOutputMore")->isVisible());
+        CHECK(s.find<QComboBox>("EveOutputRun")->isVisible()==(width>=760));
+        CHECK(s.find<QLineEdit>("EveOutputSearch")->isVisible()==(width>=1080));
+        CHECK(s.find<QComboBox>("EveOutputTarget")->isVisible() && s.find<QToolButton>("EveOutputMore")->isVisible());
         CHECK(editor->textCursor().selectedText()==selected);
         const auto height=panel->height();panel->setCurrentIndex(1);QCoreApplication::processEvents();CHECK(panel->height()==height);
         panel->setCurrentIndex(0);QCoreApplication::processEvents();CHECK(panel->height()==height);
-        for(const char* id:{"CordisHidePanel","CordisCopyPanelOutput","CordisClearPanelOutput"}) {
+        for(const char* id:{"EveHidePanel","EveCopyPanelOutput","EveClearPanelOutput"}) {
             auto button=s.find<QToolButton>(id);
-            if(width<1080 && button->objectName()!="CordisHidePanel") {CHECK(!button->isVisible());continue;}
+            if(width<1080 && button->objectName()!="EveHidePanel") {CHECK(!button->isVisible());continue;}
             auto center=button->mapTo(panel,button->rect().center());
             if(!panel->rect().contains(center) || panel->childAt(center)!=button) {
                 const auto parent=button->parentWidget()->geometry();
@@ -462,7 +462,7 @@ void responsive()
             }
             CHECK(panel->rect().contains(center) && panel->childAt(center)==button);
         }
-        const auto folder=qEnvironmentVariable("CORDIS_UI_EVIDENCE_DIR");
+        const auto folder=qEnvironmentVariable("EVE_UI_EVIDENCE_DIR");
         if(!folder.isEmpty()) {
             const auto filename=QString("output-%1-%2-%3.png").arg(mode==ElaThemeType::Dark?"dark":"light").arg(width).arg(s.window->devicePixelRatioF());
             CHECK(s.window->grab().save(QDir(folder).filePath(filename)));
@@ -471,24 +471,24 @@ void responsive()
     }
     outputMenuAction(s,QString::fromUtf8("复制本条"))->trigger();
     CHECK(QApplication::clipboard()->text().contains("buffer prepared\n[123] continuation"));
-    s.find<QAction>("CordisOpenSettings")->trigger();
-    auto origin=s.find<QLineEdit>("CordisSettingsSearch");
+    s.find<QAction>("EveOpenSettings")->trigger();
+    auto origin=s.find<QLineEdit>("EveSettingsSearch");
     origin->setFocus();origin->setText("developer");origin->setSelection(7,-4);
     s.shell.showOutputEvent(seq,origin).value();
     CHECK(editor->textCursor().selectedText()==selected);
-    QTest::keyClick(s.find<QComboBox>("CordisOutputTarget"),Qt::Key_Escape);
+    QTest::keyClick(s.find<QComboBox>("EveOutputTarget"),Qt::Key_Escape);
     until([&]{return !panel->isVisible() && QApplication::focusWidget()==origin;});
     CHECK(origin->selectedText()=="elop" && origin->cursorPosition()==3);
     s.shell.showOutputEvent(seq+10000,origin).value();
-    CHECK(s.find<QLabel>("CordisOutputFeedback")->text().contains(QString::fromUtf8("找不到该日志事件")));
+    CHECK(s.find<QLabel>("EveOutputFeedback")->text().contains(QString::fromUtf8("找不到该日志事件")));
     s.close();
 }
 void throughput()
 {
-    Scene s;s.window->resize(1360,800);s.find<QAction>("CordisOpenOutput")->trigger();
-    auto editor=s.find<QPlainTextEdit>("CordisWorkbenchOutput");
-    auto search=s.find<QLineEdit>("CordisOutputSearch");
-    auto follow=s.find<QToolButton>("CordisOutputFollow");
+    Scene s;s.window->resize(1360,800);s.find<QAction>("EveOpenOutput")->trigger();
+    auto editor=s.find<QPlainTextEdit>("EveWorkbenchOutput");
+    auto search=s.find<QLineEdit>("EveOutputSearch");
+    auto follow=s.find<QToolButton>("EveOutputFollow");
     CHECK(search->isVisible());follow->setChecked(false);
     std::optional<Context> a,b;
     const auto first=s.kernel->registerPlugin("traffic.A",[&](Context ctx){a=ctx;return completedTask();}).value();
@@ -497,7 +497,7 @@ void throughput()
     auto output=s.shell.output();int updates=0;
     QObject::connect(editor,&QPlainTextEdit::textChanged,editor,[&]{++updates;});
     QElapsedTimer total;total.start();std::vector<qint64> latency;
-    auto source=s.find<QComboBox>("CordisOutputTarget");
+    auto source=s.find<QComboBox>("EveOutputTarget");
     for(int batch=0;batch<100;++batch) {
         for(int n=0;n<1000;++n) output->write(n%2?*a:*b,"worker","traffic-"+std::to_string(batch*1000+n)).value();
         QCoreApplication::processEvents();
@@ -523,15 +523,15 @@ void crossWindow()
     s.shell.output()->write(*context,"log","managed instance log").value();
     s.shell.management()->refresh().value();
     s.shell.showManagement().value();
-    auto table=s.find<QTableView>("CordisInstanceTable");
-    auto origin=s.find<QPushButton>("CordisManagementOpenLog");
+    auto table=s.find<QTableView>("EveInstanceTable");
+    auto origin=s.find<QPushButton>("EveManagementOpenLog");
     auto dialog=origin->window();
     table->selectRow(0);origin->setFocus();
     until([&]{return dialog->isActiveWindow() && origin->isEnabled();});
     std::cout << "management active, log action enabled\n";
     QTest::keyClick(origin,Qt::Key_Space);
-    auto targets=s.find<QComboBox>("CordisOutputTarget");
-    auto output=s.find<QPlainTextEdit>("CordisWorkbenchOutput");
+    auto targets=s.find<QComboBox>("EveOutputTarget");
+    auto output=s.find<QPlainTextEdit>("EveWorkbenchOutput");
     until([&]{return s.window->isActiveWindow() && targets->hasFocus() && output->isVisible();});
     std::cout << "output active, source selector focused\n";
     CHECK(output->toPlainText().contains("managed instance log"));
@@ -564,11 +564,11 @@ void crossWindow()
         CHECK(IsWindowVisible(reinterpret_cast<HWND>(dialog->winId())));
 #endif
     CHECK(table->currentIndex().row()==0);
-    auto notifications=s.find<QPushButton>("CordisManagementOpenNotifications");
+    auto notifications=s.find<QPushButton>("EveManagementOpenNotifications");
     s.shell.notifications()->post(*context,{NotificationLevel::Warning,"managed notification event",{}}).value();
-    auto list=s.find<QListView>("CordisNotificationList");
-    auto center=s.find<QWidget>("CordisNotificationCenter");
-    auto panel=s.find<QTabWidget>("CordisWorkbenchPanel");
+    auto list=s.find<QListView>("EveNotificationList");
+    auto center=s.find<QWidget>("EveNotificationCenter");
+    auto panel=s.find<QTabWidget>("EveWorkbenchPanel");
     const auto openCenter=[&]{
         notifications->setFocus();
         QTest::keyClick(notifications,Qt::Key_Space);
@@ -583,7 +583,7 @@ void crossWindow()
 #endif
     };
     openCenter();
-    const auto folder=qEnvironmentVariable("CORDIS_UI_EVIDENCE_DIR");
+    const auto folder=qEnvironmentVariable("EVE_UI_EVIDENCE_DIR");
     if (!folder.isEmpty()) {
         const auto name=QString("management-notification-center-%1.png").arg(s.window->devicePixelRatioF());
         CHECK(s.window->grab().save(QDir(folder).filePath(name)));
@@ -602,7 +602,7 @@ void crossWindow()
         }
     } counter(dialogShows);
     dialog->installEventFilter(&counter);
-    QTest::keyClick(s.find<QPushButton>("CordisNotificationOpenLog"),Qt::Key_Space);
+    QTest::keyClick(s.find<QPushButton>("EveNotificationOpenLog"),Qt::Key_Space);
     until([&]{return !center->isVisible() && !dialog->isVisible() && targets->hasFocus() &&
                       output->textCursor().selectedText().contains("managed notification event");});
     CHECK(dialogShows==0);
@@ -623,7 +623,7 @@ void panelThemes()
             pattern.setPixelColor(x,y, (x/32+y/24)%2 ? QColor(35,82,130) : QColor(37,167,128));
     const auto background=workspace.filePath("background.png");
     CHECK(pattern.save(background));
-    const auto evidence=qEnvironmentVariable("CORDIS_UI_EVIDENCE_DIR");
+    const auto evidence=qEnvironmentVariable("EVE_UI_EVIDENCE_DIR");
     bool passed=true;
     for (const int material : {0,4}) {
         const auto preferences=workspace.filePath(QString("preferences-%1.json").arg(material));
@@ -637,15 +637,15 @@ void panelThemes()
             return failedTask(makeError(ErrorCode::ActivationFailed,"无法载入示例配置"));
         }).value();
         auto instance=scene.kernel->mount(plugin).value();until([&]{return instance.ready().isReady();});
-        auto panel=scene.find<QTabWidget>("CordisWorkbenchPanel");
-        auto output=scene.find<QPlainTextEdit>("CordisWorkbenchOutput");
-        auto tree=scene.find<QTreeWidget>("CordisProblemsTree");
-        auto detail=scene.find<QPlainTextEdit>("CordisProblemDetails");
-        auto select=scene.find<QComboBox>("CordisOutputTarget");
-        auto notice=scene.find<QLabel>("CordisOutputFeedback");
-        scene.find<QAction>("CordisOpenOutput")->trigger();
+        auto panel=scene.find<QTabWidget>("EveWorkbenchPanel");
+        auto output=scene.find<QPlainTextEdit>("EveWorkbenchOutput");
+        auto tree=scene.find<QTreeWidget>("EveProblemsTree");
+        auto detail=scene.find<QPlainTextEdit>("EveProblemDetails");
+        auto select=scene.find<QComboBox>("EveOutputTarget");
+        auto notice=scene.find<QLabel>("EveOutputFeedback");
+        scene.find<QAction>("EveOpenOutput")->trigger();
         scene.find<QSplitter>("ElaWorkbenchPanelSplitter")->setSizes({330,280});
-        scene.find<QToolButton>("CordisOutputFollow")->setChecked(false);
+        scene.find<QToolButton>("EveOutputFollow")->setChecked(false);
         scene.shell.writeOutput("工具区显示与主题同步").value();
         until([&]{return tree->topLevelItemCount()>0;});
         for (const auto mode : {ElaThemeType::Light,ElaThemeType::Dark,ElaThemeType::Light}) {
@@ -705,13 +705,13 @@ void panelThemes()
             frame=capture(popup,"source");
             surface(frame,popup->viewport(),QPoint(popup->viewport()->width()*3/4,popup->viewport()->height()/2),"source popup");
             select->hidePopup();
-            auto more=scene.find<QToolButton>("CordisOutputMore")->menu();
+            auto more=scene.find<QToolButton>("EveOutputMore")->menu();
             more->popup(scene.window->mapToGlobal(QPoint(180,120)));
             QTest::qWait(425);
             frame=capture(more,"filter-menu");
             surface(frame,more,QPoint(more->width()/2,more->actionGeometry(more->actions().first()).center().y()),"filters menu");
             more->hide();
-            panel->setCurrentWidget(scene.find<QWidget>("CordisProblemsPanel"));
+            panel->setCurrentWidget(scene.find<QWidget>("EveProblemsPanel"));
             tree->setCurrentItem(tree->topLevelItem(0)->child(0));
             frame=capture(tree,"problems");
             surface(frame,tree->viewport(),tree->viewport()->rect().bottomRight()-QPoint(12,12),"problem tree");
@@ -732,16 +732,16 @@ void panelThemes()
                 passed=false;
             }
             tree->setCurrentItem(tree->topLevelItem(0));
-            auto related=scene.find<QPushButton>("CordisProblemLog");
+            auto related=scene.find<QPushButton>("EveProblemLog");
             CHECK(!related->isEnabled());
             frame=capture(tree,"problems-disabled");
             // Disabled Ela controls intentionally use their quieter native text token.
             readable(frame,related,related->rect().adjusted(6,4,-6,-4),QPoint(4,related->height()/2),
                      "disabled related-log button",dark ? 3.0 : 1.6);
-            scene.find<QAction>("CordisOpenCommands")->trigger();
-            auto list=scene.find<QListView>("CordisCommandList");
-            auto search=scene.find<QLineEdit>("CordisCommandFilter");
-            search->setText("CordisOpenOutput");
+            scene.find<QAction>("EveOpenCommands")->trigger();
+            auto list=scene.find<QListView>("EveCommandList");
+            auto search=scene.find<QLineEdit>("EveCommandFilter");
+            search->setText("EveOpenOutput");
             CHECK(list->model()->rowCount()==1);
             frame=capture(list,"commands");
             surface(frame,list->viewport(),list->viewport()->rect().center(),"command list");

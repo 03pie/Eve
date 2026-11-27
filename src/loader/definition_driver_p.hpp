@@ -2,8 +2,8 @@
  * @brief 在可重入预检两侧核对实际定义来源，不运行 schema 或修改任何目标。
  */
 #pragma once
-#include <cordis/loader/definition_driver.hpp>
-namespace cordis::loader::detail {
+#include <eve/loader/definition_driver.hpp>
+namespace eve::loader::detail {
 inline Result<void> checkDefinitionSource(const IReconcileDriver& driver, const ValidatedCandidate& target)
 {
     const auto configured = dynamic_cast<const IConfiguredReconcileDriver*>(&driver);
@@ -14,4 +14,4 @@ inline Result<void> checkDefinitionSource(const IReconcileDriver& driver, const 
     error.phase = "loader.definitions";
     return Result<void>::failure(std::move(error));
 }
-} // namespace cordis::loader::detail
+} // namespace eve::loader::detail

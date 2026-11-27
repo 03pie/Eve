@@ -27,7 +27,7 @@ void reclaimed(Scene& scene, const UpgradePreview& value, const WorkspaceUpgrade
 void archivedReplacement(const QString& configuration, const std::string& moduleId,
                          GenerationId previous, GenerationId candidate, OperationId operation)
 {
-    const QDir root(QFileInfo(configuration).absolutePath() + "/.cordis/logs");
+    const QDir root(QFileInfo(configuration).absolutePath() + "/.eve/logs");
     const auto runs = root.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     PLATFORM_CHECK(runs.size() == 1);
     const QDir run(root.filePath(runs.front()));

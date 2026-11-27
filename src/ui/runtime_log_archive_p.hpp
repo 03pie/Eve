@@ -2,8 +2,8 @@
  * @brief 工作台读取宿主的已发布事件。文件路径和事件游标由归档持有。
  */
 #pragma once
-#include <cordis/ui/output.hpp>
-#include <QString>
+#include <eve/ui/output.hpp>
+#include <QStringList>
 #include <QMap>
 #include <functional>
 #include <memory>
@@ -12,7 +12,7 @@
 
 class QFile;
 
-namespace cordis::ui::detail
+namespace eve::ui::detail
 {
 enum class LogRunState { Active, Ended, Unconfirmed };
 struct LogRun {
@@ -104,6 +104,10 @@ public:
     RuntimeLogArchive& operator=(const RuntimeLogArchive&) = delete;
     QString currentRun() const;
     QString directory() const;
+    /** @brief 返回指定运行所在的归档根。已清理或缺失的历史运行返回空。 */
+    QString directoryFor(const QString& run) const;
+    /** @brief 返回该工作区可能的当前和旧版归档根，供导出前保护归档文件。 */
+    const QStringList& readDirectories() const;
     QString error() const;
     LogPersistence persistence() const;
     QString scanDescending(const QString& run, quint64 beforeExclusive,
@@ -122,4 +126,4 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

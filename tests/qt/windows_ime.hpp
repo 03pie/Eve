@@ -9,7 +9,7 @@
 #include <windows.h>
 #include <imm.h>
 
-namespace cordis::test {
+namespace eve::test {
 /** Exercised explicitly on a real Windows desktop with a Chinese IME installed.
  * Save and restore only the test window's input context. */
 inline void verifyNativePinyin(QLineEdit* edit)

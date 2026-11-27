@@ -6,11 +6,11 @@
 
 class QString;
 struct Scene;
-namespace cordis {
+namespace eve {
 class Runtime;
 class IScheduler;
 class Kernel;
-} // namespace cordis
-bool operationStateTreeCase(Scene&, const cordis::Runtime& old, const cordis::Runtime& next,
-                            const std::shared_ptr<cordis::IScheduler>& scheduler,
-                            const std::shared_ptr<cordis::Kernel>& kernel, const QString& mode);
+} // namespace eve
+bool operationStateTreeCase(Scene&, const eve::Runtime& old, const eve::Runtime& next,
+                            const std::shared_ptr<eve::IScheduler>& scheduler,
+                            const std::shared_ptr<eve::Kernel>& kernel, const QString& mode);

@@ -1,22 +1,22 @@
 # Windows 安装包
 
-双击 `Cordis-<版本>-windows-x64-setup.exe`，选择简体中文或 English，然后选择安装目录与快捷方式。向导跟随系统明暗模式。安装范围为当前 Windows 用户，默认目录为 `%LOCALAPPDATA%\Programs\Cordis`。安装包内含桌面工作台、日志查询工具及所需运行库，可离线安装。
+双击 `Eve-<版本>-windows-x64-setup.exe`，选择简体中文或 English，然后选择安装目录与快捷方式。向导跟随系统明暗模式。安装范围为当前 Windows 用户，默认目录为 `%LOCALAPPDATA%\Programs\Eve`。安装包内含桌面工作台、日志查询工具及所需运行库，可离线安装。
 
-安装后从开始菜单打开 **Cordis**。更新时先关闭工作台，再运行新版安装包，向导会识别已有安装。可在 Windows「设置 → 应用 → 安装的应用」卸载。工作区配置、用户文件和运行归档继续保存在原位置。[运行日志](runtime-logging.md)
+安装后从开始菜单打开 **Eve**。更新时先关闭工作台，再运行新版安装包，向导会识别已有安装。可在 Windows「设置 → 应用 → 安装的应用」卸载。工作区配置、用户文件和运行归档继续保存在原位置。[运行日志](runtime-logging.md)
 
 ## 从源码制作
 
-准备 Windows x64、Visual Studio 2022 C++ 工具链、Qt 5.15.2 MSVC x64、CMake 3.21+、Ninja 及 Inno Setup 6.6 或更高的兼容版本。命令会在独立的 Release 预设下构建两个发布入口，再从本次暂存目录编译安装程序。可通过 `CORDIS_ISCC` 指定 `ISCC.exe` 的完整路径。[开发环境](development.md) · [Inno Setup 下载](https://jrsoftware.org/isdl.php)
+准备 Windows x64、Visual Studio 2022 C++ 工具链、Qt 5.15.2 MSVC x64、CMake 3.21+、Ninja 及 Inno Setup 6.6 或更高的兼容版本。命令会在独立的 Release 预设下构建两个发布入口，再从本次暂存目录编译安装程序。可通过 `EVE_ISCC` 指定 `ISCC.exe` 的完整路径。[开发环境](development.md) · [Inno Setup 下载](https://jrsoftware.org/isdl.php)
 
 ```powershell
-$env:CORDIS_QT5152_ROOT = 'C:\Qt\5.15.2\msvc2019_64'
+$env:EVE_QT5152_ROOT = 'C:\Qt\5.15.2\msvc2019_64'
 .\tools\desktop.ps1 -Action package
 ```
 
 安装包和同名的 `.sha256` 文件位于 `build/ela-installer-msvc-release/dist/`。版本来自根 CMake 项目。以下示例用当前版本的产物在普通权限的本机桌面执行验收。
 
 ```powershell
-$setup = 'build/ela-installer-msvc-release/dist/Cordis-0.1.5-windows-x64-setup.exe'
+$setup = 'build/ela-installer-msvc-release/dist/Eve-0.2.0-windows-x64-setup.exe'
 if ((Get-FileHash $setup -Algorithm SHA256).Hash -ne ((Get-Content "$setup.sha256") -split ' ')[0]) {
     throw '安装包 SHA-256 与校验文件不匹配。'
 }

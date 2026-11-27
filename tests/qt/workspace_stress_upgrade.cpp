@@ -11,14 +11,14 @@
 #include <QPointer>
 #include <QWidget>
 #include <algorithm>
-#include <cordis_abi/state.h>
+#include <eve_abi/state.h>
 #include <exception>
 #include <optional>
 #include <vector>
 
 namespace workspace_stress_test::detail {
 namespace {
-using namespace cordis::module;
+using namespace eve::module;
 using notebook::UpgradePreview;
 using notebook::WorkspaceUpgradeReport;
 
@@ -34,7 +34,7 @@ QPlainTextEdit* editor(const Scene& scene, const RunningEntry& row)
 {
     auto* page = scene.page(row.instance);
     require(page != nullptr, "active Notebook page is missing");
-    auto* value = page->findChild<QPlainTextEdit*>("CordisNotebookEditor");
+    auto* value = page->findChild<QPlainTextEdit*>("EveNotebookEditor");
     require(value != nullptr, "active Notebook editor is missing");
     return value;
 }
@@ -199,7 +199,7 @@ void reclaimed(Scene& scene, const WorkspaceUpgradeReport& report, const platfor
 bool captureLimit(const ErrorInfo& failure)
 {
     if (failure.code == ErrorCode::InvalidArgument && failure.phase == "module.state" &&
-        failure.message == "state operation rejected, status " + std::to_string(CORDIS_E_LIMIT))
+        failure.message == "state operation rejected, status " + std::to_string(EVE_E_LIMIT))
         return true;
     return std::any_of(failure.causes.begin(), failure.causes.end(), captureLimit);
 }
@@ -320,7 +320,7 @@ QJsonObject queuedCancel(Scene& scene, const QString& sourceBin, const Action& a
 QAbstractItemModel* commandSource()
 {
     for (auto* window : QApplication::topLevelWidgets())
-        if (auto* list = window->findChild<QListView*>("CordisCommandList")) {
+        if (auto* list = window->findChild<QListView*>("EveCommandList")) {
             auto* proxy = qobject_cast<QAbstractProxyModel*>(list->model());
             require(proxy && proxy->sourceModel(), "real command source model is unavailable");
             return proxy->sourceModel();

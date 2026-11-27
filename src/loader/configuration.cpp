@@ -2,13 +2,13 @@
  * @brief 以有界结构校验和稳定 EntryPath 比较构建配置预览，保持与内核和 Qt 隔离。
  */
 #include "configuration_limits_p.hpp"
-#include <cordis/loader/configuration.hpp>
+#include <eve/loader/configuration.hpp>
 #include <algorithm>
 #include <set>
 #include <tuple>
 #include <utility>
 
-namespace cordis::loader {
+namespace eve::loader {
 namespace {
 /** @brief 标识只允许稳定 ASCII token，排除分隔符及 .、.. 路径歧义。 */
 bool identifier(const std::string& value)
@@ -184,4 +184,4 @@ PlanPreview previewChanges(const DocumentCandidate& base, const DocumentCandidat
     }
     return preview;
 }
-} // namespace cordis::loader
+} // namespace eve::loader

@@ -52,11 +52,11 @@ jobs:
           if (-not (Test-Path -LiteralPath $devCmd -PathType Leaf)) {
             throw 'The selected installation does not provide VsDevCmd.bat.'
           }
-          $env:CORDIS_VS_DEV_CMD = $devCmd
-          $script = Join-Path $env:RUNNER_TEMP 'cordis-core-msvc.cmd'
+          $env:EVE_VS_DEV_CMD = $devCmd
+          $script = Join-Path $env:RUNNER_TEMP 'eve-core-msvc.cmd'
           @'
           @echo off
-          call "%CORDIS_VS_DEV_CMD%" -no_logo -arch=x64 -host_arch=x64 || exit /b 1
+          call "%EVE_VS_DEV_CMD%" -no_logo -arch=x64 -host_arch=x64 || exit /b 1
           cmake --preset core-msvc-debug || exit /b 1
           cmake --build --preset core-msvc-debug || exit /b 1
           ctest --preset core-msvc-debug

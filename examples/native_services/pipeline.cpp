@@ -2,14 +2,14 @@
  * @brief 复用原模块、目录、Driver/Session 和清理回执，只有一个宿主拥有者。
  */
 #include "pipeline.hpp"
-#include <cordis/loader/qt_store.hpp>
+#include <eve/loader/qt_store.hpp>
 #include <exception>
 #include <map>
 #include <utility>
 
 namespace native_services {
 namespace {
-using namespace cordis;
+using namespace eve;
 struct InitializationFailure {
     ErrorInfo error;
 };
@@ -20,8 +20,8 @@ template <class T> T take(Result<T> result)
     return std::move(result).value();
 }
 } // namespace
-using namespace cordis;
-using namespace cordis::loader;
+using namespace eve;
+using namespace eve::loader;
 
 Result<std::shared_ptr<Pipeline>> Pipeline::open(const QString& root, const QString& sessionFile,
                                                  std::shared_ptr<qt::QtScheduler> scheduler)

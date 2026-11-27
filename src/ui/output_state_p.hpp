@@ -14,7 +14,7 @@ class ElaComboBox;
 class ElaLineEdit;
 class ElaToolButton;
 class QLabel;
-namespace cordis::ui::detail
+namespace eve::ui::detail
 {
 struct QtOutputOrigin {
     GenerationId generation;
@@ -72,4 +72,4 @@ struct OutputControl {
     void syncSources();
 };
 bool outputMatches(const LogRecord& row, const LogFilter& filter);
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

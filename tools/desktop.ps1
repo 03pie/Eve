@@ -9,7 +9,7 @@ doctor、configure、build、test、verify、run 或 package。package 生成 Wi
 .PARAMETER Preset
 Qt/Ela 的 MSVC Debug 或 Release 预设。
 .PARAMETER QtRoot
-Qt kit 路径，优先采用显式参数及 CORDIS_QT5152_ROOT。
+Qt kit 路径，优先采用显式参数及 EVE_QT5152_ROOT。
 .PARAMETER ConfigurationFile
 仅传给 configuration 示例的可选配置文件。
 .PARAMETER Workbench
@@ -27,7 +27,7 @@ param(
     [string]$Action = 'verify',
     [ValidateSet('qt-msvc-debug', 'qt-msvc-release', 'ela-msvc-debug', 'ela-msvc-release', 'ela-installer-msvc-release')]
     [string]$Preset = $(if ($Action -eq 'package') { 'ela-installer-msvc-release' } else { 'ela-msvc-debug' }),
-    [string]$QtRoot = $env:CORDIS_QT5152_ROOT,
+    [string]$QtRoot = $env:EVE_QT5152_ROOT,
     [string]$ConfigurationFile,
     [ValidateSet('platform', 'configuration')]
     [string]$Workbench = 'platform',
@@ -67,7 +67,7 @@ if (-not $DeveloperChild) {
 $taskRoot = Split-Path -Parent $PSScriptRoot
 Push-Location -LiteralPath $taskRoot
 try {
-    if (-not $QtRoot) { throw 'Set -QtRoot or CORDIS_QT5152_ROOT to the Qt 5.15.2 MSVC x64 kit.' }
+    if (-not $QtRoot) { throw 'Set -QtRoot or EVE_QT5152_ROOT to the Qt 5.15.2 MSVC x64 kit.' }
     $QtRoot = (Resolve-Path -LiteralPath $QtRoot).Path
     $taskQmake = Join-Path $QtRoot 'bin/qmake.exe'
     if (-not (Test-Path -LiteralPath $taskQmake -PathType Leaf)) { throw 'QtRoot must contain bin/qmake.exe.' }
@@ -90,19 +90,19 @@ try {
     $taskCompilerDirectory = Split-Path -Parent (Get-Command cl).Source
     if (Test-Path -LiteralPath (Join-Path $taskCompilerDirectory '1033/clui.dll')) {
         $env:VSLANG = '1033'
-        $env:CORDIS_MSVC_SHOWINCLUDES_PREFIX = 'Note: including file:'
+        $env:EVE_MSVC_SHOWINCLUDES_PREFIX = 'Note: including file:'
     }
     elseif (Test-Path -LiteralPath (Join-Path $taskCompilerDirectory '2052/clui.dll')) {
         $env:VSLANG = '2052'
-        $env:CORDIS_MSVC_SHOWINCLUDES_PREFIX = -join [char[]]@(0x6ce8, 0x610f, 0x3a, 0x20, 0x5305, 0x542b, 0x6587, 0x4ef6, 0x3a)
+        $env:EVE_MSVC_SHOWINCLUDES_PREFIX = -join [char[]]@(0x6ce8, 0x610f, 0x3a, 0x20, 0x5305, 0x542b, 0x6587, 0x4ef6, 0x3a)
     }
-    $env:CORDIS_QT5152_ROOT = $QtRoot
+    $env:EVE_QT5152_ROOT = $QtRoot
     $env:PATH = (Join-Path $QtRoot 'bin') + [System.IO.Path]::PathSeparator + $env:PATH
     if (-not $env:CMAKE_BUILD_PARALLEL_LEVEL) { $env:CMAKE_BUILD_PARALLEL_LEVEL = '4' }
 
     if ($Action -eq 'run') {
         if (-not $Preset.StartsWith('ela-')) { throw 'The workbench requires an Ela preset.' }
-        $taskName = if ($Workbench -eq 'configuration') { 'cordis_config_workbench.exe' } else { 'cordis_plugin_workbench.exe' }
+        $taskName = if ($Workbench -eq 'configuration') { 'eve_config_workbench.exe' } else { 'eve_plugin_workbench.exe' }
         $taskExecutable = Join-Path $taskRoot "build/$Preset/bin/$taskName"
         if (-not (Test-Path -LiteralPath $taskExecutable)) { throw 'Build the selected Ela preset before running it.' }
         $env:QT_QPA_PLATFORM = 'windows'

@@ -13,7 +13,7 @@ Artifact stage(Scene& scene, GenerationId predecessor, const QString& folder, bo
         // PE overlay 改变真实产物摘要；实际查询、模块 ID/版本和业务表仍由此 DLL 返回。
         const auto library = Scene::library(manifest);
         auto image = files::read(library);
-        image.append("cordis.unload.sibling");
+        image.append("eve.unload.sibling");
         files::write(library, image);
         auto declared = QJsonDocument::fromJson(files::read(manifest)).object();
         declared["sha256"] = QString::fromLatin1(QCryptographicHash::hash(image, QCryptographicHash::Sha256).toHex());
@@ -27,7 +27,7 @@ Artifact stage(Scene& scene, GenerationId predecessor, const QString& folder, bo
     const auto current = scene.state(created.generation);
     CHECK(current.role == GenerationRole::Candidate && current.predecessor == predecessor &&
           current.manifest.moduleVersion == "2.0.0");
-    CHECK(scene.call<int(CORDIS_CALL*)()>(artifact, "cordis_fixture_queries") == 1);
+    CHECK(scene.call<int(EVE_CALL*)()>(artifact, "eve_fixture_queries") == 1);
     return artifact;
 }
 void unload(Scene& scene, const Artifact& artifact)
@@ -44,7 +44,7 @@ void candidate(Scene& scene)
                                    scene.approval(previous.manifest))
                             .value();
     CHECK(reused.reused && reused.generation == previous.generation);
-    CHECK(scene.call<int(CORDIS_CALL*)()>(previous, "cordis_fixture_queries") == 1);
+    CHECK(scene.call<int(EVE_CALL*)()>(previous, "eve_fixture_queries") == 1);
     const auto history = scene.state(previous.generation);
     unload(scene, previous);
     CHECK(!scene.manager.reserveReplacement(current.generation, previous.generation).hasValue());
@@ -56,7 +56,7 @@ void candidate(Scene& scene)
     CHECK(!recreated.reused && recreated.generation != previous.generation &&
           recreated.generation != current.generation);
     const auto next = scene.describe(recreated.generation, previous.manifest);
-    CHECK(scene.call<int(CORDIS_CALL*)()>(next, "cordis_fixture_queries") == 1);
+    CHECK(scene.call<int(EVE_CALL*)()>(next, "eve_fixture_queries") == 1);
     CHECK(scene.state(next.generation).role == GenerationRole::Candidate &&
           scene.state(next.generation).predecessor == current.generation);
     CHECK(scene.state(current.generation).role == GenerationRole::Current &&
@@ -82,7 +82,7 @@ void current(Scene& scene)
             .value();
     CHECK(!loaded.reused && loaded.generation != previous.generation && loaded.generation != next.generation);
     const auto recreated = scene.describe(loaded.generation, previous.manifest);
-    CHECK(scene.call<int(CORDIS_CALL*)()>(recreated, "cordis_fixture_queries") == 1);
+    CHECK(scene.call<int(EVE_CALL*)()>(recreated, "eve_fixture_queries") == 1);
     CHECK(scene.state(recreated.generation).role == GenerationRole::Current &&
           scene.state(next.generation).role == GenerationRole::Candidate &&
           scene.state(next.generation).predecessor == previous.generation);

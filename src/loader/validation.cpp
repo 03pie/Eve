@@ -4,10 +4,10 @@
 #include "definition_validation_p.hpp"
 #include "module_catalog_p.hpp"
 #include <algorithm>
-#include <cordis/loader/yaml.hpp>
+#include <eve/loader/yaml.hpp>
 #include <exception>
 
-namespace cordis::loader {
+namespace eve::loader {
 namespace {
 /** @brief 定义、schema 错误保留条目位置，并用配置错误包裹原始原因。 */
 ErrorInfo errorAt(const ParsedConfiguration& source, std::string phase, std::string message, const std::string& path = {})
@@ -100,4 +100,4 @@ Result<ValidatedCandidate> validateCandidate(ParsedConfiguration source, std::ve
     }
     return Result<ValidatedCandidate>::success(ValidatedCandidate(std::move(source), std::move(inject)));
 }
-} // namespace cordis::loader
+} // namespace eve::loader

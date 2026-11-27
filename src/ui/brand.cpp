@@ -17,14 +17,14 @@ static void initializeEveBrandResources()
     (void)initialized;
 }
 
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 QIcon eveApplicationIcon()
 {
     initializeEveBrandResources();
     QIcon result;
     for (int size : {16, 24, 32, 48, 64, 128, 256})
-        result.addFile(QStringLiteral(":/cordis/brand/eve/") + QString::number(size) + QStringLiteral(".png"),
+        result.addFile(QStringLiteral(":/eve/brand/") + QString::number(size) + QStringLiteral(".png"),
                        QSize(size, size));
     return result;
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

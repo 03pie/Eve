@@ -3,13 +3,13 @@
  */
 #pragma once
 #include "qt_module_p.hpp"
-#include <cordis/qt/object.hpp>
+#include <eve/qt/object.hpp>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 Result<void> negotiateQtState(const std::shared_ptr<QtResidency>&, const std::vector<std::string>&);
 Result<std::string> validateQtState(const std::shared_ptr<Generation>&, const std::shared_ptr<QtResidency>&,
                                     const std::shared_ptr<qt::QtScheduler>&, const std::string&, const StateSnapshot&);
 Result<StateParticipant> qtStateParticipant(const std::shared_ptr<Generation>&, const std::shared_ptr<QtResidency>&,
                                             const std::shared_ptr<qt::QtScheduler>&, qt::QObjectResource, QObject*,
                                             const std::string&, std::function<void(ErrorInfo)>);
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

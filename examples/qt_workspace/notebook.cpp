@@ -9,35 +9,35 @@
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 #include <QVariant>
-#include <cordis/module/qt_plugin.hpp>
-#include <cordis/ui/commands.hpp>
-#include <cordis/ui/output.hpp>
-#include <cordis/ui/pages.hpp>
+#include <eve/module/qt_plugin.hpp>
+#include <eve/ui/commands.hpp>
+#include <eve/ui/output.hpp>
+#include <eve/ui/pages.hpp>
 #include <optional>
 
-#ifndef CORDIS_NOTEBOOK_STATE
-#define CORDIS_NOTEBOOK_STATE 0
+#ifndef EVE_NOTEBOOK_STATE
+#define EVE_NOTEBOOK_STATE 0
 #endif
-#ifndef CORDIS_EXAMPLE_NOTEBOOK_FAIL_START
-#define CORDIS_EXAMPLE_NOTEBOOK_FAIL_START 0
+#ifndef EVE_EXAMPLE_NOTEBOOK_FAIL_START
+#define EVE_EXAMPLE_NOTEBOOK_FAIL_START 0
 #endif
-#if CORDIS_NOTEBOOK_STATE
+#if EVE_NOTEBOOK_STATE
 #include "draft_state.hpp"
-#include <cordis/module/qt_state_plugin.hpp>
+#include <eve/module/qt_state_plugin.hpp>
 #endif
 
-using namespace cordis;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::ui;
 class Notebook final : public QObject,
-#if CORDIS_NOTEBOOK_STATE
+#if EVE_NOTEBOOK_STATE
                        public module::IQtStateInstanceV1,
 #endif
                        public module::IQtInstanceV1 {
     Q_OBJECT
-#if CORDIS_NOTEBOOK_STATE
-    Q_INTERFACES(cordis::module::IQtInstanceV1 cordis::module::IQtStateInstanceV1)
+#if EVE_NOTEBOOK_STATE
+    Q_INTERFACES(eve::module::IQtInstanceV1 eve::module::IQtStateInstanceV1)
 #else
-    Q_INTERFACES(cordis::module::IQtInstanceV1)
+    Q_INTERFACES(eve::module::IQtInstanceV1)
 #endif
 public:
     Task<void> activate(Context context) override
@@ -84,16 +84,16 @@ public:
                              {"notebook", value.title.toStdString(), "notebook",
                               [this, identity, context, title = value.title] {
                                   auto widget = std::make_unique<QWidget>();
-                                  widget->setObjectName("CordisNotebookPage");
-                                  widget->setProperty("cordis.instance",
+                                  widget->setObjectName("EveNotebookPage");
+                                  widget->setProperty("eve.instance",
                                                       QVariant::fromValue<qulonglong>(identity.instance.value()));
-                                  widget->setProperty("cordis.epoch", QVariant::fromValue<qulonglong>(identity.epoch));
+                                  widget->setProperty("eve.epoch", QVariant::fromValue<qulonglong>(identity.epoch));
                                   auto layout = new QVBoxLayout(widget.get());
                                   auto heading = new ElaText(title, 24, widget.get());
                                   heading->setTextFormat(Qt::PlainText);
                                   layout->addWidget(heading);
                                   editor_ = new QPlainTextEdit(widget.get());
-                                  editor_->setObjectName("CordisNotebookEditor");
+                                  editor_->setObjectName("EveNotebookEditor");
                                   editor_->setPlainText(draft_);
                                   QObject::connect(editor_.data(), &QPlainTextEdit::textChanged, widget.get(),
                                                    [this, context, editor = editor_] {
@@ -108,10 +108,10 @@ public:
                                                    });
                                   layout->addWidget(editor_);
                                   auto publish = new ElaPushButton(QString::fromUtf8("输出当前笔记"), widget.get());
-                                  publish->setObjectName("CordisNotebookPublish");
+                                  publish->setObjectName("EveNotebookPublish");
                                   layout->addWidget(publish);
                                   feedback_ = new ElaText(widget.get());
-                                  feedback_->setObjectName("CordisNotebookFeedback");
+                                  feedback_->setObjectName("EveNotebookFeedback");
                                   feedback_->setTextFormat(Qt::PlainText);
                                   layout->addWidget(feedback_);
                                   QObject::connect(publish, &QPushButton::clicked, widget.get(),
@@ -125,34 +125,34 @@ public:
         auto written = writeText(context, output.value(), "笔记插件已启动：" + value.title.toStdString());
         if (!written.hasValue())
             return failedTask(written.error());
-        if (value.failStart || CORDIS_EXAMPLE_NOTEBOOK_FAIL_START)
+        if (value.failStart || EVE_EXAMPLE_NOTEBOOK_FAIL_START)
             return failedTask(makeError(ErrorCode::ActivationFailed, "notebook start failure requested"));
         return page_->ready();
     }
-#if CORDIS_NOTEBOOK_STATE
-    CordisStatus captureState(CordisStateBufferV1* output) noexcept override
+#if EVE_NOTEBOOK_STATE
+    EveStatus captureState(EveStateBufferV1* output) noexcept override
     {
         if (!activateAttempted_) {
             const auto status = notebook::draft_state::prepare(output);
-            return status == CORDIS_OK ? CORDIS_E_CLOSED : status;
+            return status == EVE_OK ? EVE_E_CLOSED : status;
         }
         return notebook::draft_state::capture(draft_, output);
     }
-    CordisStatus restoreState(const CordisStateSchemaV1* schema, CordisBytesV1 json) noexcept override
+    EveStatus restoreState(const EveStateSchemaV1* schema, EveBytesV1 json) noexcept override
     {
         if (activateAttempted_)
-            return CORDIS_E_CLOSED;
+            return EVE_E_CLOSED;
         try {
             QString draft;
             QByteArray canonical;
             const auto status = notebook::draft_state::decode(schema, json, draft, canonical);
-            if (status != CORDIS_OK)
+            if (status != EVE_OK)
                 return status;
             draft_ = std::move(draft);
             restored_ = true;
-            return CORDIS_OK;
+            return EVE_OK;
         } catch (...) {
-            return CORDIS_E_FAILED;
+            return EVE_E_FAILED;
         }
     }
 #endif
@@ -189,27 +189,27 @@ private:
     bool restored_ = false, activateAttempted_ = false;
 };
 class NotebookFactory final : public QObject,
-#if CORDIS_NOTEBOOK_STATE
+#if EVE_NOTEBOOK_STATE
                               public module::IQtStatePluginV1,
 #endif
                               public module::IQtPluginV1 {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID "org.cordis.IQtPluginV1/1.0" FILE "notebook_metadata.json")
-#if CORDIS_NOTEBOOK_STATE
-    Q_INTERFACES(cordis::module::IQtPluginV1 cordis::module::IQtStatePluginV1)
+    Q_PLUGIN_METADATA(IID "org.eve.IQtPluginV1/1.0" FILE "notebook_metadata.json")
+#if EVE_NOTEBOOK_STATE
+    Q_INTERFACES(eve::module::IQtPluginV1 eve::module::IQtStatePluginV1)
 #else
-    Q_INTERFACES(cordis::module::IQtPluginV1)
+    Q_INTERFACES(eve::module::IQtPluginV1)
 #endif
 public:
     QStringList pluginIds() const override { return {"example.notebook"}; }
     QObject* create(const QString& id) override { return id == "example.notebook" ? new Notebook : nullptr; }
-#if CORDIS_NOTEBOOK_STATE
-    CordisStatus describeState(CordisBytesV1 plugin, CordisStateSchemaV1* output) noexcept override
+#if EVE_NOTEBOOK_STATE
+    EveStatus describeState(EveBytesV1 plugin, EveStateSchemaV1* output) noexcept override
     {
         return notebook::draft_state::describe(plugin, output);
     }
-    CordisStatus validateState(CordisBytesV1 plugin, const CordisStateSchemaV1* schema, CordisBytesV1 json,
-                               CordisStateBufferV1* output) noexcept override
+    EveStatus validateState(EveBytesV1 plugin, const EveStateSchemaV1* schema, EveBytesV1 json,
+                               EveStateBufferV1* output) noexcept override
     {
         return notebook::draft_state::validate(plugin, schema, json, output);
     }

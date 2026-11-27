@@ -14,13 +14,13 @@ bool run(const QString& name)
     if (name == "scope_external") {
         auto scope = s.kernel->reserveReplacement({s.provider.id()}).value();
         auto outside = s.active(99);
-        CordisRequestId request = 0;
-        CHECK(s.request(request) == CORDIS_E_BUSY && request == 0 &&
+        EveRequestId request = 0;
+        CHECK(s.request(request) == EVE_E_BUSY && request == 0 &&
               s.kernel->services().dependencyGraph().value().bindings[0].consumers.empty());
         scope.release().value();
-        CHECK(s.request(request) == CORDIS_PENDING);
+        CHECK(s.request(request) == EVE_PENDING);
         s.pump();
-        CHECK(s.stat(1, 3) == CORDIS_OK);
+        CHECK(s.stat(1, 3) == EVE_OK);
         CHECK(!s.kernel->reserveReplacement({s.provider.id()}).hasValue());
         auto closed = outside.close();
         s.pump();
@@ -30,15 +30,15 @@ bool run(const QString& name)
         s.pump();
         auto scope = s.kernel->reserveReplacement({s.provider.id()}).value();
         if (name == "scope_freeze") {
-            CordisRequestId request = 0;
-            CHECK(s.request(request) == CORDIS_PENDING);
+            EveRequestId request = 0;
+            CHECK(s.request(request) == EVE_PENDING);
             s.pump();
             scope.freeze().value();
-            CHECK(s.request(request) == CORDIS_E_CLOSED && provider.snapshot().value().state == InstanceState::Active);
+            CHECK(s.request(request) == EVE_E_CLOSED && provider.snapshot().value().state == InstanceState::Active);
             scope.release().value();
-            CHECK(s.request(request) == CORDIS_PENDING);
+            CHECK(s.request(request) == EVE_PENDING);
             s.pump();
-            CHECK(s.stat(1, 3) == CORDIS_OK);
+            CHECK(s.stat(1, 3) == EVE_OK);
         } else {
             auto stopped = scope.stop();
             s.pump();

@@ -3,12 +3,12 @@
  */
 #include <algorithm>
 #include "management_p.hpp"
-#include <cordis/ui/configuration.hpp>
+#include <eve/ui/configuration.hpp>
 #include <map>
 #include <stdexcept>
 #include <utility>
 
-namespace cordis::ui {
+namespace eve::ui {
 namespace {
 /** @brief 回执只包含值，不保留插件对象或配置页。 */
 class ConfigurationManagement final : public IConfigurationManagement, public detail::ConfigurationPayloadValidator
@@ -158,7 +158,7 @@ public:
             else
                 done.reject(makeError(ErrorCode::ConfigConflict, "configuration was not saved"));
         });
-        cordis::detail::TaskAccess::observe(receipt, [done](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(receipt, [done](Task<void>::Snapshot result) {
             if (!result->hasValue())
                 done.reject(result->error());
         });
@@ -239,7 +239,7 @@ private:
                 report.error = result.value().errors.front();
             done.resolve(std::move(report));
         });
-        cordis::detail::TaskAccess::observe(receipt, [done](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(receipt, [done](Task<void>::Snapshot result) {
             if (!result->hasValue())
                 done.reject(result->error());
         });
@@ -258,4 +258,4 @@ createConfigurationManagement(const std::shared_ptr<loader::ConfigurationSession
         throw std::invalid_argument("configuration management requires same owner scheduler");
     return std::make_shared<ConfigurationManagement>(session, std::move(scheduler));
 }
-} // namespace cordis::ui
+} // namespace eve::ui

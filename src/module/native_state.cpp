@@ -7,7 +7,7 @@
 #include "native_state_p.hpp"
 #include <utility>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 namespace {
 /** @brief 只在 owner 栈内存在；关闭先失效，取消/销毁及 root 完成等待本调用退出。 */
 class StateCall {
@@ -135,7 +135,7 @@ void NativeModuleControl::stateFault(ErrorInfo error) noexcept
     } catch (...) {
     }
 }
-Result<std::optional<NativeStateApi>> queryNativeState(CordisQueryStateFnV1 query,
+Result<std::optional<NativeStateApi>> queryNativeState(EveQueryStateFnV1 query,
                                                        const std::vector<std::string>& plugins)
 {
     using Output = Result<std::optional<NativeStateApi>>;
@@ -147,7 +147,7 @@ Result<std::optional<NativeStateApi>> queryNativeState(CordisQueryStateFnV1 quer
     NativeStateApi result{table.value(), {}};
     for (const auto& plugin : plugins) {
         auto schema =
-            readStateSchema([&](CordisStateSchemaV1* output) { return result.table.describe(bytes(plugin), output); });
+            readStateSchema([&](EveStateSchemaV1* output) { return result.table.describe(bytes(plugin), output); });
         if (!schema.hasValue())
             return Output::failure(schema.error());
         if (schema.value())
@@ -168,7 +168,7 @@ Result<std::string> validateNativeState(const std::shared_ptr<NativeModuleContro
         return Output::failure(entered.error());
     if (!root->record->stateApi->schemas.count(plugin))
         return Output::failure(hostError(ErrorCode::InvalidArgument, "plugin does not declare state"));
-    return call.checked(readStateJson([&](CordisStateBufferV1* output) {
+    return call.checked(readStateJson([&](EveStateBufferV1* output) {
         return root->record->stateApi->table.validate(bytes(plugin), &schema.value(), bytes(input.json), output);
     }));
 }
@@ -200,7 +200,7 @@ Result<StateParticipant> NativeStateAccess::participant(const NativeInstance& in
         auto entered = call.enter("native.state.capture", NativeInstanceState::Started);
         if (!entered.hasValue())
             return Result<std::string>::failure(entered.error());
-        return call.checked(readStateJson([&](CordisStateBufferV1* output) {
+        return call.checked(readStateJson([&](EveStateBufferV1* output) {
             return self->root->record->stateApi->table.capture(self->native, output);
         }));
     };
@@ -211,7 +211,7 @@ Result<StateParticipant> NativeStateAccess::participant(const NativeInstance& in
         auto entered = call.enter("native.state.restore");
         if (!entered.hasValue())
             return entered;
-        const CordisBytesV1 input{reinterpret_cast<const std::uint8_t*>(json.data()), json.size()};
+        const EveBytesV1 input{reinterpret_cast<const std::uint8_t*>(json.data()), json.size()};
         try {
             return call.checked(stateStatus(self->root->record->stateApi->table.restore(self->native, &schema, input)));
         } catch (...) {
@@ -221,4 +221,4 @@ Result<StateParticipant> NativeStateAccess::participant(const NativeInstance& in
     };
     return Output::success(std::move(participant));
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

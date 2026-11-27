@@ -4,7 +4,7 @@
 #include "../core/instance_state_p.hpp"
 #include "operation_p.hpp"
 #include <algorithm>
-namespace cordis::detail {
+namespace eve::detail {
 namespace {
 Result<void> compatible(const Runtime& old, const Runtime& next)
 {
@@ -409,4 +409,4 @@ Result<void> ReplacementOperationControl::prepare(ReplacementRequest request)
         return inputsHeld;
     return sealSources();
 }
-} // namespace cordis::detail
+} // namespace eve::detail

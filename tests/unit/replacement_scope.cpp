@@ -2,8 +2,8 @@
  * @brief 对真实 Core 入口验证排他、冻结、停止屏障及所有权重入。
  */
 #include <algorithm>
-#include <cordis/kernel.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/kernel.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <functional>
 #include <iostream>
 #include <optional>
@@ -12,8 +12,8 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-using namespace cordis;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using eve::testing::FakeScheduler;
 static_assert(!std::is_copy_constructible_v<ReplacementScope> && !std::is_copy_assignable_v<ReplacementScope>);
 static_assert(std::is_nothrow_move_constructible_v<ReplacementScope> &&
               std::is_nothrow_move_assignable_v<ReplacementScope>);

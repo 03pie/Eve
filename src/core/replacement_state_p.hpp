@@ -6,7 +6,7 @@
 #include <map>
 #include <optional>
 
-namespace cordis::detail {
+namespace eve::detail {
 struct PublicationControl;
 struct ReplacementScopeControl;
 struct StateConstruction {
@@ -26,4 +26,4 @@ struct ReplacementStatePlan {
     std::map<std::size_t, std::shared_ptr<StateAdmission>> members;
 };
 Result<void> claimReplacementState(const std::shared_ptr<PublicationControl>&, const std::shared_ptr<StateAdmission>&);
-} // namespace cordis::detail
+} // namespace eve::detail

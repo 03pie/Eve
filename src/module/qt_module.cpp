@@ -7,11 +7,11 @@
 #include <QPluginLoader>
 #include <QPointer>
 #include <QThread>
-#include <cordis/build_info.hpp>
-#include <cordis/module/qt_manifest.hpp>
-#include <cordis/module/qt_module.hpp>
+#include <eve/build_info.hpp>
+#include <eve/module/qt_manifest.hpp>
+#include <eve/module/qt_module.hpp>
 
-namespace cordis::module {
+namespace eve::module {
 namespace {
 ErrorInfo error(ErrorCode code, std::string message)
 {
@@ -113,4 +113,4 @@ Result<ModuleLoadReport> stageQtModule(const std::string& root, const std::strin
             error(ErrorCode::InvalidArgument, "candidate requires a current predecessor"));
     return loadGeneration(root, path, limits, predecessor);
 }
-} // namespace cordis::module
+} // namespace eve::module

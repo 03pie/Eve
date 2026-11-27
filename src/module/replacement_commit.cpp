@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <thread>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 namespace {
 ErrorInfo error(ErrorCode code, const char* message)
 {
@@ -140,4 +140,4 @@ Result<PreparedModuleCommit> ReplacementAccess::prepare(const ReplacementReserva
     }
     return Output::success(PreparedModuleCommit(std::move(value)));
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

@@ -1,8 +1,8 @@
 /** @file connection.cpp
  * @brief 原生直接桥只登记宿主令牌，业务在 owner 进入；关闭不依赖业务队列继续开放。
  */
-#include <cordis/qt/connection.hpp>
-#include <cordis/qt/object.hpp>
+#include <eve/qt/connection.hpp>
+#include <eve/qt/object.hpp>
 #include <cstdint>
 #include <exception>
 #include <limits>
@@ -10,7 +10,7 @@
 #include <mutex>
 #include <vector>
 
-namespace cordis::qt::detail {
+namespace eve::qt::detail {
 /** @brief 原生冻结与在途业务共享票据；数据在 owner 锁外释放，完成源只写宿主结果。 */
 struct ConnectionTicket {
     std::uint64_t id = 0;
@@ -219,11 +219,11 @@ struct ConnectionControl : std::enable_shared_from_this<ConnectionControl> {
         std::weak_ptr<ConnectionControl> weak = shared_from_this();
         try {
             auto task = (*function)(invocation->payload);
-            if (cordis::detail::TaskAccess::sameTask(task, stopped.task())) {
+            if (eve::detail::TaskAccess::sameTask(task, stopped.task())) {
                 invocation->result = std::make_shared<const Result<void>>(Result<void>::failure(
                     makeError(ErrorCode::CleanupCycle, "connection callback returned its own close task")));
             } else
-                cordis::detail::TaskAccess::observe(task, [weak, invocation](Task<void>::Snapshot result) {
+                eve::detail::TaskAccess::observe(task, [weak, invocation](Task<void>::Snapshot result) {
                     if (auto state = weak.lock()) {
                         std::lock_guard<std::mutex> lock(state->mutex);
                         invocation->result = std::move(result);
@@ -351,7 +351,7 @@ struct ConnectionControl : std::enable_shared_from_this<ConnectionControl> {
             deleting = true;
         }
         auto self = shared_from_this();
-        cordis::detail::TaskAccess::observe(resource->close(), [self](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(resource->close(), [self](Task<void>::Snapshot result) {
             if (!result->hasValue()) {
                 self->retained = self;
                 self->stopped.reject(result->error());
@@ -434,9 +434,9 @@ void SignalBridge::payloadFailed(const std::shared_ptr<ConnectionTicket>& ticket
 {
     lease_->control->payloadFailed(ticket, oversized);
 }
-} // namespace cordis::qt::detail
+} // namespace eve::qt::detail
 
-namespace cordis::qt {
+namespace eve::qt {
 /** @brief effect 清理先登记，外部 connectNotify 重入停止时也不会漏记资源。 */
 Result<QtConnection> QtConnection::create(const Context& owner, std::shared_ptr<QtScheduler> scheduler,
                                           detail::ConnectionCallback callback, std::string label,
@@ -558,4 +558,4 @@ Result<ConnectionSnapshot> QtConnection::snapshot() const
     value.lastError = state->lastError;
     return Result<ConnectionSnapshot>::success(std::move(value));
 }
-} // namespace cordis::qt
+} // namespace eve::qt

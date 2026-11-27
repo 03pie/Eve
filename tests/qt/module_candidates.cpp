@@ -5,11 +5,11 @@
 #include <QCoreApplication>
 #include <QTemporaryDir>
 #include <QTimer>
-#include <cordis/module/manager.hpp>
-#include <cordis/module/native.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
-#ifdef CORDIS_TEST_QT_CANDIDATES
-#include <cordis/module/qt_module.hpp>
+#include <eve/module/manager.hpp>
+#include <eve/module/native.hpp>
+#include <eve/testing/fake_scheduler.hpp>
+#ifdef EVE_TEST_QT_CANDIDATES
+#include <eve/module/qt_module.hpp>
 #endif
 #include <algorithm>
 #include <cstring>
@@ -19,9 +19,9 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
-using namespace cordis;
-using namespace cordis::module;
-namespace files = cordis::testing::modules;
+using namespace eve;
+using namespace eve::module;
+namespace files = eve::testing::modules;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -33,13 +33,13 @@ struct Scenario {
     QString root, id;
     QJsonArray plugins;
     Scenario(bool backend, QString directory)
-        : qt(backend), root(std::move(directory)), id(qt ? "org.cordis.qt.example" : "org.cordis.business"),
-          plugins(qt ? QJsonArray{"org.cordis.qt.page", "org.cordis.qt.settings"} : QJsonArray{"org.cordis.plugin"})
+        : qt(backend), root(std::move(directory)), id(qt ? "org.eve.qt.example" : "org.eve.business"),
+          plugins(qt ? QJsonArray{"org.eve.qt.page", "org.eve.qt.settings"} : QJsonArray{"org.eve.plugin"})
     {
     }
     Result<ModuleLoadReport> load(const QString& path)
     {
-#ifdef CORDIS_TEST_QT_CANDIDATES
+#ifdef EVE_TEST_QT_CANDIDATES
         if (qt)
             return loadQtModule(root.toStdString(), path.toStdString());
 #endif
@@ -47,7 +47,7 @@ struct Scenario {
     }
     Result<ModuleLoadReport> stage(const QString& path, GenerationId previous)
     {
-#ifdef CORDIS_TEST_QT_CANDIDATES
+#ifdef EVE_TEST_QT_CANDIDATES
         if (qt)
             return stageQtModule(root.toStdString(), path.toStdString(), previous);
 #endif
@@ -69,7 +69,7 @@ struct Scenario {
     {
         const auto image = GetModuleHandleW(dll.toStdWString().c_str());
         CHECK(image);
-        auto address = GetProcAddress(image, qt ? "cordis_qt_fixture_roots" : "cordis_fixture_queries");
+        auto address = GetProcAddress(image, qt ? "eve_qt_fixture_roots" : "eve_fixture_queries");
         CHECK(address);
         int(__cdecl * read)() = nullptr;
         static_assert(sizeof(read) == sizeof(address), "Windows entry");
@@ -153,9 +153,9 @@ int main(int argc, char** argv)
         } else if (name == "catalog" || name == "identity") {
             auto json = QJsonDocument::fromJson(files::read(nextPath)).object();
             if (name == "catalog")
-                json["plugins"] = QJsonArray{"org.cordis.changed"};
+                json["plugins"] = QJsonArray{"org.eve.changed"};
             else
-                json["moduleId"] = "org.cordis.foreign";
+                json["moduleId"] = "org.eve.foreign";
             files::write(nextPath, QJsonDocument(json).toJson());
             CHECK(!scene.stage(nextPath, previous).hasValue());
             CHECK(scene.manager.snapshot().value().size() == 1 && scene.load(oldPath).value().generation == previous);
@@ -178,7 +178,7 @@ int main(int argc, char** argv)
             CHECK(!qt);
             auto scheduler = std::make_shared<testing::FakeScheduler>();
             auto module = NativeModule::open(scene.manager, previous, scheduler).value();
-            auto business = module.create("org.cordis.plugin", "\"sync\"", InstanceId{1}, 1).value();
+            auto business = module.create("org.eve.plugin", "\"sync\"", InstanceId{1}, 1).value();
             auto started = business.start();
             scheduler->runUntilIdle().value();
             CHECK(started.tryResult()->hasValue() && business.snapshot().value().state == NativeInstanceState::Started);
@@ -247,7 +247,7 @@ int main(int argc, char** argv)
             CHECK(!qt);
             const auto path = scene.install(dlls[1], "foreign", "2.0.0");
             auto json = QJsonDocument::fromJson(files::read(path)).object();
-            json["moduleId"] = "org.cordis.foreign";
+            json["moduleId"] = "org.eve.foreign";
             files::write(path, QJsonDocument(json).toJson());
             CHECK(!scene.load(path).hasValue() && scene.manager.snapshot().value().size() == 3);
             json["moduleId"] = scene.id;
@@ -262,12 +262,12 @@ int main(int argc, char** argv)
             for (int index = 0; index < 62; ++index) {
                 const auto folder = temporary.path() + "/budget-" + QString::number(index);
                 const auto path =
-                    files::install(dlls[0], folder, "org.cordis.budget." + QString::number(index), scene.plugins);
+                    files::install(dlls[0], folder, "org.eve.budget." + QString::number(index), scene.plugins);
                 CHECK(!scene.manager.load(temporary.path().toStdString(), path.toStdString()).hasValue());
             }
             CHECK(scene.manager.snapshot().value().size() == 64);
             const auto path =
-                files::install(dlls[0], temporary.path() + "/overflow", "org.cordis.overflow", scene.plugins);
+                files::install(dlls[0], temporary.path() + "/overflow", "org.eve.overflow", scene.plugins);
             auto overflow = scene.manager.load(temporary.path().toStdString(), path.toStdString());
             CHECK(!overflow.hasValue() && overflow.error().phase == "module.catalog");
         }

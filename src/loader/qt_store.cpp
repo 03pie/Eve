@@ -1,10 +1,10 @@
 /** @file qt_store.cpp
  * @brief 复用 Q4d1 的真实哈希比较和临时文件提交，不在 Store 内伪造成功回执。
  */
-#include <cordis/loader/qt_store.hpp>
+#include <eve/loader/qt_store.hpp>
 #include <utility>
 
-namespace cordis::loader {
+namespace eve::loader {
 /** @brief 后端不持有文件锁，只有提交调用期间才创建事务资源。 */
 QtConfigurationWriter::QtConfigurationWriter(QString path, ConfigurationFileLimits limits)
     : path_(std::move(path)), limits_(limits) {}
@@ -24,4 +24,4 @@ Task<ConfigurationFileCommit> QtConfigurationWriter::commit(std::shared_ptr<cons
     }
     return done.task();
 }
-} // namespace cordis::loader
+} // namespace eve::loader

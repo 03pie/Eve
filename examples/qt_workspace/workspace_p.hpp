@@ -6,15 +6,15 @@
 
 namespace notebook::detail {
 struct InitializationFailure {
-    cordis::ErrorInfo error;
+    eve::ErrorInfo error;
 };
-template <class T> T require(cordis::Result<T> result)
+template <class T> T require(eve::Result<T> result)
 {
     if (!result.hasValue())
         throw InitializationFailure{result.error()};
     return std::move(result).value();
 }
-inline void require(cordis::Result<void> result)
+inline void require(eve::Result<void> result)
 {
     if (!result.hasValue())
         throw InitializationFailure{result.error()};

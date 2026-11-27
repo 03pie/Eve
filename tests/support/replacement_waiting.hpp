@@ -3,16 +3,16 @@
  */
 #pragma once
 #include "../../src/core/replacement_inspect_p.hpp"
-#include <cordis/replacement_operation.hpp>
+#include <eve/replacement_operation.hpp>
 #include <utility>
 
 template <class SceneType, class Wait>
-void operationWaitingCase(SceneType& scene, const cordis::Runtime& old, const cordis::Runtime& next,
-                          const std::shared_ptr<cordis::IScheduler>& scheduler,
-                          const std::shared_ptr<cordis::Kernel>& kernel, Wait waitFor, const QString& mode)
+void operationWaitingCase(SceneType& scene, const eve::Runtime& old, const eve::Runtime& next,
+                          const std::shared_ptr<eve::IScheduler>& scheduler,
+                          const std::shared_ptr<eve::Kernel>& kernel, Wait waitFor, const QString& mode)
 {
-    using namespace cordis;
-    using namespace cordis::loader;
+    using namespace eve;
+    using namespace eve::loader;
     const bool recovering = mode.endsWith("_recovery");
     const bool stopRoot = mode == "operation_waiting_root";
     const bool unstarted = mode.startsWith("operation_unstarted");
@@ -31,7 +31,7 @@ void operationWaitingCase(SceneType& scene, const cordis::Runtime& old, const co
                                                  return completedTask();
                                              })
                             .value();
-    const auto id = scene.qt ? "org.cordis.qt.page" : "org.cordis.plugin";
+    const auto id = scene.qt ? "org.eve.qt.page" : "org.eve.plugin";
     const auto schema = [](const std::string&) { return Result<void>::success(); };
     auto before = take(ConfigurationDefinitions::create({{{id, {}, schema, {"business", "old/module.json"}}, old},
                                                          {{"parent", {}, schema}, parent}}),
@@ -58,7 +58,7 @@ void operationWaitingCase(SceneType& scene, const cordis::Runtime& old, const co
         auto probe = take(kernel->reserveReplacement({old.id()}), "setup reservation");
         probe.prepareDefinitions({{old.id(), next}}).value();
         const auto inputs =
-            take(cordis::detail::CoreReplacementAccess::original(probe, *kernel), "actual setup members");
+            take(eve::detail::CoreReplacementAccess::original(probe, *kernel), "actual setup members");
         const auto member = std::find_if(inputs.members.begin(), inputs.members.end(),
                                          [&](const auto& item) { return item.input.runtime == old.id(); });
         CHECK(member != inputs.members.end());

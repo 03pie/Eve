@@ -3,10 +3,10 @@
  */
 #pragma once
 #include <atomic>
-#include <cordis/service.hpp>
+#include <eve/service.hpp>
 #include <set>
 
-namespace cordis::detail {
+namespace eve::detail {
 struct InstanceDeclaration {
     std::vector<ServiceKey> dependencies;
     std::vector<ServiceKey> outputs;
@@ -93,4 +93,4 @@ bool visiblePublication(const std::shared_ptr<PublicationControl>& binding,
                         const std::shared_ptr<PublicationControl>& viewer);
 bool availableBinding(const BindingControl& binding, const std::shared_ptr<PublicationControl>& viewer,
                       bool cleanup = false);
-} // namespace cordis::detail
+} // namespace eve::detail

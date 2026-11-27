@@ -10,7 +10,7 @@
 #include <set>
 #include <stdexcept>
 
-namespace cordis::detail {
+namespace eve::detail {
 /** @brief 退役绑定没有保留与调用时才完成提供者清理前置屏障。 */
 void checkUnused(const std::shared_ptr<BindingControl>& binding)
 {
@@ -297,9 +297,9 @@ Result<BindingSnapshot> committedSnapshot(const std::shared_ptr<CommittedLease>&
         return Output::failure(makeError(ErrorCode::DependencyVersion, "committed service type mismatch"));
     return Output::success(binding->snapshot());
 }
-} // namespace cordis::detail
+} // namespace eve::detail
 
-namespace cordis {
+namespace eve {
 Result<void> ServiceRegistry::validateStaged(const ProviderHandle& output, std::type_index type,
                                              InstanceId instance) const
 {
@@ -652,4 +652,4 @@ Result<BindingSnapshot> ProviderHandle::snapshot() const
     if (!binding_->scheduler->isCurrentThread()) return Result<BindingSnapshot>::failure(makeError(ErrorCode::WrongThread, "snapshot requires owner thread"));
     return Result<BindingSnapshot>::success(binding_->snapshot());
 }
-} // namespace cordis
+} // namespace eve

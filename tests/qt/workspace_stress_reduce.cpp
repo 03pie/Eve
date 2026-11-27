@@ -7,7 +7,7 @@
 #include <QJsonDocument>
 #include <QSaveFile>
 #include <algorithm>
-#include <cordis_abi/state.h>
+#include <eve_abi/state.h>
 #include <set>
 #include <stdexcept>
 
@@ -22,9 +22,9 @@ bool falseValue(const QJsonValue& value)
 }
 bool originalLimit(const QJsonObject& failure)
 {
-    if (failure["code"] == decimal(static_cast<std::uint64_t>(cordis::ErrorCode::InvalidArgument)) &&
+    if (failure["code"] == decimal(static_cast<std::uint64_t>(eve::ErrorCode::InvalidArgument)) &&
         failure["phase"] == "module.state" &&
-        failure["message"] == "state operation rejected, status " + QString::number(CORDIS_E_LIMIT))
+        failure["message"] == "state operation rejected, status " + QString::number(EVE_E_LIMIT))
         return true;
     for (const auto& cause : failure["causes"].toArray())
         if (cause.isObject() && originalLimit(cause.toObject()))
@@ -63,7 +63,7 @@ bool reproduces(const ChildResult& child)
     PLATFORM_CHECK(result["failure_signature"] == captureSignature && report["alias"] == "notebook" &&
                    report["failure"].isNull() && falseValue(report["retained"]) &&
                    falseValue(report["delivery_blocked"]) &&
-                   replacement["outcome"] == static_cast<int>(cordis::ReplacementOutcome::Failed) &&
+                   replacement["outcome"] == static_cast<int>(eve::ReplacementOutcome::Failed) &&
                    falseValue(replacement["committed"]) && falseValue(replacement["recovered"]) &&
                    falseValue(replacement["resources_retained"]) && replacement["instances"].isArray() &&
                    replacement["instances"].toArray().isEmpty() && parseDecimal(replacement["operation"]) != 0 &&
@@ -151,7 +151,7 @@ public:
         PLATFORM_CHECK(!QFileInfo::exists(minimalPath) && !QFileInfo::exists(boundaryPath));
         saveTrace(minimal, minimalPath);
         saveTrace(boundary, boundaryPath);
-        const QJsonObject result{{"schema", "cordis.workspace.reduction-proof/1"},
+        const QJsonObject result{{"schema", "eve.workspace.reduction-proof/1"},
                                  {"passed", true},
                                  {"minimality", "deletion-minimal"},
                                  {"target_failure_signature", captureSignature},

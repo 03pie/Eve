@@ -1,0 +1,351 @@
+/** @file instance.hpp
+ * @brief 声明内置插件的多代实例、配置操作及弱生命周期上下文。
+ */
+#pragma once
+#include <eve/effect.hpp>
+#include <eve/migration_state.hpp>
+#include <eve/service.hpp>
+#include <optional>
+
+namespace eve {
+namespace module {
+class NativeModule;
+}
+class Runtime;
+class Instance;
+class ReplacementBuilder;
+struct ReplacementInput;
+struct ServiceRequirement;
+template<class T> class EventBus;
+namespace detail { struct InstanceControl; }
+namespace detail { struct CleanupAccess; }
+namespace detail {
+struct KernelControl;
+struct InstanceOwnerIdentity;
+struct InstanceOwnershipAccess;
+struct InstanceStateAccess;
+struct RuntimeStateAccess;
+struct StateAdmission;
+class PreparedInstanceOwnership;
+}
+namespace detail {
+struct ReplacementScopeControl;
+}
+
+/** @brief 清理回调所属旧代的不可变信息，不包含新业务能力。 */
+struct CleanupSnapshot {
+    InstanceId instance;
+    RuntimeId runtime;
+    Epoch epoch;
+    ConfigRevision revision;
+    std::string config;
+};
+
+/** @brief 仅在一次清理回调及其异步任务期间有效的受限上下文。 */
+class CleanupContext {
+public:
+    /** @brief owner 线程读取旧代信息；清理已完成或上下文过期时返回 StaleContext。 */
+    Result<CleanupSnapshot> snapshot() const;
+    /** @brief 仅在有效清理窗口内访问本实例本代已提交的旧绑定，允许 Retiring。 */
+    template<class T, class F> Result<void> withService(const ServiceRef<T>& service, F&& function) const
+    {
+        static_assert(std::is_same_v<std::invoke_result_t<F&, T&>, void>, "cleanup service callback must return void");
+        auto current = snapshot();
+        if (!current.hasValue()) return Result<void>::failure(current.error());
+        std::function<void(T&)> callback(std::forward<F>(function));
+        if (!callback) return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "empty cleanup service callback"));
+        return detail::callCommitted(service.lease_, typeid(T), [callback = std::move(callback)](void* object) {
+            callback(*static_cast<T*>(object));
+        }, true, current.value().instance, current.value().epoch);
+    }
+private:
+    friend class Context;
+    /** @brief 只持有清理访问控制的弱引用，不延长资源生命周期。 */
+    explicit CleanupContext(std::weak_ptr<detail::CleanupAccess> access) : access_(std::move(access)) {}
+    std::weak_ptr<detail::CleanupAccess> access_;
+};
+
+/** @brief 当前代业务能力的归属信息，仅用于资源命名与诊断。 */
+struct ContextIdentity {
+    InstanceId instance;
+    Epoch epoch;
+};
+/** @brief 从真实业务上下文读取的来源值；副本不授予任何创建或替换权限。 */
+struct ContextSource {
+    InstanceId instance;
+    RuntimeId runtime;
+    Epoch epoch;
+    /** @brief 仅当前作用域的真实隔离候选上下文有值，普通/已发布上下文为空。 */
+    std::optional<OperationId> replacement;
+};
+namespace ui { class UiPagesService; class CommandService; class NotificationService; class OutputService; }
+namespace qt {
+class QtConnection;
+class QtWorker;
+}
+
+/** @brief 使用受限上下文执行清理，返回真实释放完成任务。 */
+using InstanceCleanup = std::function<Task<void>(CleanupContext)>;
+
+/** @brief 弱引用实例的业务上下文；仅允许在 owner 线程注册资源。 */
+class Context {
+public:
+    /** @brief 在业务仍有效时读取实例与代次；不会授予新的业务或清理能力。 */
+    Result<ContextIdentity> identity() const;
+    /** @brief owner 线程核对本代业务能力后读取来源；适配器须从实际 Context 读取而非接受外部来源值。 */
+    Result<ContextSource> source() const;
+    /** @brief 本代创建子实例，继承域视图/索引，可追加类型化依赖；父退役等待整个子树。 */
+    Result<Instance> inject(const Runtime& runtime, std::string config = {},
+                            std::vector<ServiceRequirement> additionalDependencies = {},
+                            std::optional<StateSnapshot> state = {}) const;
+    /** @brief Loading 中登记本 epoch 唯一状态参与者；如有迁移输入，在返回前校验并导入。 */
+    Result<void> state(StateParticipant) const;
+    /** @brief 派生只覆盖指定服务的 realm 视图，不修改父上下文，旧 epoch 不得派生能力。 */
+    Result<Context> isolate(std::string name, RealmId realm) const;
+    /** @brief 登记本代 Staged 输出；激活后普通实例公开，发布组内仅就绪为 Held。 */
+    template<class T> Result<BindingId> provide(ServiceKey key, std::shared_ptr<T> object) const
+    { return provideErased(std::move(key), std::move(object), typeid(T)); }
+    /** @brief 从托管注册表消费服务，优先使用激活前固定的声明依赖。 */
+    template<class T> Result<ServiceRef<T>> consume(const ServiceKey& key) const
+    {
+        auto lease = consumeManaged(key, typeid(T));
+        if (!lease.hasValue()) return Result<ServiceRef<T>>::failure(lease.error());
+        return Result<ServiceRef<T>>::success(ServiceRef<T>(std::weak_ptr<detail::CommittedLease>(lease.value())));
+    }
+    /** @brief 获取当前上下文捕获的配置副本，不读取新代配置。 */
+    const std::string& config() const noexcept { return config_; }
+    /** @brief 在当前激活仍有效时登记 effect；停止后拒绝新资源。 */
+    Result<EffectToken> effect(EffectSetup setup, std::string label = "anonymous") const;
+    /** @brief 登记独立清理组；清理中只能使用 CleanupContext，不获得激活上下文。 */
+    Result<EffectToken> onCleanup(InstanceCleanup cleanup, std::string label = "instance.cleanup") const;
+    /** @brief 本代 effect/子实例/在途绑定调用全部静止后才执行；失败保留资源并阻止换代。
+     * 用于依赖其他清理完成的所有者销毁；按登记逆序串行执行，失败不再推进更早的所有者。
+     * 不提供提前关闭句柄，不授予业务/服务访问能力。
+     */
+    Result<void> afterCleanup(CleanupFunction cleanup, std::string label = "instance.finalize") const;
+    /** @brief 只比较上下文的调度器归属，不授予业务能力或延长实例寿命。 */
+    bool usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const;
+    /** @brief 固定当前 Published 服务到本代 committed 账目；缺服务返回 DependencyMissing。 */
+    template<class T> Result<ServiceRef<T>> consume(const ServiceRegistry& registry, const ServiceKey& key) const
+    {
+        auto lease = consumeErased(registry, key, typeid(T));
+        if (!lease.hasValue()) return Result<ServiceRef<T>>::failure(lease.error());
+        return Result<ServiceRef<T>>::success(ServiceRef<T>(std::weak_ptr<detail::CommittedLease>(lease.value())));
+    }
+private:
+    friend class ui::UiPagesService;
+    friend struct module::detail::NativeServices;
+    friend class module::NativeModule;
+    Result<ServiceRegistry> managedRegistry() const;
+    Result<void> adoptOutput(ProviderHandle output, std::type_index type) const;
+    Result<std::vector<std::pair<ServiceKey, std::shared_ptr<detail::CommittedLease>>>>
+    inputs(std::type_index type) const;
+    friend class ui::CommandService;
+    friend class ui::NotificationService;
+    friend class ui::OutputService;
+    friend class qt::QtConnection;
+    friend class qt::QtWorker;
+    template<class T> friend class EventBus;
+    /** @brief 为事件/UI/Qt 适配器提供同 scheduler、本代业务门禁，不授予实例所有权。 */
+    Result<std::function<Result<void>()>> eventGuard(const std::shared_ptr<IScheduler>& scheduler) const;
+    /** @brief 只读呈现资格与原索引通知；适配器保留令牌，通知不得强持贡献记录。 */
+    struct Presentation {
+        std::function<bool()> visible;
+        std::shared_ptr<ScheduledJob> observation;
+        /** @brief 原组的历史终态不依赖 owner 存活；未决定为空，已发布/放弃为 true/false。 */
+        std::function<Result<std::optional<bool>>()> publication;
+    };
+    /** @brief 登记验证业务能力，查询不调用业务或调度器；普通上下文不登记观察。 */
+    Result<Presentation> presentation(const std::shared_ptr<IScheduler>& scheduler, ScheduledJob changed) const;
+    /** @brief 校验本代能力后登记并保存托管输出。 */
+    Result<BindingId> provideErased(ServiceKey key, std::shared_ptr<void> object, std::type_index type) const;
+    /** @brief 解析本实例托管注册表，不向插件暴露发布/释放控制。 */
+    Result<std::shared_ptr<detail::CommittedLease>> consumeManaged(const ServiceKey& key, std::type_index type) const;
+    /** @brief 经过实例能力校验后固定服务，并纳入本代清理屏障。 */
+    Result<std::shared_ptr<detail::CommittedLease>> consumeErased(const ServiceRegistry& registry,
+        const ServiceKey& key, std::type_index type) const;
+    friend struct detail::InstanceControl;
+    friend class Instance;
+    friend class ReplacementBuilder;
+    Result<Instance> injectWithState(const Runtime&, std::string, std::vector<ServiceRequirement>,
+                                     std::optional<StateSnapshot>, std::shared_ptr<detail::StateAdmission>) const;
+    /** @brief 捕获实例的弱引用，不延长实例生命周期。 */
+    explicit Context(std::weak_ptr<detail::InstanceControl> control, Epoch epoch, std::string config, RealmMap realms = {})
+        : control_(std::move(control)), epoch_(epoch), config_(std::move(config)), realms_(std::move(realms)) {}
+    std::weak_ptr<detail::InstanceControl> control_;
+    Epoch epoch_;
+    std::string config_;
+    RealmMap realms_;
+};
+
+/** @brief 激活前必须固定的强依赖，接口类型仅用于同工具链检查。 */
+struct ServiceRequirement {
+    ServiceKey key;
+    std::type_index type;
+    std::uint32_t minimumMinor = 0;
+    std::vector<std::string> capabilities;
+    /** @brief 创建类型化强依赖声明。 */
+    template<class T> static ServiceRequirement of(ServiceKey key, std::uint32_t minimumMinor = 0, std::vector<std::string> capabilities = {})
+    { return {std::move(key), typeid(T), minimumMinor, std::move(capabilities)}; }
+};
+
+/** @brief 声明托管输出的类型、必供约束和实现版本；optional 输出仍须满足声明类型。 */
+struct ServiceOutput {
+    ServiceKey key;
+    std::type_index type;
+    bool required = true;
+    ServiceMetadata metadata;
+    /** @brief 创建输出描述，required=false 表示允许该输出缺席。 */
+    template<class T> static ServiceOutput of(ServiceKey key, bool required = true, ServiceMetadata metadata = {})
+    { return {std::move(key), typeid(T), required, std::move(metadata)}; }
+};
+
+/** @brief 同一内置插件定义；可用于创建多个独立实例。 */
+class Runtime {
+public:
+    /** @brief 获取进程内唯一标识，副本共享标识；移动后原句柄返回无效标识。 */
+    RuntimeId id() const noexcept { return activate_ ? id_ : RuntimeId{}; }
+    /** @brief 宿主读取不可变的类型化依赖契约，不授予激活回调或服务调用能力。 */
+    const std::vector<ServiceRequirement>& requirements() const noexcept { return dependencies_; }
+    /** @brief 宿主读取不可变的输出契约，用于运行计划排序与域匹配。 */
+    const std::vector<ServiceOutput>& outputs() const noexcept { return outputs_; }
+    using Activate = std::function<Task<void>(Context)>;
+    /** @brief 创建插件定义；全部输出须声明，空输出表禁止 provide；无效描述抛 invalid_argument。 */
+    explicit Runtime(Activate activate, std::vector<ServiceRequirement> dependencies = {}, std::vector<ServiceOutput> outputs = {});
+    /** @brief 创建显式有状态定义；无效契约抛 invalid_argument，副本共享不可变契约。 */
+    static Runtime stateful(Activate, StateContract, std::vector<ServiceRequirement> dependencies = {},
+                            std::vector<ServiceOutput> outputs = {});
+    /** @brief 纯契约描述；不执行插件校验，也不授予实例状态访问。 */
+    std::optional<StateSchema> stateSchema() const;
+
+private:
+    friend class Instance;
+    friend struct detail::RuntimeStateAccess;
+    std::shared_ptr<const Activate> activate_;
+    RuntimeId id_;
+    std::vector<ServiceRequirement> dependencies_;
+    std::vector<ServiceOutput> outputs_;
+    std::shared_ptr<const StateContract> state_;
+};
+
+/** @brief 实例当前代次、目标修订及资源的诊断视图。 */
+struct InstanceSnapshot {
+    InstanceState state;
+    bool deliveryBlocked;
+    ScopeSnapshot resources;
+    Epoch epoch;
+    ConfigRevision revision;
+    InstanceId instance;
+    RuntimeId runtime;
+    std::size_t committedLeases;
+    std::optional<ErrorInfo> failure;
+    std::size_t children;
+    /** @brief 末尾清理的独立账目；主资源静止不代表此阶段已完成。 */
+    std::optional<ScopeSnapshot> finalizers = {};
+    bool finalizing = false;
+    /** @brief 包含末尾清理的资源账目；空账目不单独证明调度器或状态有效。 */
+    bool hasRetainedResources() const noexcept
+    {
+        return !resources.effects.empty() || children != 0 || committedLeases != 0 ||
+               (finalizers && !finalizers->effects.empty());
+    }
+};
+
+/** @brief 声明强依赖的当前解析状态；key 已应用实例 realm，error 为空表示可发现。 */
+struct DependencySnapshot {
+    ServiceKey key;
+    std::uint32_t minimumMinor;
+    std::vector<std::string> capabilities;
+    std::optional<ErrorInfo> error;
+};
+
+/** @brief 一次配置操作的稳定结果；epoch 为实际启动代，未启动时为零。 */
+struct StableReport {
+    StableOutcome outcome;
+    ConfigRevision revision;
+    Epoch epoch;
+};
+
+/** @brief 配置操作的可共享观察句柄。 */
+struct OperationHandle {
+    ConfigRevision revision;
+    Task<StableReport> target;
+    OperationId id;
+    InstanceId instance;
+};
+
+/** @brief 指定代次曾成功进入 Active 的历史结果，不授予当前业务能力。 */
+struct ActiveReport {
+    InstanceId instance;
+    Epoch epoch;
+    ConfigRevision revision;
+};
+
+/** @brief 可更新的内置插件实例；必须在关闭调度器前显式 stop。 */
+class Instance {
+public:
+    /** @brief 排队激活插件；要求开放的 owner-thread scheduler，否则抛 invalid_argument。 */
+    static Instance mount(const Runtime& runtime, std::shared_ptr<IScheduler> scheduler, std::string config = {},
+                          std::shared_ptr<ServiceRegistry> services = {}, RealmMap realms = {},
+                          std::vector<ServiceRequirement> additionalDependencies = {},
+                          std::optional<StateSnapshot> state = {});
+    /** @brief 在期望修订匹配时替换目标配置；返回独立稳定结果观察句柄。 */
+    Result<OperationHandle> update(std::string config, ConfigRevision expectedRevision) const;
+    /** @brief 对失败且已静止的实例重新激活，保留配置修订并分配新操作。 */
+    Result<OperationHandle> retry() const;
+    /** @brief 获取当前操作，包括 mount 的初始操作；仅 owner 线程使用。 */
+    Result<OperationHandle> operation() const;
+    /** @brief 查询本实例操作的稳定结果；拒绝其他实例或未知操作。 */
+    Task<StableReport> awaitTarget(const OperationHandle& operation) const;
+    /** @brief 查询已经启动的代次，未知/未来代次报错；退役前未激活的代次报取消。 */
+    Task<ActiveReport> awaitActive(Epoch epoch) const;
+    /** @brief owner 观察当前或后续 afterEpoch 后的弱上下文；不回放退役代次，失败可等重试，停止取消。 */
+    Task<Context> whenActiveAfter(Epoch afterEpoch = 0) const;
+    /** @brief 兼容的首次有效激活观察；失败后不重置，后续代次通过操作 target 观察。 */
+    Task<void> ready() const;
+    /** @brief 幂等终结实例，等待激活和所有 effect 清理；错误线程返回失败任务。 */
+    Task<CleanupReport> stop() const;
+    /** @brief 在 owner 线程读取状态及尚未释放的资源。 */
+    Result<InstanceSnapshot> snapshot() const;
+    /** @brief owner 只读检查依赖的精确域、类型、minor 和 capability；不提交新租约。 */
+    Result<std::vector<DependencySnapshot>> dependencies() const;
+    /** @brief 只读检查逻辑占用，不证明实例状态允许更新；实际变更仍重验。 */
+    Result<void> checkMutation() const;
+
+private:
+    friend class Context;
+    friend class Kernel;
+    friend struct detail::KernelControl;
+    friend struct detail::ReplacementScopeControl;
+    friend struct detail::InstanceOwnershipAccess;
+    friend class detail::PreparedInstanceOwnership;
+    friend struct detail::InstanceStateAccess;
+    static Instance prepareMount(const Runtime& runtime, std::shared_ptr<IScheduler> scheduler, std::string config,
+                                 std::shared_ptr<ServiceRegistry> services, RealmMap realms,
+                                 std::vector<ServiceRequirement> additionalDependencies,
+                                 std::shared_ptr<const detail::InstanceOwnerIdentity> owner = {},
+                                 std::optional<StateSnapshot> state = {},
+                                 std::shared_ptr<detail::StateAdmission> admission = {},
+                                 std::shared_ptr<detail::InstanceControl> parent = {});
+    void startMount() const;
+    void setReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const;
+    void clearReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const;
+    void resumeReplacement() const;
+    bool preparedForPublication() const noexcept;
+    ReplacementInput captureReplacementInput(InstanceId parent) const;
+    Task<CleanupReport> stopForReplacement(const std::shared_ptr<detail::ReplacementScopeControl>& claim) const;
+    Task<CleanupReport> stopForShutdown() const;
+    /** @brief 只有 Kernel 挂载入口登记规范索引身份，不将组内子实例收养为顶层实例。 */
+    void setKernelRegistry(const std::shared_ptr<ServiceRegistry>& services) const;
+    /** @brief Kernel 递归检查真实所有权，不从服务编号猜测子实例。 */
+    Result<std::vector<Instance>> ownedChildren() const;
+    /** @brief 仅 Kernel 以同一注册表和 Runtime 复制已终结实例的输入，旧实例保持终结。 */
+    Result<Instance> remount(const Runtime& runtime, const std::shared_ptr<IScheduler>& scheduler,
+                             const std::shared_ptr<ServiceRegistry>& services) const;
+    /** @brief 接受配置替换或重试，区分配置修订与操作标识。 */
+    Result<OperationHandle> change(std::string config, ConfigRevision expectedRevision, bool revise) const;
+    /** @brief 持有实例共享控制块，句柄析构不执行异步停止。 */
+    explicit Instance(std::shared_ptr<detail::InstanceControl> control) : control_(std::move(control)) {}
+    std::shared_ptr<detail::InstanceControl> control_;
+};
+} // namespace eve

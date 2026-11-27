@@ -3,14 +3,14 @@
  */
 #pragma once
 #include <atomic>
-#include <cordis/module/replacement.hpp>
-#include <cordis/replacement.hpp>
+#include <eve/module/replacement.hpp>
+#include <eve/replacement.hpp>
 #include <map>
 #include <memory>
 #include <set>
 #include <vector>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 struct ReplacementSourceEvents;
 struct BorrowedGeneration {
     GenerationId generation;
@@ -43,4 +43,4 @@ Result<void> authorizeRecoveryPair(const std::shared_ptr<ReplacementReservationC
                                    OperationId operation);
 void releaseReplacementPair(const std::shared_ptr<ReplacementReservationControl>& control) noexcept;
 Result<void> drainGeneration(GenerationId generation);
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

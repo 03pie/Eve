@@ -6,7 +6,7 @@
 #include <deque>
 #include <set>
 
-namespace cordis {
+namespace eve {
 namespace {
 ErrorInfo failure(ErrorCode code, const char* message, InstanceId instance = {})
 {
@@ -231,4 +231,4 @@ Result<ReplacementClosure> detail::KernelControl::replacementClosure(const std::
     return selection.hasValue() ? Result<ReplacementClosure>::success(std::move(selection).value().closure)
                                 : Result<ReplacementClosure>::failure(selection.error());
 }
-} // namespace cordis
+} // namespace eve

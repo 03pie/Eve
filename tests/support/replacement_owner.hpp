@@ -3,35 +3,35 @@
  */
 #pragma once
 #include <atomic>
-#include <cordis/replacement_operation.hpp>
+#include <eve/replacement_operation.hpp>
 #include <functional>
 #include <iostream>
-class OperationRejectingScheduler final : public cordis::IScheduler {
+class OperationRejectingScheduler final : public eve::IScheduler {
 public:
-    explicit OperationRejectingScheduler(std::shared_ptr<cordis::IScheduler> delegate) : delegate_(std::move(delegate))
+    explicit OperationRejectingScheduler(std::shared_ptr<eve::IScheduler> delegate) : delegate_(std::move(delegate))
     {
     }
     std::atomic_bool reject{false};
-    bool post(cordis::ScheduledJob job) override { return !reject.load() && delegate_->post(std::move(job)); }
+    bool post(eve::ScheduledJob job) override { return !reject.load() && delegate_->post(std::move(job)); }
     bool isCurrentThread() const noexcept override { return delegate_->isCurrentThread(); }
     bool isOpen() const override { return delegate_->isOpen(); }
 
 private:
-    std::shared_ptr<cordis::IScheduler> delegate_;
+    std::shared_ptr<eve::IScheduler> delegate_;
 };
-class OperationOwnerProbe final : public cordis::IReplacementOwner {
+class OperationOwnerProbe final : public eve::IReplacementOwner {
 public:
-    std::shared_ptr<cordis::IScheduler> scheduler;
+    std::shared_ptr<eve::IScheduler> scheduler;
     bool rejectCandidate = false, rejectRecovery = false;
     bool rejectRecoveryAfterCreate = false, dropCandidateDependencies = false, suspendCandidate = false;
-    cordis::Promise<void> entered;
-    cordis::Promise<cordis::ReplacementRebuiltTree> pending;
+    eve::Promise<void> entered;
+    eve::Promise<eve::ReplacementRebuiltTree> pending;
     int checked = 0, rebuilt = 0;
     std::function<void()> preflightHook;
-    std::optional<cordis::ReplacementBuilder> observedBuilder;
-    std::optional<cordis::Runtime> lastFactory;
-    cordis::Result<cordis::ReplacementOwnerPreflight> preflight(const cordis::ReplacementBuildPlan& candidate,
-                                                                const cordis::ReplacementBuildPlan& recovery) override
+    std::optional<eve::ReplacementBuilder> observedBuilder;
+    std::optional<eve::Runtime> lastFactory;
+    eve::Result<eve::ReplacementOwnerPreflight> preflight(const eve::ReplacementBuildPlan& candidate,
+                                                                const eve::ReplacementBuildPlan& recovery) override
     {
         CHECK(candidate.members.size() == 1 && recovery.members.size() == 1);
         CHECK(candidate.members[0].previous && candidate.members[0].factory && recovery.members[0].factory);
@@ -41,12 +41,12 @@ public:
             preflightHook = {};
             hook();
         }
-        return cordis::Result<cordis::ReplacementOwnerPreflight>::success({});
+        return eve::Result<eve::ReplacementOwnerPreflight>::success({});
     }
-    cordis::Task<cordis::ReplacementRebuiltTree> rebuild(cordis::ReplacementBuilder builder,
-                                                         cordis::ReplacementBuildPlan plan) override
+    eve::Task<eve::ReplacementRebuiltTree> rebuild(eve::ReplacementBuilder builder,
+                                                         eve::ReplacementBuildPlan plan) override
     {
-        using namespace cordis;
+        using namespace eve;
         ++rebuilt;
         observedBuilder = builder;
         lastFactory = plan.members[0].factory;
@@ -78,7 +78,7 @@ public:
                 else
                     done.resolve({{{key, instance}}});
             });
-        cordis::detail::TaskAccess::observe(receipt, [done](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(receipt, [done](Task<void>::Snapshot result) {
             if (!result->hasValue())
                 done.reject(result->error());
         });
@@ -86,11 +86,11 @@ public:
     }
 };
 template <class SceneType, class Wait>
-bool operationOwnerCase(SceneType& scene, const cordis::Runtime& old, const cordis::Runtime& next,
-                        const std::shared_ptr<cordis::IScheduler>& scheduler,
-                        const std::shared_ptr<cordis::Kernel>& kernel, Wait waitFor, const QString& mode)
+bool operationOwnerCase(SceneType& scene, const eve::Runtime& old, const eve::Runtime& next,
+                        const std::shared_ptr<eve::IScheduler>& scheduler,
+                        const std::shared_ptr<eve::Kernel>& kernel, Wait waitFor, const QString& mode)
 {
-    using namespace cordis;
+    using namespace eve;
     std::vector<ServiceRequirement> additional;
     if (mode == "operation_owner_contract") {
         auto provider =

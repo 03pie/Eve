@@ -1,13 +1,13 @@
 /** @file replacement_configuration.cpp
  * @brief 排他作用域与真实 Session/Kernel 驱动；文件后端仅使用内存回执。
  */
-#include <cordis/loader/kernel_driver.hpp>
-#include <cordis/loader/session.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/loader/kernel_driver.hpp>
+#include <eve/loader/session.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <iostream>
 #include <stdexcept>
-using namespace cordis;
-using namespace cordis::loader;
+using namespace eve;
+using namespace eve::loader;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

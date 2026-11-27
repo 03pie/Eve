@@ -10,7 +10,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <cordis/module/manager.hpp>
+#include <eve/module/manager.hpp>
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
@@ -22,8 +22,8 @@
 #include "../abi/business_flow.hpp"
 #include <Windows.h>
 
-using namespace cordis;
-using namespace cordis::module;
+using namespace eve;
+using namespace eve::module;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -32,23 +32,23 @@ using namespace cordis::module;
 QString root, fixtures;
 void write(const QString& path, const QByteArray& data)
 {
-    cordis::testing::modules::write(path, data);
+    eve::testing::modules::write(path, data);
 }
 QByteArray read(const QString& path)
 {
-    return cordis::testing::modules::read(path);
+    return eve::testing::modules::read(path);
 }
 QString install(const QString& name, const QString& folder = "module")
 {
-    return cordis::testing::modules::install(fixtures + "/cordis_fixture_" + name + ".dll", root + '/' + folder,
-                                             "org.cordis." + name, QJsonArray{"org.cordis.plugin"});
+    return eve::testing::modules::install(fixtures + "/eve_fixture_" + name + ".dll", root + '/' + folder,
+                                             "org.eve." + name, QJsonArray{"org.eve.plugin"});
 }
 int queryCount(const ModuleGenerationSnapshot& value)
 {
     const auto path = QDir::toNativeSeparators(QString::fromUtf8(value.libraryPath.c_str())).toStdWString();
     const auto image = GetModuleHandleW(path.c_str());
     CHECK(image != nullptr);
-    const auto address = GetProcAddress(image, "cordis_fixture_queries");
+    const auto address = GetProcAddress(image, "eve_fixture_queries");
     CHECK(address != nullptr);
     int(__cdecl * function)() = nullptr;
     static_assert(sizeof(function) == sizeof(address), "function pointer");
@@ -95,15 +95,15 @@ void business()
     const auto native = QDir::toNativeSeparators(QString::fromUtf8(value.libraryPath.c_str())).toStdWString();
     const auto image = GetModuleHandleW(native.c_str());
     BIZ_CHECK(image && value.nativePinned);
-    const auto entry = GetProcAddress(image, "cordis_query_v1");
-    const auto finishEntry = GetProcAddress(image, "cordis_business_fixture_finish");
-    CordisQueryFnV1 query = nullptr;
+    const auto entry = GetProcAddress(image, "eve_query_v1");
+    const auto finishEntry = GetProcAddress(image, "eve_business_fixture_finish");
+    EveQueryFnV1 query = nullptr;
     business_test::Finish finish = nullptr;
     static_assert(sizeof(query) == sizeof(entry) && sizeof(finish) == sizeof(finishEntry), "entry pointers");
     std::memcpy(&query, &entry, sizeof(query));
     std::memcpy(&finish, &finishEntry, sizeof(finish));
     BIZ_CHECK(query && finish);
-    const auto api = cordis::module::detail::queryBusiness(query, business_test::fullHost, value.manifest).value();
+    const auto api = eve::module::detail::queryBusiness(query, business_test::fullHost, value.manifest).value();
     business_test::exercise(api.table, finish);
     BIZ_CHECK(manager.drain(value.generation).hasValue());
     BIZ_CHECK(manager.snapshot().value()[0].state == ModuleState::Resident);
@@ -119,8 +119,8 @@ void publication()
             if (handle)
                 CloseHandle(handle);
         }
-    } entered{CreateEventW(nullptr, TRUE, FALSE, (L"Local\\CordisQueryEntered" + suffix).c_str())},
-        release{CreateEventW(nullptr, TRUE, FALSE, (L"Local\\CordisQueryRelease" + suffix).c_str())};
+    } entered{CreateEventW(nullptr, TRUE, FALSE, (L"Local\\EveQueryEntered" + suffix).c_str())},
+        release{CreateEventW(nullptr, TRUE, FALSE, (L"Local\\EveQueryRelease" + suffix).c_str())};
     CHECK(entered.handle && release.handle);
     bool accepted = false;
     std::thread worker([&] {
@@ -194,8 +194,7 @@ void incompatible()
         CHECK(value.resources.drained() && !value.resources.pinReasons.empty());
         auto again = manager.load(root.toStdString(), manifest.toStdString());
         CHECK(!again.hasValue());
-        if (std::string(name) != "missing")
-            CHECK(queryCount(value) == 1);
+        CHECK(queryCount(value) == (std::string(name) == "missing" ? 0 : 1));
     }
 }
 void image()
@@ -210,7 +209,7 @@ void image()
     ModuleManager manager;
     auto result = manager.load(root.toStdString(), manifest.toStdString());
     CHECK(!result.hasValue() && result.error().phase == "module.image" && manager.snapshot().value().empty());
-    const auto original = read(fixtures + "/cordis_fixture_good.dll");
+    const auto original = read(fixtures + "/eve_fixture_good.dll");
     IMAGE_DOS_HEADER dos{};
     std::memcpy(&dos, original.constData(), sizeof(dos));
     const auto headerOffset = dos.e_lfanew + offsetof(IMAGE_NT_HEADERS64, FileHeader);
@@ -238,7 +237,7 @@ void budget()
         // 填充真实原生失败代次证明目录预算，不重复 64 次 ASan DLL 初始化。
         const auto path = install("dependent", "candidate" + QString::number(i));
         auto manifest = QJsonDocument::fromJson(read(path)).object();
-        manifest["moduleId"] = "org.cordis.candidate" + QString::number(i);
+        manifest["moduleId"] = "org.eve.candidate" + QString::number(i);
         write(path, QJsonDocument(manifest).toJson());
         auto denied = manager.load(root.toStdString(), path.toStdString());
         CHECK(!denied.hasValue());
@@ -256,11 +255,11 @@ void aliases()
     ModuleManager manager;
     CHECK(manager.load(root.toStdString(), original.toStdString()).hasValue());
     auto manifest = QJsonDocument::fromJson(read(other)).object();
-    manifest["moduleId"] = "org.cordis.other";
+    manifest["moduleId"] = "org.eve.other";
     write(other, QJsonDocument(manifest).toJson());
     CHECK(!manager.load(root.toStdString(), other.toStdString()).hasValue());
     CHECK(manager.snapshot().value().size() == 2);
-    manifest["moduleId"] = "org.cordis.good";
+    manifest["moduleId"] = "org.eve.good";
     write(other, QJsonDocument(manifest).toJson());
     auto denied = manager.load(root.toStdString(), other.toStdString());
     CHECK(!denied.hasValue() && denied.error().phase == "module.identity");
@@ -334,7 +333,7 @@ void dependency(bool present)
     const auto manifest = install("dependent");
     const auto destination = present ? QFileInfo(manifest).absolutePath() : root + "/ambient";
     CHECK(QDir().mkpath(destination));
-    CHECK(QFile::copy(fixtures + "/cordis_fixture_dependency.dll", destination + "/cordis_fixture_dependency.dll"));
+    CHECK(QFile::copy(fixtures + "/eve_fixture_dependency.dll", destination + "/eve_fixture_dependency.dll"));
     const auto previous = QDir::currentPath();
     CHECK(QDir::setCurrent(destination));
     ModuleManager manager;

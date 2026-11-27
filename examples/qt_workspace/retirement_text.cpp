@@ -6,7 +6,7 @@
 
 namespace notebook::detail {
 namespace {
-QString attemptText(const char* title, const std::optional<cordis::Result<void>>& result)
+QString attemptText(const char* title, const std::optional<eve::Result<void>>& result)
 {
     const auto name = QString::fromUtf8(title);
     if (!result)
@@ -16,9 +16,9 @@ QString attemptText(const char* title, const std::optional<cordis::Result<void>>
 }
 } // namespace
 
-QString retirementStatusText(const WorkspaceModulesSnapshot& modules, cordis::GenerationId selected,
-                             const cordis::Result<cordis::module::ModuleGenerationSnapshot>& target,
-                             cordis::GenerationId attempted, const cordis::Result<WorkspaceRetirementReport>* result)
+QString retirementStatusText(const WorkspaceModulesSnapshot& modules, eve::GenerationId selected,
+                             const eve::Result<eve::module::ModuleGenerationSnapshot>& target,
+                             eve::GenerationId attempted, const eve::Result<WorkspaceRetirementReport>* result)
 {
     QString text = selected.valid() ? QString::fromUtf8("所选代次 #%1\n").arg(selected.value())
                                     : QString::fromUtf8("请选择需要检查的代次。\n");
@@ -27,7 +27,7 @@ QString retirementStatusText(const WorkspaceModulesSnapshot& modules, cordis::Ge
     if (row != modules.generations.end()) {
         text += QString::fromStdString(row->manifest.moduleId) + " · " +
                 QString::fromStdString(row->manifest.moduleVersion) + '\n';
-        text += row->loadPolicy == cordis::module::ModuleLoadPolicy::ApprovedNative
+        text += row->loadPolicy == eve::module::ModuleLoadPolicy::ApprovedNative
                     ? QString::fromUtf8("首次装载策略：ApprovedNative；实际回收仍须通过原资源检查。\n")
                     : QString::fromUtf8("首次装载策略：Resident，代码进程驻留。\n");
         text += row->nativeMapped ? QString::fromUtf8("目录映像引用仍在。\n")

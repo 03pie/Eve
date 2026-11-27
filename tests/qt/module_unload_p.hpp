@@ -12,10 +12,10 @@
 #include <QFileInfo>
 #include <QThread>
 #include <algorithm>
-#include <cordis/kernel.hpp>
-#include <cordis/module/native.hpp>
-#include <cordis/module/runtime.hpp>
-#include <cordis/qt/scheduler.hpp>
+#include <eve/kernel.hpp>
+#include <eve/module/native.hpp>
+#include <eve/module/runtime.hpp>
+#include <eve/qt/scheduler.hpp>
 #include <cstring>
 #include <exception>
 #include <functional>
@@ -28,10 +28,10 @@
             throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__));                             \
     } while (false)
 namespace unload_test {
-using namespace cordis;
-using namespace cordis::module;
-namespace native = cordis::module::detail;
-namespace files = cordis::testing::modules;
+using namespace eve;
+using namespace eve::module;
+namespace native = eve::module::detail;
+namespace files = eve::testing::modules;
 inline void events()
 {
     QCoreApplication::processEvents();
@@ -93,14 +93,14 @@ struct Scene {
             const char* id;
             const char* version;
         };
-        static const FixtureMetadata metadata[] = {{"org.cordis.business", "1.0.0"}, {"org.cordis.lifecycle", "1.0.0"},
-                                                   {"org.cordis.services", "1.0.0"}, {"org.cordis.state", "1.0.0"},
-                                                   {"org.cordis.policy", "1.0.0"},   {"org.cordis.dependent", "1.0.0"},
-                                                   {"org.cordis.business", "2.0.0"}, {"org.cordis.state", "2.0.0"}};
+        static const FixtureMetadata metadata[] = {{"org.eve.business", "1.0.0"}, {"org.eve.lifecycle", "1.0.0"},
+                                                   {"org.eve.services", "1.0.0"}, {"org.eve.state", "1.0.0"},
+                                                   {"org.eve.policy", "1.0.0"},   {"org.eve.dependent", "1.0.0"},
+                                                   {"org.eve.business", "2.0.0"}, {"org.eve.state", "2.0.0"}};
         CHECK(fixture < static_cast<unsigned>(fixtures.size()));
         const auto& spec = metadata[fixture];
         const auto manifest = files::install(fixtures[static_cast<int>(fixture)], root + '/' + folder, spec.id,
-                                             QJsonArray{"org.cordis.plugin"}, "c-abi", spec.version);
+                                             QJsonArray{"org.eve.plugin"}, "c-abi", spec.version);
         auto json = QJsonDocument::fromJson(files::read(manifest)).object();
         json["unloadPolicy"] = resident ? "resident" : "explicit";
         files::write(manifest, QJsonDocument(json).toJson());
@@ -145,8 +145,8 @@ struct Scene {
         std::memcpy(&nt, data.constData() + dos.e_lfanew, sizeof(nt));
         result.bytes = nt.OptionalHeader.SizeOfImage;
         CHECK(result.bytes > 0);
-        CHECK(call<CordisStatus(CORDIS_CALL*)(volatile LONG*)>(result, "cordis_fixture_unload_watch",
-                                                               &result.witness->detaches) == CORDIS_OK);
+        CHECK(call<EveStatus(EVE_CALL*)(volatile LONG*)>(result, "eve_fixture_unload_watch",
+                                                               &result.witness->detaches) == EVE_OK);
         CHECK(state(generation).resources.records.empty());
         return result;
     }
@@ -214,7 +214,7 @@ struct Event {
 };
 inline thread_local std::function<void()>* dllAction = nullptr;
 inline thread_local std::exception_ptr* dllFailure = nullptr;
-inline void CORDIS_CALL callback()
+inline void EVE_CALL callback()
 {
     try {
         const auto action = *dllAction;
@@ -229,8 +229,8 @@ inline void inDll(Scene& scene, const Artifact& value, std::function<void()> act
     auto source = native::acquireNativeSource(value.generation).value();
     auto held = source.ledger.acquire(ResourceKind::Call, "test.unload.entered").value();
     source.session.reset();
-    const auto function = entry<void(CORDIS_CALL*)(void(CORDIS_CALL*)())>(reinterpret_cast<HMODULE>(value.base),
-                                                                          "cordis_fixture_unload_call");
+    const auto function = entry<void(EVE_CALL*)(void(EVE_CALL*)())>(reinterpret_cast<HMODULE>(value.base),
+                                                                          "eve_fixture_unload_call");
     std::exception_ptr failure;
     struct Restore {
         std::function<void()>* action;

@@ -4,7 +4,7 @@
 #include "target_commit_p.hpp"
 #include <algorithm>
 #include <atomic>
-#include <cordis/loader/store.hpp>
+#include <eve/loader/store.hpp>
 #include <deque>
 #include <exception>
 #include <limits>
@@ -14,7 +14,7 @@
 #include <string>
 #include <utility>
 
-namespace cordis::loader::detail {
+namespace eve::loader::detail {
 /** @brief 统一文件保存阶段，不将配置负载带入诊断。 */
 ErrorInfo storeError(ErrorCode code, std::string message)
 {
@@ -253,7 +253,7 @@ struct StoreControl : std::enable_shared_from_this<StoreControl> {
         try {
             auto task = writer->commit(work->target, baseline->version);
             auto receipt = task.thenOn(scheduler, [self, work](const Result<ConfigurationFileCommit>& result) { self->complete(work, result); });
-            cordis::detail::TaskAccess::observe(receipt, [gate = delivery](Task<void>::Snapshot result) {
+            eve::detail::TaskAccess::observe(receipt, [gate = delivery](Task<void>::Snapshot result) {
                 if (!result->hasValue()) gate->fail(result->error());
             });
         } catch (const std::exception& error) { complete(work, Result<ConfigurationFileCommit>::failure(storeError(ErrorCode::ConfigIo, error.what()))); }
@@ -304,9 +304,9 @@ void StoreTargetSlot::publish() noexcept
         owner->dirty = true;
     published = true;
 }
-} // namespace cordis::loader::detail
+} // namespace eve::loader::detail
 
-namespace cordis::loader {
+namespace eve::loader {
 /** @brief 校验 owner 和基线形状，构造不会解析或接受磁盘配置。 */
 ConfigurationStore::ConfigurationStore(std::shared_ptr<IScheduler> scheduler, std::shared_ptr<IConfigurationWriter> writer,
     ConfigurationFileSnapshot baseline, StoreLimits limits)
@@ -394,4 +394,4 @@ Task<void> ConfigurationStore::close()
     }
     return state->delivery->closed.task();
 }
-} // namespace cordis::loader
+} // namespace eve::loader

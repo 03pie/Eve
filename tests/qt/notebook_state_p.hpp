@@ -5,9 +5,9 @@
 #include <QEventLoop>
 #include <QString>
 #include <QTimer>
-#include <cordis/migration_state.hpp>
-#include <cordis/qt/scheduler.hpp>
-#include <cordis/task.hpp>
+#include <eve/migration_state.hpp>
+#include <eve/qt/scheduler.hpp>
+#include <eve/task.hpp>
 #include <functional>
 #include <memory>
 #include <stdexcept>
@@ -21,8 +21,8 @@
     } while (false)
 
 namespace notebook_test {
-using namespace cordis;
-inline constexpr char schemaId[] = "org.cordis.example.notebook.draft";
+using namespace eve;
+inline constexpr char schemaId[] = "org.eve.example.notebook.draft";
 template <class T> T take(Result<T> result)
 {
     if (!result.hasValue())

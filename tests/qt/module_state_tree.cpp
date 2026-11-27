@@ -13,16 +13,16 @@
 #include <QEventLoop>
 #include <QThread>
 #include <atomic>
-#include <cordis/loader/qt_store.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/loader/qt_store.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <iostream>
 
-bool operationStateTreeCase(Scene& scene, const cordis::Runtime& old, const cordis::Runtime& next,
-                            const std::shared_ptr<cordis::IScheduler>& scheduler,
-                            const std::shared_ptr<cordis::Kernel>& kernel, const QString& mode)
+bool operationStateTreeCase(Scene& scene, const eve::Runtime& old, const eve::Runtime& next,
+                            const std::shared_ptr<eve::IScheduler>& scheduler,
+                            const std::shared_ptr<eve::Kernel>& kernel, const QString& mode)
 {
     const auto waitFor = [&](const auto& task) {
-        if (const auto queue = std::dynamic_pointer_cast<cordis::testing::FakeScheduler>(scheduler)) {
+        if (const auto queue = std::dynamic_pointer_cast<eve::testing::FakeScheduler>(scheduler)) {
             queue->runUntilIdle(30000).value();
             CHECK(task.isReady());
             return task.tryResult();

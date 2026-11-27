@@ -14,8 +14,8 @@
 #include <stdexcept>
 
 namespace {
-using namespace cordis;
-using namespace cordis::ui::detail;
+using namespace eve;
+using namespace eve::ui::detail;
 
 quint64 positiveId(const QCommandLineParser& parser, const char* name)
 {
@@ -72,7 +72,7 @@ int main(int argc, char** argv)
 {
     const QCoreApplication app(argc, argv);
     QCommandLineParser parser;
-    parser.setApplicationDescription("Read an existing Cordis runtime archive.");
+    parser.setApplicationDescription("Read an existing Eve runtime archive.");
     parser.addHelpOption();
     parser.addOptions({
         {{"w", "workspace"}, "Existing workspace directory.", "directory"},

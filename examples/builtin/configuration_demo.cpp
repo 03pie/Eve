@@ -1,15 +1,15 @@
 /** @file configuration_demo.cpp
  * @brief 从两份有界 YAML 文件验证内置配置并打印目标差异，不挂载插件或保存文件。
  */
-#include <cordis/loader/yaml.hpp>
+#include <eve/loader/yaml.hpp>
 #include <array>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
 
-using namespace cordis;
-using namespace cordis::loader;
+using namespace eve;
+using namespace eve::loader;
 namespace {
 /** @brief 读取前检查开放状态，按块累计并在超过预算前停止。 */
 Result<std::string> readFile(const std::string& path, std::size_t maximum)
@@ -80,7 +80,7 @@ const char* name(ChangeKind kind)
 int main(int argc, char** argv)
 {
     try {
-        if (argc != 3) { std::cerr << "usage: cordis_configuration_demo BASE.yaml CANDIDATE.yaml\n"; return EXIT_FAILURE; }
+        if (argc != 3) { std::cerr << "usage: eve_configuration_demo BASE.yaml CANDIDATE.yaml\n"; return EXIT_FAILURE; }
         auto base = load(argv[1]);
         if (!base.hasValue()) { std::cerr << base.error().message << '\n'; return EXIT_FAILURE; }
         auto candidate = load(argv[2]);

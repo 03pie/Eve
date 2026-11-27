@@ -1,13 +1,13 @@
 /** @file replacement_commit.cpp
  * @brief Core 规范定义绑定和隔离输出一起切换；不充当模块/配置事务验收。
  */
-#include <cordis/kernel.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/kernel.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <thread>
-using namespace cordis;
+using namespace eve;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

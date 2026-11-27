@@ -2,13 +2,13 @@
  * @brief 当次发布组权限、空组丢弃、线程和寿命边界。
  */
 #include "../../src/core/replacement_inspect_p.hpp"
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <thread>
-using namespace cordis;
-using cordis::detail::CoreReplacementAccess;
+using namespace eve;
+using eve::detail::CoreReplacementAccess;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -69,7 +69,7 @@ void releaseOrder()
     worker.join();
     CHECK(wrongThread && !unlocked);
     auto released = s.kernel.whenReplacementReleased(scope.snapshot().value().operation);
-    cordis::detail::TaskAccess::observe(
+    eve::detail::TaskAccess::observe(
         released, [&](Task<void>::Snapshot result) { notifiedAfterUnlock = result->hasValue() && unlocked; });
     CoreReplacementAccess::release(scope, unlock).value();
     CHECK(unlocked && notifiedAfterUnlock);

@@ -4,13 +4,13 @@
 #pragma once
 #include <QString>
 #include <functional>
-#include <cordis/qt/scheduler.hpp>
-#include <cordis/ui/management.hpp>
+#include <eve/qt/scheduler.hpp>
+#include <eve/ui/management.hpp>
 #include <memory>
 #include <optional>
 #include <set>
 class QWidget;
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 struct ManagementControl;
 // Optional host adapter. Validation is side-effect-free and uses the same payload grammar as submission.
 struct ConfigurationPayloadValidator {
@@ -51,4 +51,4 @@ struct HomeSnapshot {
 HomeSnapshot managementHomeSnapshot(const std::shared_ptr<ManagementControl>& control);
 /** @brief 同步关门、停止刷新，晚到结果只更新值账目，不再操作窗口。 */
 Task<void> closeManagement(const std::shared_ptr<ManagementControl>& control);
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

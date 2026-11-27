@@ -2,7 +2,7 @@
  * @brief 操作门面、owner 串行推进及失败保留，不执行模块锁内回调。
  */
 #include "operation_p.hpp"
-namespace cordis::detail {
+namespace eve::detail {
 Result<void> ReplacementOperationControl::releaseClaims()
 {
     if (!execution)
@@ -305,8 +305,8 @@ void ReplacementOperationControl::settle(ReplacementOutcome outcome, bool retain
     }
     delivery->done.resolve(report);
 }
-} // namespace cordis::detail
-namespace cordis {
+} // namespace eve::detail
+namespace eve {
 Result<ReplacementOperation> ReplacementOperation::begin(ReplacementRequest request)
 {
     using Output = Result<ReplacementOperation>;
@@ -377,4 +377,4 @@ Result<void> ReplacementOperation::cancel()
     control->cancel();
     return Result<void>::success();
 }
-} // namespace cordis
+} // namespace eve

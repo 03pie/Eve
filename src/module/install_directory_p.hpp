@@ -3,12 +3,12 @@
  */
 #pragma once
 #include "native_file_p.hpp"
-#include <cordis/result.hpp>
+#include <eve/result.hpp>
 #include <memory>
 #include <utility>
 #include <vector>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 class InstallHandle {
 public:
     explicit InstallHandle(HANDLE handle = INVALID_HANDLE_VALUE) noexcept : handle_(handle) {}
@@ -59,4 +59,4 @@ private:
     bool published_ = false;
     bool cleanupAttempted_ = false;
 };
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

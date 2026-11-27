@@ -1,13 +1,13 @@
 /** @file context_source.cpp
  * @brief 来源从真实 Context 派生，跨激活排队、子实例及作用域退役保持权限边界。
  */
-#include <cordis/kernel.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/kernel.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <thread>
-using namespace cordis;
+using namespace eve;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

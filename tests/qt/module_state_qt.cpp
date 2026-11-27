@@ -13,10 +13,10 @@
 #include <QThread>
 #include <QVariant>
 #include <algorithm>
-#include <cordis/kernel.hpp>
-#include <cordis/module/qt_module.hpp>
-#include <cordis/qt/object.hpp>
-#include <cordis_abi/state.h>
+#include <eve/kernel.hpp>
+#include <eve/module/qt_module.hpp>
+#include <eve/qt/object.hpp>
+#include <eve_abi/state.h>
 #include <cstring>
 #include <exception>
 #include <iostream>
@@ -25,9 +25,9 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
-using namespace cordis;
-using namespace cordis::module;
-namespace files = cordis::testing::modules;
+using namespace eve;
+using namespace eve::module;
+namespace files = eve::testing::modules;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -52,7 +52,7 @@ template <class T> typename Task<T>::Snapshot wait(const Task<T>& task)
 }
 std::function<void(int)> hook;
 std::exception_ptr hookFailure;
-void CORDIS_CALL callback(int phase)
+void EVE_CALL callback(int phase)
 {
     try {
         if (hook)
@@ -70,8 +70,8 @@ struct Scene {
     HMODULE image = nullptr;
     Scene(const QString& root, const QString& fixture)
     {
-        const auto manifest = files::install(fixture, root + "/plugin", "org.cordis.qt.example",
-                                             QJsonArray{"org.cordis.qt.page", "org.cordis.qt.settings"}, "qt-ui");
+        const auto manifest = files::install(fixture, root + "/plugin", "org.eve.qt.example",
+                                             QJsonArray{"org.eve.qt.page", "org.eve.qt.settings"}, "qt-ui");
         generation = loadQtModule(root.toStdString(), manifest.toStdString()).value().generation;
         const auto path = QDir::toNativeSeparators(root + "/plugin/module.dll").toStdWString();
         image = GetModuleHandleW(path.c_str());
@@ -88,7 +88,7 @@ struct Scene {
     }
     template <class F, class... Args> auto probe(const char* name, Args... args) const
     {
-        auto source = cordis::module::detail::findGeneration(generation);
+        auto source = eve::module::detail::findGeneration(generation);
         CHECK(source);
         ModuleLease lease;
         if (source->ledger.snapshot().accepting)
@@ -97,21 +97,21 @@ struct Scene {
             CHECK(inspection); // 协商失败已封账，检查使用失败前取得的真实 Call。
         return function<F>(name)(args...);
     }
-    int count(int index) const { return probe<int(CORDIS_CALL*)(int)>("cordis_qt_state_count", index); }
-    QObject* object(int index) const { return probe<QObject*(CORDIS_CALL*)(int)>("cordis_qt_state_object", index); }
+    int count(int index) const { return probe<int(EVE_CALL*)(int)>("eve_qt_state_count", index); }
+    QObject* object(int index) const { return probe<QObject*(EVE_CALL*)(int)>("eve_qt_state_object", index); }
     void observe(std::function<void(int)> value)
     {
         hook = std::move(value);
-        probe<void(CORDIS_CALL*)(void(CORDIS_CALL*)(int))>("cordis_qt_state_hook", hook ? &callback : nullptr);
+        probe<void(EVE_CALL*)(void(EVE_CALL*)(int))>("eve_qt_state_hook", hook ? &callback : nullptr);
     }
-    void mode(const QString& value) { QCoreApplication::instance()->setProperty("cordis.qt.stateMode", value); }
-    Runtime runtime(const std::string& plugin = "org.cordis.qt.page")
+    void mode(const QString& value) { QCoreApplication::instance()->setProperty("eve.qt.stateMode", value); }
+    Runtime runtime(const std::string& plugin = "org.eve.qt.page")
     {
         return qtRuntime(generation, {plugin, {}, {}}, scheduler).value();
     }
     std::size_t records(ResourceKind kind) const
     {
-        const auto snapshot = cordis::module::detail::findGeneration(generation)->ledger.snapshot();
+        const auto snapshot = eve::module::detail::findGeneration(generation)->ledger.snapshot();
         return static_cast<std::size_t>(std::count_if(snapshot.records.begin(), snapshot.records.end(),
                                                       [&](const ResourceRecord& value) { return value.kind == kind; }));
     }
@@ -145,14 +145,14 @@ void roundtrip(Scene& s)
     s.object(2)->setProperty("state", "22");
     auto scope = s.kernel->reserveReplacement({registered.id()}).value();
     scope.freeze().value();
-    auto a = cordis::detail::InstanceStateAccess::capture(scope, first).value();
-    auto b = cordis::detail::InstanceStateAccess::capture(scope, second).value();
+    auto a = eve::detail::InstanceStateAccess::capture(scope, first).value();
+    auto b = eve::detail::InstanceStateAccess::capture(scope, second).value();
     CHECK(a && b && a->json == "11" && b->json == "22" && a->schema.version == 2);
     s.mode("capture_busy");
-    CHECK(cordis::detail::InstanceStateAccess::capture(scope, first).error().code == ErrorCode::ConfigConflict);
+    CHECK(eve::detail::InstanceStateAccess::capture(scope, first).error().code == ErrorCode::ConfigConflict);
     CHECK(s.manager.snapshot().value()[0].state == ModuleState::Serving);
     s.mode({});
-    CHECK(cordis::detail::InstanceStateAccess::capture(scope, first).value()->json == "11");
+    CHECK(eve::detail::InstanceStateAccess::capture(scope, first).value()->json == "11");
     scope.release().value();
     CHECK(wait(s.kernel->close())->value().quiescent && s.count(5) == 3 && s.count(6) == 3);
 }
@@ -200,7 +200,7 @@ void capture(Scene& s, const QString& name)
     auto scope = s.kernel->reserveReplacement({runtime.id()}).value();
     scope.freeze().value();
     s.mode(name);
-    auto result = cordis::detail::InstanceStateAccess::capture(scope, instance);
+    auto result = eve::detail::InstanceStateAccess::capture(scope, instance);
     CHECK(!result.hasValue() && result.error().code == ErrorCode::AbiProtocol);
     s.faulted();
     const bool deleted = name == "capture_deleted";
@@ -220,7 +220,7 @@ void guards(Scene& s, bool wrongThread)
     if (wrongThread) {
         bool rejected = false;
         std::thread worker([&] {
-            const auto result = cordis::detail::InstanceStateAccess::capture(scope, one);
+            const auto result = eve::detail::InstanceStateAccess::capture(scope, one);
             rejected = !result.hasValue() && result.error().code == ErrorCode::WrongThread;
         });
         worker.join();
@@ -228,10 +228,10 @@ void guards(Scene& s, bool wrongThread)
     } else {
         s.observe([&](int phase) {
             CHECK(phase == 3);
-            const auto nested = cordis::detail::InstanceStateAccess::capture(scope, two);
+            const auto nested = eve::detail::InstanceStateAccess::capture(scope, two);
             CHECK(!nested.hasValue() && nested.error().code == ErrorCode::ConfigConflict && s.count(3) == 1);
         });
-        CHECK(cordis::detail::InstanceStateAccess::capture(scope, one).value()->json == "7");
+        CHECK(eve::detail::InstanceStateAccess::capture(scope, one).value()->json == "7");
         s.observe({});
     }
     scope.release().value();
@@ -278,7 +278,7 @@ void lifecycle(Scene& s, const QString& name)
         CHECK(wait(instance->ready())->hasValue());
         scope.emplace(s.kernel->reserveReplacement({runtime.id()}).value());
         scope->freeze().value();
-        const auto result = cordis::detail::InstanceStateAccess::capture(*scope, *instance);
+        const auto result = eve::detail::InstanceStateAccess::capture(*scope, *instance);
         CHECK(!result.hasValue() && result.error().code == ErrorCode::ContextClosing);
     }
     s.observe({});
@@ -322,7 +322,7 @@ int main(int argc, char** argv)
             objectGuard();
             return 0;
         }
-        app.setProperty("cordis.qt.stateMode", name);
+        app.setProperty("eve.qt.stateMode", name);
         QTemporaryDir temporary(args[2] + "/run-XXXXXX");
         CHECK(temporary.isValid());
         temporary.setAutoRemove(false);
@@ -330,18 +330,18 @@ int main(int argc, char** argv)
         CHECK(fixtures.size() == 2);
         Scene s(temporary.path(), fixtures[name == "legacy" ? 1 : 0]);
         if (name.startsWith("describe")) {
-            s.inspection.emplace(cordis::module::detail::findGeneration(s.generation)
+            s.inspection.emplace(eve::module::detail::findGeneration(s.generation)
                                      ->ledger.acquire(ResourceKind::Call, "test.qt.state.rejectedInspection")
                                      .value());
-            auto rejected = qtRuntime(s.generation, {"org.cordis.qt.page", {}, {}}, s.scheduler);
+            auto rejected = qtRuntime(s.generation, {"org.eve.qt.page", {}, {}}, s.scheduler);
             CHECK(!rejected.hasValue() && rejected.error().code == ErrorCode::AbiProtocol);
             s.mode({});
-            CHECK(!qtRuntime(s.generation, {"org.cordis.qt.page", {}, {}}, s.scheduler).hasValue());
+            CHECK(!qtRuntime(s.generation, {"org.eve.qt.page", {}, {}}, s.scheduler).hasValue());
             CHECK(s.count(0) == 1 && s.count(7) == 0 && !s.manager.snapshot().value()[0].businessAccepted);
             s.inspection.reset();
             CHECK(s.records(ResourceKind::Call) == 0);
         } else if (name == "metadata") {
-            auto first = s.runtime(), second = s.runtime(), stateless = s.runtime("org.cordis.qt.settings");
+            auto first = s.runtime(), second = s.runtime(), stateless = s.runtime("org.eve.qt.settings");
             CHECK(first.stateSchema()->id == "counter" && second.stateSchema()->version == 2 &&
                   !stateless.stateSchema());
             CHECK(s.count(0) == 2 && s.count(7) == 0 && s.count(1) == 0);

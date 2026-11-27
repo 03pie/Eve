@@ -6,22 +6,22 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <future>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
 
-using namespace cordis;
-using namespace cordis::module;
-using namespace cordis::module::detail;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using namespace eve::module;
+using namespace eve::module::detail;
+using eve::testing::FakeScheduler;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
             throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__));                             \
     } while (false)
-CordisBytesV1 bytes(const std::string& value)
+EveBytesV1 bytes(const std::string& value)
 {
     return {reinterpret_cast<const uint8_t*>(value.data()), value.size()};
 }
@@ -34,7 +34,7 @@ struct Scene {
         return channel.begin(kind, "test").value();
     }
     void pump() { CHECK(scheduler->runUntilIdle().hasValue()); }
-    CordisStatus complete(const NativeTicket& ticket, const std::string& json = "{}", CordisStatus status = CORDIS_OK)
+    EveStatus complete(const NativeTicket& ticket, const std::string& json = "{}", EveStatus status = EVE_OK)
     {
         return channel.complete(channel.context(), ticket.id, status, bytes(json));
     }
@@ -44,11 +44,11 @@ void sync()
     Scene s;
     auto ticket = s.begin();
     CHECK(s.ledger.snapshot().records.size() == 2);
-    CHECK(s.channel.returned(ticket.id, CORDIS_OK).hasValue());
+    CHECK(s.channel.returned(ticket.id, EVE_OK).hasValue());
     CHECK(!ticket.result.isReady());
     CHECK(s.channel.seal().hasValue() && !s.channel.drained().isReady());
     s.pump();
-    CHECK(ticket.result.tryResult()->value().status == CORDIS_OK && s.channel.drained().isReady());
+    CHECK(ticket.result.tryResult()->value().status == EVE_OK && s.channel.drained().isReady());
     CHECK(s.ledger.snapshot().records.empty());
 }
 void fence()
@@ -57,14 +57,14 @@ void fence()
     CHECK(s.channel.close().hasValue());
     auto stop = s.begin(NativeRequestKind::Stop);
     CHECK(!s.channel.drained().isReady());
-    CHECK(s.channel.returned(stop.id, CORDIS_OK).hasValue());
+    CHECK(s.channel.returned(stop.id, EVE_OK).hasValue());
     s.pump();
     CHECK(!s.channel.drained().isReady());
     auto cleanupTicket = s.begin(NativeRequestKind::Cleanup);
     CHECK(s.channel.seal().hasValue());
     CHECK(!s.channel.begin(NativeRequestKind::Stop, "after-seal").hasValue());
     CHECK(!s.channel.drained().isReady());
-    CHECK(s.channel.returned(cleanupTicket.id, CORDIS_OK).hasValue());
+    CHECK(s.channel.returned(cleanupTicket.id, EVE_OK).hasValue());
     s.pump();
     CHECK(s.channel.drained().isReady() && s.channel.snapshot().value().sealed);
     CHECK(s.channel.close().hasValue() && s.channel.seal().hasValue());
@@ -74,14 +74,14 @@ void pending()
 {
     Scene s;
     auto ticket = s.begin();
-    CHECK(s.channel.returned(ticket.id, CORDIS_PENDING).hasValue());
+    CHECK(s.channel.returned(ticket.id, EVE_PENDING).hasValue());
     std::string input = "{\"large\":9007199254740993}";
     const auto original = input;
-    CordisStatus status = CORDIS_E_FAILED;
+    EveStatus status = EVE_E_FAILED;
     std::thread worker([&] { status = s.complete(ticket, input); });
     worker.join();
     input.assign(input.size(), 'x');
-    CHECK(status == CORDIS_OK && !ticket.result.isReady());
+    CHECK(status == EVE_OK && !ticket.result.isReady());
     CHECK(s.ledger.snapshot().records.size() == 2);
     s.pump();
     CHECK(ticket.result.tryResult()->value().json == original);
@@ -91,9 +91,9 @@ void early()
 {
     Scene s;
     auto ticket = s.begin();
-    CHECK(s.complete(ticket, "[1]") == CORDIS_OK);
+    CHECK(s.complete(ticket, "[1]") == EVE_OK);
     CHECK(!ticket.result.isReady() && s.scheduler->pending() == 0 && s.ledger.snapshot().records.size() == 3);
-    CHECK(s.channel.returned(ticket.id, CORDIS_PENDING).hasValue());
+    CHECK(s.channel.returned(ticket.id, EVE_PENDING).hasValue());
     s.pump();
     CHECK(ticket.result.tryResult()->value().json == "[1]");
     CHECK(s.ledger.snapshot().records.empty());
@@ -104,7 +104,7 @@ void race()
     auto ticket = s.begin();
     std::promise<void> go;
     auto gate = go.get_future().share();
-    std::array<CordisStatus, 2> results{};
+    std::array<EveStatus, 2> results{};
     std::array<std::thread, 2> workers;
     for (std::size_t i = 0; i < workers.size(); ++i)
         workers[i] = std::thread([&, i] {
@@ -112,12 +112,12 @@ void race()
             results[i] = s.complete(ticket, std::to_string(i));
         });
     go.set_value();
-    const bool recorded = s.channel.returned(ticket.id, CORDIS_PENDING).hasValue();
+    const bool recorded = s.channel.returned(ticket.id, EVE_PENDING).hasValue();
     for (auto& worker : workers)
         worker.join();
     CHECK(recorded);
-    CHECK((results[0] == CORDIS_OK) != (results[1] == CORDIS_OK));
-    CHECK(results[0] == CORDIS_E_ABI_PROTOCOL || results[1] == CORDIS_E_ABI_PROTOCOL);
+    CHECK((results[0] == EVE_OK) != (results[1] == EVE_OK));
+    CHECK(results[0] == EVE_E_ABI_PROTOCOL || results[1] == EVE_E_ABI_PROTOCOL);
     s.pump();
     CHECK(ticket.result.tryResult()->hasValue());
     CHECK(s.channel.snapshot().value().protocolErrors == 1 && s.ledger.snapshot().records.empty());
@@ -129,20 +129,20 @@ void cancel()
         auto ticket = s.begin();
         std::promise<void> go;
         auto gate = go.get_future();
-        CordisStatus accepted = CORDIS_E_FAILED;
+        EveStatus accepted = EVE_E_FAILED;
         std::thread worker([&] {
             gate.wait();
             accepted = s.complete(ticket, "true");
         });
         go.set_value();
-        const bool recorded = s.channel.returned(ticket.id, CORDIS_PENDING).hasValue();
+        const bool recorded = s.channel.returned(ticket.id, EVE_PENDING).hasValue();
         const auto cancelled = s.channel.cancel(ticket.id);
         worker.join();
-        CHECK(recorded && cancelled.hasValue() && cancelled.value() && accepted == CORDIS_OK);
+        CHECK(recorded && cancelled.hasValue() && cancelled.value() && accepted == EVE_OK);
         CHECK(!ticket.result.isReady());
         s.pump();
         CHECK(ticket.result.tryResult()->value().cancelRequested);
-        CHECK(ticket.result.tryResult()->value().status == CORDIS_OK);
+        CHECK(ticket.result.tryResult()->value().status == EVE_OK);
     }
     CHECK(s.channel.seal().hasValue() && s.channel.drained().isReady());
 }
@@ -150,8 +150,8 @@ void protocol()
 {
     Scene s;
     auto ticket = s.begin();
-    CHECK(s.complete(ticket) == CORDIS_OK);
-    CHECK(s.channel.returned(ticket.id, CORDIS_OK).hasValue());
+    CHECK(s.complete(ticket) == EVE_OK);
+    CHECK(s.channel.returned(ticket.id, EVE_OK).hasValue());
     s.pump();
     CHECK(!ticket.result.tryResult()->hasValue() && ticket.result.tryResult()->error().code == ErrorCode::AbiProtocol);
     CHECK(s.channel.snapshot().value().requests[0].unsafe);
@@ -168,19 +168,19 @@ void input()
 {
     Scene s;
     auto ticket = s.begin();
-    CHECK(s.channel.returned(ticket.id, CORDIS_PENDING).hasValue());
-    CHECK(s.complete(ticket, "{}", CORDIS_PENDING) == CORDIS_E_ABI_PROTOCOL);
-    CHECK(s.complete(ticket, "{bad}") == CORDIS_E_INVALID_ARGUMENT);
-    CHECK(s.channel.complete(s.channel.context(), ticket.id, CORDIS_OK, {nullptr, 1}) == CORDIS_E_INVALID_ARGUMENT);
-    CHECK(s.channel.complete(s.channel.context(), ticket.id, CORDIS_OK, {nullptr, UINT64_MAX}) ==
-          CORDIS_E_INVALID_ARGUMENT);
+    CHECK(s.channel.returned(ticket.id, EVE_PENDING).hasValue());
+    CHECK(s.complete(ticket, "{}", EVE_PENDING) == EVE_E_ABI_PROTOCOL);
+    CHECK(s.complete(ticket, "{bad}") == EVE_E_INVALID_ARGUMENT);
+    CHECK(s.channel.complete(s.channel.context(), ticket.id, EVE_OK, {nullptr, 1}) == EVE_E_INVALID_ARGUMENT);
+    CHECK(s.channel.complete(s.channel.context(), ticket.id, EVE_OK, {nullptr, UINT64_MAX}) ==
+          EVE_E_INVALID_ARGUMENT);
     std::string tooLarge(1024 * 1024 + 1, ' ');
-    CHECK(s.complete(ticket, tooLarge) == CORDIS_E_LIMIT);
+    CHECK(s.complete(ticket, tooLarge) == EVE_E_LIMIT);
     CHECK(!ticket.result.isReady() && s.channel.snapshot().value().bufferedBytes == 0);
-    CHECK(s.complete(ticket, "{\"error\":true}", CORDIS_E_FAILED) == CORDIS_OK);
+    CHECK(s.complete(ticket, "{\"error\":true}", EVE_E_FAILED) == EVE_OK);
     s.pump();
-    CHECK(ticket.result.tryResult()->value().status == CORDIS_E_FAILED);
-    CHECK(s.complete(ticket) == CORDIS_E_ABI_PROTOCOL);
+    CHECK(ticket.result.tryResult()->value().status == EVE_E_FAILED);
+    CHECK(s.complete(ticket) == EVE_E_ABI_PROTOCOL);
     CHECK(s.channel.snapshot().value().requests.empty());
 }
 void quota()
@@ -191,30 +191,30 @@ void quota()
     auto a = channel.begin(NativeRequestKind::Invoke, "one").value();
     auto b = channel.begin(NativeRequestKind::Invoke, "two").value();
     CHECK(!channel.begin(NativeRequestKind::Invoke, "over").hasValue());
-    CHECK(channel.returned(a.id, CORDIS_PENDING).hasValue() && channel.returned(b.id, CORDIS_PENDING).hasValue());
-    CHECK(channel.complete(channel.context(), a.id, CORDIS_OK, bytes("\"abcd\"")) == CORDIS_OK);
-    CHECK(channel.complete(channel.context(), b.id, CORDIS_OK, bytes("\"efgh\"")) == CORDIS_E_LIMIT);
+    CHECK(channel.returned(a.id, EVE_PENDING).hasValue() && channel.returned(b.id, EVE_PENDING).hasValue());
+    CHECK(channel.complete(channel.context(), a.id, EVE_OK, bytes("\"abcd\"")) == EVE_OK);
+    CHECK(channel.complete(channel.context(), b.id, EVE_OK, bytes("\"efgh\"")) == EVE_E_LIMIT);
     CHECK(channel.snapshot().value().bufferedBytes == 6);
     CHECK(scheduler->runUntilIdle().hasValue());
-    CHECK(channel.complete(channel.context(), b.id, CORDIS_OK, bytes("\"efgh\"")) == CORDIS_OK);
+    CHECK(channel.complete(channel.context(), b.id, EVE_OK, bytes("\"efgh\"")) == EVE_OK);
     CHECK(scheduler->runUntilIdle().hasValue());
     auto c = channel.begin(NativeRequestKind::Start, "new").value();
     CHECK(c.id != a.id && c.id != b.id);
-    CHECK(channel.returned(c.id, CORDIS_OK).hasValue() && channel.seal().hasValue());
+    CHECK(channel.returned(c.id, EVE_OK).hasValue() && channel.seal().hasValue());
     CHECK(scheduler->runUntilIdle().hasValue() && channel.drained().isReady());
 }
 void closing()
 {
     Scene s;
     auto start = s.begin();
-    CHECK(s.channel.returned(start.id, CORDIS_PENDING).hasValue() && s.channel.close().hasValue());
+    CHECK(s.channel.returned(start.id, EVE_PENDING).hasValue() && s.channel.close().hasValue());
     CHECK(!s.channel.begin(NativeRequestKind::Invoke, "closed").hasValue());
     auto stop = s.begin(NativeRequestKind::Stop);
-    CHECK(s.channel.returned(stop.id, CORDIS_OK).hasValue());
+    CHECK(s.channel.returned(stop.id, EVE_OK).hasValue());
     s.pump();
     CHECK(!s.channel.drained().isReady() && !start.result.isReady());
     CHECK(s.channel.seal().hasValue());
-    CHECK(s.complete(start, "", CORDIS_E_CANCELLED) == CORDIS_OK);
+    CHECK(s.complete(start, "", EVE_E_CANCELLED) == EVE_OK);
     s.pump();
     CHECK(s.channel.drained().isReady() && s.ledger.snapshot().records.empty());
 }
@@ -222,13 +222,13 @@ void deliveryFailure(bool accepted)
 {
     Scene s;
     auto ticket = s.begin();
-    CHECK(s.channel.returned(ticket.id, CORDIS_PENDING).hasValue());
+    CHECK(s.channel.returned(ticket.id, EVE_PENDING).hasValue());
     if (accepted)
-        CHECK(s.complete(ticket) == CORDIS_OK);
+        CHECK(s.complete(ticket) == EVE_OK);
     std::thread worker([&] { s.scheduler->close(); });
     worker.join();
     if (!accepted)
-        CHECK(s.complete(ticket) == CORDIS_OK);
+        CHECK(s.complete(ticket) == EVE_OK);
     CHECK(ticket.result.isReady() && ticket.result.tryResult()->error().code == ErrorCode::SchedulerClosed);
     CHECK(s.channel.snapshot().value().requests[0].deliveryBlocked);
     CHECK(s.channel.seal().hasValue() && !s.channel.drained().isReady());
@@ -246,8 +246,8 @@ void throwing()
     GenerationLedger ledger;
     RequestChannel channel(scheduler, ledger, InstanceId{1}, 1);
     auto ticket = channel.begin(NativeRequestKind::Invoke, "throw").value();
-    CHECK(channel.returned(ticket.id, CORDIS_PENDING).hasValue());
-    CHECK(channel.complete(channel.context(), ticket.id, CORDIS_OK, {}) == CORDIS_OK);
+    CHECK(channel.returned(ticket.id, EVE_PENDING).hasValue());
+    CHECK(channel.complete(channel.context(), ticket.id, EVE_OK, {}) == EVE_OK);
     CHECK(ticket.result.tryResult()->error().code == ErrorCode::SchedulerClosed);
     CHECK(!ledger.snapshot().records.empty());
 }
@@ -274,10 +274,10 @@ void retirement()
     GenerationLedger ledger;
     RequestChannel channel(scheduler, ledger, InstanceId{1}, 1);
     auto ticket = channel.begin(NativeRequestKind::Invoke, "copy").value();
-    CHECK(channel.returned(ticket.id, CORDIS_PENDING).hasValue());
+    CHECK(channel.returned(ticket.id, EVE_PENDING).hasValue());
     auto copied = scheduler->copied.get_future();
-    CordisStatus result = CORDIS_E_FAILED;
-    std::thread worker([&] { result = channel.complete(channel.context(), ticket.id, CORDIS_OK, bytes("null")); });
+    EveStatus result = EVE_E_FAILED;
+    std::thread worker([&] { result = channel.complete(channel.context(), ticket.id, EVE_OK, bytes("null")); });
     try {
         CHECK(copied.wait_for(std::chrono::seconds(5)) == std::future_status::ready);
         CHECK(scheduler->inner.runOne().hasValue());
@@ -292,7 +292,7 @@ void retirement()
     }
     scheduler->release.set_value();
     worker.join();
-    CHECK(result == CORDIS_OK && !channel.drained().isReady());
+    CHECK(result == EVE_OK && !channel.drained().isReady());
     CHECK(scheduler->inner.runUntilIdle().hasValue());
     CHECK(channel.drained().isReady() && ledger.snapshot().records.empty());
 }
@@ -316,15 +316,15 @@ void threads()
     bool rejected = false;
     std::thread worker([&] {
         rejected = !s.channel.begin(NativeRequestKind::Invoke, "wrong").hasValue() &&
-                   !s.channel.returned(ticket.id, CORDIS_OK).hasValue() && !s.channel.cancel(ticket.id).hasValue() &&
+                   !s.channel.returned(ticket.id, EVE_OK).hasValue() && !s.channel.cancel(ticket.id).hasValue() &&
                    !s.channel.close().hasValue() && !s.channel.seal().hasValue() && !s.channel.snapshot().hasValue();
     });
     worker.join();
     CHECK(rejected && s.channel.snapshot().value().requests.size() == 1);
     Scene newer;
     CHECK(newer.channel.context() != s.channel.context());
-    CHECK(newer.channel.complete(s.channel.context(), ticket.id, CORDIS_OK, {}) == CORDIS_E_ABI_PROTOCOL);
-    CHECK(s.channel.returned(ticket.id, CORDIS_OK).hasValue());
+    CHECK(newer.channel.complete(s.channel.context(), ticket.id, EVE_OK, {}) == EVE_E_ABI_PROTOCOL);
+    CHECK(s.channel.returned(ticket.id, EVE_OK).hasValue());
     s.pump();
 }
 void json(bool valid)

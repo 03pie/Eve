@@ -4,7 +4,7 @@
 #include "../core/instance_state_p.hpp"
 #include "operation_p.hpp"
 #include <algorithm>
-namespace cordis::detail {
+namespace eve::detail {
 namespace {
 bool sameAdditionalInputs(const std::vector<ServiceRequirement>& a, const std::vector<ServiceRequirement>& b)
 {
@@ -272,4 +272,4 @@ Result<void> ReplacementOperationControl::validateBuilt()
         return Result<void>::failure(replacementError(ErrorCode::ConfigConflict, "undeclared reconstruction members"));
     return Result<void>::success();
 }
-} // namespace cordis::detail
+} // namespace eve::detail

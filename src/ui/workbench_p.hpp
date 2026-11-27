@@ -6,7 +6,7 @@
 #include "status_p.hpp"
 #include <QSet>
 #include <QString>
-#include <cordis/result.hpp>
+#include <eve/result.hpp>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -17,7 +17,7 @@ class QTabBar;
 class QTabWidget;
 class QToolButton;
 class QPlainTextEdit;
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 struct WorkbenchControl;
 /** @brief 首页只展示插件值状态，电源操作由宿主按实例身份重新校验。 */
 struct HomePlugin {
@@ -82,4 +82,4 @@ void selectWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const
 void selectWorkbenchEmpty(const std::shared_ptr<WorkbenchControl>& control);
 /** @brief 同步关闭所有新入口，清除搜索弹层与快捷键，控件仍由窗口清理屏障销毁。 */
 void closeWorkbench(const std::shared_ptr<WorkbenchControl>& control);
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

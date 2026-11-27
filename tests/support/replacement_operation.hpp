@@ -3,14 +3,14 @@
  */
 #pragma once
 #include "replacement_owner.hpp"
-#include <cordis/replacement_operation.hpp>
+#include <eve/replacement_operation.hpp>
 template <class SceneType, class Wait>
-bool operationCase(SceneType& scene, const cordis::Runtime& old, const cordis::Runtime& next,
-                   const std::shared_ptr<cordis::IScheduler>& scheduler, const std::shared_ptr<cordis::Kernel>& kernel,
+bool operationCase(SceneType& scene, const eve::Runtime& old, const eve::Runtime& next,
+                   const std::shared_ptr<eve::IScheduler>& scheduler, const std::shared_ptr<eve::Kernel>& kernel,
                    Wait waitFor, const QString& mode)
 {
-    using namespace cordis;
-    using namespace cordis::loader;
+    using namespace eve;
+    using namespace eve::loader;
     auto take = [](auto result, const char* phase) {
         if (!result.hasValue())
             throw std::runtime_error(std::string(phase) + ": " + result.error().message + " [" + result.error().phase +
@@ -42,7 +42,7 @@ bool operationCase(SceneType& scene, const cordis::Runtime& old, const cordis::R
                                  [](const StateSnapshot& value) { return Result<std::string>::success(value.json); }})
             : Runtime(activateBuiltin);
     auto builtin = kernel->registerRuntime("builtin", builtinDefinition).value();
-    const auto id = scene.qt ? "org.cordis.qt.page" : "org.cordis.plugin";
+    const auto id = scene.qt ? "org.eve.qt.page" : "org.eve.plugin";
     auto schema = [](const std::string&) { return Result<void>::success(); };
     auto first = take(ConfigurationDefinitions::create({{{id, {}, schema, {"business", "old/module.json"}}, old},
                                                         {{"builtin", {}, schema}, builtin}}),

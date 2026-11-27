@@ -57,7 +57,7 @@ std::uint64_t parseDecimal(const QJsonValue& value)
     }
     return result;
 }
-QJsonObject error(const cordis::ErrorInfo& reason)
+QJsonObject error(const eve::ErrorInfo& reason)
 {
     QJsonArray causes;
     for (const auto& cause : reason.causes)
@@ -80,7 +80,7 @@ QJsonArray artifactInputs(const QString& sourceBin)
         for (const auto& variant : {QStringLiteral("a"), QStringLiteral("b")}) {
             const auto directory = (alias == "notebook" ? "qt-upgrade/" : "native-upgrade/") + alias + '-' + variant;
             for (const auto& file :
-                 {QStringLiteral("module.json"), "cordis_example_" + alias + '_' + variant + ".dll"}) {
+                 {QStringLiteral("module.json"), "eve_example_" + alias + '_' + variant + ".dll"}) {
                 const auto relative = directory + '/' + file;
                 QFile input(QDir(sourceBin).filePath(relative));
                 if (!input.open(QIODevice::ReadOnly))
@@ -110,7 +110,7 @@ void saveTrace(const Trace& trace, const QString& path)
     }
     if (trace.actions.empty() || trace.actions.size() > 64)
         throw InvalidTrace("trace action budget");
-    const QJsonObject root{{"schema", "cordis.workspace.actions/1"},
+    const QJsonObject root{{"schema", "eve.workspace.actions/1"},
                            {"generator", trace.generator},
                            {"seed", trace.seed},
                            {"artifacts", trace.artifacts},
@@ -137,7 +137,7 @@ Trace loadTrace(const QString& path, const QString& sourceBin)
         throw InvalidTrace("trace is not in canonical tool format");
     const auto root = document.object();
     fields(root, {"actions", "artifacts", "generator", "schema", "seed"});
-    if (root["schema"] != "cordis.workspace.actions/1" || !supportedGenerator(root["generator"]))
+    if (root["schema"] != "eve.workspace.actions/1" || !supportedGenerator(root["generator"]))
         throw InvalidTrace("unsupported action schema or generator");
     parseDecimal(root["seed"]);
     if (!root["actions"].isArray() || !root["artifacts"].isArray() ||

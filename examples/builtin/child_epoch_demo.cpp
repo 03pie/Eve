@@ -1,8 +1,8 @@
 /** @file child_epoch_demo.cpp
  * @brief 宿主跨父代次重建配置子实例的 Core 桥示例，不替代 Loader 的显式 children 协调器。
  */
-#include <cordis/kernel.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/kernel.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 
 #include <cstdlib>
 #include <iostream>
@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <string>
 
-using namespace cordis;
+using namespace eve;
 namespace {
 /** @brief 示例只推进确定性队列，未稳定或失败都不伪装成执行成功。 */
 template <class T> T wait(const std::shared_ptr<testing::FakeScheduler>& scheduler, const Task<T>& task)

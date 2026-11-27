@@ -1,8 +1,8 @@
 /** @file activation_context.cpp
  * @brief 使用真实实例/子树和显式 gate 验证宿主跨代观察，不借用过期插件上下文。
  */
-#include <cordis/kernel.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/kernel.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 
 #include <cstdlib>
 #include <functional>
@@ -15,8 +15,8 @@
 #include <utility>
 #include <vector>
 
-using namespace cordis;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using eve::testing::FakeScheduler;
 #define CHECK(value)                                                                                                   \
     do {                                                                                                               \
         if (!(value))                                                                                                  \

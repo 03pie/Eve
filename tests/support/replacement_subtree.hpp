@@ -3,34 +3,34 @@
  */
 #pragma once
 #include <algorithm>
-#include <cordis/replacement_operation.hpp>
+#include <eve/replacement_operation.hpp>
 #include <map>
 #include <stdexcept>
 
-class SubtreeReplacementOwner final : public cordis::IReplacementOwner {
+class SubtreeReplacementOwner final : public eve::IReplacementOwner {
     struct Build : std::enable_shared_from_this<Build> {
-        std::shared_ptr<cordis::IScheduler> scheduler;
-        cordis::Runtime childFactory;
-        std::optional<std::pair<cordis::Runtime, cordis::Runtime>> business;
-        std::map<std::string, cordis::Runtime> candidateFactories;
-        cordis::ReplacementBuildPlan plan;
-        cordis::ReplacementBuilder builder;
-        cordis::ReplacementRebuiltTree tree;
-        std::shared_ptr<cordis::ReplacementRebuiltTree> observed;
-        cordis::Promise<cordis::ReplacementRebuiltTree> done;
-        std::optional<cordis::Context> rootContext;
+        std::shared_ptr<eve::IScheduler> scheduler;
+        eve::Runtime childFactory;
+        std::optional<std::pair<eve::Runtime, eve::Runtime>> business;
+        std::map<std::string, eve::Runtime> candidateFactories;
+        eve::ReplacementBuildPlan plan;
+        eve::ReplacementBuilder builder;
+        eve::ReplacementRebuiltTree tree;
+        std::shared_ptr<eve::ReplacementRebuiltTree> observed;
+        eve::Promise<eve::ReplacementRebuiltTree> done;
+        std::optional<eve::Context> rootContext;
         bool omit = false, wrongParent = false;
 
-        Build(std::shared_ptr<cordis::IScheduler> queue, cordis::Runtime child, cordis::ReplacementBuildPlan input,
-              cordis::ReplacementBuilder permission)
+        Build(std::shared_ptr<eve::IScheduler> queue, eve::Runtime child, eve::ReplacementBuildPlan input,
+              eve::ReplacementBuilder permission)
             : scheduler(std::move(queue)), childFactory(std::move(child)), plan(std::move(input)),
               builder(std::move(permission))
         {
         }
 
-        void create(std::size_t key, std::optional<cordis::Context> parent)
+        void create(std::size_t key, std::optional<eve::Context> parent)
         {
-            using namespace cordis;
+            using namespace eve;
             const auto input = std::find_if(plan.members.begin(), plan.members.end(),
                                             [&](const auto& item) { return item.key == key; });
             CHECK(input != plan.members.end());
@@ -72,7 +72,7 @@ class SubtreeReplacementOwner final : public cordis::IReplacementOwner {
                 *self->observed = self->tree;
                 self->done.resolve(std::move(self->tree));
             });
-            cordis::detail::TaskAccess::observe(receipt, [done = done](Task<void>::Snapshot result) {
+            eve::detail::TaskAccess::observe(receipt, [done = done](Task<void>::Snapshot result) {
                 if (!result->hasValue())
                     done.reject(result->error());
             });
@@ -82,12 +82,12 @@ class SubtreeReplacementOwner final : public cordis::IReplacementOwner {
 public:
     enum class FutureIssue { None, MissingService, Cycle, UnknownRealm, Version };
     enum class RecoveryIssue { None, Config, Realm, Requirements, Outputs };
-    std::shared_ptr<cordis::IScheduler> scheduler;
-    cordis::Runtime childFactory;
-    std::optional<std::pair<cordis::Runtime, cordis::Runtime>> business;
-    std::map<std::string, cordis::Runtime> candidateFactories;
+    std::shared_ptr<eve::IScheduler> scheduler;
+    eve::Runtime childFactory;
+    std::optional<std::pair<eve::Runtime, eve::Runtime>> business;
+    std::map<std::string, eve::Runtime> candidateFactories;
     std::map<std::string, std::string> candidateConfigs;
-    using Sources = std::map<std::string, std::optional<cordis::module::ModuleFactorySource>>;
+    using Sources = std::map<std::string, std::optional<eve::module::ModuleFactorySource>>;
     Sources candidateSources, recoverySources;
     bool omitCandidate = false, wrongCandidateParent = false;
     bool addCandidateChild = false, lieCandidateContract = false, omitFuture = false;
@@ -95,20 +95,20 @@ public:
     RecoveryIssue recoveryIssue = RecoveryIssue::None;
     bool equivalentRecovery = false;
     bool suspendCandidate = false;
-    cordis::Promise<void> entered;
-    cordis::Promise<cordis::ReplacementRebuiltTree> pending;
+    eve::Promise<void> entered;
+    eve::Promise<eve::ReplacementRebuiltTree> pending;
     bool probeStale = false, staleRejected = false;
-    std::optional<cordis::ReplacementBuilder> previousBuilder;
-    std::optional<cordis::Runtime> previousFactory;
+    std::optional<eve::ReplacementBuilder> previousBuilder;
+    std::optional<eve::Runtime> previousFactory;
     std::size_t checked = 0, rebuilt = 0;
-    std::shared_ptr<cordis::ReplacementRebuiltTree> observed;
-    SubtreeReplacementOwner(std::shared_ptr<cordis::IScheduler> queue, cordis::Runtime child)
+    std::shared_ptr<eve::ReplacementRebuiltTree> observed;
+    SubtreeReplacementOwner(std::shared_ptr<eve::IScheduler> queue, eve::Runtime child)
         : scheduler(std::move(queue)), childFactory(std::move(child))
     {
     }
 
-    cordis::Result<cordis::ReplacementOwnerPreflight> preflight(const cordis::ReplacementBuildPlan& candidate,
-                                                                const cordis::ReplacementBuildPlan& recovery) override
+    eve::Result<eve::ReplacementOwnerPreflight> preflight(const eve::ReplacementBuildPlan& candidate,
+                                                                const eve::ReplacementBuildPlan& recovery) override
     {
         CHECK(candidate.members.size() == 3 && recovery.members.size() == 3);
         for (const auto* plan : {&candidate, &recovery}) {
@@ -127,8 +127,8 @@ public:
             CHECK(roots == 1);
         }
         ++checked;
-        const auto describe = [&](const cordis::ReplacementBuildPlan& plan) {
-            std::vector<cordis::ReplacementDynamicMember> result;
+        const auto describe = [&](const eve::ReplacementBuildPlan& plan) {
+            std::vector<eve::ReplacementDynamicMember> result;
             for (const auto& item : plan.members) {
                 if (item.factory)
                     continue;
@@ -155,7 +155,7 @@ public:
                     result.back().config = config->second;
             }
             if (!plan.recovery && lieCandidateContract)
-                result.back().contract.outputs.push_back(cordis::ServiceOutput::of<int>({"future.claim"}));
+                result.back().contract.outputs.push_back(eve::ServiceOutput::of<int>({"future.claim"}));
             if (plan.recovery) {
                 switch (recoveryIssue) {
                 case RecoveryIssue::Config:
@@ -168,7 +168,7 @@ public:
                     result.back().contract.requirements.clear();
                     break;
                 case RecoveryIssue::Outputs:
-                    result.back().contract.outputs.push_back(cordis::ServiceOutput::of<int>({"changed.recovery"}));
+                    result.back().contract.outputs.push_back(eve::ServiceOutput::of<int>({"changed.recovery"}));
                     break;
                 case RecoveryIssue::None:
                     break;
@@ -183,19 +183,19 @@ public:
                 switch (futureIssue) {
                 case FutureIssue::MissingService:
                     result.back().contract.requirements.push_back(
-                        cordis::ServiceRequirement::of<int>({"future.absent"}));
+                        eve::ServiceRequirement::of<int>({"future.absent"}));
                     break;
                 case FutureIssue::Cycle:
                     result.back().contract.requirements.push_back(
-                        cordis::ServiceRequirement::of<int>({"future.cycle"}));
-                    result.back().contract.outputs.push_back(cordis::ServiceOutput::of<int>({"future.cycle"}));
+                        eve::ServiceRequirement::of<int>({"future.cycle"}));
+                    result.back().contract.outputs.push_back(eve::ServiceOutput::of<int>({"future.cycle"}));
                     break;
                 case FutureIssue::UnknownRealm:
-                    result.back().realms = result.back().realms.isolate("owner.child", cordis::RealmId{999999}).value();
+                    result.back().realms = result.back().realms.isolate("owner.child", eve::RealmId{999999}).value();
                     break;
                 case FutureIssue::Version:
                     result.back().contract.requirements.push_back(
-                        cordis::ServiceRequirement::of<int>({"owner.child"}, 1));
+                        eve::ServiceRequirement::of<int>({"owner.child"}, 1));
                     break;
                 case FutureIssue::None:
                     break;
@@ -214,10 +214,10 @@ public:
             }
             return result;
         };
-        return cordis::Result<cordis::ReplacementOwnerPreflight>::success({describe(candidate), describe(recovery)});
+        return eve::Result<eve::ReplacementOwnerPreflight>::success({describe(candidate), describe(recovery)});
     }
-    cordis::Task<cordis::ReplacementRebuiltTree> rebuild(cordis::ReplacementBuilder builder,
-                                                         cordis::ReplacementBuildPlan plan) override
+    eve::Task<eve::ReplacementRebuiltTree> rebuild(eve::ReplacementBuilder builder,
+                                                         eve::ReplacementBuildPlan plan) override
     {
         ++rebuilt;
         if (!plan.recovery && suspendCandidate) {
@@ -236,9 +236,9 @@ public:
             if (!plan.recovery) {
                 previousBuilder = builder;
                 previousFactory = root->factory;
-                cordis::Promise<cordis::ReplacementRebuiltTree> rejected;
+                eve::Promise<eve::ReplacementRebuiltTree> rejected;
                 rejected.reject(
-                    cordis::makeError(cordis::ErrorCode::ActivationFailed, "candidate rejected before create"));
+                    eve::makeError(eve::ErrorCode::ActivationFailed, "candidate rejected before create"));
                 return rejected.task();
             }
             staleRejected =
@@ -248,7 +248,7 @@ public:
         auto build = std::make_shared<Build>(scheduler, childFactory, std::move(plan), std::move(builder));
         build->business = business;
         build->candidateFactories = candidateFactories;
-        observed = std::make_shared<cordis::ReplacementRebuiltTree>();
+        observed = std::make_shared<eve::ReplacementRebuiltTree>();
         build->observed = observed;
         build->omit = !build->plan.recovery && omitCandidate;
         build->wrongParent = !build->plan.recovery && wrongCandidateParent;
@@ -261,11 +261,11 @@ public:
 };
 
 template <class SceneType, class Wait>
-void operationSubtreeCase(SceneType& scene, const cordis::Runtime& old, const cordis::Runtime& next,
-                          const std::shared_ptr<cordis::IScheduler>& scheduler,
-                          const std::shared_ptr<cordis::Kernel>& kernel, Wait waitFor, const QString& mode)
+void operationSubtreeCase(SceneType& scene, const eve::Runtime& old, const eve::Runtime& next,
+                          const std::shared_ptr<eve::IScheduler>& scheduler,
+                          const std::shared_ptr<eve::Kernel>& kernel, Wait waitFor, const QString& mode)
 {
-    using namespace cordis;
+    using namespace eve;
     const auto take = [](auto result, const char* step) {
         if (!result.hasValue())
             throw std::runtime_error(std::string(step) + ": " + result.error().message);

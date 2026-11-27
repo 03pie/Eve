@@ -8,7 +8,7 @@ function(check_flags)
     set(CMAKE_CXX_FLAGS_RELEASE "/EHsc- /O2")
     set(CMAKE_CXX_FLAGS_CUSTOM "/EHsc")
     set(CMAKE_CXX_FLAGS_PROFILE "-EHsc")
-    cordis_module_exception_model()
+    eve_module_exception_model()
     if(NOT CMAKE_CXX_FLAGS STREQUAL "/EHs /EHs\t-EHs /EHsc- /EHs- /EHa /DKEEP"
         OR NOT CMAKE_CXX_FLAGS_DEBUG STREQUAL "/Zi /EHs"
         OR NOT CMAKE_CXX_FLAGS_RELEASE STREQUAL "/EHsc- /O2"
@@ -18,7 +18,7 @@ function(check_flags)
     endif()
     set(MSVC FALSE)
     set(CMAKE_CXX_FLAGS "/EHsc")
-    cordis_module_exception_model()
+    eve_module_exception_model()
     if(NOT CMAKE_CXX_FLAGS STREQUAL "/EHsc")
         message(FATAL_ERROR "Non-MSVC flags changed")
     endif()

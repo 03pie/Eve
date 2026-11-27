@@ -1,7 +1,7 @@
 include_guard(GLOBAL)
 
 # 生成端与宿主 parseManifest 的 V1 契约一致，标识符和版本都只允许 ASCII。
-function(cordis_validate_module_identity MODULE_ID PLUGIN_ID MODULE_VERSION)
+function(eve_validate_module_identity MODULE_ID PLUGIN_ID MODULE_VERSION)
     foreach(field IN ITEMS MODULE_ID PLUGIN_ID)
         set(value "${${field}}")
         string(LENGTH "${value}" length)

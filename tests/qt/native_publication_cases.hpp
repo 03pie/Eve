@@ -24,17 +24,17 @@ bool run(const QString& name)
     s.pump();
     CHECK(outside.snapshot().value().state == NativeInstanceState::Started && inside.ready().tryResult()->hasValue());
     CHECK(group.snapshot().value().members == 2);
-    CordisRequestId request = 0;
-    CHECK(s.request(request, 1) == CORDIS_E_NOT_FOUND && request == 0);
-    CHECK(s.request(request, 2) == CORDIS_PENDING);
+    EveRequestId request = 0;
+    CHECK(s.request(request, 1) == EVE_E_NOT_FOUND && request == 0);
+    CHECK(s.request(request, 2) == EVE_PENDING);
     s.pump();
     CHECK(s.finishAll() == 1);
     s.pump();
     CHECK(s.result(2) == "{\"integer\":9007199254740993}");
-    CHECK(s.request(request, 1) == CORDIS_E_NOT_FOUND && request == 0);
+    CHECK(s.request(request, 1) == EVE_E_NOT_FOUND && request == 0);
     if (name == "publication_commit") {
         group.commit().value();
-        CHECK(s.request(request, 1) == CORDIS_PENDING);
+        CHECK(s.request(request, 1) == EVE_PENDING);
         s.pump();
         CHECK(s.finishAll() == 1);
         s.pump();
@@ -42,7 +42,7 @@ bool run(const QString& name)
     } else {
         group.abort().value();
         CHECK(!group.commit().hasValue());
-        CHECK(s.request(request, 1) == CORDIS_E_NOT_FOUND);
+        CHECK(s.request(request, 1) == EVE_E_NOT_FOUND);
     }
     s.finishManaged();
     return true;

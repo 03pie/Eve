@@ -1,15 +1,15 @@
 /** @file instance_finalizers.cpp
  * @brief 验证依赖本代资源静止的所有者销毁、换代和失败保留。
  */
-#include <cordis/instance.hpp>
-#include <cordis/kernel.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/instance.hpp>
+#include <eve/kernel.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <thread>
-using namespace cordis;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using eve::testing::FakeScheduler;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

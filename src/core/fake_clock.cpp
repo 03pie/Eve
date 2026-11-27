@@ -2,11 +2,11 @@
  * @file fake_clock.cpp
  * @brief 实现虚拟时钟的定时注册、时间推进和关闭逻辑。
  */
-#include <cordis/testing/fake_clock.hpp>
+#include <eve/testing/fake_clock.hpp>
 #include <algorithm>
 #include <limits>
 
-namespace cordis::testing {
+namespace eve::testing {
 /**
  * @brief 关闭虚拟时钟，并丢弃所有尚未执行的任务。
  */
@@ -121,4 +121,4 @@ void FakeClock::closeImpl()
         }
     }
 }
-} // namespace cordis::testing
+} // namespace eve::testing

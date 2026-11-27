@@ -6,7 +6,7 @@
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <algorithm>
-#include <cordis/replacement_scope.hpp>
+#include <eve/replacement_scope.hpp>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -49,20 +49,20 @@ Runtime valueRuntime(Scene& scene, const std::string& tag, bool cleanupFailure =
 void abortFailure()
 {
     Scene scene;
-    const auto label = scene.find<QLabel>("CordisNotification");
+    const auto label = scene.find<QLabel>("EveNotification");
     const auto before = label->text();
     const auto group = take(scene.kernel->holdPublication());
     auto instance = take(scene.kernel->mountHeld(group, valueRuntime(scene, "abort-failure", true)));
     CHECK(wait(instance.ready(), scene.scheduler)->hasValue());
     CHECK(take(scene.kernel->services().snapshot()).empty());
     values(scene, "abort-failure", 0);
-    CHECK(label->text() == before && scene.find<QComboBox>("CordisOutputTarget")->count() == 2);
+    CHECK(label->text() == before && scene.find<QComboBox>("EveOutputTarget")->count() == 2);
     take(group.abort());
     CHECK(take(group.snapshot()).state == PublicationState::Aborted);
     const auto stopped = wait(instance.stop(), scene.scheduler);
     CHECK(stopped->hasValue() && !stopped->value().quiescent && !stopped->value().errors.empty());
     values(scene, "abort-failure", 0);
-    CHECK(label->text() == before && scene.find<QComboBox>("CordisOutputTarget")->count() == 2);
+    CHECK(label->text() == before && scene.find<QComboBox>("EveOutputTarget")->count() == 2);
     CHECK(take(scene.kernel->services().snapshot()).empty());
     const auto closed = wait(scene.kernel->close(), scene.scheduler);
     CHECK(closed->hasValue() && !closed->value().quiescent);
@@ -78,9 +78,9 @@ void discarded()
     values(scene, "retained", 1);
     const auto beforeOutput = take(scene.shell.output()->snapshot()).size();
     const auto beforeNotices = take(scene.shell.notifications()->snapshot()).size();
-    const auto label = scene.find<QLabel>("CordisNotification");
+    const auto label = scene.find<QLabel>("EveNotification");
     const auto before = label->text();
-    const auto targets = scene.find<QComboBox>("CordisOutputTarget")->count();
+    const auto targets = scene.find<QComboBox>("EveOutputTarget")->count();
     const auto group = take(scene.kernel->holdPublication());
     auto instance = take(scene.kernel->mountHeld(group, valueRuntime(scene, "discarded")));
     CHECK(wait(instance.ready(), scene.scheduler)->hasValue());
@@ -94,8 +94,8 @@ void discarded()
     const auto notifications = scene.shell.notifications()->snapshot();
     CHECK(!output.hasValue() && output.error().code == ErrorCode::SchedulerClosed);
     CHECK(!notifications.hasValue() && notifications.error().code == ErrorCode::SchedulerClosed);
-    CHECK(label->text() == before && scene.find<QComboBox>("CordisOutputTarget")->count() == targets);
-    CHECK(!scene.find<QPlainTextEdit>("CordisWorkbenchOutput")->toPlainText().contains("discarded"));
+    CHECK(label->text() == before && scene.find<QComboBox>("EveOutputTarget")->count() == targets);
+    CHECK(!scene.find<QPlainTextEdit>("EveWorkbenchOutput")->toPlainText().contains("discarded"));
     const auto closing = scene.kernel->close();
     if (const auto report = closing.tryResult())
         CHECK(!report->hasValue() || !report->value().quiescent);

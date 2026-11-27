@@ -1,4 +1,4 @@
-Cordis 桌面运行包
+Eve 桌面运行包
 
 Qt 5.15.2
 本程序动态链接 Qt Core、GUI 和 Widgets，使用 QtBase 的 Windows 平台、

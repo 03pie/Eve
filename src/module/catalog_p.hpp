@@ -6,11 +6,11 @@
 #include "failure_p.hpp"
 #include "instance_origin_p.hpp"
 #include "reservation_p.hpp"
-#include <cordis/module/manager.hpp>
+#include <eve/module/manager.hpp>
 #include <map>
 #include <mutex>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 /** @brief 后端特有所有者；目录锁外显式退役，析构不代替加载器终结。 */
 struct BackendResidency {
     virtual ~BackendResidency() = default;
@@ -56,4 +56,4 @@ std::vector<std::shared_ptr<Generation>> allGenerations();
 Result<ModuleLoadReport> failGeneration(const std::shared_ptr<Generation>& generation, ErrorInfo failure);
 /** @brief 受限搜索取得本目录映射，按首次策略 PIN 并核对实际映像；不能在目录锁内调用。 */
 Result<void> mapGenerationImage(const std::shared_ptr<Generation>& generation);
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

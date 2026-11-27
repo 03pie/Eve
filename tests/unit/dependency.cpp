@@ -1,15 +1,15 @@
 /** @file dependency.cpp
  * @brief 验证托管服务的 Pending、恢复、消费者优先清理和依赖隔离。
  */
-#include <cordis/kernel.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/kernel.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
 
-using namespace cordis;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using eve::testing::FakeScheduler;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(#x); } while (false)
 
 /** @brief A01/A02/A03：声明依赖缺失不启动，提供者退出等待消费者，恢复保留配置。 */

@@ -7,10 +7,10 @@
 #include <QEventLoop>
 #include <QTimer>
 #include <algorithm>
-#include <cordis/kernel.hpp>
-#include <cordis/module/manager.hpp>
-#include <cordis/module/runtime.hpp>
-#include <cordis/qt/scheduler.hpp>
+#include <eve/kernel.hpp>
+#include <eve/module/manager.hpp>
+#include <eve/module/runtime.hpp>
+#include <eve/qt/scheduler.hpp>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -20,8 +20,8 @@
 
 bool nativeServiceStateAbiCase(const QString&, const QString&);
 namespace {
-using namespace cordis;
-using namespace cordis::module;
+using namespace eve;
+using namespace eve::module;
 #define CHECK(value)                                                                                                   \
     do {                                                                                                               \
         if (!(value))                                                                                                  \
@@ -76,7 +76,7 @@ NativeUnloadWhitelist qualification(const QString& root)
         for (const auto* variant : {"a", "b"}) {
             const auto manifest = std::string("native-upgrade/") + name + "-" + variant + "/module.json";
             const auto artifact = take(preflightModule(root.toStdString(), manifest));
-            const auto id = std::string("org.cordis.example.") + name;
+            const auto id = std::string("org.eve.example.") + name;
             CHECK(artifact.manifest().moduleId == id && artifact.manifest().loader == ModuleLoader::CAbi);
             CHECK(artifact.manifest().moduleVersion == (std::string(variant) == "a" ? "1.1.0" : "1.2.0"));
             CHECK(artifact.manifest().plugins == std::vector<std::string>{std::string("example.") + name});
@@ -114,7 +114,7 @@ struct Scene {
             "reporter", take(reporter->runtime({"example.reporter",
                                                 {{{"example.counter", 1}, 1, {"next"}}},
                                                 {{{"example.report", 1}, true, {1, {"read"}}}}})))));
-        CHECK(counterRuntime->stateSchema() && counterRuntime->stateSchema()->id == "org.cordis.example.counter" &&
+        CHECK(counterRuntime->stateSchema() && counterRuntime->stateSchema()->id == "org.eve.example.counter" &&
               counterRuntime->stateSchema()->version == 1);
         CHECK(!reporterRuntime->stateSchema());
         for (const auto& state : take(manager.snapshot()))
@@ -144,8 +144,8 @@ struct Scene {
     {
         auto scope = take(kernel->reserveReplacement({counterRuntime->id()}));
         take(scope.freeze());
-        const auto value = take(cordis::detail::InstanceStateAccess::capture(scope, instance));
-        CHECK(value && value->schema.id == "org.cordis.example.counter" && value->schema.version == 1);
+        const auto value = take(eve::detail::InstanceStateAccess::capture(scope, instance));
+        CHECK(value && value->schema.id == "org.eve.example.counter" && value->schema.version == 1);
         take(scope.release());
         barrier(scheduler);
         return value->json;
@@ -174,7 +174,7 @@ void runtime(const QString& root, const std::string& variant)
 {
     Scene scene(root, variant);
     auto child = std::make_shared<std::optional<Instance>>();
-    const auto parent = scene.imported({{"org.cordis.example.counter", 1}, "9007199254740993"}, child);
+    const auto parent = scene.imported({{"org.eve.example.counter", 1}, "9007199254740993"}, child);
     CHECK(wait(parent.ready(), scene.scheduler)->hasValue() && *child);
     CHECK(scene.capture(**child) == "9007199254740993");
     const auto consumer = take(scene.kernel->mount(*scene.reporterRuntime, "null"));
@@ -201,8 +201,8 @@ void boundaries(const QString& root)
     Scene scene(root, "b");
     const auto other = take(scene.kernel->services().createRealm());
     auto zero = std::make_shared<std::optional<Instance>>(), maximum = std::make_shared<std::optional<Instance>>();
-    const auto first = scene.imported({{"org.cordis.example.counter", 1}, "0"}, zero);
-    const auto second = scene.imported({{"org.cordis.example.counter", 1}, "18446744073709551615"}, maximum, other);
+    const auto first = scene.imported({{"org.eve.example.counter", 1}, "0"}, zero);
+    const auto second = scene.imported({{"org.eve.example.counter", 1}, "18446744073709551615"}, maximum, other);
     CHECK(wait(first.ready(), scene.scheduler)->hasValue() && wait(second.ready(), scene.scheduler)->hasValue());
     CHECK(scene.capture(**zero) == "0" && scene.capture(**maximum) == "18446744073709551615");
     CHECK(take(scene.counter->snapshot()).instances.size() == 2);
@@ -211,10 +211,10 @@ void boundaries(const QString& root)
 void rejections(const QString& root)
 {
     Scene scene(root, "a");
-    for (const auto& state : std::vector<StateSnapshot>{{{"org.cordis.example.counter", 1}, "01"},
-                                                        {{"org.cordis.example.counter", 1}, "18446744073709551616"},
-                                                        {{"org.cordis.example.counter", 1}, "1e0"},
-                                                        {{"org.cordis.example.counter", 2}, "1"},
+    for (const auto& state : std::vector<StateSnapshot>{{{"org.eve.example.counter", 1}, "01"},
+                                                        {{"org.eve.example.counter", 1}, "18446744073709551616"},
+                                                        {{"org.eve.example.counter", 1}, "1e0"},
+                                                        {{"org.eve.example.counter", 2}, "1"},
                                                         {{"other.counter", 1}, "1"}}) {
         auto child = std::make_shared<std::optional<Instance>>();
         const auto parent = scene.imported(state, child);

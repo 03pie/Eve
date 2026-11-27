@@ -26,10 +26,10 @@ struct View {
 
     explicit View(Scene& scene) : panel(openModules(scene)), dialog(panel->window())
     {
-        table = panel->findChild<QTableView*>("CordisModuleTable");
-        refresh = panel->findChild<QPushButton*>("CordisModuleDiagnosticsRefresh");
-        text = panel->findChild<QPlainTextEdit*>("CordisModuleDiagnosticsText");
-        auto* timer = panel->findChild<QTimer*>("CordisModulesRefreshTimer");
+        table = panel->findChild<QTableView*>("EveModuleTable");
+        refresh = panel->findChild<QPushButton*>("EveModuleDiagnosticsRefresh");
+        text = panel->findChild<QPlainTextEdit*>("EveModuleDiagnosticsText");
+        auto* timer = panel->findChild<QTimer*>("EveModulesRefreshTimer");
         PLATFORM_CHECK(table && refresh && text && timer);
         timer->stop();
     }

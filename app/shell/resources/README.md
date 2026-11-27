@@ -22,5 +22,5 @@ python tools/package_eve_icon.py
 可用以下检查确认平台工作台和配置示例的 PE 图标与正式 ICO 七帧逐字节相同。
 
 ```powershell
-python tools/check_eve_icons.py build/ela-msvc-release/bin/cordis_plugin_workbench.exe build/ela-msvc-release/bin/cordis_config_workbench.exe
+python tools/check_eve_icons.py build/ela-msvc-release/bin/eve_plugin_workbench.exe build/ela-msvc-release/bin/eve_config_workbench.exe
 ```

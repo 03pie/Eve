@@ -9,7 +9,7 @@
 #include <QPushButton>
 #include <QVariant>
 #include <algorithm>
-#include <cordis/module/install.hpp>
+#include <eve/module/install.hpp>
 #include <set>
 
 namespace platform_workspace_test {

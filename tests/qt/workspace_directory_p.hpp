@@ -4,19 +4,19 @@
 #pragma once
 #include "../../src/module/instance_origin_p.hpp"
 #include <QJsonArray>
-#include <cordis/module/manager.hpp>
+#include <eve/module/manager.hpp>
 #include <cstddef>
 #include <optional>
 #include <vector>
 
 namespace workspace_directory_test {
 struct GenerationValues {
-    cordis::module::ModuleGenerationSnapshot module;
+    eve::module::ModuleGenerationSnapshot module;
     std::size_t admissions = 0;
     bool loading = false, image = false, observationImage = false, artifactFile = false, backend = false;
-    std::optional<cordis::OperationId> reservation;
-    std::vector<cordis::module::ModuleRuntimeOrigin> runtimes;
-    std::vector<cordis::module::detail::InstanceOrigin> instances;
+    std::optional<eve::OperationId> reservation;
+    std::vector<eve::module::ModuleRuntimeOrigin> runtimes;
+    std::vector<eve::module::detail::InstanceOrigin> instances;
 };
 struct DirectoryValues {
     std::vector<GenerationValues> generations;

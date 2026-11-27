@@ -2,10 +2,10 @@
  * @file w2.cpp
  * @brief 测试 effect 生命周期、虚拟时钟及任务超时观察。
  */
-#include <cordis/effect.hpp>
-#include <cordis/observation.hpp>
-#include <cordis/testing/fake_clock.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/effect.hpp>
+#include <eve/observation.hpp>
+#include <eve/testing/fake_clock.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <atomic>
 #include <cstdlib>
 #include <iostream>
@@ -16,9 +16,9 @@
 #include <thread>
 #include <vector>
 
-using namespace cordis;
-using cordis::testing::FakeClock;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using eve::testing::FakeClock;
+using eve::testing::FakeScheduler;
 using namespace std::chrono_literals;
 
 /** @brief 条件不成立时抛出包含表达式和行号的测试异常。 */

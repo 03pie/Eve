@@ -1,25 +1,25 @@
 # C 业务 ABI V1
 
-这是 Windows x64 业务表的签名和布局基线。公开入口及配套类型见[独立 C11 头](../sdk/include/cordis_abi/plugin.h)和[业务 ABI 决策](adr/0031-business-abi.md)。
+这是 Windows x64 业务表的签名和布局基线。公开入口及配套类型见[独立 C11 头](../sdk/include/eve_abi/plugin.h)和[业务 ABI 决策](adr/0031-business-abi.md)。
 
 ## 平台与版本
 
-函数、函数指针和入口均为 C linkage / 显式 CORDIS_CALL，Windows 使用 __cdecl，入口由 CORDIS_ABI_EXPORTS 显式导出。使用平台自然对齐，不使用 pack；Windows x64 的实际调用及对齐遵循 [Microsoft x64 ABI](https://learn.microsoft.com/en-us/cpp/build/x64-software-conventions)。不跨边界传递 STL、QString、bool、异常、RTTI 或需要另一侧 delete 的对象。GCC 的无 Qt 源码/布局检查不代表 GCC DLL 与 MSVC 宿主已兼容。
+函数、函数指针和入口均为 C linkage / 显式 EVE_CALL，Windows 使用 __cdecl，入口由 EVE_ABI_EXPORTS 显式导出。使用平台自然对齐，不使用 pack；Windows x64 的实际调用及对齐遵循 [Microsoft x64 ABI](https://learn.microsoft.com/en-us/cpp/build/x64-software-conventions)。不跨边界传递 STL、QString、bool、异常、RTTI 或需要另一侧 delete 的对象。GCC 的无 Qt 源码/布局检查不代表 GCC DLL 与 MSVC 宿主已兼容。
 
-业务入口 cordis_query_v1 与 M2a 的 cordis_module_query_v1 相互独立。前者协商完整业务表，后者只描述模块；默认 ModuleManager.load 仍只做 M2a，不自动创建业务实例。
+业务入口 eve_query_v1 与 M2a 的 eve_module_query_v1 相互独立。前者协商完整业务表，后者只描述模块；默认 ModuleManager.load 仍只做 M2a，不自动创建业务实例。
 
 host_abi 是 major，minor、结构长度和能力位在表中。宿主将输出 struct_size 设为可写容量；生产者最多写 min(容量, 自身长度)，返回自身长度。major 必须相同；同 major 的新 minor/尾部扩展，在已知前缀完整且能力均可识别时允许。所有 reserved 为零；不兼容变更升级 major，不在已有字段中改含义。
 
 | 类型 | x64 大小/对齐 | 关键偏移 |
 |---|---|---|
-| CordisStatus | 4 字节 | int32，不使用 Core ErrorCode 的序号 |
-| CordisHandle / CordisRequestId | 8 字节 | uint64；0 无效 |
-| CordisTableHeaderV1 | 16 / 4 | size=0，major=4，minor=8，reserved=12 |
-| CordisBytesV1 | 16 / 8 | data=0，size=8 |
-| CordisServiceKeyV1 | 32 / 8 | name=0，major=16，reserved=20，realm=24 |
-| CordisServiceMetadataV1 | 24 / 8 | size=0，minor=4，capabilities_json=8 |
-| CordisHostV1 | 112 / 8 | capabilities=16，complete=32，末项=104 |
-| CordisPluginApiV1 | 152 / 8 | capabilities=16，module_id=32，plugins=72，create=80，末项=144 |
+| EveStatus | 4 字节 | int32，不使用 Core ErrorCode 的序号 |
+| EveHandle / EveRequestId | 8 字节 | uint64；0 无效 |
+| EveTableHeaderV1 | 16 / 4 | size=0，major=4，minor=8，reserved=12 |
+| EveBytesV1 | 16 / 8 | data=0，size=8 |
+| EveServiceKeyV1 | 32 / 8 | name=0，major=16，reserved=20，realm=24 |
+| EveServiceMetadataV1 | 24 / 8 | size=0，minor=4，capabilities_json=8 |
+| EveHostV1 | 112 / 8 | capabilities=16，complete=32，末项=104 |
+| EvePluginApiV1 | 152 / 8 | capabilities=16，module_id=32，plugins=72，create=80，末项=144 |
 
 C11 与 C++17 共享同一份完整字段偏移断言，见 tests/abi/business_layout_asserts.h。HostTable 的三个基础槽为 complete/log/request_cancel；插件基础槽为 create/start/request_stop/destroy/cancel_request/request_complete，均不可空。
 

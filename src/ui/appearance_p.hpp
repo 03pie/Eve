@@ -11,7 +11,7 @@
 #include <QPainter>
 #include <QString>
 
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 /** @brief 继承 Ela 的开关绘制与动画，补齐 Space/Enter 操作和可见键盘焦点。 */
 class KeyboardToggleSwitch final : public ElaToggleSwitch {
 public:
@@ -118,4 +118,4 @@ inline void primaryButton(ElaPushButton* button)
     button->setLightTextColor(eTheme->getThemeColor(ElaThemeType::Light, ElaThemeType::BasicTextInvert));
     button->setDarkTextColor(eTheme->getThemeColor(ElaThemeType::Dark, ElaThemeType::BasicTextInvert));
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

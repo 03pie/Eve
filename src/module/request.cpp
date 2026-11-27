@@ -11,7 +11,7 @@
 #include <stdexcept>
 #include <thread>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 namespace {
 ErrorInfo requestError(ErrorCode code, const char* message)
 {
@@ -30,9 +30,9 @@ std::uint64_t allocate(std::atomic<std::uint64_t>& next)
     }
 }
 std::atomic<std::uint64_t> contexts{1}, requests{1};
-bool finalStatus(CordisStatus value)
+bool finalStatus(EveStatus value)
 {
-    return value <= CORDIS_OK && value >= CORDIS_E_BUSY;
+    return value <= EVE_OK && value >= EVE_E_BUSY;
 }
 bool cleanup(NativeRequestKind kind)
 {
@@ -49,11 +49,11 @@ ResourceKind resourceKind(NativeRequestKind kind)
     return ResourceKind::Call;
 }
 struct RequestEntry {
-    CordisRequestId id;
+    EveRequestId id;
     NativeRequestKind kind;
     bool returned = false, attempted = false, receiving = false, completed = false;
     bool cancelled = false, queued = false, unsafe = false, blocked = false;
-    CordisStatus returnStatus = CORDIS_PENDING, status = CORDIS_OK;
+    EveStatus returnStatus = EVE_PENDING, status = EVE_OK;
     std::size_t reserved = 0;
     std::string json;
     std::optional<ErrorInfo> error;
@@ -62,7 +62,7 @@ struct RequestEntry {
 };
 enum class Ready { Waiting, Queue, Blocked };
 } // namespace
-CordisRequestId allocateNativeRequestId()
+EveRequestId allocateNativeRequestId()
 {
     return allocate(requests);
 }
@@ -77,14 +77,14 @@ struct RequestControl {
     std::weak_ptr<IScheduler> scheduler;
     GenerationLedger ledger;
     const std::thread::id owner;
-    const CordisHandle context;
+    const EveHandle context;
     const InstanceId instance;
     const Epoch epoch;
     const RequestLimits limits;
     bool closing = false, sealed = false, faulted = false;
     std::uint64_t protocolErrors = 0;
     std::size_t buffered = 0;
-    std::map<CordisRequestId, std::shared_ptr<RequestEntry>> entries;
+    std::map<EveRequestId, std::shared_ptr<RequestEntry>> entries;
     // 未完成或投递失败时，不能因最后一个包装句柄销毁而丢弃原生引用。
     std::shared_ptr<RequestControl> retained;
     Promise<void> drained;
@@ -105,14 +105,14 @@ Ready prepare(RequestControl& state, RequestEntry& entry)
 {
     if (entry.queued || !entry.returned || entry.receiving)
         return Ready::Waiting;
-    if (entry.returnStatus == CORDIS_PENDING && !entry.completed)
+    if (entry.returnStatus == EVE_PENDING && !entry.completed)
         return Ready::Waiting;
-    if (entry.returnStatus != CORDIS_PENDING && (!finalStatus(entry.returnStatus) || entry.attempted)) {
+    if (entry.returnStatus != EVE_PENDING && (!finalStatus(entry.returnStatus) || entry.attempted)) {
         entry.unsafe = true;
         entry.error =
             requestError(ErrorCode::AbiProtocol, "invalid entry return or synchronous return plus completion");
         protocol(state);
-    } else if (entry.returnStatus != CORDIS_PENDING) {
+    } else if (entry.returnStatus != EVE_PENDING) {
         entry.status = entry.returnStatus;
     }
     if (!entry.payloadLease) {
@@ -248,7 +248,7 @@ RequestChannel::RequestChannel(std::shared_ptr<IScheduler> scheduler, Generation
 {
     if (!scheduler || !scheduler->isCurrentThread() || !scheduler->isOpen() || !instance.valid() || epoch == 0 ||
         limits.maximumRequests == 0 || limits.maximumRequests > 1024 || limits.maximumJsonBytes == 0 ||
-        limits.maximumJsonBytes > CORDIS_MAX_JSON_BYTES || limits.maximumBufferedBytes < limits.maximumJsonBytes ||
+        limits.maximumJsonBytes > EVE_MAX_JSON_BYTES || limits.maximumBufferedBytes < limits.maximumJsonBytes ||
         limits.maximumBufferedBytes > 64 * 1024 * 1024)
         throw std::invalid_argument("invalid native request channel owner, identity or limits");
     control_ = std::make_shared<RequestControl>(std::move(scheduler), ledger, instance, epoch, limits);
@@ -262,7 +262,7 @@ RequestChannel::~RequestChannel()
     } catch (...) {
     }
 }
-CordisHandle RequestChannel::context() const noexcept
+EveHandle RequestChannel::context() const noexcept
 {
     return control_->context;
 }
@@ -297,7 +297,7 @@ Result<NativeTicket> RequestChannel::begin(NativeRequestKind kind, std::string l
     state->retained = state;
     return Result<NativeTicket>::success({entry->id, entry->result.task()});
 }
-Result<void> RequestChannel::returned(CordisRequestId id, CordisStatus status)
+Result<void> RequestChannel::returned(EveRequestId id, EveStatus status)
 {
     auto state = control_;
     if (!owner(*state))
@@ -320,8 +320,8 @@ Result<void> RequestChannel::returned(CordisRequestId id, CordisStatus status)
     dispatch(state, entry, ready);
     return Result<void>::success();
 }
-CordisStatus RequestChannel::complete(CordisHandle contextId, CordisRequestId id, CordisStatus status,
-                                      CordisBytesV1 bytes) noexcept
+EveStatus RequestChannel::complete(EveHandle contextId, EveRequestId id, EveStatus status,
+                                      EveBytesV1 bytes) noexcept
 {
     auto state = control_;
     std::shared_ptr<RequestEntry> entry;
@@ -332,29 +332,29 @@ CordisStatus RequestChannel::complete(CordisHandle contextId, CordisRequestId id
             auto found = state->entries.find(id);
             if (contextId != state->context || found == state->entries.end()) {
                 protocol(*state);
-                return CORDIS_E_ABI_PROTOCOL;
+                return EVE_E_ABI_PROTOCOL;
             }
             entry = found->second;
             if (entry->receiving || entry->completed || entry->queued || entry->blocked ||
-                (entry->returned && entry->returnStatus != CORDIS_PENDING)) {
+                (entry->returned && entry->returnStatus != EVE_PENDING)) {
                 protocol(*state);
-                return CORDIS_E_ABI_PROTOCOL;
+                return EVE_E_ABI_PROTOCOL;
             }
             entry->attempted = true;
             if (!finalStatus(status)) {
                 protocol(*state);
-                return CORDIS_E_ABI_PROTOCOL;
+                return EVE_E_ABI_PROTOCOL;
             }
             if (bytes.size && !bytes.data) {
                 protocol(*state);
-                return CORDIS_E_INVALID_ARGUMENT;
+                return EVE_E_INVALID_ARGUMENT;
             }
             if (bytes.size > state->limits.maximumJsonBytes ||
                 bytes.size > state->limits.maximumBufferedBytes - state->buffered)
-                return CORDIS_E_LIMIT;
+                return EVE_E_LIMIT;
             auto payload = state->ledger.acquire(ResourceKind::QueuePayload, "native.result");
             if (!payload.hasValue())
-                return CORDIS_E_LIMIT;
+                return EVE_E_LIMIT;
             entry->payloadLease = std::move(payload.value());
             entry->receiving = true;
             entry->reserved = static_cast<std::size_t>(bytes.size);
@@ -383,7 +383,7 @@ CordisStatus RequestChannel::complete(CordisHandle contextId, CordisRequestId id
             ready = prepare(*state, *entry);
         }
         dispatch(state, entry, ready);
-        return valid ? CORDIS_OK : CORDIS_E_INVALID_ARGUMENT;
+        return valid ? EVE_OK : EVE_E_INVALID_ARGUMENT;
     } catch (...) {
         try {
             Ready ready = Ready::Waiting;
@@ -402,10 +402,10 @@ CordisStatus RequestChannel::complete(CordisHandle contextId, CordisRequestId id
                 dispatch(state, entry, ready);
         } catch (...) {
         }
-        return CORDIS_E_FAILED;
+        return EVE_E_FAILED;
     }
 }
-Result<bool> RequestChannel::cancel(CordisRequestId id)
+Result<bool> RequestChannel::cancel(EveRequestId id)
 {
     auto state = control_;
     if (!owner(*state))
@@ -464,4 +464,4 @@ Result<NativeRequestSnapshot> RequestChannel::snapshot() const
     }
     return Result<NativeRequestSnapshot>::success(std::move(result));
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

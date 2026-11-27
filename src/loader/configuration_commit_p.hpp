@@ -5,11 +5,11 @@
 #include "replacement_claim_p.hpp"
 #include "replacement_plan_p.hpp"
 #include "session_commit_p.hpp"
-#include <cordis/loader/kernel_driver.hpp>
-#include <cordis/loader/session.hpp>
+#include <eve/loader/kernel_driver.hpp>
+#include <eve/loader/session.hpp>
 #include <memory>
 
-namespace cordis::loader::detail {
+namespace eve::loader::detail {
 struct ReplacementEntry {
     std::string path;
     InstanceId previous;
@@ -87,4 +87,4 @@ struct ConfigurationCommitAccess {
             const std::vector<ReplacementEntry>&, std::uint64_t expected, const SessionReplacementHold* = nullptr,
             const DriverReplacementClaim* = nullptr);
 };
-} // namespace cordis::loader::detail
+} // namespace eve::loader::detail

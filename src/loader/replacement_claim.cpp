@@ -5,7 +5,7 @@
 #include <atomic>
 #include <map>
 #include <thread>
-namespace cordis::loader::detail {
+namespace eve::loader::detail {
 namespace {
 bool overlaps(const std::set<std::string>& roots, const std::string& path)
 {
@@ -162,4 +162,4 @@ Result<DriverReplacementClaim> DriverReplacementClaims::reserve(OperationId oper
     ledger_->claims.merge(node);
     return Output::success(std::move(result));
 }
-} // namespace cordis::loader::detail
+} // namespace eve::loader::detail

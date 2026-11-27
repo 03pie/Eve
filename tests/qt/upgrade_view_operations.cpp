@@ -12,7 +12,7 @@ QPlainTextEdit* editor(const Scene& scene, InstanceId instance)
 {
     auto* page = scene.page(instance);
     PLATFORM_CHECK(page);
-    auto* value = page->findChild<QPlainTextEdit*>("CordisNotebookEditor");
+    auto* value = page->findChild<QPlainTextEdit*>("EveNotebookEditor");
     PLATFORM_CHECK(value);
     return value;
 }

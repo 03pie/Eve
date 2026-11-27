@@ -3,11 +3,11 @@
  */
 #include "../../src/core/instance_state_p.hpp"
 #include "../../src/core/replacement_inspect_p.hpp"
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <iostream>
 #include <thread>
-using namespace cordis;
-using namespace cordis::detail;
+using namespace eve;
+using namespace eve::detail;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

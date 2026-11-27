@@ -3,10 +3,10 @@
  */
 #pragma once
 #include <atomic>
-#include <cordis/kernel.hpp>
+#include <eve/kernel.hpp>
 #include <map>
 
-namespace cordis::detail {
+namespace eve::detail {
 struct ReplacementSelection {
     ReplacementClosure closure;
     std::vector<ServiceKey> outputs;
@@ -59,4 +59,4 @@ struct KernelControl : std::enable_shared_from_this<KernelControl> {
     Promise<CleanupReport> closed_;
     std::shared_ptr<std::atomic_bool> blocked_ = std::make_shared<std::atomic_bool>(false);
 };
-} // namespace cordis::detail
+} // namespace eve::detail

@@ -1,8 +1,8 @@
 /** @file diagnostics.cpp
  * @brief 无 Qt 验证宿主名称/实例查询和精确依赖诊断不改变业务账目。
  */
-#include <cordis/kernel.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/kernel.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -11,8 +11,8 @@
 #include <thread>
 #include <utility>
 
-using namespace cordis;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using eve::testing::FakeScheduler;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__)); } while (false)
 /** @brief 名称是值快照，实例查询只返回本内核记录并遵循 owner 限制。 */
 void lookup()

@@ -9,8 +9,8 @@
 
 namespace native_services {
 namespace {
-using namespace cordis;
-using namespace cordis::module;
+using namespace eve;
+using namespace eve::module;
 
 bool supported(ServiceKind kind)
 {
@@ -40,13 +40,13 @@ std::function<Result<void>()> available(const std::shared_ptr<CurrentModule>& re
 }
 } // namespace
 
-cordis::Result<void> prepareServiceModule(const std::shared_ptr<CurrentModule>& record,
-                                          cordis::module::ModuleManager& manager,
-                                          std::shared_ptr<cordis::IScheduler> scheduler,
-                                          cordis::ServiceRegistry services,
-                                          std::shared_ptr<const cordis::module::NativeLogSink> logs)
+eve::Result<void> prepareServiceModule(const std::shared_ptr<CurrentModule>& record,
+                                          eve::module::ModuleManager& manager,
+                                          std::shared_ptr<eve::IScheduler> scheduler,
+                                          eve::ServiceRegistry services,
+                                          std::shared_ptr<const eve::module::NativeLogSink> logs)
 {
-    using namespace cordis;
+    using namespace eve;
     const auto current = record;
     if (!current || !current->generation.valid() || !supported(current->kind))
         return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "service module record invalid"));
@@ -63,11 +63,11 @@ cordis::Result<void> prepareServiceModule(const std::shared_ptr<CurrentModule>& 
     current->runtime.emplace(std::move(runtime).value());
     return Result<void>::success();
 }
-cordis::Result<cordis::loader::ConfiguredPlugin> configuredServicePlugin(const std::shared_ptr<CurrentModule>& record,
-                                                                         cordis::loader::PluginModule source)
+eve::Result<eve::loader::ConfiguredPlugin> configuredServicePlugin(const std::shared_ptr<CurrentModule>& record,
+                                                                         eve::loader::PluginModule source)
 {
-    using namespace cordis;
-    using namespace cordis::loader;
+    using namespace eve;
+    using namespace eve::loader;
     using Output = Result<ConfiguredPlugin>;
     if (!record || !record->generation.valid() || !supported(record->kind) || !record->session || !record->runtime ||
         !record->runtime->id().valid())

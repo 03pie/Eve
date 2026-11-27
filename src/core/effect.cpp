@@ -2,7 +2,7 @@
  * @file effect.cpp
  * @brief 实现 effect 初始化、资源清理及作用域关闭流程。
  */
-#include <cordis/effect.hpp>
+#include <eve/effect.hpp>
 #include <atomic>
 #include <limits>
 #include <map>
@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <unordered_set>
 
-namespace cordis::detail {
+namespace eve::detail {
 struct ScopeControl;
 
 /**
@@ -202,9 +202,9 @@ void EffectControl::finish()
     closed.resolve(CleanupReport{!cleanupFailed, errors});
     if (auto scope = owner.lock()) scope->completed(shared_from_this());
 }
-} // namespace cordis::detail
+} // namespace eve::detail
 
-namespace cordis {
+namespace eve {
 /** @brief 调度器身份在作用域创建后保持不变。 */
 bool EffectScope::usesScheduler(const std::shared_ptr<IScheduler>& scheduler) const { return control_->scheduler == scheduler; }
 /** @brief 仅广播取消；资源清理由之后的 close 屏障推进。 */
@@ -387,4 +387,4 @@ Result<ScopeSnapshot> EffectScope::snapshot() const
     }
     return Result<ScopeSnapshot>::success(std::move(snapshot));
 }
-} // namespace cordis
+} // namespace eve

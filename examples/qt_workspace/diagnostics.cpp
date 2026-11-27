@@ -4,7 +4,7 @@
 #include "modules_panel_p.hpp"
 
 namespace notebook::detail {
-QString moduleErrorText(const cordis::ErrorInfo& error, unsigned depth)
+QString moduleErrorText(const eve::ErrorInfo& error, unsigned depth)
 {
     auto text = QString::fromStdString(error.phase + ": " + error.message);
     if (depth < 4)
@@ -13,9 +13,9 @@ QString moduleErrorText(const cordis::ErrorInfo& error, unsigned depth)
     return text;
 }
 namespace {
-const char* stateName(cordis::module::ModuleState state)
+const char* stateName(eve::module::ModuleState state)
 {
-    using cordis::module::ModuleState;
+    using eve::module::ModuleState;
     switch (state) {
     case ModuleState::Serving:
         return "业务入口开放";
@@ -41,8 +41,8 @@ QString moduleDiagnosticsText(const WorkspaceModulesSnapshot& snapshot)
 {
     QString text;
     for (const auto& row : snapshot.generations) {
-        const auto role = row.role == cordis::module::GenerationRole::Current     ? "当前"
-                          : row.role == cordis::module::GenerationRole::Candidate ? "候选"
+        const auto role = row.role == eve::module::GenerationRole::Current     ? "当前"
+                          : row.role == eve::module::GenerationRole::Candidate ? "候选"
                                                                                   : "已退役";
         text += QString::fromStdString(row.manifest.moduleId) + QString("  #%1  ").arg(row.generation.value()) +
                 QString::fromUtf8(role) + " · " + QString::fromUtf8(stateName(row.state));

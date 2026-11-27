@@ -3,11 +3,11 @@
  */
 #pragma once
 #include "native_file_p.hpp"
-#include <cordis/module/manifest.hpp>
+#include <eve/module/manifest.hpp>
 #include <memory>
 #include <vector>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 bool sameManifest(const ModuleManifest& left, const ModuleManifest& right);
 struct VerifiedSource {
     explicit VerifiedSource(PreflightArtifact value) : artifact(std::move(value)) {}
@@ -18,4 +18,4 @@ struct VerifiedSource {
 };
 Result<std::unique_ptr<VerifiedSource>> verifyModuleSource(const std::string& root, const std::string& manifest,
                                                            PreflightLimits limits);
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

@@ -6,14 +6,14 @@
 namespace native_resource_test {
 using namespace native_host_test;
 struct Resources : Scene {
-    using Dispatch = CordisStatus(CORDIS_CALL*)(unsigned, CordisHandle, CordisBytesV1, CordisRequestId*);
-    using Cancel = CordisStatus(CORDIS_CALL*)(unsigned, CordisRequestId);
-    using Effect = CordisStatus(CORDIS_CALL*)(unsigned, CordisHandle, CordisHandle*);
-    using Ready = CordisStatus(CORDIS_CALL*)(unsigned, CordisHandle, CordisStatus);
-    using Close = CordisStatus(CORDIS_CALL*)(unsigned, CordisHandle, CordisRequestId*);
-    using Stat = std::uint64_t(CORDIS_CALL*)(unsigned, unsigned);
-    using Ack = void(CORDIS_CALL*)(unsigned, CordisStatus);
-    using Data = CordisBytesV1(CORDIS_CALL*)(unsigned);
+    using Dispatch = EveStatus(EVE_CALL*)(unsigned, EveHandle, EveBytesV1, EveRequestId*);
+    using Cancel = EveStatus(EVE_CALL*)(unsigned, EveRequestId);
+    using Effect = EveStatus(EVE_CALL*)(unsigned, EveHandle, EveHandle*);
+    using Ready = EveStatus(EVE_CALL*)(unsigned, EveHandle, EveStatus);
+    using Close = EveStatus(EVE_CALL*)(unsigned, EveHandle, EveRequestId*);
+    using Stat = std::uint64_t(EVE_CALL*)(unsigned, unsigned);
+    using Ack = void(EVE_CALL*)(unsigned, EveStatus);
+    using Data = EveBytesV1(EVE_CALL*)(unsigned);
     Dispatch dispatch;
     Cancel cancel;
     Effect effect;
@@ -26,11 +26,11 @@ struct Resources : Scene {
                        const QString& fixture = "resources", const QString& folder = "module",
                        std::optional<ServiceRegistry> services = {})
         : Scene(std::move(scheduler), fixture, folder, std::move(services)),
-          dispatch(entry<Dispatch>(image, "cordis_resource_dispatch")),
-          cancel(entry<Cancel>(image, "cordis_resource_cancel")),
-          effect(entry<Effect>(image, "cordis_resource_effect")), ready(entry<Ready>(image, "cordis_resource_ready")),
-          close(entry<Close>(image, "cordis_resource_close")), stat(entry<Stat>(image, "cordis_resource_stat")),
-          ack(entry<Ack>(image, "cordis_resource_ack_status")), data(entry<Data>(image, "cordis_resource_result"))
+          dispatch(entry<Dispatch>(image, "eve_resource_dispatch")),
+          cancel(entry<Cancel>(image, "eve_resource_cancel")),
+          effect(entry<Effect>(image, "eve_resource_effect")), ready(entry<Ready>(image, "eve_resource_ready")),
+          close(entry<Close>(image, "eve_resource_close")), stat(entry<Stat>(image, "eve_resource_stat")),
+          ack(entry<Ack>(image, "eve_resource_ack_status")), data(entry<Data>(image, "eve_resource_result"))
     {
     }
     NativeInstance active(std::uint64_t id = 1)
@@ -41,20 +41,20 @@ struct Resources : Scene {
         CHECK(started.tryResult()->hasValue());
         return instance;
     }
-    CordisRequestId send(CordisHandle callback = 7, unsigned index = 0, const std::string& text = "{\"v\":1}")
+    EveRequestId send(EveHandle callback = 7, unsigned index = 0, const std::string& text = "{\"v\":1}")
     {
-        CordisRequestId request = 0;
+        EveRequestId request = 0;
         CHECK(dispatch(index, callback, {reinterpret_cast<const uint8_t*>(text.data()), text.size()}, &request) ==
-              CORDIS_PENDING);
+              EVE_PENDING);
         CHECK(request);
         return request;
     }
-    CordisHandle add(CordisHandle callback = 11, unsigned index = 0, bool setup = true)
+    EveHandle add(EveHandle callback = 11, unsigned index = 0, bool setup = true)
     {
-        CordisHandle handle = 0;
-        CHECK(effect(index, callback, &handle) == CORDIS_OK && handle);
+        EveHandle handle = 0;
+        CHECK(effect(index, callback, &handle) == EVE_OK && handle);
         if (setup)
-            CHECK(ready(index, handle, CORDIS_OK) == CORDIS_OK);
+            CHECK(ready(index, handle, EVE_OK) == EVE_OK);
         return handle;
     }
     std::string result(unsigned index = 0)
@@ -77,7 +77,7 @@ void dispatch(bool early = false, bool sync = false)
         CHECK(s.finishAll() == 1);
         s.pump();
     }
-    CHECK(s.stat(0, 0) == 1 && s.stat(0, 5) == request && s.stat(0, 3) == CORDIS_OK);
+    CHECK(s.stat(0, 0) == 1 && s.stat(0, 5) == request && s.stat(0, 3) == EVE_OK);
     CHECK(instance.snapshot().value().pendingHostOperations == 0);
     CHECK(s.result() == (sync ? "" : "{\"integer\":9007199254740993}"));
     s.finish();
@@ -91,14 +91,14 @@ void cancel(bool entered, bool closing)
         s.pump();
     auto stopped = closing ? std::optional<Task<CleanupReport>>(instance.close()) : std::nullopt;
     if (!closing)
-        CHECK(s.cancel(0, request) == CORDIS_OK);
+        CHECK(s.cancel(0, request) == EVE_OK);
     s.pump();
     if (entered) {
         CHECK(s.stat(0, 0) == 0 && (!stopped || !stopped->isReady()));
         CHECK(s.finishAll() == 1);
         s.pump();
     }
-    CHECK(s.stat(0, 0) == 1 && static_cast<CordisStatus>(s.stat(0, 3)) == CORDIS_E_CANCELLED);
+    CHECK(s.stat(0, 0) == 1 && static_cast<EveStatus>(s.stat(0, 3)) == EVE_E_CANCELLED);
     if (stopped)
         CHECK(stopped->tryResult()->value().quiescent);
     s.finish();
@@ -131,7 +131,7 @@ void setupPending()
     auto closed = instance.close();
     s.pump();
     CHECK(!closed.isReady() && s.stat(0, 2) == 0);
-    CHECK(s.ready(0, effect, CORDIS_E_CANCELLED) == CORDIS_OK);
+    CHECK(s.ready(0, effect, EVE_E_CANCELLED) == EVE_OK);
     s.pump();
     CHECK(closed.tryResult()->value().quiescent && s.stat(0, 2) == 1);
     s.finish();
@@ -141,8 +141,8 @@ void explicitClose(bool fail = false)
     Resources s;
     auto instance = s.active();
     auto effect = s.add(fail ? 13 : 12);
-    CordisRequestId request = 0;
-    CHECK(s.close(0, effect, &request) == CORDIS_PENDING && request && s.stat(0, 0) == 0);
+    EveRequestId request = 0;
+    CHECK(s.close(0, effect, &request) == EVE_PENDING && request && s.stat(0, 0) == 0);
     s.pump();
     if (!fail) {
         CHECK(s.stat(0, 0) == 0 && s.finishAll() == 1);
@@ -150,11 +150,11 @@ void explicitClose(bool fail = false)
     }
     CHECK(s.stat(0, 0) == 1 && s.stat(0, 5) == request);
     if (fail) {
-        CHECK(static_cast<CordisStatus>(s.stat(0, 3)) == CORDIS_E_FAILED);
+        CHECK(static_cast<EveStatus>(s.stat(0, 3)) == EVE_E_FAILED);
         CHECK(instance.closed().tryResult()->value().quiescent == false);
         CHECK(instance.snapshot().value().uncertain && !s.manager.snapshot().value()[0].resources.records.empty());
     } else {
-        CHECK(s.stat(0, 3) == CORDIS_OK && s.stat(0, 2) == 1);
+        CHECK(s.stat(0, 3) == EVE_OK && s.stat(0, 2) == 1);
         s.finish();
         CHECK(s.stat(0, 2) == 1);
     }
@@ -175,8 +175,8 @@ void closeDuringCleanup()
     Resources s;
     auto instance = s.active();
     auto effect = s.add(12);
-    CordisRequestId request = 0;
-    CHECK(s.close(0, effect, &request) == CORDIS_PENDING);
+    EveRequestId request = 0;
+    CHECK(s.close(0, effect, &request) == EVE_PENDING);
     s.pump();
     CHECK(s.stat(0, 4) != 0);
     auto closed = instance.close();
@@ -192,22 +192,22 @@ void guards()
     Resources s;
     auto a = s.active(), b = s.active(2);
     auto effect = s.add();
-    CordisRequestId request = 99;
-    CHECK(s.close(1, effect, &request) == CORDIS_E_NOT_FOUND && request == 0);
-    CHECK(s.ready(1, effect, CORDIS_OK) == CORDIS_E_NOT_FOUND);
-    CordisStatus wrongThread = CORDIS_OK;
+    EveRequestId request = 99;
+    CHECK(s.close(1, effect, &request) == EVE_E_NOT_FOUND && request == 0);
+    CHECK(s.ready(1, effect, EVE_OK) == EVE_E_NOT_FOUND);
+    EveStatus wrongThread = EVE_OK;
     std::thread worker([&] {
         request = 99;
         wrongThread = s.dispatch(0, 8, {nullptr, 0}, &request);
     });
     worker.join();
-    CHECK(wrongThread == CORDIS_E_WRONG_THREAD && request == 0);
-    CHECK(s.dispatch(0, 8, {nullptr, 1}, &request) == CORDIS_E_INVALID_ARGUMENT && request == 0);
-    CHECK(s.dispatch(0, 0, {reinterpret_cast<const uint8_t*>("{}"), 2}, &request) == CORDIS_E_INVALID_ARGUMENT);
-    CHECK(s.cancel(0, 123456) == CORDIS_E_NOT_FOUND);
+    CHECK(wrongThread == EVE_E_WRONG_THREAD && request == 0);
+    CHECK(s.dispatch(0, 8, {nullptr, 1}, &request) == EVE_E_INVALID_ARGUMENT && request == 0);
+    CHECK(s.dispatch(0, 0, {reinterpret_cast<const uint8_t*>("{}"), 2}, &request) == EVE_E_INVALID_ARGUMENT);
+    CHECK(s.cancel(0, 123456) == EVE_E_NOT_FOUND);
     for (unsigned i = 0; i < 128; ++i)
         s.send(8);
-    CHECK(s.dispatch(0, 8, {reinterpret_cast<const uint8_t*>("{}"), 2}, &request) == CORDIS_E_LIMIT && request == 0);
+    CHECK(s.dispatch(0, 8, {reinterpret_cast<const uint8_t*>("{}"), 2}, &request) == EVE_E_LIMIT && request == 0);
     s.pump();
     CHECK(s.stat(0, 0) == 128);
     s.send(9);
@@ -220,7 +220,7 @@ void duplicateReady()
     Resources s;
     auto instance = s.active();
     auto effect = s.add();
-    CHECK(s.ready(0, effect, CORDIS_OK) == CORDIS_E_ABI_PROTOCOL);
+    CHECK(s.ready(0, effect, EVE_OK) == EVE_E_ABI_PROTOCOL);
     CHECK(instance.closed().tryResult()->value().quiescent == false);
     CHECK(instance.snapshot().value().uncertain);
 }
@@ -228,19 +228,19 @@ void effectReuse()
 {
     Resources s;
     auto instance = s.active();
-    CordisHandle previous = 0;
+    EveHandle previous = 0;
     for (unsigned i = 0; i < 128; ++i) {
         auto effect = s.add();
         CHECK(effect > previous);
         previous = effect;
-        CordisRequestId request = 0;
-        CHECK(s.close(0, effect, &request) == CORDIS_PENDING);
+        EveRequestId request = 0;
+        CHECK(s.close(0, effect, &request) == EVE_PENDING);
         s.pump();
     }
     CHECK(s.stat(0, 2) == 128 && instance.snapshot().value().resources.effects.empty());
-    CordisHandle next = 0;
-    CHECK(s.effect(0, 11, &next) == CORDIS_OK && next > previous);
-    CHECK(s.ready(0, next, CORDIS_OK) == CORDIS_OK);
+    EveHandle next = 0;
+    CHECK(s.effect(0, 11, &next) == EVE_OK && next > previous);
+    CHECK(s.ready(0, next, EVE_OK) == EVE_OK);
     s.finish();
     CHECK(s.stat(0, 2) == 129);
 }
@@ -248,7 +248,7 @@ void rejectedAck()
 {
     Resources s;
     auto instance = s.active();
-    s.ack(0, CORDIS_PENDING);
+    s.ack(0, EVE_PENDING);
     s.send(8);
     s.pump();
     CHECK(instance.closed().tryResult()->value().quiescent == false);

@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 /** @brief 接受单个 UTF-8 JSON 值，最多 64 层容器，转义必须为 Unicode 标量。
  * 保留重复成员名及原始文本；业务 schema 在其所属桥中另验。空文本不属于 JSON。
  */
@@ -16,4 +16,4 @@ bool validAbiJson(std::string_view text) noexcept;
 bool validAbiUtf8(std::string_view text) noexcept;
 /** @brief 严格解码能力名称数组，最多 128 项/每项 128 UTF-8 字节，拒绝空值和转义同名项。 */
 std::optional<std::vector<std::string>> abiStringArray(std::string_view text);
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

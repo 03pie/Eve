@@ -29,7 +29,7 @@ void until(Predicate ready, const char* failure)
 
 /** @brief 等待异步结果并在失败时保留真实的宿主诊断。 */
 template<class T>
-auto await(const cordis::Task<T>& task)
+auto await(const eve::Task<T>& task)
 {
     until([&] { return task.isReady(); }, "The workbench task did not settle.");
     auto result = task.tryResult();
@@ -39,7 +39,7 @@ auto await(const cordis::Task<T>& task)
 }
 
 /** @brief 等待宿主释放资源后关闭调度器，检查线程队列和会话均已清空。 */
-void close(cordis::workbench::Workbench& host)
+void close(eve::workbench::Workbench& host)
 {
     await(host.close());
     host.scheduler->close().value();
@@ -49,9 +49,9 @@ void close(cordis::workbench::Workbench& host)
 }
 
 /** @brief 应用插件自有配置，并显式保存接受的修订以供下个进程读取。 */
-void savePluginConfiguration(cordis::workbench::Workbench& host, const cordis::loader::ParsedConfiguration& source)
+void savePluginConfiguration(eve::workbench::Workbench& host, const eve::loader::ParsedConfiguration& source)
 {
-    using namespace cordis::loader;
+    using namespace eve::loader;
     const auto preview = [&](const char* config) {
         const auto changed = setEntryConfiguration(source, "main", config).value();
         return host.session->preview(changed.normalizedYaml());
@@ -74,12 +74,12 @@ void savePluginConfiguration(cordis::workbench::Workbench& host, const cordis::l
 /** @brief 新建时检查空配置，冷启动时核对从磁盘恢复的历史字段和数值原文。 */
 void verifyInstalledConsumer(const QString& manifest, const QString& workspace, bool reopen)
 {
-    cordis::workbench::Workbench host;
+    eve::workbench::Workbench host;
     try {
         host.open(manifest, workspace);
         host.publishUi();
         const auto applied = await(host.applyInitial().settled);
-        if (applied->value().outcome != cordis::loader::PlanOutcome::Applied || !applied->value().errors.empty())
+        if (applied->value().outcome != eve::loader::PlanOutcome::Applied || !applied->value().errors.empty())
             throw std::runtime_error("The workbench could not activate the template module.");
         until([&] {
             const auto pages = host.shell.pages()->snapshot().value();
@@ -112,11 +112,11 @@ int main(int argc, char** argv)
     const auto args = application.arguments();
     if (args.size() < 3 || args.size() > 4 ||
         (args.size() == 4 && args[3] != "create" && args[3] != "reopen")) {
-        std::cerr << "Usage: cordis_sdk_consumer_tests module.json workspace [create|reopen]\n";
+        std::cerr << "Usage: eve_sdk_consumer_tests module.json workspace [create|reopen]\n";
         return 1;
     }
     QStandardPaths::setTestModeEnabled(true);
-    application.setApplicationName("CordisSdkConsumer-" + QFileInfo(QFileInfo(args[2]).absolutePath()).fileName());
+    application.setApplicationName("EveSdkConsumer-" + QFileInfo(QFileInfo(args[2]).absolutePath()).fileName());
     try {
         verifyInstalledConsumer(args[1], args[2], args.value(3) == "reopen");
         return 0;

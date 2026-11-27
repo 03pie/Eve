@@ -12,12 +12,12 @@
 #include <QRegularExpression>
 #include <algorithm>
 #include <array>
-#include <cordis/module/manifest.hpp>
+#include <eve/module/manifest.hpp>
 #include <initializer_list>
 #include <limits>
 #include <set>
 
-namespace cordis::module {
+namespace eve::module {
 namespace {
 using detail::OpenedPath;
 ErrorInfo failure(std::string phase, std::string message, ErrorCode code = ErrorCode::ConfigInvalid)
@@ -283,4 +283,4 @@ Result<PreflightArtifact> preflightModule(const std::string& pluginRoot, const s
         PreflightArtifact(std::move(parsed).value(), canonicalManifest.toUtf8().toStdString(),
                           canonicalLibrary.toUtf8().toStdString(), static_cast<std::uint64_t>(read)));
 }
-} // namespace cordis::module
+} // namespace eve::module

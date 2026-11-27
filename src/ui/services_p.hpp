@@ -2,8 +2,8 @@
  * @brief 外壳与命令/通知后端的宿主私有桥，不进入插件 SDK。
  */
 #pragma once
-#include <cordis/qt/scheduler.hpp>
-#include <cordis/task.hpp>
+#include <eve/qt/scheduler.hpp>
+#include <eve/task.hpp>
 #include <memory>
 #include "output_p.hpp"
 #include <vector>
@@ -12,7 +12,7 @@ class QLabel;
 class QListView;
 class QAction;
 class QWidget;
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 struct ServicesControl;
 void configureNotificationCenter(const std::shared_ptr<ServicesControl>& control, QWidget* window,
                                  std::function<QString(InstanceId)> sourceName = {});
@@ -30,4 +30,4 @@ Task<void> closeUiServices(const std::shared_ptr<ServicesControl>& control);
 /** @brief 命令视图共享真实注册记录及平台 QAction，过滤只操作宿主值。 */
 void configureCommandPanel(const std::shared_ptr<ServicesControl>& control, QWidget* page,
     const std::vector<QAction*>& actions, std::shared_ptr<OutputControl> output, WindowAccess access);
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

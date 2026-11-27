@@ -8,7 +8,7 @@
 #include <QMouseEvent>
 #include <QPalette>
 #include "theme_palette_p.hpp"
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 /** @brief 固定诊断标签归宿主窗口所有，禁止 Ela 默认的拖出独立窗口行为。 */
 class FixedDiagnosticsTabs final : public ElaTabWidget {
 public:
@@ -49,4 +49,4 @@ protected:
         return ElaTabWidget::eventFilter(watched, event);
     }
 };
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

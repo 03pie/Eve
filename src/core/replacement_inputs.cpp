@@ -3,7 +3,7 @@
  */
 #include "replacement_scope_p.hpp"
 #include "service_p.hpp"
-namespace cordis::detail {
+namespace eve::detail {
 namespace {
 ErrorInfo inputError(ErrorCode code, const char* message, OperationId operation)
 {
@@ -183,10 +183,10 @@ Result<std::vector<ReplacementInputBinding>> CoreReplacementAccess::inputBinding
     }
     return Output::success(std::move(bindings));
 }
-} // namespace cordis::detail
-namespace cordis {
+} // namespace eve::detail
+namespace eve {
 Result<void> ServiceRegistry::replacementProviderAccess(InstanceId instance) const
 {
     return detail::replacementProviderAccess(control_, instance);
 }
-} // namespace cordis
+} // namespace eve

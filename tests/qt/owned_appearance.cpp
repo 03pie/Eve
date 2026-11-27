@@ -58,7 +58,7 @@ struct Evidence {
                         {"height", surface->height()}, {"dpr", capture.devicePixelRatio()},
                         {"screenshot", file + ".png"}, {"windowsMaterialAccepted", top->property("ElaWindowMaterialApplied").toBool()}};
         if (name == "configuration") {
-            const auto handle = required<QSplitter>(surface, "CordisConfigSplitter")->handle(1);
+            const auto handle = required<QSplitter>(surface, "EveConfigSplitter")->handle(1);
             const auto divider = image.pixelColor(handle->mapTo(surface, handle->rect().center()) * dpr);
             row["divider"] = divider.name(QColor::HexArgb);
             PLATFORM_CHECK(divider.alpha() < 200 || (dark ? divider.lightness() < 130 : divider.lightness() > 150));
@@ -127,7 +127,7 @@ struct Evidence {
 
 void ownedAppearance(const QString& sourceBin)
 {
-    const auto path = qEnvironmentVariable("CORDIS_OWNED_APPEARANCE_EVIDENCE");
+    const auto path = qEnvironmentVariable("EVE_OWNED_APPEARANCE_EVIDENCE");
     PLATFORM_CHECK(!path.isEmpty() && QDir().mkpath(path));
     Evidence evidence{QDir(path), {}};
     PLATFORM_CHECK(evidence.folder.entryList(QDir::Files).isEmpty());
@@ -139,13 +139,13 @@ void ownedAppearance(const QString& sourceBin)
     for (auto top : QApplication::topLevelWidgets())
         if (auto main = qobject_cast<ElaWindow*>(top)) window = main;
     PLATFORM_CHECK(window);
-    required<QAction>(window, "CordisOpenSettings")->trigger();
-    const auto theme = required<QComboBox>(window, "CordisSettingsTheme");
-    const auto material = required<QComboBox>(window, "CordisSettingsMaterial");
-    const auto center = required<QWidget>(window, "CordisNotificationCenter");
-    const auto list = required<QListView>(center, "CordisNotificationList");
-    const auto empty = required<QLabel>(center, "CordisNotificationEmpty");
-    const auto bell = required<QToolButton>(window, "CordisShowNotifications");
+    required<QAction>(window, "EveOpenSettings")->trigger();
+    const auto theme = required<QComboBox>(window, "EveSettingsTheme");
+    const auto material = required<QComboBox>(window, "EveSettingsMaterial");
+    const auto center = required<QWidget>(window, "EveNotificationCenter");
+    const auto list = required<QListView>(center, "EveNotificationList");
+    const auto empty = required<QLabel>(center, "EveNotificationEmpty");
+    const auto bell = required<QToolButton>(window, "EveShowNotifications");
     const auto cycle = [&](const std::function<void(bool, int)>& observe) {
         for (bool dark : {false, true}) {
             theme->setCurrentIndex(dark);
@@ -183,13 +183,13 @@ void ownedAppearance(const QString& sourceBin)
         until([&] { return !dialog->isVisible(); });
     };
     take(scene.state->shell.showManagement());
-    checkDialog("CordisManagement", "CordisManagementDetails", "management");
-    required<QAction>(window, "CordisConfigurationFile")->trigger();
-    checkDialog("CordisConfigurationPage", "CordisConfigEditor", "configuration");
-    required<QAction>(window, "CordisAddPlugin")->trigger();
-    checkDialog("CordisAddPluginDialog", "CordisAddPluginConfiguration", "add-instance");
-    required<QAction>(window, "CordisOpenModules")->trigger();
-    checkDialog("CordisModuleDiagnostics", "CordisModuleTable", "modules");
+    checkDialog("EveManagement", "EveManagementDetails", "management");
+    required<QAction>(window, "EveConfigurationFile")->trigger();
+    checkDialog("EveConfigurationPage", "EveConfigEditor", "configuration");
+    required<QAction>(window, "EveAddPlugin")->trigger();
+    checkDialog("EveAddPluginDialog", "EveAddPluginConfiguration", "add-instance");
+    required<QAction>(window, "EveOpenModules")->trigger();
+    checkDialog("EveModuleDiagnostics", "EveModuleTable", "modules");
     PLATFORM_CHECK(evidence.captures.size() == 72);
     finishModules(scene);
 }

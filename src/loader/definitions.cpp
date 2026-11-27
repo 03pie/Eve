@@ -7,7 +7,7 @@
 #include <set>
 #include <stdexcept>
 
-namespace cordis::loader {
+namespace eve::loader {
 namespace {
 ErrorInfo error(const char* message)
 {
@@ -166,4 +166,4 @@ Result<PluginModule> ConfigurationDefinitions::module(const std::string& plugin)
     return at == data_->entries.end() ? Result<PluginModule>::failure(error("unknown plugin definition"))
                                       : Result<PluginModule>::success(at->second->configuration.module);
 }
-} // namespace cordis::loader
+} // namespace eve::loader

@@ -5,8 +5,8 @@
 #include <algorithm>
 
 namespace notebook::detail {
-using namespace cordis;
-using namespace cordis::module;
+using namespace eve;
+using namespace eve::module;
 Result<ModuleGenerationSnapshot> retirementTarget(const WorkspaceModulesSnapshot& snapshot, GenerationId generation)
 {
     using Output = Result<ModuleGenerationSnapshot>;
@@ -46,7 +46,7 @@ WorkspaceRetirementReport attemptRetirement(ModuleManager& manager, const Module
 } // namespace notebook::detail
 
 namespace notebook {
-using namespace cordis;
+using namespace eve;
 Result<WorkspaceRetirementReport> Workspace::retryRetirement(GenerationId expectedGeneration)
 {
     using Output = Result<WorkspaceRetirementReport>;

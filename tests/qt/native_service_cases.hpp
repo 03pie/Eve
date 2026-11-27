@@ -5,16 +5,16 @@
 #include "../../src/core/replacement_inspect_p.hpp"
 namespace native_service_test {
 using namespace native_resource_test;
-CordisBytesV1 span(const std::string& text)
+EveBytesV1 span(const std::string& text)
 {
     return {reinterpret_cast<const uint8_t*>(text.data()), text.size()};
 }
 struct Services : Resources {
-    using Register = CordisStatus(CORDIS_CALL*)(unsigned, CordisHandle, const CordisServiceKeyV1*,
-                                                const CordisServiceMetadataV1*, CordisHandle, CordisHandle*);
-    using Withdraw = CordisStatus(CORDIS_CALL*)(unsigned, CordisHandle, CordisRequestId*);
-    using Invoke = CordisStatus(CORDIS_CALL*)(unsigned, const CordisServiceKeyV1*, uint32_t, CordisBytesV1,
-                                              CordisBytesV1, CordisBytesV1, CordisRequestId*);
+    using Register = EveStatus(EVE_CALL*)(unsigned, EveHandle, const EveServiceKeyV1*,
+                                                const EveServiceMetadataV1*, EveHandle, EveHandle*);
+    using Withdraw = EveStatus(EVE_CALL*)(unsigned, EveHandle, EveRequestId*);
+    using Invoke = EveStatus(EVE_CALL*)(unsigned, const EveServiceKeyV1*, uint32_t, EveBytesV1,
+                                              EveBytesV1, EveBytesV1, EveRequestId*);
     Register reg;
     Withdraw withdraw;
     Invoke invoke;
@@ -22,30 +22,30 @@ struct Services : Resources {
                       const QString& fixture = "services", const QString& folder = "module",
                       std::optional<ServiceRegistry> services = {})
         : Resources(std::move(scheduler), fixture, folder, std::move(services)),
-          reg(entry<Register>(image, "cordis_service_register")),
-          withdraw(entry<Withdraw>(image, "cordis_service_withdraw")),
-          invoke(entry<Invoke>(image, "cordis_service_invoke"))
+          reg(entry<Register>(image, "eve_service_register")),
+          withdraw(entry<Withdraw>(image, "eve_service_withdraw")),
+          invoke(entry<Invoke>(image, "eve_service_invoke"))
     {
     }
-    CordisHandle provide(CordisHandle ownedEffect, CordisHandle token = 8, std::uint64_t realm = 1,
+    EveHandle provide(EveHandle ownedEffect, EveHandle token = 8, std::uint64_t realm = 1,
                          const std::string& name = "test.service", unsigned index = 0)
     {
         std::string capabilities = "[\"read\",\"\\u4e2d\"]";
-        CordisServiceKeyV1 key{span(name), 1, 0, realm};
-        CordisServiceMetadataV1 metadata{sizeof(CordisServiceMetadataV1), 2, span(capabilities)};
-        CordisHandle binding = 0;
-        CHECK(reg(index, ownedEffect, &key, &metadata, token, &binding) == CORDIS_OK && binding);
+        EveServiceKeyV1 key{span(name), 1, 0, realm};
+        EveServiceMetadataV1 metadata{sizeof(EveServiceMetadataV1), 2, span(capabilities)};
+        EveHandle binding = 0;
+        CHECK(reg(index, ownedEffect, &key, &metadata, token, &binding) == EVE_OK && binding);
         return binding;
     }
-    CordisStatus request(CordisRequestId& output, unsigned index = 1, std::uint64_t realm = 1, std::uint32_t minor = 0,
+    EveStatus request(EveRequestId& output, unsigned index = 1, std::uint64_t realm = 1, std::uint32_t minor = 0,
                          const std::string& caps = "[]", const std::string& payload = "{\"integer\":9007199254740993}",
                          const std::string& name = "test.service", const std::string& method = "echo")
     {
-        CordisServiceKeyV1 key{span(name), 1, 0, realm};
+        EveServiceKeyV1 key{span(name), 1, 0, realm};
         return invoke(index, &key, minor, span(caps), span(method), span(payload), &output);
     }
 };
-void call(CordisHandle token)
+void call(EveHandle token)
 {
     Services s;
     auto provider = s.active(), consumer = s.active(2);
@@ -55,15 +55,15 @@ void call(CordisHandle token)
     auto services = provider.snapshot().value().services;
     CHECK(services.size() == 1 && services[0].state == BindingState::Published && services[0].metadata.minor == 2);
     CHECK(services[0].metadata.capabilities.size() == 2 && services[0].metadata.capabilities[1] == "中");
-    CordisRequestId request = 0;
-    CHECK(s.request(request) == CORDIS_PENDING && request && s.stat(0, 1) == 0 && s.stat(1, 0) == 0);
+    EveRequestId request = 0;
+    CHECK(s.request(request) == EVE_PENDING && request && s.stat(0, 1) == 0 && s.stat(1, 0) == 0);
     s.pump();
     if (token == 7) {
         CHECK(s.stat(1, 0) == 0 && s.finishAll() == 1);
         s.pump();
     }
     CHECK(s.stat(0, 1) == 1 && s.stat(0, 6) && s.stat(0, 6) != request);
-    CHECK(s.stat(1, 0) == 1 && s.stat(1, 5) == request && s.stat(1, 3) == CORDIS_OK);
+    CHECK(s.stat(1, 0) == 1 && s.stat(1, 5) == request && s.stat(1, 3) == EVE_OK);
     CHECK(s.result(1) == (token == 8 ? "" : "{\"integer\":9007199254740993}"));
     CHECK(consumer.snapshot().value().committedServices == 1);
     s.finish();
@@ -76,14 +76,14 @@ void publication(bool fail)
     auto effect = s.add();
     s.provide(effect);
     auto consumer = s.active(2);
-    CordisRequestId request = 44;
-    CHECK(s.request(request) == CORDIS_E_NOT_FOUND && request == 0);
+    EveRequestId request = 44;
+    CHECK(s.request(request) == EVE_E_NOT_FOUND && request == 0);
     CHECK(provider.snapshot().value().services[0].state == BindingState::Staged);
     if (!fail) {
         CHECK(s.finishAll() == 1);
         s.pump();
         CHECK(started.tryResult()->hasValue());
-        CHECK(s.request(request) == CORDIS_PENDING);
+        CHECK(s.request(request) == EVE_PENDING);
         s.pump();
         CHECK(s.stat(0, 1) == 1);
     } else
@@ -97,31 +97,31 @@ void guards()
     auto effect = s.add();
     auto binding = s.provide(effect);
     s.pump();
-    CordisRequestId request = 99;
-    CHECK(s.request(request, 1, 1, 3) == CORDIS_E_UNSUPPORTED && request == 0);
-    CHECK(s.request(request, 1, 1, 0, "[\"missing\"]") == CORDIS_E_UNSUPPORTED && request == 0);
-    CHECK(s.request(request, 1, 1, 0, "[\"a\",\"\\u0061\"]") == CORDIS_E_INVALID_ARGUMENT);
-    CHECK(s.request(request, 1, 1, 0, "{}") == CORDIS_E_INVALID_ARGUMENT);
-    CHECK(s.request(request, 1, 1, 0, "[]", "broken") == CORDIS_E_INVALID_ARGUMENT);
-    CHECK(s.request(request, 1, 1, 0, "[]", "{}", "test.service", "") == CORDIS_E_INVALID_ARGUMENT);
-    CHECK(s.request(request, 1, 999999) == CORDIS_E_INVALID_ARGUMENT);
-    CHECK(s.withdraw(1, binding, &request) == CORDIS_E_NOT_FOUND && request == 0);
-    CordisHandle foreign = 99;
+    EveRequestId request = 99;
+    CHECK(s.request(request, 1, 1, 3) == EVE_E_UNSUPPORTED && request == 0);
+    CHECK(s.request(request, 1, 1, 0, "[\"missing\"]") == EVE_E_UNSUPPORTED && request == 0);
+    CHECK(s.request(request, 1, 1, 0, "[\"a\",\"\\u0061\"]") == EVE_E_INVALID_ARGUMENT);
+    CHECK(s.request(request, 1, 1, 0, "{}") == EVE_E_INVALID_ARGUMENT);
+    CHECK(s.request(request, 1, 1, 0, "[]", "broken") == EVE_E_INVALID_ARGUMENT);
+    CHECK(s.request(request, 1, 1, 0, "[]", "{}", "test.service", "") == EVE_E_INVALID_ARGUMENT);
+    CHECK(s.request(request, 1, 999999) == EVE_E_INVALID_ARGUMENT);
+    CHECK(s.withdraw(1, binding, &request) == EVE_E_NOT_FOUND && request == 0);
+    EveHandle foreign = 99;
     std::string name = "test.service", caps = "[]";
-    CordisServiceKeyV1 key{span(name), 1, 0, 1};
-    CordisServiceMetadataV1 metadata{sizeof(CordisServiceMetadataV1), 0, span(caps)};
-    CHECK(s.reg(1, effect, &key, &metadata, 8, &foreign) == CORDIS_E_INVALID_ARGUMENT && foreign == 0);
-    CHECK(s.reg(0, effect, &key, &metadata, 8, &foreign) == CORDIS_E_BUSY && foreign == 0);
+    EveServiceKeyV1 key{span(name), 1, 0, 1};
+    EveServiceMetadataV1 metadata{sizeof(EveServiceMetadataV1), 0, span(caps)};
+    CHECK(s.reg(1, effect, &key, &metadata, 8, &foreign) == EVE_E_INVALID_ARGUMENT && foreign == 0);
+    CHECK(s.reg(0, effect, &key, &metadata, 8, &foreign) == EVE_E_BUSY && foreign == 0);
     key.reserved = 1;
-    CHECK(s.reg(0, effect, &key, &metadata, 8, &foreign) == CORDIS_E_INVALID_ARGUMENT);
+    CHECK(s.reg(0, effect, &key, &metadata, 8, &foreign) == EVE_E_INVALID_ARGUMENT);
     key.reserved = 0;
     metadata.struct_size = 0;
-    CHECK(s.reg(0, effect, &key, &metadata, 8, &foreign) == CORDIS_E_INVALID_ARGUMENT);
-    CordisStatus wrong = CORDIS_OK;
+    CHECK(s.reg(0, effect, &key, &metadata, 8, &foreign) == EVE_E_INVALID_ARGUMENT);
+    EveStatus wrong = EVE_OK;
     std::thread worker([&] { wrong = s.request(request); });
     worker.join();
-    CHECK(wrong == CORDIS_E_WRONG_THREAD && request == 0);
-    CHECK(s.request(request, 0) == CORDIS_E_BUSY); // 不能提交等待自身退出的服务环。
+    CHECK(wrong == EVE_E_WRONG_THREAD && request == 0);
+    CHECK(s.request(request, 0) == EVE_E_BUSY); // 不能提交等待自身退出的服务环。
     s.finish();
 }
 void realms()
@@ -133,15 +133,15 @@ void realms()
     auto provider = s.active(), consumer = s.active(2);
     s.provide(s.add(), 8, realm.value());
     s.pump();
-    CordisRequestId request = 0;
-    CHECK(s.request(request) == CORDIS_E_NOT_FOUND);
-    CHECK(s.request(request, 1, realm.value(), 2, "[\"read\"]") == CORDIS_PENDING);
+    EveRequestId request = 0;
+    CHECK(s.request(request) == EVE_E_NOT_FOUND);
+    CHECK(s.request(request, 1, realm.value(), 2, "[\"read\"]") == EVE_PENDING);
     s.pump();
     CHECK(s.stat(0, 1) == 1);
     ServiceRegistry other(scheduler);
     CHECK(!NativeModule::open(s.manager, s.generation, scheduler, other).hasValue());
     auto foreign = other.createRealm().value();
-    CHECK(s.request(request, 1, foreign.value()) == CORDIS_E_INVALID_ARGUMENT);
+    CHECK(s.request(request, 1, foreign.value()) == EVE_E_INVALID_ARGUMENT);
     auto another = std::make_shared<FakeScheduler>();
     ServiceRegistry wrong(another);
     CHECK(!NativeModule::open(s.manager, s.generation, scheduler, wrong).hasValue());
@@ -154,13 +154,13 @@ void withdraw()
     auto binding = s.provide(s.add());
     s.add(11, 1);
     s.pump();
-    CordisRequestId request = 0;
-    CHECK(s.request(request) == CORDIS_PENDING);
+    EveRequestId request = 0;
+    CHECK(s.request(request) == EVE_PENDING);
     s.pump();
-    CordisRequestId withdrawn = 0;
-    CHECK(s.withdraw(0, binding, &withdrawn) == CORDIS_PENDING && withdrawn && s.stat(0, 0) == 0);
-    CHECK(s.request(request) == CORDIS_E_CLOSED);
-    CHECK(s.request(request, 2) == CORDIS_E_NOT_FOUND);
+    EveRequestId withdrawn = 0;
+    CHECK(s.withdraw(0, binding, &withdrawn) == EVE_PENDING && withdrawn && s.stat(0, 0) == 0);
+    CHECK(s.request(request) == EVE_E_CLOSED);
+    CHECK(s.request(request, 2) == EVE_E_NOT_FOUND);
     s.pump();
     CHECK(consumer.closed().tryResult()->value().quiescent);
     CHECK(s.stat(0, 0) == 1 && s.stat(0, 5) == withdrawn && s.stat(0, 7) == 0);
@@ -188,12 +188,12 @@ void replacementWithdrawal(WithdrawalKind kind)
     const auto held = std::find_if(original.services.begin(), original.services.end(),
                                    [](const auto& value) { return value.key.name == "test.service"; });
     CHECK(held != original.services.end());
-    cordis::detail::CoreReplacementAccess::sealPlan(scope, kernel, {}, {{held->key, held->id}}).value();
+    eve::detail::CoreReplacementAccess::sealPlan(scope, kernel, {}, {{held->key, held->id}}).value();
     const auto records = s.state().resources.records.size();
-    CordisRequestId refused = 99;
+    EveRequestId refused = 99;
     const bool effectClose = kind == WithdrawalKind::Effect;
     std::optional<Task<CleanupReport>> refusedClose;
-    CordisStatus status = CORDIS_OK;
+    EveStatus status = EVE_OK;
     if (kind == WithdrawalKind::Instance || kind == WithdrawalKind::Module)
         refusedClose = kind == WithdrawalKind::Instance ? provider.close() : s.module.close();
     else
@@ -205,28 +205,28 @@ void replacementWithdrawal(WithdrawalKind kind)
         CHECK(result && !result->hasValue() && result->error().code == ErrorCode::ConfigConflict &&
               result->error().operation == scope.snapshot().value().operation);
     } else
-        CHECK(status == CORDIS_E_BUSY && refused == 0);
+        CHECK(status == EVE_E_BUSY && refused == 0);
     CHECK(!s.module.snapshot().value().closing && !s.module.snapshot().value().faulted);
     CHECK(after.pendingHostOperations == original.pendingHostOperations &&
           s.state().resources.records.size() == records && !s.state().failure);
     CHECK(after.services.size() == 2 &&
           std::all_of(after.services.begin(), after.services.end(),
                       [](const auto& value) { return value.state == BindingState::Published; }));
-    CordisRequestId request = 0;
-    CHECK(s.request(request) == CORDIS_PENDING && request);
+    EveRequestId request = 0;
+    CHECK(s.request(request) == EVE_PENDING && request);
     s.pump();
-    CHECK(s.stat(1, 3) == CORDIS_OK && consumer.snapshot().value().committedServices == 1);
+    CHECK(s.stat(1, 3) == EVE_OK && consumer.snapshot().value().committedServices == 1);
     scope.release().value();
-    CordisRequestId withdrawn = 0;
+    EveRequestId withdrawn = 0;
     if (refusedClose) {
         auto closed = kind == WithdrawalKind::Instance ? provider.close() : s.module.close();
         s.pump();
         CHECK(closed.tryResult()->value().quiescent);
     } else {
-        CHECK((effectClose ? s.close(0, effect, &withdrawn) : s.withdraw(0, binding, &withdrawn)) == CORDIS_PENDING &&
+        CHECK((effectClose ? s.close(0, effect, &withdrawn) : s.withdraw(0, binding, &withdrawn)) == EVE_PENDING &&
               withdrawn);
         s.pump();
-        CHECK(s.stat(0, 5) == withdrawn && s.stat(0, 3) == CORDIS_OK);
+        CHECK(s.stat(0, 5) == withdrawn && s.stat(0, 3) == EVE_OK);
     }
     after = provider.snapshot().value();
     CHECK(after.state == (refusedClose ? NativeInstanceState::Destroyed : NativeInstanceState::Started) &&
@@ -245,8 +245,8 @@ void cleanup()
     s.provide(s.add(), 9);
     s.add(15, 1);
     s.pump();
-    CordisRequestId request = 0;
-    CHECK(s.request(request) == CORDIS_PENDING);
+    EveRequestId request = 0;
+    CHECK(s.request(request) == EVE_PENDING);
     s.pump();
     auto closed = provider.close();
     s.pump();
@@ -264,17 +264,17 @@ void cancel(bool entered)
     auto provider = s.active(), consumer = s.active(2);
     s.provide(s.add(), 7);
     s.pump();
-    CordisRequestId request = 0;
-    CHECK(s.request(request) == CORDIS_PENDING);
+    EveRequestId request = 0;
+    CHECK(s.request(request) == EVE_PENDING);
     if (entered)
         s.pump();
-    CHECK(s.cancel(1, request) == CORDIS_OK);
+    CHECK(s.cancel(1, request) == EVE_OK);
     s.pump();
     if (entered) {
         CHECK(s.stat(1, 0) == 0 && s.finishAll() == 1);
         s.pump();
     }
-    CHECK(s.stat(0, 1) == (entered ? 1U : 0U) && static_cast<CordisStatus>(s.stat(1, 3)) == CORDIS_E_CANCELLED);
+    CHECK(s.stat(0, 1) == (entered ? 1U : 0U) && static_cast<EveStatus>(s.stat(1, 3)) == EVE_E_CANCELLED);
     s.finish();
 }
 void limits()
@@ -285,10 +285,10 @@ void limits()
     for (int i = 0; i < 128; ++i)
         s.provide(effect, 8, 1, "service." + std::to_string(i));
     std::string name = "extra", caps = "[]";
-    CordisServiceKeyV1 key{span(name), 1, 0, 1};
-    CordisServiceMetadataV1 metadata{sizeof(CordisServiceMetadataV1), 0, span(caps)};
-    CordisHandle binding = 88;
-    CHECK(s.reg(0, effect, &key, &metadata, 8, &binding) == CORDIS_E_LIMIT && binding == 0);
+    EveServiceKeyV1 key{span(name), 1, 0, 1};
+    EveServiceMetadataV1 metadata{sizeof(EveServiceMetadataV1), 0, span(caps)};
+    EveHandle binding = 88;
+    CHECK(s.reg(0, effect, &key, &metadata, 8, &binding) == EVE_E_LIMIT && binding == 0);
     s.pump();
     s.finish();
 }
@@ -300,8 +300,8 @@ void shared()
     auto provider = first.active(), consumer = second.active(2);
     first.provide(first.add(), 9);
     first.pump();
-    CordisRequestId request = 0;
-    CHECK(second.request(request, 0) == CORDIS_PENDING);
+    EveRequestId request = 0;
+    CHECK(second.request(request, 0) == EVE_PENDING);
     first.pump();
     CHECK(first.stat(0, 1) == 1 && second.stat(0, 0) == 1 && second.stat(0, 5) == request);
     auto closed = first.module.close();
@@ -320,8 +320,8 @@ void rejectedBudget()
     s.pump();
     for (int i = 0; i < 128; ++i)
         s.send(8, 1);
-    CordisRequestId request = 77;
-    CHECK(s.request(request) == CORDIS_E_LIMIT && request == 0);
+    EveRequestId request = 77;
+    CHECK(s.request(request) == EVE_E_LIMIT && request == 0);
     CHECK(consumer.snapshot().value().committedServices == 0);
     s.pump();
     CHECK(s.stat(0, 1) == 0 && s.stat(1, 0) == 128);
@@ -334,11 +334,11 @@ void cancelProtocol()
     auto provider = s.active(), consumer = s.active(2);
     s.provide(s.add(), 7);
     s.pump();
-    CordisRequestId request = 0;
-    CHECK(s.request(request) == CORDIS_PENDING);
+    EveRequestId request = 0;
+    CHECK(s.request(request) == EVE_PENDING);
     s.pump();
-    s.ack(0, CORDIS_PENDING);
-    CHECK(s.cancel(1, request) == CORDIS_E_ABI_PROTOCOL);
+    s.ack(0, EVE_PENDING);
+    CHECK(s.cancel(1, request) == EVE_E_ABI_PROTOCOL);
     CHECK(provider.snapshot().value().uncertain && consumer.snapshot().value().uncertain);
     CHECK(!provider.closed().tryResult()->value().quiescent && !consumer.closed().tryResult()->value().quiescent);
     CHECK(!s.state().resources.records.empty());
@@ -350,20 +350,20 @@ void effectBarrier()
     auto provider = s.active(), consumer = s.active(2);
     auto effect = s.add(11, 0, false);
     s.provide(effect);
-    CordisRequestId request = 55;
-    CHECK(s.request(request) == CORDIS_E_NOT_FOUND && !request);
+    EveRequestId request = 55;
+    CHECK(s.request(request) == EVE_E_NOT_FOUND && !request);
     s.pump();
     CHECK(provider.snapshot().value().services[0].state == BindingState::Staged);
-    CHECK(s.ready(0, effect, CORDIS_OK) == CORDIS_OK);
-    CHECK(s.request(request) == CORDIS_E_NOT_FOUND); // Core ready 尚未收敛。
+    CHECK(s.ready(0, effect, EVE_OK) == EVE_OK);
+    CHECK(s.request(request) == EVE_E_NOT_FOUND); // Core ready 尚未收敛。
     s.pump();
-    CHECK(s.request(request) == CORDIS_PENDING);
+    CHECK(s.request(request) == EVE_PENDING);
     s.pump();
     auto failed = s.add(11, 0, false);
     s.provide(failed, 8, 1, "test.failed");
-    CHECK(s.ready(0, failed, CORDIS_E_FAILED) == CORDIS_OK);
+    CHECK(s.ready(0, failed, EVE_E_FAILED) == EVE_OK);
     s.pump();
-    CHECK(s.request(request, 1, 1, 0, "[]", "{}", "test.failed") == CORDIS_E_NOT_FOUND);
+    CHECK(s.request(request, 1, 1, 0, "[]", "{}", "test.failed") == EVE_E_NOT_FOUND);
     s.finish();
 }
 /** @brief Core 的真实 committed 依赖图拒绝两实例互等；清理不新增绑定。 */
@@ -374,10 +374,10 @@ void cycle()
     s.provide(s.add(), 8, 1, "first", 0);
     s.provide(s.add(16, 1), 8, 1, "second", 1);
     s.pump();
-    CordisRequestId request = 0;
-    CHECK(s.request(request, 1, 1, 0, "[]", "{}", "first") == CORDIS_PENDING);
+    EveRequestId request = 0;
+    CHECK(s.request(request, 1, 1, 0, "[]", "{}", "first") == EVE_PENDING);
     s.pump();
-    CHECK(s.request(request, 0, 1, 0, "[]", "{}", "second") == CORDIS_E_BUSY && !request);
+    CHECK(s.request(request, 0, 1, 0, "[]", "{}", "second") == EVE_E_BUSY && !request);
     s.finish();
 }
 /** @brief ACK 之后调度器仍保留的消费者投递副本阻止两端提前静止。 */
@@ -392,8 +392,8 @@ void retirement()
     s.provide(s.add(), 9);
     CHECK(scheduler->inner.runUntilIdle().hasValue());
     scheduler->capture = true;
-    CordisRequestId request = 0;
-    CHECK(s.request(request) == CORDIS_PENDING);
+    EveRequestId request = 0;
+    CHECK(s.request(request) == EVE_PENDING);
     CHECK(scheduler->inner.runUntilIdle().hasValue() && s.stat(1, 0) == 1);
     auto stopped = s.module.close();
     CHECK(scheduler->inner.runUntilIdle().hasValue());
@@ -411,8 +411,8 @@ void failedCleanup()
     s.provide(s.add());
     s.add(13, 1);
     s.pump();
-    CordisRequestId request = 0;
-    CHECK(s.request(request) == CORDIS_PENDING);
+    EveRequestId request = 0;
+    CHECK(s.request(request) == EVE_PENDING);
     s.pump();
     auto closed = provider.close();
     s.pump();

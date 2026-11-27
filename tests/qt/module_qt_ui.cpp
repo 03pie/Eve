@@ -9,18 +9,18 @@
 #include <QThread>
 #include <QWidget>
 #include <algorithm>
-#include <cordis/module/qt_module.hpp>
-#include <cordis/ui/ela_shell.hpp>
+#include <eve/module/qt_module.hpp>
+#include <eve/ui/ela_shell.hpp>
 #include <cstring>
 #include <iostream>
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <Windows.h>
-using namespace cordis;
-using namespace cordis::module;
-using namespace cordis::ui;
-namespace files = cordis::testing::modules;
+using namespace eve;
+using namespace eve::module;
+using namespace eve::ui;
+namespace files = eve::testing::modules;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -55,10 +55,10 @@ struct Probe {
         std::memcpy(&result, &address, sizeof(result));
         return result;
     }
-    int count(int index) const { return function<int(__cdecl*)(int)>("cordis_qt_ui_count")(index); }
+    int count(int index) const { return function<int(__cdecl*)(int)>("eve_qt_ui_count")(index); }
     bool post(qt::QtScheduler* scheduler) const
     {
-        return function<int(__cdecl*)(qt::QtScheduler*)>("cordis_qt_ui_post")(scheduler) == 1;
+        return function<int(__cdecl*)(qt::QtScheduler*)>("eve_qt_ui_post")(scheduler) == 1;
     }
 };
 std::size_t records(ModuleManager& manager, ResourceKind kind)
@@ -78,8 +78,8 @@ int main(int argc, char** argv)
         QTemporaryDir temporary(args[2] + "/run-XXXXXX");
         CHECK(temporary.isValid());
         temporary.setAutoRemove(false);
-        const auto manifest = files::install(args[3], temporary.path() + "/plugin", "org.cordis.qt.example",
-                                             QJsonArray{"org.cordis.qt.page", "org.cordis.qt.settings"}, "qt-ui");
+        const auto manifest = files::install(args[3], temporary.path() + "/plugin", "org.eve.qt.example",
+                                             QJsonArray{"org.eve.qt.page", "org.eve.qt.settings"}, "qt-ui");
         auto scheduler = std::make_shared<qt::QtScheduler>();
         ElaShell shell(scheduler);
         auto services = std::make_shared<ServiceRegistry>(scheduler);
@@ -90,7 +90,7 @@ int main(int argc, char** argv)
         Probe probe(temporary.path() + "/plugin/module.dll");
         std::optional<Runtime> runtime =
             qtRuntime(loaded.generation,
-                      {"org.cordis.qt.page", {ServiceRequirement::of<UiPagesService>({"ui.pages"})}, {}}, scheduler)
+                      {"org.eve.qt.page", {ServiceRequirement::of<UiPagesService>({"ui.pages"})}, {}}, scheduler)
                 .value();
         auto first = Instance::mount(*runtime, scheduler, "first", services);
         CHECK(wait(first.ready())->hasValue());

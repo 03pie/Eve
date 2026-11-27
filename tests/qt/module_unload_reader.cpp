@@ -27,8 +27,8 @@ bool borrowedReader(Scene& scene, const QString& name)
     {
         auto currentModule = take(NativeModule::open(scene.manager, current.generation, scheduler));
         auto consumerModule = take(NativeModule::open(scene.manager, consumer.generation, scheduler));
-        const auto original = take(currentModule.runtime({"org.cordis.plugin", {}, {}}));
-        std::optional<Runtime> borrowed{take(consumerModule.runtime({"org.cordis.plugin", {}, {}}))};
+        const auto original = take(currentModule.runtime({"org.eve.plugin", {}, {}}));
+        std::optional<Runtime> borrowed{take(consumerModule.runtime({"org.eve.plugin", {}, {}}))};
         const auto borrowedId = borrowed->id();
         Kernel kernel(scheduler);
         CHECK(kernel.registerRuntime("target", original).hasValue());

@@ -30,7 +30,7 @@
 #include <utility>
 #include <vector>
 
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 namespace {
 /** @brief 品牌背景使用原生绘制，缩放时保持清晰，不依赖演示仓库的大体积图片。 */
 QImage banner()
@@ -74,8 +74,8 @@ QPixmap pluginIcon(const QString& id)
 
 HomePage::HomePage()
 {
-    setObjectName("CordisWelcomePage");
-    setWindowTitle(QString::fromUtf8("Cordis 插件工作台"));
+    setObjectName("EveWelcomePage");
+    setWindowTitle(QString::fromUtf8("Eve 插件工作台"));
     setTitleVisible(false);
     setContentsMargins(16, 12, 16, 12);
     auto content = new QWidget;
@@ -85,7 +85,7 @@ HomePage::HomePage()
     layout->setSpacing(16);
     layout->setSizeConstraint(QLayout::SetMinimumSize);
     auto hero = new ElaImageCard(content);
-    hero->setObjectName("CordisHomeBanner");
+    hero->setObjectName("EveHomeBanner");
     hero->setCardImage(banner());
     hero->setBorderRadius(14);
     hero->setMinimumHeight(116);
@@ -99,14 +99,14 @@ HomePage::HomePage()
     title->setIsBold(true);
     count_ = new ElaText(hero);
     count_->setTextPixelSize(14);
-    count_->setObjectName("CordisInstanceSummary");
+    count_->setObjectName("EveInstanceSummary");
     for (auto text : {title, count_.data()}) {
         text->setStyleSheet("color:white;background:transparent;");
         summary->addWidget(text);
     }
     bannerRow_->addLayout(summary, 1);
     add_ = new ActionButton(QString::fromUtf8("添加插件实例…"), hero);
-    add_->setObjectName("CordisWelcomePlugins");
+    add_->setObjectName("EveWelcomePlugins");
     primaryButton(add_);
     bannerRow_->addWidget(add_, 0, Qt::AlignLeft | Qt::AlignVCenter);
     layout->addWidget(hero);
@@ -114,22 +114,22 @@ HomePage::HomePage()
     label->setIsBold(true);
     layout->addWidget(label);
     error_ = new ElaText(content);
-    error_->setObjectName("CordisHomeError");
+    error_->setObjectName("EveHomeError");
     error_->setTextFormat(Qt::PlainText);
     error_->setWordWrap(true);
     error_->hide();
     layout->addWidget(error_);
     cards_ = new QWidget(content);
-    cards_->setObjectName("CordisPluginCards");
+    cards_->setObjectName("EvePluginCards");
     flow_ = new ElaFlowLayout(cards_, 0, 12, 12);
     flow_->setIsAnimation(false);
     layout->addWidget(cards_);
     empty_ = new QWidget(content);
-    empty_->setObjectName("CordisEmptyInstances");
+    empty_->setObjectName("EveEmptyInstances");
     emptyRow_ = new QBoxLayout(QBoxLayout::LeftToRight, empty_);
     emptyRow_->setContentsMargins(0, 0, 0, 0);
     auto emptyText = new ElaText(QString::fromUtf8("暂无插件实例。"), 14, empty_);
-    emptyText->setObjectName("CordisHomeEmpty");
+    emptyText->setObjectName("EveHomeEmpty");
     secondaryText(emptyText);
     emptyRow_->addWidget(emptyText);
     emptyRow_->addStretch();
@@ -141,7 +141,7 @@ HomePage::HomePage()
 void HomePage::focusInstance(const QString& key)
 {
     if (auto card = items_.value(key)) {
-        if (auto manage = card->findChild<QPushButton*>("CordisPluginManage")) {
+        if (auto manage = card->findChild<QPushButton*>("EvePluginManage")) {
             if (auto scroll = findChild<QScrollArea*>())
                 scroll->ensureWidgetVisible(manage);
             manage->setFocus(Qt::OtherFocusReason);
@@ -173,8 +173,8 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
         if (!item) {
             layoutChanged = true;
             item = new ElaScrollPageArea(cards_);
-            item->setObjectName("CordisPluginCard");
-            item->setProperty("CordisPluginId", plugin.id);
+            item->setObjectName("EvePluginCard");
+            item->setProperty("EvePluginId", plugin.id);
             item->setFixedWidth(280);
             item->setMinimumHeight(144);
             item->setMaximumHeight(QWIDGETSIZE_MAX);
@@ -191,19 +191,19 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
             auto text = new QVBoxLayout;
             text->setSpacing(4);
             auto title = new ElaText(item);
-            title->setObjectName("CordisPluginTitle");
+            title->setObjectName("EvePluginTitle");
             title->setTextFormat(Qt::PlainText);
             title->setTextPixelSize(16);
             title->setIsBold(true);
             auto status = new ElaText(item);
-            status->setObjectName("CordisPluginStatus");
+            status->setObjectName("EvePluginStatus");
             status->setTextFormat(Qt::PlainText);
             status->setTextPixelSize(13);
             text->addWidget(title);
             auto statusRow = new QHBoxLayout;
             statusRow->setSpacing(6);
             auto stateIcon = new ElaText(item);
-            stateIcon->setObjectName("CordisPluginStateIcon");
+            stateIcon->setObjectName("EvePluginStateIcon");
             stateIcon->setFixedSize(16, 16);
             statusRow->addWidget(stateIcon);
             statusRow->addWidget(status, 1);
@@ -212,21 +212,21 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
             body->addLayout(header);
             auto footer = new QHBoxLayout;
             auto identity = new ElaText(QString::fromUtf8("实例 #%1").arg(plugin.id), 12, item);
-            identity->setObjectName("CordisPluginIdentity");
+            identity->setObjectName("EvePluginIdentity");
             secondaryText(identity);
             footer->addWidget(identity, 1);
             auto button = new KeyboardToggleSwitch(item);
-            button->setObjectName("CordisPluginPower");
+            button->setObjectName("EvePluginPower");
             footer->addWidget(button, 0, Qt::AlignVCenter);
             body->addLayout(footer);
             auto tools = new QHBoxLayout;
             for (const auto& entry :
-                 {std::make_pair("CordisPluginManage", "管理"), std::make_pair("CordisPluginConfigure", "配置")}) {
+                 {std::make_pair("EvePluginManage", "管理"), std::make_pair("EvePluginConfigure", "配置")}) {
                 auto action = new ActionButton(QString::fromUtf8(entry.second), item);
                 action->setObjectName(QString::fromLatin1(entry.first));
                 action->setMinimumHeight(30);
                 action->setAccessibleName(plugin.title + " · " + action->text());
-                const bool configuration = action->objectName() == "CordisPluginConfigure";
+                const bool configuration = action->objectName() == "EvePluginConfigure";
                 action->setEnabled(!configuration || plugin.configuration);
                 if (configuration)
                     action->setToolTip(plugin.configuration
@@ -260,7 +260,7 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
                             return;
                         auto invoke = power_;
                         auto access = access_;
-                        const auto revision = button->property("CordisConfigurationRevision").toULongLong();
+                        const auto revision = button->property("EveConfigurationRevision").toULongLong();
                         auto execute = [this, button, id, revision, enabled, invoke] {
                             if (!button || !button->isEnabled())
                                 return;
@@ -288,11 +288,11 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
                             Qt::QueuedConnection);
                     });
         }
-        auto title = item->findChild<ElaText*>("CordisPluginTitle");
-        auto status = item->findChild<ElaText*>("CordisPluginStatus");
-        auto button = item->findChild<ElaToggleSwitch*>("CordisPluginPower");
-        button->setProperty("CordisConfigurationRevision", QVariant::fromValue<qulonglong>(plugin.revision));
-        auto identity = item->findChild<ElaText*>("CordisPluginIdentity");
+        auto title = item->findChild<ElaText*>("EvePluginTitle");
+        auto status = item->findChild<ElaText*>("EvePluginStatus");
+        auto button = item->findChild<ElaToggleSwitch*>("EvePluginPower");
+        button->setProperty("EveConfigurationRevision", QVariant::fromValue<qulonglong>(plugin.revision));
+        auto identity = item->findChild<ElaText*>("EvePluginIdentity");
         const auto identityText =
             plugin.identity.isEmpty() ? QString::fromUtf8("实例 #%1").arg(plugin.id) : plugin.identity;
         identity->setText(identity->fontMetrics().elidedText(identityText, Qt::ElideMiddle, 185));
@@ -305,7 +305,7 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
         if (status->text() != state)
             status->setText(state);
         status->setWordWrap(true);
-        auto stateIcon = item->findChild<ElaText*>("CordisPluginStateIcon");
+        auto stateIcon = item->findChild<ElaText*>("EvePluginStateIcon");
         auto presentation = plugin.status;
         if (plugin.busy)
             presentation.icon = ElaIconType::ArrowsRotate;
@@ -366,4 +366,4 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
         cards_->updateGeometry();
     }
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

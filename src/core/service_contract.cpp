@@ -6,7 +6,7 @@
 #include <map>
 #include <set>
 #include <stdexcept>
-namespace cordis::detail {
+namespace eve::detail {
 /** @brief 插件固定契约与宿主附加契约共用键、类型及能力名称校验。 */
 bool validServiceDescriptor(const ServiceKey& key, std::type_index type, const std::vector<std::string>& capabilities)
 {
@@ -51,4 +51,4 @@ std::vector<ServiceRequirement> mergeDependencies(const std::vector<ServiceRequi
     }
     return result;
 }
-} // namespace cordis::detail
+} // namespace eve::detail

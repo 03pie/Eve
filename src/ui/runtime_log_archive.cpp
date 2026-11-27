@@ -33,7 +33,7 @@
 #include <unistd.h>
 #endif
 
-namespace cordis::ui::detail
+namespace eve::ui::detail
 {
 namespace
 {
@@ -69,7 +69,7 @@ bool validRun(const QString& id)
 }
 QString workspaceLogsPath(const QString& workspace)
 {
-    return QDir(workspace).absoluteFilePath(".cordis/logs");
+    return QDir(workspace).absoluteFilePath(".eve/logs");
 }
 QString fallbackLogsPath(const QString& workspace, const QString& dataPath)
 {
@@ -244,13 +244,16 @@ QStringList savedLogRoots(const QString& workspace)
 {
     if (workspace.isEmpty())
         return {};
-    QStringList roots{workspaceLogsPath(workspace)};
+    // 旧目录仅用于读取历史，新运行始终写入当前版本的工作区或备用目录。
+    QStringList roots{workspaceLogsPath(workspace), QDir(workspace).absoluteFilePath(".cordis/logs")};
     const auto data = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     if (!data.isEmpty())
         roots.push_back(fallbackLogsPath(workspace, data));
     const auto localData = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
-    if (!localData.isEmpty())
+    if (!localData.isEmpty()) {
+        roots.push_back(fallbackLogsPath(workspace, QDir(localData).filePath("EvePluginWorkbench")));
         roots.push_back(fallbackLogsPath(workspace, QDir(localData).filePath("CordisPluginWorkbench")));
+    }
     roots.removeDuplicates();
     return roots;
 }
@@ -344,16 +347,19 @@ std::vector<LogRun> listLogRuns(const QStringList& roots, const QString& except 
     std::sort(result.begin(), result.end(), newerRun);
     return result;
 }
-} // namespace
-
-QString savedLogDirectory(const QString& workspace, const QString& run)
+QString findLogRoot(const QStringList& roots, const QString& run)
 {
-    if (workspace.isEmpty() || !validRun(run))
+    if (!validRun(run))
         return {};
-    for (const auto& root : savedLogRoots(workspace))
+    for (const auto& root : roots)
         if (!readRunMetadata(runDirectory(QDir(root), run), run).isEmpty())
             return root;
     return {};
+}
+} // namespace
+QString savedLogDirectory(const QString& workspace, const QString& run)
+{
+    return findLogRoot(savedLogRoots(workspace), run);
 }
 QString scanSavedDescending(const QString& workspace, const QString& run, quint64 beforeExclusive,
                             const std::function<bool(const LogRecord&)>& visitor)
@@ -426,6 +432,11 @@ struct RuntimeLogArchive::Impl {
     QDateTime started = QDateTime::currentDateTimeUtc();
     QString version;
     QDir root, run;
+    QStringList readRoots;
+    QString directoryFor(const QString& requested) const
+    {
+        return requested == id ? root.absolutePath() : findLogRoot(readRoots, requested);
+    }
     std::unique_ptr<QLockFile> lock;
     mutable std::mutex mutex;
     std::condition_variable ready;
@@ -440,7 +451,7 @@ struct RuntimeLogArchive::Impl {
     std::deque<TailLog> tail;
     quint64 tailBytes = 0;
     LogSourceCatalog currentSources;
-    mutable QString cachedRun;
+    mutable QString cachedRunPath;
     mutable std::pair<QString, qint64> cachedTail;
     mutable LogSourceCatalog cachedSources;
 
@@ -688,7 +699,8 @@ struct RuntimeLogArchive::Impl {
             if (!recent.empty() && (!before || recent.front().row.eventId < before))
                 before = recent.front().row.eventId;
         }
-        const auto folder = runDirectory(root, requested);
+        const auto directory = directoryFor(requested);
+        const auto folder = directory.isEmpty() ? QFileInfo{} : runDirectory(QDir(directory), requested);
         if (folder.filePath().isEmpty()) {
             warning = QString::fromUtf8("该运行的归档不可用。");
             return;
@@ -717,11 +729,14 @@ RuntimeLogArchive::RuntimeLogArchive(const QString& workspace, const QString& ve
             d.state.problem = QString::fromUtf8("日志目录不可写，正在等待恢复。");
         }
     }
+    d.readRoots = savedLogRoots(workspace);
     d.writer = std::thread([this] { impl_->writeBatches(); });
 }
 RuntimeLogArchive::~RuntimeLogArchive() { finish(false); }
 QString RuntimeLogArchive::currentRun() const { return impl_->id; }
 QString RuntimeLogArchive::directory() const { return impl_->root.absolutePath(); }
+QString RuntimeLogArchive::directoryFor(const QString& run) const { return impl_->directoryFor(run); }
+const QStringList& RuntimeLogArchive::readDirectories() const { return impl_->readRoots; }
 QString RuntimeLogArchive::error() const
 {
     std::lock_guard<std::mutex> guard(impl_->mutex);
@@ -754,7 +769,10 @@ quint64 RuntimeLogArchive::acceptedThrough(const QString& run) const
         std::lock_guard<std::mutex> guard(impl_->mutex);
         return impl_->state.accepted;
     }
-    const auto saved = readRunMetadata(runDirectory(impl_->root, run), run);
+    const auto directory = impl_->directoryFor(run);
+    if (directory.isEmpty())
+        return 0;
+    const auto saved = readRunMetadata(runDirectory(QDir(directory), run), run);
     const auto accepted = saved.value("persistence").toObject().value("accepted").toString().toULongLong();
     if (accepted)
         return accepted;
@@ -824,7 +842,7 @@ void RuntimeLogArchive::finish(bool clean)
 std::vector<LogRun> RuntimeLogArchive::runs() const
 {
     const auto& d = *impl_;
-    auto list = listLogRuns({d.root.absolutePath()}, d.id);
+    auto list = listLogRuns(d.readRoots, d.id);
     const auto folder = runDirectory(d.root, d.id);
     const auto metadata = readRunMetadata(folder, d.id);
     LogRun current;
@@ -846,7 +864,10 @@ std::vector<std::pair<QString, LogRecord>> RuntimeLogArchive::recentNotification
             break;
         if (run.id == currentRun())
             continue;
-        QFile file(impl_->root.filePath(run.id + "/run.json"));
+        const auto directory = impl_->directoryFor(run.id);
+        if (directory.isEmpty())
+            continue;
+        QFile file(QDir(directory).filePath(run.id + "/run.json"));
         if (file.open(QIODevice::ReadOnly) && file.size() <= 8192) {
             const auto meta = QJsonDocument::fromJson(file.readAll()).object();
             if (meta.contains("ended") && !meta.value("hasNotifications").toBool())
@@ -873,9 +894,10 @@ LogSourceResult RuntimeLogArchive::sourceCatalog(const QString& run) const
         if (run == d.id)
             return {d.currentSources, {}};
     }
-    if (!validRun(run) || QFileInfo(d.root.filePath(run)).isSymLink())
+    const auto directory = d.directoryFor(run);
+    if (directory.isEmpty())
         return {{}, QString::fromUtf8("该运行的归档不可用。")};
-    const QDir folder(d.root.filePath(run));
+    const QDir folder(QDir(directory).filePath(run));
     if (!folder.exists())
         return {{}, QString::fromUtf8("该运行的归档不可用。")};
     QFile meta(folder.filePath("run.json"));
@@ -892,7 +914,7 @@ LogSourceResult RuntimeLogArchive::sourceCatalog(const QString& run) const
     const auto stamp = complete ? std::make_pair(QString{}, qint64{-1}) : tail();
     {
         std::lock_guard<std::mutex> guard(d.mutex);
-        if (run == d.cachedRun && stamp == d.cachedTail)
+        if (folder.absolutePath() == d.cachedRunPath && stamp == d.cachedTail)
             return {d.cachedSources, {}};
     }
     LogSourceCatalog values;
@@ -903,7 +925,7 @@ LogSourceResult RuntimeLogArchive::sourceCatalog(const QString& run) const
     });
     if (warning.isEmpty() && (complete || stamp == tail())) {
         std::lock_guard<std::mutex> guard(d.mutex);
-        d.cachedRun = run;
+        d.cachedRunPath = folder.absolutePath();
         d.cachedTail = stamp;
         d.cachedSources = values;
     }
@@ -921,4 +943,4 @@ std::optional<LogRecord> RuntimeLogArchive::locate(const QString& run, std::uint
     });
     return found;
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

@@ -2,11 +2,11 @@
  * @file fake_scheduler.cpp
  * @brief 实现用于测试的线程安全手动 FIFO 调度器。
  */
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <exception>
 #include <utility>
 
-namespace cordis::testing {
+namespace eve::testing {
 /**
  * @brief 将构造线程记录为调度器所属线程。
  */
@@ -130,4 +130,4 @@ void FakeScheduler::close()
         }
     }
 }
-} // namespace cordis::testing
+} // namespace eve::testing

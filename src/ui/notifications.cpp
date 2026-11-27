@@ -33,7 +33,7 @@
 #include <limits>
 #include <future>
 
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 namespace
 {
 struct AcceptedNotice {
@@ -67,7 +67,7 @@ class NoticePanel final : public QWidget
 public:
     explicit NoticePanel(QWidget* window) : QWidget(window)
     {
-        setObjectName("CordisNotificationCenter");
+        setObjectName("EveNotificationCenter");
         setAccessibleName(QStringLiteral("通知中心"));
         setAutoFillBackground(true);
         auto applyTheme = [this](ElaThemeType::ThemeMode mode) {
@@ -80,18 +80,18 @@ public:
         auto header = new QHBoxLayout;
         header->addWidget(new ElaText(QStringLiteral("通知中心"), 18, this), 1);
         closeButton = new ActionButton(QStringLiteral("关闭"), this);
-        closeButton->setObjectName("CordisNotificationClose");
+        closeButton->setObjectName("EveNotificationClose");
         closeButton->setAccessibleName(QStringLiteral("关闭通知中心"));
         header->addWidget(closeButton);
         layout->addLayout(header);
         status = new ElaText(this);
-        status->setObjectName("CordisNotificationArchiveStatus");
+        status->setObjectName("EveNotificationArchiveStatus");
         status->setTextFormat(Qt::PlainText);
         status->setWordWrap(true);
         status->hide();
         layout->addWidget(status);
         list = new ElaListView(this);
-        list->setObjectName("CordisNotificationList");
+        list->setObjectName("EveNotificationList");
         list->setAccessibleName(QStringLiteral("通知列表"));
         list->setEditTriggers(QAbstractItemView::NoEditTriggers);
         list->setWordWrap(true);
@@ -101,15 +101,15 @@ public:
         list->setModel(model);
         layout->addWidget(list, 1);
         empty = new ElaText(QStringLiteral("暂无通知"), 14, this);
-        empty->setObjectName("CordisNotificationEmpty");
+        empty->setObjectName("EveNotificationEmpty");
         empty->setAlignment(Qt::AlignCenter);
         secondaryText(empty);
         layout->addWidget(empty, 1);
         auto tools = new QHBoxLayout;
         markRead = new ActionButton(QStringLiteral("全部标为已读"), this);
-        markRead->setObjectName("CordisNotificationMarkRead");
+        markRead->setObjectName("EveNotificationMarkRead");
         openLog = new ActionButton(QStringLiteral("查看相关日志"), this);
-        openLog->setObjectName("CordisNotificationOpenLog");
+        openLog->setObjectName("EveNotificationOpenLog");
         tools->addWidget(markRead);
         tools->addStretch();
         tools->addWidget(openLog);
@@ -130,8 +130,8 @@ public:
         if (watched == parentWidget() && e->type() == QEvent::Resize)
             position();
         if (watched == parentWidget() && e->type() == QEvent::DynamicPropertyChange &&
-            static_cast<QDynamicPropertyChangeEvent*>(e)->propertyName() == "CordisReducedMotion" &&
-            parentWidget()->property("CordisReducedMotion").toBool()) {
+            static_cast<QDynamicPropertyChangeEvent*>(e)->propertyName() == "EveReducedMotion" &&
+            parentWidget()->property("EveReducedMotion").toBool()) {
             const auto bars = parentWidget()->findChildren<ElaMessageBar*>(QString(), Qt::FindDirectChildrenOnly);
             for (auto bar : bars) {
                 bar->hide();
@@ -256,8 +256,9 @@ struct NotificationControl : std::enable_shared_from_this<NotificationControl> {
                 changedRuns[row->run].append(QString::number(row->event));
         }
         for (auto it = changedRuns.cbegin(); it != changedRuns.cend(); ++it) {
-            const auto folder = QDir(archive->directory()).filePath(it.key());
-            if (!QFileInfo(folder).isDir() || QFileInfo(folder).isSymLink()) {
+            const auto directory = archive->directoryFor(it.key());
+            const auto folder = QDir(directory).filePath(it.key());
+            if (directory.isEmpty() || !QFileInfo(folder).isDir() || QFileInfo(folder).isSymLink()) {
                 readWarning = QStringLiteral("通知归档已不可用，无法保存已读状态。");
                 continue;
             }
@@ -311,7 +312,7 @@ struct NotificationControl : std::enable_shared_from_this<NotificationControl> {
         announceFault = false;
         if (!panel->isVisible()) {
             auto window = panel->parentWidget();
-            const bool showBar = !muted && window->isVisible() && !window->property("CordisReducedMotion").toBool();
+            const bool showBar = !muted && window->isVisible() && !window->property("EveReducedMotion").toBool();
             if (showFault && showBar)
                 ElaMessageBar::warning(ElaMessageBarType::BottomRight, QStringLiteral("日志归档"),
                                        QStringLiteral("日志归档受阻，请在通知中心查看。"), 3600, window);
@@ -438,7 +439,7 @@ void installNotificationCenter(const std::shared_ptr<NotificationControl>& self,
 {
     self->sourceName = std::move(sourceName);
     self->panel = new NoticePanel(window);
-    self->bell = window->findChild<QToolButton*>("CordisShowNotifications");
+    self->bell = window->findChild<QToolButton*>("EveShowNotifications");
     if (self->bell)
         self->bell->setFocusPolicy(Qt::TabFocus);
     auto panel = self->panel.data();
@@ -503,7 +504,10 @@ void watchNotificationArchive(const std::shared_ptr<NotificationControl>& self,
             const auto& run = item.first;
             const auto& record = item.second;
             if (run != lastRun) {
-                reads = std::make_unique<QSettings>(QDir(archive->directory()).filePath(run + "/notice-read.ini"),
+                const auto directory = archive->directoryFor(run);
+                if (directory.isEmpty())
+                    continue;
+                reads = std::make_unique<QSettings>(QDir(directory).filePath(run + "/notice-read.ini"),
                                                     QSettings::IniFormat);
                 lastRun = run;
             }
@@ -702,4 +706,4 @@ void closeNotifications(const std::shared_ptr<NotificationControl>& self)
     self->pending.clear();
     self->access = {};
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

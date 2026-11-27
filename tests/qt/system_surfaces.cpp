@@ -133,22 +133,22 @@ void observeSystemSurfaces(ElaWindow& window, const QString& settingsPath, const
     const bool isolated = !isolatedRestriction.isEmpty() && !privateHive;
     const bool automated = privateHive || isolated;
     const auto kind = privateHive ? QStringLiteral("transparency") :
-                      isolated ? isolatedRestriction : qEnvironmentVariable("CORDIS_SURFACE_KIND");
-    require(kind == "contrast" || kind == "transparency", "set CORDIS_SURFACE_KIND to contrast or transparency");
+                      isolated ? isolatedRestriction : qEnvironmentVariable("EVE_SURFACE_KIND");
+    require(kind == "contrast" || kind == "transparency", "set EVE_SURFACE_KIND to contrast or transparency");
     QTemporaryDir temporary;
-    const auto destination = qEnvironmentVariable("CORDIS_SURFACE_EVIDENCE", automated ? temporary.path() : QString());
-    require(!destination.isEmpty() && QDir().mkpath(destination), "set CORDIS_SURFACE_EVIDENCE to a new directory");
+    const auto destination = qEnvironmentVariable("EVE_SURFACE_EVIDENCE", automated ? temporary.path() : QString());
+    require(!destination.isEmpty() && QDir().mkpath(destination), "set EVE_SURFACE_EVIDENCE to a new directory");
     const QDir directory(destination);
     require(directory.entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty(), "evidence directory must be empty");
-    const bool baselineOnly = !automated && qEnvironmentVariable("CORDIS_SURFACE_BASELINE_ONLY") == "1";
-    const auto material = window.findChild<QComboBox*>("CordisSettingsMaterial");
-    const auto hint = window.findChild<ElaText*>("CordisSettingsMaterialHint");
-    const auto layer = window.findChild<QWidget*>("CordisWorkbenchWallpaper", Qt::FindDirectChildrenOnly);
+    const bool baselineOnly = !automated && qEnvironmentVariable("EVE_SURFACE_BASELINE_ONLY") == "1";
+    const auto material = window.findChild<QComboBox*>("EveSettingsMaterial");
+    const auto hint = window.findChild<ElaText*>("EveSettingsMaterialHint");
+    const auto layer = window.findChild<QWidget*>("EveWorkbenchWallpaper", Qt::FindDirectChildrenOnly);
     require(material && hint && layer, "expected settings material, hint and wallpaper layer");
     const auto hwnd = reinterpret_cast<HWND>(window.winId());
     const auto digest = pixelsDigest(window.getWindowPixmap(ElaThemeType::Light));
     const auto initial = nativeState(hwnd);
-    cordis::ui::detail::WorkbenchPreferences* preferences = nullptr;
+    eve::ui::detail::WorkbenchPreferences* preferences = nullptr;
     // The restored phase requires DWM to accept Mica under the real desktop policy.
     if (automated && (initial.highContrast || !initial.transparency)) {
         std::cout << "SKIP: desktop currently requires solid surfaces" << std::endl;
@@ -156,14 +156,14 @@ void observeSystemSurfaces(ElaWindow& window, const QString& settingsPath, const
     }
     if (isolated) {
         for (auto child : window.children())
-            if (auto value = dynamic_cast<cordis::ui::detail::WorkbenchPreferences*>(child)) preferences = value;
+            if (auto value = dynamic_cast<eve::ui::detail::WorkbenchPreferences*>(child)) preferences = value;
         require(preferences, "expected workbench-owned preferences");
     }
     std::optional<PrivateTransparencyHive> hive;
     if (privateHive) hive.emplace().open();
     const auto actualAccount = hive ? hive->actualAccount() : HKEY_CURRENT_USER;
     auto capture = [&](const QString& phase, bool restricted) {
-        const cordis::ui::detail::SystemSurfaceSettings policy{restricted && kind == "contrast",
+        const eve::ui::detail::SystemSurfaceSettings policy{restricted && kind == "contrast",
                                                                !(restricted && kind == "transparency")};
         if (isolated) preferences->applySystemSurfaceSettings(policy);
         if (hive) {
@@ -173,7 +173,7 @@ void observeSystemSurfaces(ElaWindow& window, const QString& settingsPath, const
             require(nativeState(hwnd).transparency == !restricted, "redirected account input");
             if (phase != "baseline") {
                 QTest::qWait(30);
-                require(window.property("CordisWallpaperVisible").toBool() == restricted,
+                require(window.property("EveWallpaperVisible").toBool() == restricted,
                         "window state must still reflect previous phase before WM_SETTINGCHANGE");
             }
             DWORD_PTR response = 0;
@@ -193,8 +193,8 @@ void observeSystemSurfaces(ElaWindow& window, const QString& settingsPath, const
                 ? eApp->getWindowDisplayMode() == ElaApplicationType::Normal && (state.backdrop == 0 || state.backdrop == 1)
                 : eApp->getWindowDisplayMode() == ElaApplicationType::Mica && state.backdrop == 2;
             const bool osUnchanged = state.highContrast == initial.highContrast && state.transparency == initial.transparency;
-            return (automated ? osUnchanged : osMatches) && effective && window.property("CordisWallpaperVisible").toBool() == !restricted &&
-                   layer->isVisible() == !restricted && window.property("CordisRequestedMaterialAccepted").toBool() == !restricted;
+            return (automated ? osUnchanged : osMatches) && effective && window.property("EveWallpaperVisible").toBool() == !restricted &&
+                   layer->isVisible() == !restricted && window.property("EveRequestedMaterialAccepted").toBool() == !restricted;
         };
         while (!matches() && timer.elapsed() < (automated || phase == "baseline" ? 5000 : 180000)) QTest::qWait(50);
         const bool observed = matches();
@@ -219,7 +219,7 @@ void observeSystemSurfaces(ElaWindow& window, const QString& settingsPath, const
         const auto screenshot = (observed ? phase : phase + "-timeout") + ".png";
         require(window.grab().save(directory.filePath(screenshot)), "save settings window screenshot");
         QFile file(settingsPath);
-        require(file.open(QIODevice::ReadOnly), "read isolated Cordis preferences");
+        require(file.open(QIODevice::ReadOnly), "read isolated Eve preferences");
         const auto values = QJsonDocument::fromJson(file.readAll()).object();
         const auto currentDigest = pixelsDigest(window.getWindowPixmap(ElaThemeType::Light));
         const bool choices = material->currentIndex() == ElaApplicationType::Mica &&
@@ -233,7 +233,7 @@ void observeSystemSurfaces(ElaWindow& window, const QString& settingsPath, const
             {"hwnd", QString::number(reinterpret_cast<quintptr>(hwnd))},
             {"highContrast", state.highContrast}, {"transparency", state.transparency}, {"dwmBackdrop", state.backdrop},
             {"selectedMaterial", material->currentIndex()}, {"effectiveElaMaterial", static_cast<int>(eApp->getWindowDisplayMode())},
-            {"requestedMaterialAccepted", window.property("CordisRequestedMaterialAccepted").toBool()},
+            {"requestedMaterialAccepted", window.property("EveRequestedMaterialAccepted").toBool()},
             {"wallpaperLayerVisible", layer->isVisible()}, {"storedWallpaperSha256", QString::fromLatin1(currentDigest)},
             {"wallpaperPreferenceMatches", values.value("background").toString() == imagePath},
             {"savedMaterial", values.value("material")}, {"settingsHint", hint->text()},

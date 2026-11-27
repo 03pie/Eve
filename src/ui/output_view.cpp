@@ -33,7 +33,7 @@
 #include <limits>
 #include <utility>
 
-namespace cordis::ui::detail
+namespace eve::ui::detail
 {
 namespace
 {
@@ -61,13 +61,13 @@ class OutputEditor final : public ElaPlainTextEdit
         search->setVisible(wide);
         level->setVisible(medium);
         instance->setVisible(wide);
-        for(const char* id:{"CordisCopyPanelOutput","CordisClearPanelOutput"})
+        for(const char* id:{"EveCopyPanelOutput","EveClearPanelOutput"})
             if(auto button=window()->findChild<QToolButton*>(id)) button->setVisible(wide && isVisible());
         const int h = toolbar->sizeHint().height();
         setViewportMargins(0, h, 0, 0);
         toolbar->setGeometry(0, 0, width(), h);
         if (moveFocus)
-            if (auto more = toolbar->findChild<QToolButton*>("CordisOutputMore"))
+            if (auto more = toolbar->findChild<QToolButton*>("EveOutputMore"))
                 more->setFocus(Qt::OtherFocusReason);
     }
 
@@ -338,7 +338,7 @@ void returnFromOutput(OutputControl& state, bool returnToPanelPage)
         state.panel->setCurrentWidget(page);
     else
         state.panel->hide();
-    state.origin.restore(page ? page->findChild<QWidget*>("CordisProblemsTree") : nullptr);
+    state.origin.restore(page ? page->findChild<QWidget*>("EveProblemsTree") : nullptr);
 }
 } // namespace
 void OutputControl::syncSources()
@@ -405,12 +405,12 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
         layout->addWidget(box, 1);
         return box;
     };
-    self->runs = combo("CordisOutputRun", QString::fromUtf8("运行记录"), 210);
+    self->runs = combo("EveOutputRun", QString::fromUtf8("运行记录"), 210);
     editor->run = self->runs;
-    self->targets = combo("CordisOutputTarget", QString::fromUtf8("输出来源"), 190);
-    self->instances = combo("CordisOutputInstance", QString::fromUtf8("实例或代次"), 135);
+    self->targets = combo("EveOutputTarget", QString::fromUtf8("输出来源"), 190);
+    self->instances = combo("EveOutputInstance", QString::fromUtf8("实例或代次"), 135);
     editor->instance = self->instances;
-    self->levels = combo("CordisOutputLevel", QString::fromUtf8("最低显示级别"), 108);
+    self->levels = combo("EveOutputLevel", QString::fromUtf8("最低显示级别"), 108);
     editor->level = self->levels;
     self->levels->addItem(QString::fromUtf8("所有级别"));
     self->levels->addItem(QString::fromUtf8("调试及以上"), static_cast<int>(LogSeverity::Debug));
@@ -419,7 +419,7 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
     self->levels->addItem(QString::fromUtf8("仅错误"), static_cast<int>(LogSeverity::Error));
     self->search = new ElaLineEdit(tools);
     editor->search = self->search;
-    self->search->setObjectName("CordisOutputSearch");
+    self->search->setObjectName("EveOutputSearch");
     self->search->setPlaceholderText(QString::fromUtf8("筛选日志正文"));
     self->search->setAccessibleName(self->search->placeholderText());
     self->search->setClearButtonEnabled(true);
@@ -427,7 +427,7 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
     self->search->setMaximumWidth(250);
     layout->addWidget(self->search, 1);
     self->follow = new ElaToolButton(tools);
-    self->follow->setObjectName("CordisOutputFollow");
+    self->follow->setObjectName("EveOutputFollow");
     self->follow->setElaIcon(ElaIconType::ArrowDown);
     self->follow->setCheckable(true);
     self->follow->setChecked(true);
@@ -439,11 +439,11 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
     self->feedback = feedback;
     self->feedback->setTextFormat(Qt::PlainText);
     self->feedback->setMaximumWidth(160);
-    self->feedback->setObjectName("CordisOutputFeedback");
+    self->feedback->setObjectName("EveOutputFeedback");
     self->feedback->hide();
     layout->addWidget(self->feedback);
     auto more = new ElaToolButton(tools);
-    more->setObjectName("CordisOutputMore");
+    more->setObjectName("EveOutputMore");
     more->setText(QString::fromUtf8("筛选与更多"));
     more->setAccessibleName(more->text());
     more->setPopupMode(QToolButton::InstantPopup);
@@ -464,7 +464,7 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
             s->filter.instance.reset();
             s->filter.epoch.reset();
             s->filter.instanceKey.clear();
-            s->editor->window()->setProperty("CordisOutputSource", s->filter.sourceId);
+            s->editor->window()->setProperty("EveOutputSource", s->filter.sourceId);
             rebuildFilter(s);
         }
     });
@@ -537,7 +537,7 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
         QObject::connect(edit, &QLineEdit::textChanged, s->search, &QLineEdit::setText);
         menu->addAction(QString::fromUtf8("清除筛选"), [s] {
             clearFilterControls(*s);
-            s->editor->window()->setProperty("CordisOutputSource", QString{});
+            s->editor->window()->setProperty("EveOutputSource", QString{});
             rebuildFilter(s);
         });
         menu->addAction(QString::fromUtf8("查看上次运行"), [s] { showPreviousOutput(s, s->origin.target()); });
@@ -553,7 +553,7 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
         auto newest = menu->addAction(QString::fromUtf8("返回最新一页"), [s] { rebuildFilter(s); });
         newest->setEnabled(s->browsingOlder);
         menu->addSeparator();
-        for(const char* id:{"CordisCopyOutput","CordisClearOutput"})
+        for(const char* id:{"EveCopyOutput","EveClearOutput"})
             if(auto action=s->editor->window()->findChild<QAction*>(id)) menu->addAction(action);
         menu->addAction(QString::fromUtf8("复制本条"), [s] {
             const auto position = s->editor->textCursor().position();
@@ -574,10 +574,11 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
             const auto memory = archive ? QString{} : s->text();
             const auto path =
                 QFileDialog::getSaveFileName(s->editor, QString::fromUtf8("导出已筛选记录"),
-                                             QStringLiteral("cordis-output.txt"), QStringLiteral("Text (*.txt)"));
+                                             QStringLiteral("eve-output.txt"), QStringLiteral("Text (*.txt)"));
             if (path.isEmpty() || !s->open)
                 return;
-            if (archive && exportWouldModifyArchive(path, archive->directory())) {
+            if (archive && std::any_of(archive->readDirectories().cbegin(), archive->readDirectories().cend(),
+                                       [&](const QString& root) { return exportWouldModifyArchive(path, root); })) {
                 s->notice = QString::fromUtf8("请选择归档目录之外的导出位置。");
                 QToolTip::showText(s->editor->mapToGlobal(QPoint(8, 4)), s->notice, s->editor);
                 return;
@@ -602,7 +603,7 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
                                ok ? QString::fromUtf8("已导出筛选结果到 ") + path : s->notice, s->editor);
         });
     });
-    self->filter.sourceId = editor->window()->property("CordisOutputSource").toString();
+    self->filter.sourceId = editor->window()->property("EveOutputSource").toString();
     syncRuns(*self);
     self->syncSources();
     editor->fitTools();
@@ -734,7 +735,7 @@ void toggleOutputPanel(const std::shared_ptr<OutputControl>& s)
     showOutput(s,{}, {},QApplication::focusWidget());
     if(page && page!=s->editor) {
         s->panel->setCurrentWidget(page);
-        if (const auto filter=page->findChild<QLineEdit*>("CordisProblemsFilter")) filter->setFocus();
+        if (const auto filter=page->findChild<QLineEdit*>("EveProblemsFilter")) filter->setFocus();
     }
 }
 void showPreviousOutput(const std::shared_ptr<OutputControl>& s, QWidget* origin)
@@ -776,4 +777,4 @@ void clearOutput(const std::shared_ptr<OutputControl>& s)
     s->preserveText = false;
     refreshOutput(s);
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

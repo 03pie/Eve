@@ -33,7 +33,7 @@ UI 边界另由三个回归入口覆盖。`ui.optimization_roundtrip` 与 `ui.op
 - **协议值**。C ABI 状态码、能力位、结构字段宽度及上限由独立 C11 头定义。更改这些值要同时评估已有模块和布局断言。清单文件名 `module.json` 与工作区文件名 `session.yaml` 参与发现和重开，同样属于兼容性约定。
 - **资源预算**。日志文本长度、未发布输出总量、实时历史、分段大小和归档保留容量分别限制不同资源。以后调整某个值，应在其所有者处写明单位、满额处理及相关测试。输出服务返回的序号和归档确认各有语义。
 - **默认值**。插件身份来自外部工程，模块版本来自发布者，平台目录来自工作区选择或 Qt 的应用数据位置。平台预设只描述自身入口。历史插件配置随文档往返，插件解释自己的字段。
-- **构建和文本**。第一方目标通过 `cordis_target_defaults` 共享 C++17、MSVC 的 `/W4 /permissive- /utf-8` 与 GCC/Clang 的 `-Wall -Wextra -Wpedantic`。启用 `CORDIS_WARNINGS_AS_ERRORS` 时分别使用 `/WX` 与 `-Werror`。Windows PowerShell 5.1 脚本按 `.editorconfig` 使用 UTF-8 BOM 和 CRLF，本轮修正了系统动画检查脚本。
+- **构建和文本**。第一方目标通过 `eve_target_defaults` 共享 C++17、MSVC 的 `/W4 /permissive- /utf-8` 与 GCC/Clang 的 `-Wall -Wextra -Wpedantic`。启用 `EVE_WARNINGS_AS_ERRORS` 时分别使用 `/WX` 与 `-Werror`。Windows PowerShell 5.1 脚本按 `.editorconfig` 使用 UTF-8 BOM 和 CRLF，本轮修正了系统动画检查脚本。
 
 ## 后续修改顺序
 

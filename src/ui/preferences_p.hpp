@@ -11,7 +11,7 @@
 class ElaWindow;
 class QTabWidget;
 class QSplitter;
-namespace cordis::ui::detail
+namespace eve::ui::detail
 {
 /** @brief 设置控件、偏好文件和首次启动共同使用的逻辑像素范围。 */
 struct PreferenceDimension {
@@ -82,4 +82,4 @@ class WorkbenchPreferences final : public QObject
     int panelHeight_ = panelHeightPixels.initial;
     bool restoring_ = true, applyingHeight_ = false, dirty_ = false;
 };
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

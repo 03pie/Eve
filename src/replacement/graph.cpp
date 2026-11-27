@@ -3,7 +3,7 @@
  */
 #include "../core/service_plan_p.hpp"
 #include "operation_p.hpp"
-namespace cordis::detail {
+namespace eve::detail {
 Result<std::vector<std::size_t>>
 ReplacementOperationControl::planGraph(bool restoring, CoreReplacementAccess::InputBindings* inputs) const
 {
@@ -61,4 +61,4 @@ ReplacementOperationControl::planGraph(bool restoring, CoreReplacementAccess::In
             units.push_back(roots.at(key));
     return Output::success(std::move(units));
 }
-} // namespace cordis::detail
+} // namespace eve::detail

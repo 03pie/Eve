@@ -4,19 +4,19 @@
 #pragma once
 #include "replacement_peer.hpp"
 #include <algorithm>
-#include <cordis/loader/qt_store.hpp>
-#include <cordis/module/native.hpp>
-#include <cordis/replacement_operation.hpp>
+#include <eve/loader/qt_store.hpp>
+#include <eve/module/native.hpp>
+#include <eve/replacement_operation.hpp>
 #include <utility>
 
 template <class SceneType, class Wait>
-void operationPathsCase(SceneType& scene, const cordis::Runtime& old, const cordis::Runtime& next,
-                        const std::shared_ptr<cordis::IScheduler>& scheduler,
-                        const std::shared_ptr<cordis::Kernel>& kernel, Wait waitFor, bool parallel)
+void operationPathsCase(SceneType& scene, const eve::Runtime& old, const eve::Runtime& next,
+                        const std::shared_ptr<eve::IScheduler>& scheduler,
+                        const std::shared_ptr<eve::Kernel>& kernel, Wait waitFor, bool parallel)
 {
-    using namespace cordis;
-    using namespace cordis::loader;
-    using namespace cordis::module;
+    using namespace eve;
+    using namespace eve::loader;
+    using namespace eve::module;
     const auto take = [](auto result, const char* step) {
         if (!result.hasValue())
             throw std::runtime_error(std::string(step) + ": " + result.error().message);
@@ -38,12 +38,12 @@ void operationPathsCase(SceneType& scene, const cordis::Runtime& old, const cord
                                                  return completedTask();
                                              })
                             .value();
-    const auto id = scene.qt ? "org.cordis.qt.page" : "org.cordis.plugin";
+    const auto id = scene.qt ? "org.eve.qt.page" : "org.eve.plugin";
     const auto schema = [](const std::string&) { return Result<void>::success(); };
     auto definitions =
         take(ConfigurationDefinitions::create(
                  {{{id, {}, schema, {"business", "old/module.json"}}, old},
-                  {{"org.cordis.peer.plugin", {}, schema, {"peer", "peer-old/module.json"}}, peerFactory},
+                  {{"org.eve.peer.plugin", {}, schema, {"peer", "peer-old/module.json"}}, peerFactory},
                   {{"parent", {}, schema}, parent}}),
              "path definitions");
     auto driver = KernelReconcileDriver::configured(scheduler, kernel, definitions);
@@ -56,7 +56,7 @@ void operationPathsCase(SceneType& scene, const cordis::Runtime& old, const cord
                       "/module.json}}\nplugins: [{id: root, plugin: parent, children: [{id: a, plugin: " + id +
                       ", module: business, config: " + (scene.qt ? "normal" : "sync") + "}";
         source += parallel ? "]}, {id: root-peer, plugin: parent, children: [" : ", ";
-        return source + "{id: b, plugin: org.cordis.peer.plugin, module: peer, config: sync}]}]\n";
+        return source + "{id: b, plugin: org.eve.peer.plugin, module: peer, config: sync}]}]\n";
     };
     auto initial = take(session->apply(session->preview(text(false, false)).value()), "initial paths");
     CHECK(waitFor(initial.settled)->value().outcome == PlanOutcome::Failed);
@@ -70,7 +70,7 @@ void operationPathsCase(SceneType& scene, const cordis::Runtime& old, const cord
         auto following =
             take(current->replacing(
                      primary ? std::vector<ConfiguredPlugin>{{{id, {}, schema, {"business", "next/module.json"}}, next}}
-                             : std::vector<ConfiguredPlugin>{{{"org.cordis.peer.plugin",
+                             : std::vector<ConfiguredPlugin>{{{"org.eve.peer.plugin",
                                                                {},
                                                                schema,
                                                                {"peer", "peer-next/module.json"}},

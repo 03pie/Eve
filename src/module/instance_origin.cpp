@@ -5,7 +5,7 @@
 #include "instance_origin_p.hpp"
 #include <utility>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 namespace {
 ErrorInfo error(ErrorCode code, const char* message)
 {
@@ -83,4 +83,4 @@ Result<InstanceOriginLease> retainInstanceOrigin(GenerationId id, const std::str
     const auto row = generation->instanceOrigins.emplace(std::make_pair(instance, epoch), origin);
     return Output::success(InstanceOriginLease(generation, row, std::move(lease.value())));
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

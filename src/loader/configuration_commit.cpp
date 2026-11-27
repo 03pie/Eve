@@ -4,7 +4,7 @@
 #include "configuration_commit_p.hpp"
 #include <thread>
 
-namespace cordis::loader::detail {
+namespace eve::loader::detail {
 struct ConfigurationCommitControl {
     // 逆序先解除 Driver，再解除 Session 的目标槽与业务访问。
     std::optional<PreparedSessionCommit> session;
@@ -96,4 +96,4 @@ std::optional<AcceptedTarget> PreparedConfigurationCommit::accepted() const
 {
     return control_ && control_->session ? control_->session->accepted() : std::nullopt;
 }
-} // namespace cordis::loader::detail
+} // namespace eve::loader::detail

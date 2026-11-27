@@ -4,12 +4,12 @@
 #include <QCoreApplication>
 #include <QObject>
 #include <QVariant>
-#include <cordis/module/qt_plugin.hpp>
+#include <eve/module/qt_plugin.hpp>
 #include <optional>
 #include <stdexcept>
 #include <vector>
-using namespace cordis;
-using namespace cordis::module;
+using namespace eve;
+using namespace eve::module;
 class Business;
 namespace {
 bool wrongCore = false;
@@ -32,7 +32,7 @@ struct Capture {
 } // namespace
 class Business final : public QObject, public IQtInstanceV1 {
     Q_OBJECT
-    Q_INTERFACES(cordis::module::IQtInstanceV1)
+    Q_INTERFACES(eve::module::IQtInstanceV1)
 public:
     Business() : index(live.size())
     {
@@ -112,13 +112,13 @@ public:
 };
 class BusinessFactory final : public QObject, public IQtPluginV1 {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID "org.cordis.IQtPluginV1/1.0" FILE "qt_metadata.json")
-    Q_INTERFACES(cordis::module::IQtPluginV1)
+    Q_PLUGIN_METADATA(IID "org.eve.IQtPluginV1/1.0" FILE "qt_metadata.json")
+    Q_INTERFACES(eve::module::IQtPluginV1)
 public:
     BusinessFactory()
     {
         ++counts[0];
-        wrongCore = QCoreApplication::instance()->property("cordis.qt.factoryMode").toString() == "wrong_core";
+        wrongCore = QCoreApplication::instance()->property("eve.qt.factoryMode").toString() == "wrong_core";
     }
     const void* coreRuntimeIdentity() const noexcept override
     {
@@ -127,18 +127,18 @@ public:
     QStringList pluginIds() const override
     {
         ++counts[1];
-        const auto mode = QCoreApplication::instance()->property("cordis.qt.factoryMode").toString();
+        const auto mode = QCoreApplication::instance()->property("eve.qt.factoryMode").toString();
         if (mode == "query_reentry")
             QCoreApplication::processEvents();
         if (mode == "query_throw")
             throw std::runtime_error("fixture query threw");
         if (mode == "bad_catalog")
-            return {"org.cordis.qt.page", "org.cordis.qt.page"};
-        return {"org.cordis.qt.settings", "org.cordis.qt.page"};
+            return {"org.eve.qt.page", "org.eve.qt.page"};
+        return {"org.eve.qt.settings", "org.eve.qt.page"};
     }
     QObject* create(const QString& plugin) override
     {
-        const auto mode = QCoreApplication::instance()->property("cordis.qt.factoryMode").toString();
+        const auto mode = QCoreApplication::instance()->property("eve.qt.factoryMode").toString();
         if (mode == "null")
             return nullptr;
         if (mode == "create_throw")
@@ -156,11 +156,11 @@ public:
         return object;
     }
 };
-extern "C" __declspec(dllexport) int __cdecl cordis_qt_business_count(int index)
+extern "C" __declspec(dllexport) int __cdecl eve_qt_business_count(int index)
 {
     return index >= 0 && index < 8 ? counts[index] : -1;
 }
-extern "C" __declspec(dllexport) void __cdecl cordis_qt_business_release(int index, int cleanup)
+extern "C" __declspec(dllexport) void __cdecl eve_qt_business_release(int index, int cleanup)
 {
     if (index >= 0 && static_cast<std::size_t>(index) < live.size() && live[index]) {
         if (cleanup)
@@ -169,21 +169,21 @@ extern "C" __declspec(dllexport) void __cdecl cordis_qt_business_release(int ind
             live[index]->startGate.resolve();
     }
 }
-extern "C" __declspec(dllexport) QObject* __cdecl cordis_qt_business_object(int index)
+extern "C" __declspec(dllexport) QObject* __cdecl eve_qt_business_object(int index)
 {
     return index >= 0 && static_cast<std::size_t>(index) < live.size() ? live[index] : nullptr;
 }
-extern "C" __declspec(dllexport) int __cdecl cordis_qt_business_context(int index)
+extern "C" __declspec(dllexport) int __cdecl eve_qt_business_context(int index)
 {
     return index >= 0 && static_cast<std::size_t>(index) < contexts.size() && contexts[index] &&
            contexts[index]->identity().hasValue();
 }
-extern "C" __declspec(dllexport) std::uint64_t __cdecl cordis_qt_business_runtime_id()
+extern "C" __declspec(dllexport) std::uint64_t __cdecl eve_qt_business_runtime_id()
 {
     Runtime value([](Context) { return completedTask(); });
     return value.id().value();
 }
-extern "C" __declspec(dllexport) std::uint64_t __cdecl cordis_qt_business_child_id(int index)
+extern "C" __declspec(dllexport) std::uint64_t __cdecl eve_qt_business_child_id(int index)
 {
     return index >= 0 && static_cast<std::size_t>(index) < childIds.size() ? childIds[index] : 0;
 }

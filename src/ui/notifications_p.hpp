@@ -4,10 +4,10 @@
 #pragma once
 #include "output_p.hpp"
 #include "pending_values_p.hpp"
-#include <cordis/ui/notifications.hpp>
+#include <eve/ui/notifications.hpp>
 
 class QLabel;
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 struct NotificationControl;
 void installNotificationCenter(const std::shared_ptr<NotificationControl>& control, QWidget* window,
                                std::function<QString(InstanceId)> sourceName);
@@ -38,4 +38,4 @@ void settleNotifications(const std::shared_ptr<NotificationControl>& control, bo
 Result<std::vector<NotificationSnapshot>> notificationSnapshot(const std::shared_ptr<NotificationControl>& control);
 /** @brief 关门丢弃尚未确认值并释放来源；不删除纯历史。 */
 void closeNotifications(const std::shared_ptr<NotificationControl>& control);
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

@@ -5,11 +5,11 @@
 #include "catalog_p.hpp"
 #include <QPluginLoader>
 #include <QPointer>
-#include <cordis/module/qt_plugin.hpp>
-#include <cordis/module/qt_state_plugin.hpp>
+#include <eve/module/qt_plugin.hpp>
+#include <eve/module/qt_state_plugin.hpp>
 #include <map>
 #include <set>
-namespace cordis::module::detail {
+namespace eve::module::detail {
 struct QtResidency final : BackendResidency {
     explicit QtResidency(const std::string& path) : loader(QString::fromUtf8(path.c_str())) {}
     QPluginLoader loader;
@@ -25,4 +25,4 @@ struct QtResidency final : BackendResidency {
 };
 Result<void> qtAvailable(const std::shared_ptr<Generation>&, const std::shared_ptr<QtResidency>&);
 void qtBusinessFault(const std::shared_ptr<Generation>&, const ErrorInfo&);
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

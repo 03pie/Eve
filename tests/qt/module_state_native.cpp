@@ -7,10 +7,10 @@
 #include "../support/module_artifacts.hpp"
 #include <QCoreApplication>
 #include <algorithm>
-#include <cordis/kernel.hpp>
-#include <cordis/module/manager.hpp>
-#include <cordis/module/native.hpp>
-#include <cordis/module/runtime.hpp>
+#include <eve/kernel.hpp>
+#include <eve/module/manager.hpp>
+#include <eve/module/native.hpp>
+#include <eve/module/runtime.hpp>
 #include <cstring>
 #include <deque>
 #include <exception>
@@ -21,10 +21,10 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
-using namespace cordis;
-using namespace cordis::module;
-namespace files = cordis::testing::modules;
-namespace native = cordis::module::detail;
+using namespace eve;
+using namespace eve::module;
+namespace files = eve::testing::modules;
+namespace native = eve::module::detail;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -54,7 +54,7 @@ struct Scheduler : IScheduler {
 };
 std::function<void(std::uint32_t)> hook;
 std::exception_ptr hookFailure;
-void CORDIS_CALL callback(std::uint32_t phase)
+void EVE_CALL callback(std::uint32_t phase)
 {
     try {
         if (hook)
@@ -63,7 +63,7 @@ void CORDIS_CALL callback(std::uint32_t phase)
         hookFailure = std::current_exception();
     }
 }
-using Hook = void(CORDIS_CALL*)(std::uint32_t);
+using Hook = void(EVE_CALL*)(std::uint32_t);
 struct Scene {
     std::shared_ptr<Scheduler> scheduler = std::make_shared<Scheduler>();
     std::shared_ptr<Kernel> kernel = std::make_shared<Kernel>(scheduler);
@@ -75,8 +75,8 @@ struct Scene {
     Scene(const QString& root, const QString& fixture, bool legacy)
     {
         const auto directory = root + "/plugin";
-        const auto manifest = files::install(fixture, directory, legacy ? "org.cordis.business" : "org.cordis.state",
-                                             QJsonArray{"org.cordis.plugin"});
+        const auto manifest = files::install(fixture, directory, legacy ? "org.eve.business" : "org.eve.state",
+                                             QJsonArray{"org.eve.plugin"});
         generation = manager.load(root.toStdString(), manifest.toStdString()).value().generation;
         source.emplace(native::acquireNativeSource(generation).value());
         const auto path = QDir::toNativeSeparators(directory + "/module.dll").toStdWString();
@@ -95,26 +95,26 @@ struct Scene {
     void mode(std::uint32_t value)
     {
         auto call = source->ledger.acquire(ResourceKind::Call, "test.state.mode").value();
-        entry<void(CORDIS_CALL*)(std::uint32_t)>("cordis_state_set_mode")(value);
+        entry<void(EVE_CALL*)(std::uint32_t)>("eve_state_set_mode")(value);
     }
     std::uint32_t count(std::uint32_t index)
     {
         auto call = source->ledger.acquire(ResourceKind::Call, "test.state.count").value();
-        return entry<std::uint32_t(CORDIS_CALL*)(std::uint32_t)>("cordis_state_count")(index);
+        return entry<std::uint32_t(EVE_CALL*)(std::uint32_t)>("eve_state_count")(index);
     }
     unsigned creates()
     {
         auto call = source->ledger.acquire(ResourceKind::Call, "test.state.creates").value();
-        return entry<unsigned(CORDIS_CALL*)()>("cordis_business_fixture_creates")();
+        return entry<unsigned(EVE_CALL*)()>("eve_business_fixture_creates")();
     }
     void observe(std::function<void(std::uint32_t)> action)
     {
         hook = std::move(action);
         auto call = source->ledger.acquire(ResourceKind::Call, "test.state.hook").value();
-        entry<void(CORDIS_CALL*)(Hook)>("cordis_state_set_hook")(callback);
+        entry<void(EVE_CALL*)(Hook)>("eve_state_set_hook")(callback);
     }
     void open() { module.emplace(NativeModule::open(manager, generation, scheduler, kernel->services()).value()); }
-    Runtime runtime() { return module->runtime({"org.cordis.plugin", {}, {}}).value(); }
+    Runtime runtime() { return module->runtime({"org.eve.plugin", {}, {}}).value(); }
     template <class T> typename Task<T>::Snapshot wait(const Task<T>& task)
     {
         scheduler->run();
@@ -190,14 +190,14 @@ void roundtrip(Scene& s)
     CHECK(s.wait(one.ready())->hasValue() && s.wait(two.ready())->hasValue());
     auto scope = s.kernel->reserveReplacement({old.id()}).value();
     scope.freeze().value();
-    auto a = cordis::detail::InstanceStateAccess::capture(scope, one).value();
-    auto b = cordis::detail::InstanceStateAccess::capture(scope, two).value();
+    auto a = eve::detail::InstanceStateAccess::capture(scope, one).value();
+    auto b = eve::detail::InstanceStateAccess::capture(scope, two).value();
     CHECK(a && b && a->json == "7" && b->json == "7" && a->schema.version == 2);
     s.mode(7);
-    CHECK(cordis::detail::InstanceStateAccess::capture(scope, one).error().code == ErrorCode::ConfigConflict);
+    CHECK(eve::detail::InstanceStateAccess::capture(scope, one).error().code == ErrorCode::ConfigConflict);
     CHECK(!s.module->snapshot().value().faulted);
     s.mode(0);
-    CHECK(cordis::detail::InstanceStateAccess::capture(scope, one).value()->json == "7");
+    CHECK(eve::detail::InstanceStateAccess::capture(scope, one).value()->json == "7");
     scope.release().value();
     s.close();
     CHECK(s.count(6) == 3);
@@ -205,7 +205,7 @@ void roundtrip(Scene& s)
 void directClose(Scene& s, const std::string& name)
 {
     s.open();
-    auto instance = s.module->create("org.cordis.plugin", "\"sync\"", InstanceId(700), 1).value();
+    auto instance = s.module->create("org.eve.plugin", "\"sync\"", InstanceId(700), 1).value();
     auto participant = native::NativeStateAccess::participant(instance, {"counter", 2}).value();
     const bool restoring = name == "restore_close";
     if (!restoring)
@@ -279,7 +279,7 @@ void coreFailure(Scene& s, const std::string& name)
 void captureFailure(Scene& s, std::uint32_t mode)
 {
     s.open();
-    auto instance = s.module->create("org.cordis.plugin", "\"sync\"", InstanceId(701), 1).value();
+    auto instance = s.module->create("org.eve.plugin", "\"sync\"", InstanceId(701), 1).value();
     CHECK(s.wait(instance.start())->hasValue());
     auto participant = native::NativeStateAccess::participant(instance, {"counter", 2}).value();
     s.mode(mode);
@@ -293,7 +293,7 @@ void captureFailure(Scene& s, std::uint32_t mode)
 void rawGuards(Scene& s, const std::string& name)
 {
     s.open();
-    auto instance = s.module->create("org.cordis.plugin", "\"sync\"", InstanceId(702), 1).value();
+    auto instance = s.module->create("org.eve.plugin", "\"sync\"", InstanceId(702), 1).value();
     CHECK(!native::NativeStateAccess::participant(instance, {"counter", 1}).hasValue());
     auto participant = native::NativeStateAccess::participant(instance, {"counter", 2}).value();
     CHECK(participant.restore("{").error().code == ErrorCode::InvalidArgument && s.count(2) == 0);

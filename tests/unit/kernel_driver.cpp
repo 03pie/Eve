@@ -1,8 +1,8 @@
 /** @file kernel_driver.cpp
  * @brief 使用真实 Kernel、服务租约及显式 gate 验证配置驱动，不以受控驱动冒充插件运行。
  */
-#include <cordis/loader/kernel_driver.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/loader/kernel_driver.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -18,9 +18,9 @@
 #include <utility>
 #include <vector>
 
-using namespace cordis;
-using namespace cordis::loader;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using namespace eve::loader;
+using eve::testing::FakeScheduler;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

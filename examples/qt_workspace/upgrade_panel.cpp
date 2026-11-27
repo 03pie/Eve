@@ -19,7 +19,7 @@
 #include <utility>
 
 namespace notebook {
-using namespace cordis;
+using namespace eve;
 namespace {
 void setText(ElaPlainTextEdit* widget, const QString& text)
 {
@@ -33,7 +33,7 @@ UpgradePanel::UpgradePanel(std::weak_ptr<Workspace> workspace, QWidget* parent, 
 {
     if (!refreshOwner_)
         throw std::invalid_argument("upgrade panel requires its parent refresh");
-    setObjectName("CordisUpgradePanel");
+    setObjectName("EveUpgradePanel");
     auto layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 8, 0, 0);
     auto hint = new ElaText(QString::fromUtf8("选择模块声明 → 检查影响 → 升级 → 保存已接受配置"), 14, this);
@@ -42,12 +42,12 @@ UpgradePanel::UpgradePanel(std::weak_ptr<Workspace> workspace, QWidget* parent, 
     layout->addWidget(hint);
     auto row = new QHBoxLayout;
     source_ = new ElaLineEdit(this);
-    source_->setObjectName("CordisUpgradeSource");
+    source_->setObjectName("EveUpgradeSource");
     source_->setAccessibleName(QString::fromUtf8("候选模块声明绝对路径"));
     source_->setPlaceholderText(QString::fromUtf8("候选 module.json 的绝对路径"));
     row->addWidget(source_, 1);
     browse_ = new ElaPushButton(QString::fromUtf8("选择文件…"), this);
-    browse_->setObjectName("CordisUpgradeBrowse");
+    browse_->setObjectName("EveUpgradeBrowse");
     row->addWidget(browse_);
     layout->addLayout(row);
     auto actions = new QHBoxLayout;
@@ -58,27 +58,27 @@ UpgradePanel::UpgradePanel(std::weak_ptr<Workspace> workspace, QWidget* parent, 
         actions->addWidget(value);
         return value;
     };
-    previewButton_ = button("CordisUpgradePreview", "检查影响");
-    start_ = button("CordisUpgradeStart", "升级");
-    cancel_ = button("CordisUpgradeCancel", "请求取消");
+    previewButton_ = button("EveUpgradePreview", "检查影响");
+    start_ = button("EveUpgradeStart", "升级");
+    cancel_ = button("EveUpgradeCancel", "请求取消");
     actions->addStretch();
-    save_ = button("CordisUpgradeSave", "保存已接受配置");
+    save_ = button("EveUpgradeSave", "保存已接受配置");
     layout->addLayout(actions);
     status_ = new ElaText(this);
-    status_->setObjectName("CordisUpgradeStatus");
+    status_->setObjectName("EveUpgradeStatus");
     status_->setWordWrap(true);
     status_->setTextFormat(Qt::PlainText);
     layout->addWidget(status_);
     previewText_ = new ElaPlainTextEdit(this);
-    previewText_->setObjectName("CordisUpgradePreviewText");
+    previewText_->setObjectName("EveUpgradePreviewText");
     previewText_->setReadOnly(true);
     layout->addWidget(previewText_, 1);
     reportText_ = new ElaPlainTextEdit(this);
-    reportText_->setObjectName("CordisUpgradeReportText");
+    reportText_->setObjectName("EveUpgradeReportText");
     reportText_->setReadOnly(true);
     layout->addWidget(reportText_, 1);
     saveStatus_ = new ElaText(this);
-    saveStatus_->setObjectName("CordisUpgradeSaveStatus");
+    saveStatus_->setObjectName("EveUpgradeSaveStatus");
     saveStatus_->setWordWrap(true);
     saveStatus_->setTextFormat(Qt::PlainText);
     layout->addWidget(saveStatus_);
@@ -215,7 +215,7 @@ void UpgradePanel::browse()
         }
         auto dialog = new QFileDialog(this, QString::fromUtf8("选择候选模块声明"));
         chooser_ = dialog;
-        dialog->setObjectName("CordisUpgradeFileDialog");
+        dialog->setObjectName("EveUpgradeFileDialog");
         dialog->setAttribute(Qt::WA_DeleteOnClose);
         dialog->setWindowModality(Qt::NonModal);
         dialog->setModal(false);

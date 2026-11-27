@@ -34,10 +34,10 @@ void retirement(const QString& sourceBin)
     });
     worker.join();
     PLATFORM_CHECK(wrongThread);
-    auto* tabs = view.body->findChild<QTabWidget*>("CordisModuleTabs");
-    auto* choices = view.body->findChild<QComboBox*>("CordisRetirementGeneration");
-    auto* retry = view.body->findChild<QPushButton*>("CordisRetirementRetry");
-    auto* status = view.body->findChild<QLabel*>("CordisRetirementStatus");
+    auto* tabs = view.body->findChild<QTabWidget*>("EveModuleTabs");
+    auto* choices = view.body->findChild<QComboBox*>("EveRetirementGeneration");
+    auto* retry = view.body->findChild<QPushButton*>("EveRetirementRetry");
+    auto* status = view.body->findChild<QLabel*>("EveRetirementStatus");
     PLATFORM_CHECK(tabs && choices && retry && status);
     tabs->setCurrentIndex(1);
     view.refresh();

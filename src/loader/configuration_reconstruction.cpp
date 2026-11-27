@@ -5,7 +5,7 @@
 #include <map>
 #include <set>
 
-namespace cordis::loader::detail {
+namespace eve::loader::detail {
 Result<ConfigurationReconstructionPlan>
 ConfigurationReconstructionAccess::inspect(const ReplacementScope& scope,
                                            std::vector<DriverReconstructionRequest> participants)
@@ -52,4 +52,4 @@ bool ConfigurationReconstructionAccess::current(const ConfigurationReconstructio
             return false;
     return true;
 }
-} // namespace cordis::loader::detail
+} // namespace eve::loader::detail

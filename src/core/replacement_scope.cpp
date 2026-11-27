@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace cordis::detail {
+namespace eve::detail {
 namespace {
 ErrorInfo scopeError(ErrorCode code, const char* message, OperationId operation = {})
 {
@@ -527,9 +527,9 @@ void shutdownReplacementScopes(const std::shared_ptr<ServiceRegistryControl>& re
     for (const auto& control : controls)
         control->shutdown(finished, outcome);
 }
-} // namespace cordis::detail
+} // namespace eve::detail
 
-namespace cordis {
+namespace eve {
 Result<void>
 ServiceRegistry::replacementMountAccess(const Runtime& runtime, const RealmMap& realms,
                                         const std::vector<ServiceRequirement>& additionalDependencies) const
@@ -630,4 +630,4 @@ Result<void> ReplacementScope::release() const
                ? control->release()
                : Result<void>::failure(detail::scopeError(ErrorCode::InvalidArgument, "replacement scope moved from"));
 }
-} // namespace cordis
+} // namespace eve

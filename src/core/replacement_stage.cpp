@@ -7,7 +7,7 @@
 #include <exception>
 #include <stdexcept>
 
-namespace cordis::detail {
+namespace eve::detail {
 void registerReplacementStageInstance(const std::shared_ptr<PublicationControl>& publication, const Instance& instance)
 {
     if (replacementViewAllowsStage(publication))
@@ -240,8 +240,8 @@ void ReplacementScopeControl::finishStage(const Result<CleanupReport>& result)
     state = stageReport.quiescent ? ReplacementScopeState::Stopped : ReplacementScopeState::Failed;
     discarded.resolve(stageReport);
 }
-} // namespace cordis::detail
-namespace cordis {
+} // namespace eve::detail
+namespace eve {
 Result<Instance> ReplacementBuilder::stage(const Runtime& runtime, std::string config, RealmMap realms,
                                            std::vector<ServiceRequirement> dependencies,
                                            std::optional<StateSnapshot> state) const
@@ -268,4 +268,4 @@ Task<CleanupReport> ReplacementScope::discard() const
     return control ? control->discard()
                    : detail::rejected(makeError(ErrorCode::InvalidArgument, "replacement scope moved from"));
 }
-} // namespace cordis
+} // namespace eve

@@ -4,7 +4,7 @@
 #include "definition_driver_p.hpp"
 #include "target_commit_p.hpp"
 #include <atomic>
-#include <cordis/loader/coordinator.hpp>
+#include <eve/loader/coordinator.hpp>
 #include <exception>
 #include <limits>
 #include <map>
@@ -13,7 +13,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace cordis::loader::detail {
+namespace eve::loader::detail {
 /** @brief 跨线程投递故障只终结线程安全 Promise，不读取 owner 工作中的报告或驱动。 */
 struct DeliveryGate {
     std::atomic_bool blocked{false};
@@ -111,7 +111,7 @@ struct CoordinatorControl : std::enable_shared_from_this<CoordinatorControl> {
     /** @brief 所有回执故障共用同一个线程安全门禁。 */
     void observeReceipt(const Task<void>& receipt)
     {
-        cordis::detail::TaskAccess::observe(receipt, [gate = delivery](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(receipt, [gate = delivery](Task<void>::Snapshot result) {
             if (!result->hasValue()) gate->fail(result->error());
         });
     }
@@ -338,9 +338,9 @@ void CoordinatorTargetSlot::publish() noexcept
     owner->revision = next;
     published = true;
 }
-} // namespace cordis::loader::detail
+} // namespace eve::loader::detail
 
-namespace cordis::loader {
+namespace eve::loader {
 /** @brief 验证调用约束，不在构造期触碰驱动业务状态。 */
 ConfigurationCoordinator::ConfigurationCoordinator(std::shared_ptr<IScheduler> scheduler, std::shared_ptr<IReconcileDriver> driver)
 {
@@ -422,4 +422,4 @@ Task<CleanupReport> ConfigurationCoordinator::close()
     }
     return state->delivery->closed.task();
 }
-} // namespace cordis::loader
+} // namespace eve::loader

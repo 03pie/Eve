@@ -6,10 +6,10 @@
 #include <QPluginLoader>
 #include <QTemporaryDir>
 #include <QTimer>
-#include <cordis/module/native.hpp>
-#include <cordis/module/qt_manifest.hpp>
-#include <cordis/module/qt_module.hpp>
-#include <cordis/qt/scheduler.hpp>
+#include <eve/module/native.hpp>
+#include <eve/module/qt_manifest.hpp>
+#include <eve/module/qt_module.hpp>
+#include <eve/qt/scheduler.hpp>
 #include <cstring>
 #include <iostream>
 #include <thread>
@@ -17,9 +17,9 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
-using namespace cordis;
-using namespace cordis::module;
-namespace files = cordis::testing::modules;
+using namespace eve;
+using namespace eve::module;
+namespace files = eve::testing::modules;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -29,7 +29,7 @@ int roots(const QString& library)
 {
     const auto image = GetModuleHandleW(library.toStdWString().c_str());
     CHECK(image);
-    const auto address = GetProcAddress(image, "cordis_qt_fixture_roots");
+    const auto address = GetProcAddress(image, "eve_qt_fixture_roots");
     CHECK(address);
     int(__cdecl * read)() = nullptr;
     static_assert(sizeof(read) == sizeof(address), "Windows entry layout");
@@ -51,8 +51,8 @@ int main(int argc, char** argv)
         CHECK(temporary.isValid());
         const auto root = temporary.path();
         const auto library = root + "/qt/module.dll";
-        const auto path = files::install(args[3], root + "/qt", "org.cordis.qt.example",
-                                         QJsonArray{"org.cordis.qt.page", "org.cordis.qt.settings"}, "qt-ui");
+        const auto path = files::install(args[3], root + "/qt", "org.eve.qt.example",
+                                         QJsonArray{"org.eve.qt.page", "org.eve.qt.settings"}, "qt-ui");
         ModuleManager manager;
         CHECK(manager.snapshot().value().empty());
         if (name == "thread") {
@@ -97,8 +97,8 @@ int main(int argc, char** argv)
         }
         std::optional<ModuleLoadReport> nativeReport;
         if (name == "mixed") {
-            const auto nativePath = files::install(QStringLiteral(CORDIS_NATIVE_FIXTURE), root + "/native",
-                                                   "org.cordis.good", QJsonArray{"org.cordis.plugin"});
+            const auto nativePath = files::install(QStringLiteral(EVE_NATIVE_FIXTURE), root + "/native",
+                                                   "org.eve.good", QJsonArray{"org.eve.plugin"});
             auto loaded = manager.load(root.toStdString(), nativePath.toStdString());
             CHECK(loaded.hasValue());
             nativeReport = loaded.value();
@@ -160,15 +160,15 @@ int main(int argc, char** argv)
             CHECK(!manager.drain(result.value().generation).hasValue());
         }
         if (name == "reuse") {
-            const auto other = files::install(args[3], root + "/copy", "org.cordis.qt.example",
-                                              QJsonArray{"org.cordis.qt.settings", "org.cordis.qt.page"}, "qt-ui");
+            const auto other = files::install(args[3], root + "/copy", "org.eve.qt.example",
+                                              QJsonArray{"org.eve.qt.settings", "org.eve.qt.page"}, "qt-ui");
             auto reused = loadQtModule(root.toStdString(), other.toStdString());
             CHECK(reused.hasValue() && reused.value().reused && reused.value().generation == result.value().generation);
             CHECK(roots(library) == 1 && manager.snapshot().value().size() == 1);
             CHECK(!GetModuleHandleW((root + "/copy/module.dll").toStdWString().c_str()));
         } else if (name == "identity") {
-            const auto other = files::install(args[3], root + "/different", "org.cordis.qt.example",
-                                              QJsonArray{"org.cordis.qt.page", "org.cordis.qt.settings"}, "qt-ui");
+            const auto other = files::install(args[3], root + "/different", "org.eve.qt.example",
+                                              QJsonArray{"org.eve.qt.page", "org.eve.qt.settings"}, "qt-ui");
             auto bytes = files::read(root + "/different/module.dll");
             bytes += "changed";
             files::write(root + "/different/module.dll", bytes);

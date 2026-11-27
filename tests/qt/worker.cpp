@@ -8,11 +8,11 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <cordis/kernel.hpp>
-#include <cordis/qt/clock.hpp>
-#include <cordis/qt/connection.hpp>
-#include <cordis/qt/worker.hpp>
-#include <cordis/qt/value_worker.hpp>
+#include <eve/kernel.hpp>
+#include <eve/qt/clock.hpp>
+#include <eve/qt/connection.hpp>
+#include <eve/qt/worker.hpp>
+#include <eve/qt/value_worker.hpp>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -30,8 +30,8 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
-using namespace cordis;
-using namespace cordis::qt;
+using namespace eve;
+using namespace eve::qt;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

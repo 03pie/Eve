@@ -5,7 +5,7 @@
 #include "native_file_p.hpp"
 #include <memory>
 #include <vector>
-namespace cordis::module::detail {
+namespace eve::module::detail {
 inline bool modulePathInput(const std::string& value)
 {
     return !value.empty() && value.size() <= 32768 && value.find('\0') == std::string::npos &&
@@ -57,4 +57,4 @@ inline bool protectModuleDirectories(const QString& directory, std::vector<std::
     }
     return true;
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

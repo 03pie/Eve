@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-运行 Cordis 项目的配置、构建、测试或完整验证流程。
+运行 Eve 项目的配置、构建、测试或完整验证流程。
 
 .DESCRIPTION
 通过项目 CMake 预设执行所选开发操作，并在外部命令失败时报告错误。
@@ -12,7 +12,7 @@
 要使用的 CMake 预设。
 
 .PARAMETER QtRoot
-Qt 5.15.2 kit 根目录；Qt/Ela 预设使用，默认读取 CORDIS_QT5152_ROOT。
+Qt 5.15.2 kit 根目录；Qt/Ela 预设使用，默认读取 EVE_QT5152_ROOT。
 
 .PARAMETER ShowIncludesPrefix
 MSVC 依赖输出前缀；默认读取进程变量，用于编码无法自动识别的终端。
@@ -23,8 +23,8 @@ param(
     [string]$Action = 'verify',
     [ValidateSet('core-gcc-debug', 'core-gcc-release', 'core-msvc-debug', 'core-msvc-release', 'qt-msvc-debug', 'qt-msvc-release', 'ela-msvc-debug', 'ela-msvc-release', 'ela-installer-msvc-release')]
     [string]$Preset = 'core-gcc-debug',
-    [string]$QtRoot = $env:CORDIS_QT5152_ROOT,
-    [string]$ShowIncludesPrefix = $env:CORDIS_MSVC_SHOWINCLUDES_PREFIX
+    [string]$QtRoot = $env:EVE_QT5152_ROOT,
+    [string]$ShowIncludesPrefix = $env:EVE_MSVC_SHOWINCLUDES_PREFIX
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,12 +46,12 @@ System.String。返回 CMake 可执行文件的完整路径。
 function Find-CMake {
     $taskFound = Get-Command cmake -ErrorAction SilentlyContinue
     if ($taskFound) { return $taskFound.Source }
-    if ($env:CORDIS_CMAKE_BIN) {
+    if ($env:EVE_CMAKE_BIN) {
         $taskExecutableName = if ($IsLinux -or $IsMacOS) { 'cmake' } else { 'cmake.exe' }
-        $taskCandidate = Join-Path $env:CORDIS_CMAKE_BIN $taskExecutableName
+        $taskCandidate = Join-Path $env:EVE_CMAKE_BIN $taskExecutableName
         if (Test-Path -LiteralPath $taskCandidate -PathType Leaf) { return $taskCandidate }
     }
-    throw 'CMake was not found. Add CMake to PATH or set CORDIS_CMAKE_BIN to its bin directory.'
+    throw 'CMake was not found. Add CMake to PATH or set EVE_CMAKE_BIN to its bin directory.'
 }
 
 <#
@@ -82,7 +82,7 @@ function Invoke-Checked([string]$Executable, [string[]]$Arguments) {
 }
 
 $taskOriginalPath = $env:PATH
-$taskOriginalQtRoot = $env:CORDIS_QT5152_ROOT
+$taskOriginalQtRoot = $env:EVE_QT5152_ROOT
 Push-Location -LiteralPath $taskRoot
 try {
     $taskCmake = Find-CMake
@@ -91,14 +91,14 @@ try {
     if (-not (Test-Path -LiteralPath $taskCtest -PathType Leaf)) { throw 'CTest must be installed beside CMake.' }
 
     if ($Preset.StartsWith('qt-') -or $Preset.StartsWith('ela-')) {
-        if (-not $QtRoot) { throw 'Set -QtRoot or CORDIS_QT5152_ROOT to the Qt 5.15.2 MSVC x64 kit.' }
+        if (-not $QtRoot) { throw 'Set -QtRoot or EVE_QT5152_ROOT to the Qt 5.15.2 MSVC x64 kit.' }
         $taskQtRoot = (Resolve-Path -LiteralPath $QtRoot).Path
         $taskQmake = Join-Path $taskQtRoot 'bin/qmake.exe'
         if (-not (Test-Path -LiteralPath $taskQmake -PathType Leaf)) { throw 'QtRoot must contain bin/qmake.exe.' }
         $taskQtVersion = & $taskQmake -query QT_VERSION
         if ($LASTEXITCODE -ne 0 -or $taskQtVersion.Trim() -ne '5.15.2') { throw 'Qt preset requires exactly Qt 5.15.2.' }
         if (-not (Test-Path -LiteralPath (Join-Path $taskQtRoot 'lib/Qt5Core.lib') -PathType Leaf)) { throw 'Qt preset requires an MSVC kit.' }
-        $env:CORDIS_QT5152_ROOT = $taskQtRoot
+        $env:EVE_QT5152_ROOT = $taskQtRoot
         $env:PATH = (Join-Path $taskQtRoot 'bin') + [System.IO.Path]::PathSeparator + $env:PATH
     }
 
@@ -114,7 +114,7 @@ try {
     if ($Action -in @('configure', 'verify')) {
         $taskConfigureArguments = @('--preset', $Preset)
         if ($Preset.Contains('msvc') -and $ShowIncludesPrefix) {
-            $taskConfigureArguments += "-DCORDIS_MSVC_SHOWINCLUDES_PREFIX=$ShowIncludesPrefix"
+            $taskConfigureArguments += "-DEVE_MSVC_SHOWINCLUDES_PREFIX=$ShowIncludesPrefix"
         }
         Invoke-Checked $taskCmake $taskConfigureArguments
     }
@@ -127,6 +127,6 @@ try {
 }
 finally {
     $env:PATH = $taskOriginalPath
-    $env:CORDIS_QT5152_ROOT = $taskOriginalQtRoot
+    $env:EVE_QT5152_ROOT = $taskOriginalQtRoot
     Pop-Location
 }

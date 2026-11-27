@@ -1,16 +1,16 @@
 /* Test-only unload witness. No business table or instance registry. */
 #include <Windows.h>
-#include <cordis_abi/plugin.h>
+#include <eve_abi/plugin.h>
 
 static volatile LONG* dynamic_detaches;
-CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_fixture_unload_watch(volatile LONG* slot)
+EVE_EXPORT EveStatus EVE_CALL eve_fixture_unload_watch(volatile LONG* slot)
 {
     if (!slot)
-        return CORDIS_E_INVALID_ARGUMENT;
+        return EVE_E_INVALID_ARGUMENT;
     dynamic_detaches = slot;
-    return CORDIS_OK;
+    return EVE_OK;
 }
-CORDIS_EXPORT void CORDIS_CALL cordis_fixture_unload_call(void(CORDIS_CALL* action)(void))
+EVE_EXPORT void EVE_CALL eve_fixture_unload_call(void(EVE_CALL* action)(void))
 {
     if (action)
         action();

@@ -4,8 +4,8 @@
 #include "../support/module_artifacts.hpp"
 #include <QCoreApplication>
 #include <QTemporaryDir>
-#include <cordis/module/manager.hpp>
-#include <cordis/module/qt_manifest.hpp>
+#include <eve/module/manager.hpp>
+#include <eve/module/qt_manifest.hpp>
 #include <iostream>
 #include <thread>
 #ifndef NOMINMAX
@@ -13,14 +13,14 @@
 #endif
 #include <Windows.h>
 
-using namespace cordis;
-using namespace cordis::module;
+using namespace eve;
+using namespace eve::module;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
             throw std::runtime_error(#x);                                                                              \
     } while (false)
-namespace files = cordis::testing::modules;
+namespace files = eve::testing::modules;
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
@@ -30,9 +30,9 @@ int main(int argc, char** argv)
         const auto name = args[1];
         QTemporaryDir root;
         CHECK(root.isValid());
-        const auto plugins = name == "order" ? QJsonArray{"org.cordis.qt.settings", "org.cordis.qt.page"}
-                                             : QJsonArray{"org.cordis.qt.page", "org.cordis.qt.settings"};
-        const auto path = files::install(args[2], root.path() + "/plugin", "org.cordis.qt.example", plugins, "qt-ui");
+        const auto plugins = name == "order" ? QJsonArray{"org.eve.qt.settings", "org.eve.qt.page"}
+                                             : QJsonArray{"org.eve.qt.page", "org.eve.qt.settings"};
+        const auto path = files::install(args[2], root.path() + "/plugin", "org.eve.qt.example", plugins, "qt-ui");
         const auto library = (root.path() + "/plugin/module.dll").toStdWString();
         CHECK(!GetModuleHandleW(library.c_str()));
         const auto before = ModuleManager{}.snapshot().value().size();

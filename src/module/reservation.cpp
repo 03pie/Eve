@@ -2,11 +2,11 @@
  * @brief 预约关联真实 Core 来源；目录锁内不调用 Core、调度器或插件。
  */
 #include "reservation_p.hpp"
-#include <cordis/module/manager.hpp>
-#include <cordis/replacement_scope.hpp>
+#include <eve/module/manager.hpp>
+#include <eve/replacement_scope.hpp>
 #include <utility>
 
-namespace cordis::module {
+namespace eve::module {
 Result<ReplacementReservation> ModuleManager::reserveReplacement(GenerationId current, GenerationId candidate)
 {
     if (!ownerThread()) {
@@ -83,4 +83,4 @@ Result<ModuleReplacementSnapshot> ReplacementReservation::snapshot() const
     error.phase = "module.replacement";
     return Result<ModuleReplacementSnapshot>::failure(std::move(error));
 }
-} // namespace cordis::module
+} // namespace eve::module

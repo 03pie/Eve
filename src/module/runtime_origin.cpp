@@ -5,7 +5,7 @@
 #include "runtime_origin_p.hpp"
 #include <algorithm>
 
-namespace cordis::module {
+namespace eve::module {
 namespace {
 ErrorInfo originError(ErrorCode code, const char* message)
 {
@@ -72,4 +72,4 @@ Result<std::optional<ModuleRuntimeOrigin>> ModuleManager::runtimeOrigin(RuntimeI
     }
     return Output::success(std::nullopt);
 }
-} // namespace cordis::module
+} // namespace eve::module

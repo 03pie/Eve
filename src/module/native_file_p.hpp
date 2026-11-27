@@ -15,7 +15,7 @@
 #endif
 #include <Windows.h>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 /** @brief 对已经限定为绝对路径的内部名称保留 Windows 长路径语义。 */
 inline std::wstring nativeModulePath(const QString& path)
 {
@@ -157,4 +157,4 @@ private:
     bool identityAvailable_ = false;
 };
 
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

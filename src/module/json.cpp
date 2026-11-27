@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 namespace {
 bool readUnicode(std::string_view text, std::size_t& at) noexcept
 {
@@ -286,4 +286,4 @@ std::optional<std::vector<std::string>> abiStringArray(std::string_view text)
         return {};
     return Scanner(text).strings();
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

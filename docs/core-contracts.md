@@ -1,6 +1,6 @@
 # Core 接口契约
 
-本页描述 Core 的接口行为、并发和资源所有权。公开定义见 [SDK 头文件](../sdk/include/cordis/)；验证入口见[测试矩阵](testing.md)。
+本页描述 Core 的接口行为、并发和资源所有权。公开定义见 [SDK 头文件](../sdk/include/eve/)；验证入口见[测试矩阵](testing.md)。
 
 ## 1. Result 与错误
 
@@ -70,7 +70,7 @@ close 的结果为 `Task<CleanupReport>`：`quiescent` 表示是否确认资源�
 
 ## 4. Kernel / Instance / Context
 
-Kernel 登记插件定义并挂载实例，Instance 提供更新、重试、停止和代次观察。每代资源静止后才启动最新配置。失败静止后允许 retry，stop 终结实例。Runtime、Instance 和 Operation 的标识在进程内唯一。retry 保留配置修订，awaitActive 查询已启动代次，对未来代次返回 InvalidArgument。持有历史成功结果时，业务调用仍需通过当前代次检查。以下列出主要接口，完整参数类型和默认值见 [Kernel 声明](../sdk/include/cordis/kernel.hpp)及 [Instance 声明](../sdk/include/cordis/instance.hpp)。
+Kernel 登记插件定义并挂载实例，Instance 提供更新、重试、停止和代次观察。每代资源静止后才启动最新配置。失败静止后允许 retry，stop 终结实例。Runtime、Instance 和 Operation 的标识在进程内唯一。retry 保留配置修订，awaitActive 查询已启动代次，对未来代次返回 InvalidArgument。持有历史成功结果时，业务调用仍需通过当前代次检查。以下列出主要接口，完整参数类型和默认值见 [Kernel 声明](../sdk/include/eve/kernel.hpp)及 [Instance 声明](../sdk/include/eve/instance.hpp)。
 
 ```text
 Kernel.registerPlugin(name, activate, dependencies, outputs) -> Result<Runtime>

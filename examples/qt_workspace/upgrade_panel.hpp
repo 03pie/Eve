@@ -36,13 +36,13 @@ private:
     ElaText *status_ = nullptr, *saveStatus_ = nullptr;
     QPointer<QFileDialog> chooser_;
     std::optional<UpgradePreview> preview_;
-    std::optional<cordis::Task<WorkspaceUpgradeReport>> execution_;
-    std::optional<cordis::Task<cordis::loader::SaveReport>> saving_;
+    std::optional<eve::Task<WorkspaceUpgradeReport>> execution_;
+    std::optional<eve::Task<eve::loader::SaveReport>> saving_;
     std::string alias_;
     QString sourceText_, message_, saveMessage_;
-    cordis::GenerationId generation_;
-    cordis::RuntimeId runtime_;
-    cordis::OperationId operation_;
+    eve::GenerationId generation_;
+    eve::RuntimeId runtime_;
+    eve::OperationId operation_;
     std::uint64_t revision_ = 0, inputVersion_ = 0;
     bool acting_ = false, rendering_ = false;
 

@@ -7,16 +7,16 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <algorithm>
-#include <cordis/loader/qt_file.hpp>
+#include <eve/loader/qt_file.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 
 namespace {
-using namespace cordis;
-using namespace cordis::module;
-using namespace cordis::loader;
+using namespace eve;
+using namespace eve::module;
+using namespace eve::loader;
 void require(bool condition, const char* message)
 {
     if (!condition)
@@ -47,7 +47,7 @@ template <class F> void guarded(F callback)
 }
 class Runner : public std::enable_shared_from_this<Runner> {
 public:
-    Runner(QString root, std::string mode, std::shared_ptr<cordis::qt::QtScheduler> scheduler)
+    Runner(QString root, std::string mode, std::shared_ptr<eve::qt::QtScheduler> scheduler)
         : root_(std::move(root)), mode_(std::move(mode))
     {
         require(mode_ == "normal" || mode_ == "multi" || mode_ == "realms" || mode_ == "start_failure" ||
@@ -206,7 +206,7 @@ int main(int argc, char** argv)
 {
     try {
         QCoreApplication app(argc, argv);
-        const auto scheduler = std::make_shared<cordis::qt::QtScheduler>();
+        const auto scheduler = std::make_shared<eve::qt::QtScheduler>();
         const auto arguments = app.arguments();
         const auto root =
             arguments.size() > 1 ? arguments.at(1) : QCoreApplication::applicationDirPath() + "/native-services";

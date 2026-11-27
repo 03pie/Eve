@@ -6,7 +6,7 @@
 
 class QIODevice;
 
-namespace cordis::ui::detail
+namespace eve::ui::detail
 {
 inline constexpr int defaultLogPageSize = 200;
 inline constexpr int maxLogPageSize = 1000;
@@ -96,4 +96,4 @@ private:
     LogFilter filter_;
     bool cancelled_ = false;
 };
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

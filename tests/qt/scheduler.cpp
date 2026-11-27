@@ -1,8 +1,8 @@
 /** @file scheduler.cpp
  * @brief 以真实 Qt 循环验证调度、关闭仲裁、异常边界及内核异步停止。
  */
-#include <cordis/qt/scheduler.hpp>
-#include <cordis/kernel.hpp>
+#include <eve/qt/scheduler.hpp>
+#include <eve/kernel.hpp>
 #include "../support/reentrant_callable.hpp"
 #include <QCoreApplication>
 #include <QEventLoop>
@@ -18,8 +18,8 @@
 #include <thread>
 #include <vector>
 
-using namespace cordis;
-using cordis::qt::QtScheduler;
+using namespace eve;
+using eve::qt::QtScheduler;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(#x); } while (false)
 
 /** @brief 驱动真实循环到指定任务通知抵达，超时只让测试失败，不伪造任务完成。 */
@@ -218,13 +218,13 @@ void callableReentry()
     auto scheduler = std::make_shared<QtScheduler>();
     int ran = 0, discarded = 0;
     Promise<void> done;
-    CHECK(scheduler->post({cordis::test::ReentrantCallable(*scheduler, ran), cordis::test::ReentrantCallable(*scheduler, discarded)}));
+    CHECK(scheduler->post({eve::test::ReentrantCallable(*scheduler, ran), eve::test::ReentrantCallable(*scheduler, discarded)}));
     CHECK(scheduler->post({[&] { done.resolve(); }, {}}));
     waitTask(done.task(), scheduler);
     CHECK(ran == 1 && discarded == 0);
-    CHECK(scheduler->post({cordis::test::ReentrantCallable(*scheduler, ran), cordis::test::ReentrantCallable(*scheduler, discarded)}));
+    CHECK(scheduler->post({eve::test::ReentrantCallable(*scheduler, ran), eve::test::ReentrantCallable(*scheduler, discarded)}));
     CHECK(scheduler->close().hasValue());
-    CHECK(!scheduler->post({cordis::test::ReentrantCallable(*scheduler, ran), cordis::test::ReentrantCallable(*scheduler, discarded)}));
+    CHECK(!scheduler->post({eve::test::ReentrantCallable(*scheduler, ran), eve::test::ReentrantCallable(*scheduler, discarded)}));
     const auto view = scheduler->snapshot().value();
     CHECK(ran == 1 && discarded == 1 && view.discarded == 1 && view.queued == 0 && view.callbackErrors == 0);
 }

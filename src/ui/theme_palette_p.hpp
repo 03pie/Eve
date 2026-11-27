@@ -2,7 +2,7 @@
 #include <ElaTheme.h>
 #include <QPalette>
 
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 // Native Qt widgets read different roles for lists, labels, headers and
 // inactive selections. Bind the containing surface and let children inherit.
 inline QPalette workbenchPalette(QPalette palette, ElaThemeType::ThemeMode mode,

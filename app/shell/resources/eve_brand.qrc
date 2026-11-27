@@ -1,5 +1,5 @@
 <RCC>
-  <qresource prefix="/cordis/brand/eve">
+  <qresource prefix="/eve/brand">
     <file alias="16.png">eve-16.png</file>
     <file alias="24.png">eve-24.png</file>
     <file alias="32.png">eve-32.png</file>

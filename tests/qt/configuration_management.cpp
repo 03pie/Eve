@@ -25,10 +25,10 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
-#include <cordis/loader/kernel_driver.hpp>
-#include <cordis/loader/qt_store.hpp>
-#include <cordis/ui/configuration.hpp>
-#include <cordis/ui/ela_shell.hpp>
+#include <eve/loader/kernel_driver.hpp>
+#include <eve/loader/qt_store.hpp>
+#include <eve/ui/configuration.hpp>
+#include <eve/ui/ela_shell.hpp>
 #include <cstdlib>
 #include <exception>
 #include <functional>
@@ -37,9 +37,9 @@
 #include <stdexcept>
 #include <thread>
 #include <utility>
-using namespace cordis;
-using namespace cordis::loader;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::loader;
+using namespace eve::ui;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -133,7 +133,7 @@ struct Scene {
                             ->add(context, {"page", "Demo page", "Example",
                                             [] {
                                                 auto widget = std::make_unique<QWidget>();
-                                                widget->setObjectName("CordisConfigurationDemoPage");
+                                                widget->setObjectName("EveConfigurationDemoPage");
                                                 return widget;
                                             }})
                             .value()
@@ -144,7 +144,7 @@ struct Scene {
         pluginDefinition.emplace(definition);
         auto driver =
             std::make_shared<KernelReconcileDriver>(scheduler, kernel, std::vector<KernelPlugin>{{"demo", definition}});
-        auto path = directory.filePath("cordis.yaml");
+        auto path = directory.filePath("eve.yaml");
         session = std::make_shared<ConfigurationSession>(
             scheduler, driver,
             std::vector<PluginDefinition>{{"demo", {}, [](const std::string&) { return Result<void>::success(); }}},
@@ -177,9 +177,9 @@ struct Scene {
     /** @brief 只查找路径身份，不借用临时实例号。 */
     QWidget* card(const QString& path = "r") const
     {
-        auto home = find<QWidget>("CordisWelcomePage");
-        for (auto item : home->findChildren<QWidget*>("CordisPluginCard"))
-            if (item->property("CordisPluginId").toString() == "configuration:" + path)
+        auto home = find<QWidget>("EveWelcomePage");
+        for (auto item : home->findChildren<QWidget*>("EvePluginCard"))
+            if (item->property("EvePluginId").toString() == "configuration:" + path)
                 return item;
         return nullptr;
     }
@@ -187,7 +187,7 @@ struct Scene {
     ElaToggleSwitch* toggle(const QString& path = "r")
     {
         until([&] { return card(path) != nullptr; });
-        auto result = card(path)->findChild<ElaToggleSwitch*>("CordisPluginPower");
+        auto result = card(path)->findChild<ElaToggleSwitch*>("EvePluginPower");
         CHECK(result);
         return result;
     }
@@ -229,7 +229,7 @@ QTimer* isolatedHomeTimer(const Scene& scene)
 {
     QTimer* home = nullptr;
     QTimer* management = nullptr;
-    const auto view = scene.find<QWidget>("CordisManagement");
+    const auto view = scene.find<QWidget>("EveManagement");
     for (auto* timer : scene.window->findChildren<QTimer*>()) {
         if (timer->parent() == scene.window.data() && timer->interval() == 500) {
             CHECK(!home);
@@ -296,7 +296,7 @@ void providerHomeReplace()
     scene.apply();
     (void)scene.toggle();
     const auto original = scene.route->snapshot().value().entries.front().instance;
-    const QPointer<QWidget> oldPage = scene.find<QWidget>("CordisConfigurationDemoPage");
+    const QPointer<QWidget> oldPage = scene.find<QWidget>("EveConfigurationDemoPage");
     const QPointer<QWidget> card = scene.card();
     const auto timer = isolatedHomeTimer(scene);
     std::exception_ptr callbackFailure;
@@ -322,16 +322,16 @@ void providerHomeReplace()
     CHECK(current.valid() && current != original && !oldPage && !proxy->onSnapshot);
     timer->start(1);
     until([&] {
-        const auto identity = scene.card()->findChild<QLabel*>("CordisPluginIdentity");
+        const auto identity = scene.card()->findChild<QLabel*>("EvePluginIdentity");
         return identity && identity->text().contains(QString::number(current.value()));
     });
     timer->stop();
-    const auto cards = scene.find<QWidget>("CordisWelcomePage")->findChildren<QWidget*>("CordisPluginCard");
+    const auto cards = scene.find<QWidget>("EveWelcomePage")->findChildren<QWidget*>("EvePluginCard");
     CHECK(cards.size() == 1 && scene.card() == card &&
-          cards.front()->property("CordisPluginId").toString() == "configuration:r");
+          cards.front()->property("EvePluginId").toString() == "configuration:r");
     const auto pages = scene.shell.pages()->snapshot().value();
     CHECK(pages.size() == 1 && pages.front().owner.instance == current &&
-          scene.find<QWidget>("CordisConfigurationDemoPage"));
+          scene.find<QWidget>("EveConfigurationDemoPage"));
     CHECK(scene.shell.diagnostics()->snapshot().value().instances.empty());
     CHECK(!scene.shell.management()->stop(current).hasValue() && !scene.shell.management()->retry(current).hasValue() &&
           !scene.shell.management()->load(current).hasValue());
@@ -363,7 +363,7 @@ void home()
     until([&] { return power->isEnabled() && power->getIsToggled(); });
     CHECK(scene.card() == card);
     CHECK(scene.route->snapshot().value().entries.front().instance != original);
-    CHECK(scene.find<QWidget>("CordisWelcomePage")->findChildren<QWidget*>("CordisPluginCard").size() == 1);
+    CHECK(scene.find<QWidget>("EveWelcomePage")->findChildren<QWidget*>("EvePluginCard").size() == 1);
     CHECK(scene.session->snapshot().value().store.dirty);
     CHECK(!scene.shell.management()->stop(scene.route->snapshot().value().entries.front().instance).hasValue());
     scene.close();
@@ -377,7 +377,7 @@ void disabled()
     auto child = scene.toggle("r/c");
     CHECK(child->getIsToggled());
     CHECK(scene.activations == 0);
-    CHECK(scene.card("r/c")->findChild<QLabel*>("CordisPluginStatus")->text() == QString::fromUtf8("父项停用"));
+    CHECK(scene.card("r/c")->findChild<QLabel*>("EvePluginStatus")->text() == QString::fromUtf8("父项停用"));
     auto op = scene.shell.management()->setConfigurationEnabled("r/c", false, 1).value();
     CHECK(!scene.operation(op).error);
     CHECK(scene.activations == 0 && scene.route->snapshot().value().entries.size() == 2);
@@ -389,11 +389,11 @@ void management()
     Scene scene;
     scene.fail = true;
     scene.apply();
-    auto table = scene.find<QTableView>("CordisManagementConfigurationTable");
+    auto table = scene.find<QTableView>("EveManagementConfigurationTable");
     table->setCurrentIndex(table->model()->index(0, 0));
     table->selectRow(0);
     scene.shell.management()->refresh().value();
-    auto retry = scene.find<QPushButton>("CordisManagementConfigurationReconcile");
+    auto retry = scene.find<QPushButton>("EveManagementConfigurationReconcile");
     CHECK(retry->isEnabled());
     scene.fail = false;
     retry->click();
@@ -405,7 +405,7 @@ void management()
     auto record = scene.shell.diagnostics()->snapshot().value().operations.back();
     CHECK(record.configurationResult && record.configurationResult->outcome == ConfigurationOutcome::Applied &&
           !record.error);
-    scene.find<QPushButton>("CordisManagementConfigurationDisable")->click();
+    scene.find<QPushButton>("EveManagementConfigurationDisable")->click();
     until([&] { return scene.session->snapshot().value().coordinator.running.empty(); });
     auto manual = scene.kernel->registerPlugin("manual", [](Context) { return completedTask(); }).value();
     auto instance = scene.kernel->mount(manual).value();
@@ -441,7 +441,7 @@ void homeStale()
     auto newer = scene.session->setEnabled("r", true, 1).value();
     scene.shell.management()->refresh().value();
     wait(newer.settled);
-    until([&] { return scene.find<QLabel>("CordisHomeError")->isVisible(); });
+    until([&] { return scene.find<QLabel>("EveHomeError")->isVisible(); });
     CHECK(scene.route->snapshot().value().revision == 2 && scene.route->snapshot().value().entries.front().enabled);
     scene.close();
 }
@@ -533,7 +533,7 @@ void reentry()
     Scene scene;
     bool entered = false, survived = false;
     std::optional<Task<void>> closed;
-    auto model = scene.find<QTableView>("CordisManagementConfigurationTable")->model();
+    auto model = scene.find<QTableView>("EveManagementConfigurationTable")->model();
     QObject::connect(model, &QAbstractItemModel::rowsInserted, model, [&] {
         if (entered)
             return;
@@ -577,7 +577,7 @@ void layout()
     scene.apply();
     scene.toggle();
     until(
-        [&] { return scene.card()->findChild<QLabel*>("CordisPluginStatus")->text() == QString::fromUtf8("运行中"); });
+        [&] { return scene.card()->findChild<QLabel*>("EvePluginStatus")->text() == QString::fromUtf8("运行中"); });
     for (auto theme : {ElaThemeType::Light, ElaThemeType::Dark}) {
         eTheme->setThemeMode(theme);
         scene.window->resize(1200, 800);
@@ -586,17 +586,17 @@ void layout()
         CHECK(scene.window->grab().save(QCoreApplication::applicationDirPath() + "/configuration-home-" + suffix +
                                         ".png"));
         scene.shell.showManagement().value();
-        auto table = scene.find<QTableView>("CordisManagementConfigurationTable");
-        auto tabs = scene.find<QWidget>("CordisManagementConfiguration")->parentWidget();
+        auto table = scene.find<QTableView>("EveManagementConfigurationTable");
+        auto tabs = scene.find<QWidget>("EveManagementConfiguration")->parentWidget();
         while (tabs && !qobject_cast<QTabWidget*>(tabs))
             tabs = tabs->parentWidget();
         CHECK(tabs);
-        qobject_cast<QTabWidget*>(tabs)->setCurrentWidget(scene.find<QWidget>("CordisManagementConfiguration"));
+        qobject_cast<QTabWidget*>(tabs)->setCurrentWidget(scene.find<QWidget>("EveManagementConfiguration"));
         QCoreApplication::processEvents();
         CHECK(table->isVisible() && table->height() > 100 && table->columnWidth(0) >= 180);
         CHECK(scene.window->grab().save(QCoreApplication::applicationDirPath() + "/configuration-management-" + suffix +
                                         ".png"));
-        scene.find<QAction>("CordisOpenHome")->trigger();
+        scene.find<QAction>("EveOpenHome")->trigger();
     }
     scene.close();
 }
@@ -606,26 +606,26 @@ void cardWindows()
     Scene scene;
     scene.apply();
     scene.toggle();
-    auto tabs = scene.find<QTabBar>("CordisPageTabs");
+    auto tabs = scene.find<QTabBar>("EvePageTabs");
     const auto navigation = scene.window->getCurrentNavigationPageKey();
     auto before = scene.route->snapshot().value().entries.front();
-    scene.card()->findChild<QPushButton*>("CordisPluginManage")->click();
-    QPointer<ElaDialog> dialog = scene.find<ElaDialog>("CordisManagement");
+    scene.card()->findChild<QPushButton*>("EvePluginManage")->click();
+    QPointer<ElaDialog> dialog = scene.find<ElaDialog>("EveManagement");
     CHECK(dialog->isVisible() && dialog->parentWidget() == scene.window);
     CHECK(tabs->count() == 1 && scene.window->getCurrentNavigationPageKey() == navigation);
-    CHECK(dialog->windowTitle().contains("r") && !scene.find<QTableView>("CordisInstanceTable")->isVisible());
+    CHECK(dialog->windowTitle().contains("r") && !scene.find<QTableView>("EveInstanceTable")->isVisible());
     dialog->close();
     CHECK(dialog->isHidden() && scene.route->snapshot().value().entries.front().instance == before.instance);
-    scene.card()->findChild<QPushButton*>("CordisPluginConfigure")->click();
+    scene.card()->findChild<QPushButton*>("EvePluginConfigure")->click();
     CHECK(dialog->isVisible());
-    CHECK(scene.find<QTabWidget>("CordisManagementTabs")->currentWidget() ==
-          scene.find<QWidget>("CordisManagementConfiguration"));
-    CHECK(scene.find<QPlainTextEdit>("CordisPluginConfigurationEditor")->toPlainText() == "{}");
+    CHECK(scene.find<QTabWidget>("EveManagementTabs")->currentWidget() ==
+          scene.find<QWidget>("EveManagementConfiguration"));
+    CHECK(scene.find<QPlainTextEdit>("EvePluginConfigurationEditor")->toPlainText() == "{}");
     for (auto theme : {ElaThemeType::Light, ElaThemeType::Dark}) {
         eTheme->setThemeMode(theme);
         QTest::qWait(30);
         const auto suffix = theme == ElaThemeType::Light ? "light" : "dark";
-        auto editor = scene.find<QPlainTextEdit>("CordisPluginConfigurationEditor");
+        auto editor = scene.find<QPlainTextEdit>("EvePluginConfigurationEditor");
         const auto point = editor->viewport()->mapTo(
             dialog, QPoint(editor->viewport()->width() - 20, editor->viewport()->height() - 20));
         const auto background = dialog->grab().toImage().pixelColor(point);
@@ -633,11 +633,11 @@ void cardWindows()
         CHECK(dialog->grab().save(QCoreApplication::applicationDirPath() + "/card-management-" + suffix + ".png"));
     }
     scene.apply("formatVersion: 1\nplugins: []\n");
-    CHECK(!scene.find<QPushButton>("CordisPluginConfigurationApply")->isEnabled());
-    scene.find<QAction>("CordisOpenNotifications")->trigger();
-    CHECK(scene.find<QWidget>("CordisNotificationCenter")->isVisible());
-    CHECK(scene.find<QTabWidget>("CordisManagementTabs")->currentWidget() ==
-          scene.find<QWidget>("CordisManagementConfiguration"));
+    CHECK(!scene.find<QPushButton>("EvePluginConfigurationApply")->isEnabled());
+    scene.find<QAction>("EveOpenNotifications")->trigger();
+    CHECK(scene.find<QWidget>("EveNotificationCenter")->isVisible());
+    CHECK(scene.find<QTabWidget>("EveManagementTabs")->currentWidget() ==
+          scene.find<QWidget>("EveManagementConfiguration"));
     scene.close();
     CHECK(!dialog);
 }
@@ -646,13 +646,13 @@ void cardWindows()
 void addInstanceNativeIme()
 {
     Scene scene;
-    until([&] { return scene.find<QAction>("CordisAddPlugin")->isEnabled(); });
-    scene.find<QAction>("CordisAddPlugin")->trigger();
-    auto dialog = scene.find<ElaDialog>("CordisAddPluginDialog");
-    auto submit = scene.find<QPushButton>("CordisAddPluginSubmit");
+    until([&] { return scene.find<QAction>("EveAddPlugin")->isEnabled(); });
+    scene.find<QAction>("EveAddPlugin")->trigger();
+    auto dialog = scene.find<ElaDialog>("EveAddPluginDialog");
+    auto submit = scene.find<QPushButton>("EveAddPluginSubmit");
     int submissions = 0;
     QObject::connect(submit, &QPushButton::clicked, dialog, [&] { ++submissions; });
-    cordis::test::verifyNativePinyin(scene.find<QLineEdit>("CordisAddPluginId"));
+    eve::test::verifyNativePinyin(scene.find<QLineEdit>("EveAddPluginId"));
     CHECK(dialog->isVisible() && submissions == 0);
     scene.close();
 }
@@ -661,30 +661,30 @@ void addInstance()
 {
     Scene scene;
     CHECK(scene.session->registeredPlugins().value() == std::vector<std::string>{"demo"});
-    until([&] { return scene.find<QAction>("CordisAddPlugin")->isEnabled(); });
-    scene.find<QAction>("CordisAddPlugin")->trigger();
-    auto dialog = scene.find<ElaDialog>("CordisAddPluginDialog");
+    until([&] { return scene.find<QAction>("EveAddPlugin")->isEnabled(); });
+    scene.find<QAction>("EveAddPlugin")->trigger();
+    auto dialog = scene.find<ElaDialog>("EveAddPluginDialog");
     CHECK(dialog->isVisible());
-    auto types = scene.find<QComboBox>("CordisAddPluginType");
+    auto types = scene.find<QComboBox>("EveAddPluginType");
     CHECK(types->count() == 1 && types->currentText() == "demo");
-    auto id = scene.find<QLineEdit>("CordisAddPluginId");
-    auto yaml = scene.find<QPlainTextEdit>("CordisAddPluginConfiguration");
-    auto submit = scene.find<QPushButton>("CordisAddPluginSubmit");
+    auto id = scene.find<QLineEdit>("EveAddPluginId");
+    auto yaml = scene.find<QPlainTextEdit>("EveAddPluginConfiguration");
+    auto submit = scene.find<QPushButton>("EveAddPluginSubmit");
     submit->click();
-    CHECK(scene.find<QLabel>("CordisAddPluginIdError")->isVisible());
+    CHECK(scene.find<QLabel>("EveAddPluginIdError")->isVisible());
     const auto idA11y = QAccessible::queryAccessibleInterface(id);
     const auto yamlA11y = QAccessible::queryAccessibleInterface(yaml);
     CHECK(idA11y && yamlA11y && !yamlA11y->text(QAccessible::Name).isEmpty());
-    CHECK(idA11y->text(QAccessible::Description) == scene.find<QLabel>("CordisAddPluginIdError")->text());
+    CHECK(idA11y->text(QAccessible::Description) == scene.find<QLabel>("EveAddPluginIdError")->text());
     id->setText("added");
     yaml->setPlainText("{invalid");
-    CHECK(!scene.find<QLabel>("CordisAddPluginIdError")->isVisible());
-    CHECK(scene.find<QLabel>("CordisAddPluginConfigurationError")->isVisible());
-    CHECK(yamlA11y->text(QAccessible::Description) == scene.find<QLabel>("CordisAddPluginConfigurationError")->text());
+    CHECK(!scene.find<QLabel>("EveAddPluginIdError")->isVisible());
+    CHECK(scene.find<QLabel>("EveAddPluginConfigurationError")->isVisible());
+    CHECK(yamlA11y->text(QAccessible::Description) == scene.find<QLabel>("EveAddPluginConfigurationError")->text());
     yaml->setPlainText("{still invalid");
-    CHECK(scene.find<QLabel>("CordisAddPluginConfigurationError")->isVisible());
+    CHECK(scene.find<QLabel>("EveAddPluginConfigurationError")->isVisible());
     yaml->setPlainText("{\"title\":\"added\"}");
-    CHECK(!scene.find<QLabel>("CordisAddPluginConfigurationError")->isVisible());
+    CHECK(!scene.find<QLabel>("EveAddPluginConfigurationError")->isVisible());
     CHECK(yamlA11y->text(QAccessible::Description).isEmpty());
     for (auto theme : {ElaThemeType::Light, ElaThemeType::Dark}) {
         eTheme->setThemeMode(theme);
@@ -698,18 +698,18 @@ void addInstance()
     until([&] { return dialog->isHidden(); });
     auto state = scene.route->snapshot().value();
     CHECK(state.revision == 1 && state.dirty && state.entries.size() == 1 && state.entries[0].path == "added");
-    CHECK(!QFile::exists(scene.directory.filePath("cordis.yaml")));
+    CHECK(!QFile::exists(scene.directory.filePath("eve.yaml")));
     until([&] { return scene.card("added") != nullptr; });
-    auto addedManage = scene.card("added")->findChild<QPushButton*>("CordisPluginManage");
+    auto addedManage = scene.card("added")->findChild<QPushButton*>("EvePluginManage");
     until([&] { return addedManage->hasFocus(); });
-    CHECK(scene.find<QTabBar>("CordisPageTabs")->count() == 1);
-    scene.find<QAction>("CordisAddPlugin")->trigger();
+    CHECK(scene.find<QTabBar>("EvePageTabs")->count() == 1);
+    scene.find<QAction>("EveAddPlugin")->trigger();
     id->setText("added");
     submit->click();
-    CHECK(dialog->isVisible() && scene.find<QLabel>("CordisAddPluginIdError")->isVisible());
+    CHECK(dialog->isVisible() && scene.find<QLabel>("EveAddPluginIdError")->isVisible());
     CHECK(yaml->toPlainText() == "{\"title\":\"added\"}" && scene.route->snapshot().value().entries.size() == 1);
     id->setText("second");
-    CHECK(!scene.find<QLabel>("CordisAddPluginIdError")->isVisible());
+    CHECK(!scene.find<QLabel>("EveAddPluginIdError")->isVisible());
     auto duplicate = scene.route->addInstance("added", "demo", "{}", state.revision);
     CHECK(!duplicate.hasValue() && scene.route->snapshot().value().revision == state.revision);
     submit->click();
@@ -721,7 +721,7 @@ void addInstance()
     scene.close();
     Scene baseline(false);
     wait(baseline.session->close());
-    const auto path = baseline.directory.filePath("cordis.yaml");
+    const auto path = baseline.directory.filePath("eve.yaml");
     QFile file(path);
     CHECK(file.open(QIODevice::WriteOnly));
     CHECK(file.write("formatVersion: 1\nplugins: [{id: existing, plugin: demo}]\n") > 0);
@@ -758,31 +758,31 @@ void editInstance()
     CHECK(!scene.route->addInstance("broken", "demo", "{broken:", 2).hasValue());
     CHECK(scene.route->snapshot().value().revision == 2);
     scene.toggle();
-    scene.card()->findChild<QPushButton*>("CordisPluginConfigure")->click();
-    auto editor = scene.find<QPlainTextEdit>("CordisPluginConfigurationEditor");
+    scene.card()->findChild<QPushButton*>("EvePluginConfigure")->click();
+    auto editor = scene.find<QPlainTextEdit>("EvePluginConfigurationEditor");
     editor->setPlainText("{\"draft\":true}");
-    scene.card("sibling")->findChild<QPushButton*>("CordisPluginConfigure")->click();
+    scene.card("sibling")->findChild<QPushButton*>("EvePluginConfigure")->click();
     CHECK(editor->toPlainText() == "{\"draft\":true}" &&
-          scene.find<QLabel>("CordisManagementStatus")->text().contains(QStringLiteral("继续编辑")));
+          scene.find<QLabel>("EveManagementStatus")->text().contains(QStringLiteral("继续编辑")));
     auto change = scene.route->setEnabled("sibling", false, 2).value();
     wait(change);
-    scene.find<QPushButton>("CordisPluginConfigurationApply")->click();
+    scene.find<QPushButton>("EvePluginConfigurationApply")->click();
     CHECK(editor->toPlainText() == "{\"draft\":true}" && scene.route->snapshot().value().revision == 3);
-    scene.find<QPushButton>("CordisPluginConfigurationReload")->click();
+    scene.find<QPushButton>("EvePluginConfigurationReload")->click();
     CHECK(editor->toPlainText().contains("keep") && !editor->toPlainText().contains("draft"));
     editor->setPlainText("{\"new\":true}");
-    scene.find<QPushButton>("CordisPluginConfigurationApply")->click();
-    until([&] { return scene.find<QPushButton>("CordisPluginConfigurationReload")->isEnabled(); });
+    scene.find<QPushButton>("EvePluginConfigurationApply")->click();
+    until([&] { return scene.find<QPushButton>("EvePluginConfigurationReload")->isEnabled(); });
     CHECK(scene.route->snapshot().value().revision == 4 && scene.route->snapshot().value().dirty);
-    scene.find<QPushButton>("CordisPluginConfigurationSave")->click();
+    scene.find<QPushButton>("EvePluginConfigurationSave")->click();
     until([&] { return !scene.route->snapshot().value().dirty; });
-    until([&] { return scene.find<QPushButton>("CordisPluginConfigurationReload")->isEnabled(); });
+    until([&] { return scene.find<QPushButton>("EvePluginConfigurationReload")->isEnabled(); });
     CHECK(scene.shell.showManagement().hasValue());
-    scene.find<QTabWidget>("CordisManagementTabs")
-        ->setCurrentWidget(scene.find<QWidget>("CordisManagementConfiguration"));
-    auto table = scene.find<QTableView>("CordisManagementConfigurationTable");
-    auto apply = scene.find<QPushButton>("CordisPluginConfigurationApply");
-    auto reload = scene.find<QPushButton>("CordisPluginConfigurationReload");
+    scene.find<QTabWidget>("EveManagementTabs")
+        ->setCurrentWidget(scene.find<QWidget>("EveManagementConfiguration"));
+    auto table = scene.find<QTableView>("EveManagementConfigurationTable");
+    auto apply = scene.find<QPushButton>("EvePluginConfigurationApply");
+    auto reload = scene.find<QPushButton>("EvePluginConfigurationReload");
     table->setCurrentIndex(table->model()->index(0, 0));
     CHECK(table->currentIndex().data().toString() == "r");
     editor->setPlainText("{\"owner\":\"A\"}");
@@ -790,15 +790,15 @@ void editInstance()
     QTest::keyClick(table, Qt::Key_Down);
     CHECK(table->currentIndex().data().toString() == "r" && editor->toPlainText() == "{\"owner\":\"A\"}" &&
           apply->isEnabled());
-    CHECK(scene.find<QLabel>("CordisManagementStatus")->text().contains(QStringLiteral("继续编辑")));
+    CHECK(scene.find<QLabel>("EveManagementStatus")->text().contains(QStringLiteral("继续编辑")));
     reload->click();
     table->setCurrentIndex(table->model()->index(2, 0));
     CHECK(table->currentIndex().data().toString() == "sibling" && editor->toPlainText().contains("9007199254740993"));
-    auto log = scene.find<QPushButton>("CordisManagementOpenLog");
+    auto log = scene.find<QPushButton>("EveManagementOpenLog");
     CHECK(log->isEnabled());
     log->click();
-    CHECK(scene.find<QComboBox>("CordisOutputInstance")->currentData().toString() == "config/sibling");
-    QTest::keyClick(scene.find<QComboBox>("CordisOutputTarget"), Qt::Key_Escape);
+    CHECK(scene.find<QComboBox>("EveOutputInstance")->currentData().toString() == "config/sibling");
+    QTest::keyClick(scene.find<QComboBox>("EveOutputTarget"), Qt::Key_Escape);
     editor->setPlainText("{\"owner\":\"sibling\"}");
     scene.apply("formatVersion: 1\nplugins: [{id: survivor, plugin: demo}]\n");
     CHECK(editor->isReadOnly() && !apply->isEnabled() && editor->toPlainText() == "{\"owner\":\"sibling\"}");
@@ -814,7 +814,7 @@ void saveConflict()
 {
     Scene scene;
     wait(scene.route->addInstance("a", "demo", "{}", 0).value());
-    QFile file(scene.directory.filePath("cordis.yaml"));
+    QFile file(scene.directory.filePath("eve.yaml"));
     CHECK(file.open(QIODevice::WriteOnly));
     CHECK(file.write("formatVersion: 1\nplugins: []\n") > 0);
     file.close();
@@ -849,7 +849,7 @@ void dialogLifetime()
                        .value();
     auto instance = scene.kernel->mount(runtime).value();
     wait(instance.ready());
-    CHECK(!page->snapshot().value().navigationPresent && scene.find<QTabBar>("CordisPageTabs")->count() == 1);
+    CHECK(!page->snapshot().value().navigationPresent && scene.find<QTabBar>("EvePageTabs")->count() == 1);
     page->navigate().value();
     QPointer<QWidget> dialog = body->window();
     CHECK(dialog->isVisible() && page->snapshot().value().current);
@@ -859,14 +859,14 @@ void dialogLifetime()
     const auto id = QString::number(instance.snapshot().value().instance.value());
     QPointer<QWidget> card;
     until([&] {
-        for (auto item : scene.window->findChildren<QWidget*>("CordisPluginCard"))
-            if (item->property("CordisPluginId").toString() == id)
+        for (auto item : scene.window->findChildren<QWidget*>("EvePluginCard"))
+            if (item->property("EvePluginId").toString() == id)
                 card = item;
         return !card.isNull();
     });
-    CHECK(!card->findChild<QPushButton*>("CordisPluginConfigure")->isEnabled());
-    card->findChild<QPushButton*>("CordisPluginManage")->click();
-    auto stop = scene.find<QPushButton>("CordisManagementStop");
+    CHECK(!card->findChild<QPushButton*>("EvePluginConfigure")->isEnabled());
+    card->findChild<QPushButton*>("EvePluginManage")->click();
+    auto stop = scene.find<QPushButton>("EveManagementStop");
     CHECK(stop->isVisible() && stop->isEnabled());
     stop->click();
     until([&] { return instance.snapshot().value().state == InstanceState::Disposed && !body && !dialog; });

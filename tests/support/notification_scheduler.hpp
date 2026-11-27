@@ -2,12 +2,12 @@
  * @brief 发布与定向通知测试共用原 FIFO、拒投及同步投递重入调度器。
  */
 #pragma once
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <exception>
 #include <functional>
 #include <utility>
 
-namespace cordis::test {
+namespace eve::test {
 struct NotificationScheduler final : IScheduler {
     testing::FakeScheduler queue;
     bool reject = false;
@@ -34,4 +34,4 @@ struct NotificationScheduler final : IScheduler {
             std::rethrow_exception(hookFailure);
     }
 };
-} // namespace cordis::test
+} // namespace eve::test

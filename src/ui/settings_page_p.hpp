@@ -13,7 +13,7 @@ class QVBoxLayout;
 class ElaWindow;
 class QTabWidget;
 
-namespace cordis::ui::detail
+namespace eve::ui::detail
 {
 /** Page-owned section geometry and search index; changing location never touches workbench history. */
 class SettingsPage final : public QWidget
@@ -64,4 +64,4 @@ class SettingsPage final : public QWidget
 class WorkbenchPreferences;
 SettingsPage *createSettingsPage(ElaWindow *window, QTabWidget *panel, WorkbenchPreferences *prefs,
                                  SettingsPage::Guard guard);
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

@@ -13,8 +13,8 @@
 #include <algorithm>
 #include <set>
 
-namespace cordis::module::detail {
-Result<std::optional<ModuleInputSource>> nativeInputSource(const cordis::detail::ReplacementInputBinding& binding)
+namespace eve::module::detail {
+Result<std::optional<ModuleInputSource>> nativeInputSource(const eve::detail::ReplacementInputBinding& binding)
 {
     using Output = Result<std::optional<ModuleInputSource>>;
     if (binding.type != typeid(NativeServiceEndpoint))
@@ -38,80 +38,80 @@ Result<std::optional<ModuleInputSource>> nativeInputSource(const cordis::detail:
         provider->root->source.generation, provider->instance, provider->epoch, {}, binding.candidate, binding.recovery});
 }
 
-CordisStatus statusOf(const ErrorInfo& error)
+EveStatus statusOf(const ErrorInfo& error)
 {
     switch (error.code) {
     case ErrorCode::WrongThread:
-        return CORDIS_E_WRONG_THREAD;
+        return EVE_E_WRONG_THREAD;
     case ErrorCode::InvalidArgument:
-        return CORDIS_E_INVALID_ARGUMENT;
+        return EVE_E_INVALID_ARGUMENT;
     case ErrorCode::DependencyMissing:
-        return CORDIS_E_NOT_FOUND;
+        return EVE_E_NOT_FOUND;
     case ErrorCode::DependencyVersion:
-        return CORDIS_E_UNSUPPORTED;
+        return EVE_E_UNSUPPORTED;
     case ErrorCode::ServiceConflict:
     case ErrorCode::ConfigConflict:
     case ErrorCode::DependencyCycle:
-        return CORDIS_E_BUSY;
+        return EVE_E_BUSY;
     case ErrorCode::ModulePinned:
-        return CORDIS_E_LIMIT;
+        return EVE_E_LIMIT;
     case ErrorCode::StaleContext:
     case ErrorCode::ContextClosing:
     case ErrorCode::ServiceRetiring:
     case ErrorCode::SchedulerClosed:
-        return CORDIS_E_CLOSED;
+        return EVE_E_CLOSED;
     default:
-        return CORDIS_E_FAILED;
+        return EVE_E_FAILED;
     }
 }
 namespace {
-CordisStatus copy(CordisBytesV1 value, std::string& text, std::size_t limit, bool json = false)
+EveStatus copy(EveBytesV1 value, std::string& text, std::size_t limit, bool json = false)
 {
     if (value.size > limit)
-        return CORDIS_E_LIMIT;
+        return EVE_E_LIMIT;
     if (value.size && !value.data)
-        return CORDIS_E_INVALID_ARGUMENT;
+        return EVE_E_INVALID_ARGUMENT;
     if (value.size)
         text.assign(reinterpret_cast<const char*>(value.data), static_cast<std::size_t>(value.size));
-    return (json ? validAbiJson(text) : validAbiUtf8(text)) ? CORDIS_OK : CORDIS_E_INVALID_ARGUMENT;
+    return (json ? validAbiJson(text) : validAbiUtf8(text)) ? EVE_OK : EVE_E_INVALID_ARGUMENT;
 }
-CordisStatus capabilities(CordisBytesV1 value, std::vector<std::string>& output)
+EveStatus capabilities(EveBytesV1 value, std::vector<std::string>& output)
 {
     std::string json;
     auto copied = copy(value, json, 16384, true);
-    if (copied != CORDIS_OK)
+    if (copied != EVE_OK)
         return copied;
     const auto document = QJsonDocument::fromJson(QByteArray(json.data(), static_cast<int>(json.size())));
     if (!document.isArray())
-        return CORDIS_E_INVALID_ARGUMENT;
+        return EVE_E_INVALID_ARGUMENT;
     const auto array = document.array();
     if (array.size() > 64)
-        return CORDIS_E_LIMIT;
+        return EVE_E_LIMIT;
     std::set<std::string> unique;
     for (const auto& item : array) {
         if (!item.isString())
-            return CORDIS_E_INVALID_ARGUMENT;
+            return EVE_E_INVALID_ARGUMENT;
         auto name = item.toString().toUtf8().toStdString();
         if (name.empty() || !unique.insert(name).second)
-            return CORDIS_E_INVALID_ARGUMENT;
-        if (name.size() > CORDIS_MAX_ID_BYTES)
-            return CORDIS_E_LIMIT;
+            return EVE_E_INVALID_ARGUMENT;
+        if (name.size() > EVE_MAX_ID_BYTES)
+            return EVE_E_LIMIT;
         output.push_back(std::move(name));
     }
-    return CORDIS_OK;
+    return EVE_OK;
 }
-CordisStatus key(const CordisServiceKeyV1* value, ServiceKey& output)
+EveStatus key(const EveServiceKeyV1* value, ServiceKey& output)
 {
     if (!value || value->reserved || !value->interface_major || !value->realm)
-        return CORDIS_E_INVALID_ARGUMENT;
-    auto copied = copy(value->name, output.name, CORDIS_MAX_ID_BYTES);
-    if (copied != CORDIS_OK)
+        return EVE_E_INVALID_ARGUMENT;
+    auto copied = copy(value->name, output.name, EVE_MAX_ID_BYTES);
+    if (copied != EVE_OK)
         return copied;
     if (output.name.empty())
-        return CORDIS_E_INVALID_ARGUMENT;
+        return EVE_E_INVALID_ARGUMENT;
     output.interfaceMajor = value->interface_major;
     output.realm = RealmId{value->realm};
-    return CORDIS_OK;
+    return EVE_OK;
 }
 bool permits(const ServiceMetadata& available, std::uint32_t minor, const std::vector<std::string>& required)
 {
@@ -140,12 +140,12 @@ bool businessAvailable(const std::shared_ptr<NativeServiceEndpoint>& endpoint)
 struct NativeBinding {
     std::optional<ProviderHandle> handle;
     std::shared_ptr<NativeServiceEndpoint> endpoint;
-    CordisHandle id = 0;
+    EveHandle id = 0;
     bool withdrawing = false;
     Promise<void> withdrawn;
 };
 struct NativeCommit {
-    std::shared_ptr<cordis::detail::CommittedLease> lease;
+    std::shared_ptr<eve::detail::CommittedLease> lease;
     std::shared_ptr<NativeServiceEndpoint> endpoint;
     bool borrowed = false;
 };
@@ -180,7 +180,7 @@ Result<void> NativeServices::bind(const Context& context)
         auto value = std::make_shared<NativeCommit>();
         value->lease = input.second;
         value->borrowed = true;
-        auto obtained = cordis::detail::callCommitted(
+        auto obtained = eve::detail::callCommitted(
             value->lease, typeid(NativeServiceEndpoint),
             [value](void* object) {
                 value->endpoint = static_cast<NativeServiceEndpoint*>(object)->shared_from_this();
@@ -215,40 +215,40 @@ ServiceRegistry& NativeServices::index()
         self->root->services.emplace(self->root->scheduler.lock());
     return *self->root->services;
 }
-CordisStatus NativeServices::add(CordisHandle effect, const CordisServiceKeyV1* wireKey,
-                                 const CordisServiceMetadataV1* wireMetadata, CordisHandle token, CordisHandle* output)
+EveStatus NativeServices::add(EveHandle effect, const EveServiceKeyV1* wireKey,
+                                 const EveServiceMetadataV1* wireMetadata, EveHandle token, EveHandle* output)
 {
     if (!output)
-        return CORDIS_E_INVALID_ARGUMENT;
+        return EVE_E_INVALID_ARGUMENT;
     *output = 0;
     auto self = owner.lock();
     auto resources = self->resources;
     auto allowed = resources->allowed(false);
-    if (allowed != CORDIS_OK)
+    if (allowed != EVE_OK)
         return allowed;
-    if (!(self->root->record->api->table.capabilities & CORDIS_CAP_SERVICES))
-        return CORDIS_E_UNSUPPORTED;
+    if (!(self->root->record->api->table.capabilities & EVE_CAP_SERVICES))
+        return EVE_E_UNSUPPORTED;
     if (self->managed && self->startSettled)
-        return CORDIS_E_CLOSED;
+        return EVE_E_CLOSED;
     if (!resources->serviceEffectExists(effect) || !token || !wireMetadata ||
-        wireMetadata->struct_size < sizeof(CordisServiceMetadataV1))
-        return CORDIS_E_INVALID_ARGUMENT;
+        wireMetadata->struct_size < sizeof(EveServiceMetadataV1))
+        return EVE_E_INVALID_ARGUMENT;
     if (providers.size() >= 128)
-        return CORDIS_E_LIMIT;
+        return EVE_E_LIMIT;
     ServiceKey serviceKey;
     auto checked = key(wireKey, serviceKey);
-    if (checked != CORDIS_OK)
+    if (checked != EVE_OK)
         return checked;
     if (self->managed)
         serviceKey = self->managed->realms_.resolve(serviceKey);
     ServiceMetadata metadata;
     metadata.minor = wireMetadata->minor;
     checked = capabilities(wireMetadata->capabilities_json, metadata.capabilities);
-    if (checked != CORDIS_OK)
+    if (checked != EVE_OK)
         return checked;
     auto retained = self->root->source.ledger.acquire(ResourceKind::ServiceObject, "native.service.object");
     if (!retained.hasValue())
-        return CORDIS_E_LIMIT;
+        return EVE_E_LIMIT;
     auto endpoint = std::make_shared<NativeServiceEndpoint>();
     endpoint->owner = self;
     endpoint->token = token;
@@ -275,12 +275,12 @@ CordisStatus NativeServices::add(CordisHandle effect, const CordisServiceKeyV1* 
     providers.emplace(binding->id, binding);
     *output = binding->id;
     publishReady();
-    return CORDIS_OK;
+    return EVE_OK;
 }
 void NativeServices::publishReady()
 {
     auto self = owner.lock();
-    if (!self || self->resources->allowed(false) != CORDIS_OK)
+    if (!self || self->resources->allowed(false) != EVE_OK)
         return;
     if (self->managed)
         return; // Core publishes only after the complete activation task settles.
@@ -298,9 +298,9 @@ void NativeServices::publishReady()
 }
 Result<void> NativeServices::retirementAccess(const std::shared_ptr<NativeBinding>& binding) const
 {
-    return cordis::detail::replacementBindingReadAccess(binding->handle->binding_);
+    return eve::detail::replacementBindingReadAccess(binding->handle->binding_);
 }
-Result<void> NativeServices::retirementAccess(std::optional<CordisHandle> effect) const
+Result<void> NativeServices::retirementAccess(std::optional<EveHandle> effect) const
 {
     for (const auto& entry : providers) {
         if (effect && entry.second->endpoint->effect != *effect)
@@ -352,7 +352,7 @@ void NativeServices::retireAll()
     for (const auto& binding : values)
         retire(binding);
 }
-Task<void> NativeServices::retireEffect(CordisHandle effect)
+Task<void> NativeServices::retireEffect(EveHandle effect)
 {
     std::vector<std::shared_ptr<NativeBinding>> values;
     for (const auto& pair : providers)
@@ -374,73 +374,73 @@ Task<void> NativeServices::retireEffect(CordisHandle effect)
     }
     return done.task();
 }
-CordisStatus NativeServices::withdraw(CordisHandle id, CordisRequestId* output)
+EveStatus NativeServices::withdraw(EveHandle id, EveRequestId* output)
 {
     if (!output)
-        return CORDIS_E_INVALID_ARGUMENT;
+        return EVE_E_INVALID_ARGUMENT;
     *output = 0;
     auto self = owner.lock();
     auto resources = self->resources;
     const auto allowed = resources->allowed(true);
-    if (allowed != CORDIS_OK)
+    if (allowed != EVE_OK)
         return allowed;
-    if (!(self->root->record->api->table.capabilities & CORDIS_CAP_SERVICES))
-        return CORDIS_E_UNSUPPORTED;
+    if (!(self->root->record->api->table.capabilities & EVE_CAP_SERVICES))
+        return EVE_E_UNSUPPORTED;
     auto found = providers.find(id);
     if (found == providers.end())
-        return CORDIS_E_NOT_FOUND;
+        return EVE_E_NOT_FOUND;
     auto access = retirementAccess(found->second);
     if (!access.hasValue())
         return statusOf(access.error());
     auto accepted = resources->operation(false, {});
     if (!accepted.hasValue())
-        return CORDIS_E_LIMIT;
+        return EVE_E_LIMIT;
     auto operation = accepted.value();
     operation->entered = true;
     auto binding = found->second;
     retire(binding);
     self->observe(binding->withdrawn.task(),
                   [resources, operation](NativeInstanceControl&, const Result<void>& result) {
-                      resources->deliver(operation, result.hasValue() ? CORDIS_OK : CORDIS_E_FAILED);
+                      resources->deliver(operation, result.hasValue() ? EVE_OK : EVE_E_FAILED);
                   });
     *output = operation->id;
-    return CORDIS_PENDING;
+    return EVE_PENDING;
 }
-CordisStatus NativeServices::invoke(const CordisServiceKeyV1* wireKey, std::uint32_t minor,
-                                    CordisBytesV1 requiredCapabilities, CordisBytesV1 method, CordisBytesV1 payload,
-                                    CordisRequestId* output)
+EveStatus NativeServices::invoke(const EveServiceKeyV1* wireKey, std::uint32_t minor,
+                                    EveBytesV1 requiredCapabilities, EveBytesV1 method, EveBytesV1 payload,
+                                    EveRequestId* output)
 {
     if (!output)
-        return CORDIS_E_INVALID_ARGUMENT;
+        return EVE_E_INVALID_ARGUMENT;
     *output = 0;
     auto self = owner.lock();
     auto resources = self->resources;
     const bool cleanup = resources->cleanupServices();
     const auto allowed = resources->allowed(cleanup);
-    if (allowed != CORDIS_OK)
+    if (allowed != EVE_OK)
         return allowed;
-    if (!(self->root->record->api->table.capabilities & CORDIS_CAP_SERVICES))
-        return CORDIS_E_UNSUPPORTED;
+    if (!(self->root->record->api->table.capabilities & EVE_CAP_SERVICES))
+        return EVE_E_UNSUPPORTED;
     if (!self->native || !self->startIssued || released)
-        return CORDIS_E_CLOSED;
+        return EVE_E_CLOSED;
     ServiceKey serviceKey;
     auto checked = key(wireKey, serviceKey);
-    if (checked != CORDIS_OK)
+    if (checked != EVE_OK)
         return checked;
     if (self->managed)
         serviceKey = self->managed->realms_.resolve(serviceKey);
     std::vector<std::string> required;
     checked = capabilities(requiredCapabilities, required);
-    if (checked != CORDIS_OK)
+    if (checked != EVE_OK)
         return checked;
     std::string name, data;
-    checked = copy(method, name, CORDIS_MAX_ID_BYTES);
-    if (checked != CORDIS_OK)
+    checked = copy(method, name, EVE_MAX_ID_BYTES);
+    if (checked != EVE_OK)
         return checked;
     if (name.empty())
-        return CORDIS_E_INVALID_ARGUMENT;
-    checked = copy(payload, data, CORDIS_MAX_JSON_BYTES, true);
-    if (checked != CORDIS_OK)
+        return EVE_E_INVALID_ARGUMENT;
+    checked = copy(payload, data, EVE_MAX_JSON_BYTES, true);
+    if (checked != EVE_OK)
         return checked;
     std::shared_ptr<NativeCommit> committed;
     auto existing = consumers.find(serviceKey);
@@ -448,11 +448,11 @@ CordisStatus NativeServices::invoke(const CordisServiceKeyV1* wireKey, std::uint
         committed = existing->second;
     else {
         if (self->managed)
-            return cleanup ? CORDIS_E_CLOSED : CORDIS_E_NOT_FOUND;
+            return cleanup ? EVE_E_CLOSED : EVE_E_NOT_FOUND;
         if (cleanup)
-            return CORDIS_E_CLOSED;
+            return EVE_E_CLOSED;
         if (consumers.size() >= 128)
-            return CORDIS_E_LIMIT;
+            return EVE_E_LIMIT;
         auto found = index().findErased(serviceKey, typeid(NativeServiceEndpoint), minor, required);
         if (!found.hasValue())
             return statusOf(found.error());
@@ -461,7 +461,7 @@ CordisStatus NativeServices::invoke(const CordisServiceKeyV1* wireKey, std::uint
             serviceKey, typeid(NativeServiceEndpoint), self->root->scheduler.lock(), self->instance, self->epoch,
             [weak] {
                 auto instance = weak.lock();
-                return instance && instance->resources->allowed(false) == CORDIS_OK
+                return instance && instance->resources->allowed(false) == EVE_OK
                            ? Result<void>::success()
                            : Result<void>::failure(hostError(ErrorCode::ContextClosing, "native consumer closing"));
             },
@@ -475,40 +475,40 @@ CordisStatus NativeServices::invoke(const CordisServiceKeyV1* wireKey, std::uint
             return statusOf(retained.error());
         committed = std::make_shared<NativeCommit>();
         committed->lease = retained.value();
-        auto obtained = cordis::detail::callCommitted(
+        auto obtained = eve::detail::callCommitted(
             committed->lease, typeid(NativeServiceEndpoint),
             [committed](void* pointer) {
                 committed->endpoint = static_cast<NativeServiceEndpoint*>(pointer)->shared_from_this();
             },
             false);
         if (!obtained.hasValue()) {
-            cordis::detail::releaseCommitted(committed->lease);
+            eve::detail::releaseCommitted(committed->lease);
             return statusOf(obtained.error());
         }
     }
     const bool newCommit = existing == consumers.end();
-    const auto rejected = [&](CordisStatus status) {
+    const auto rejected = [&](EveStatus status) {
         if (newCommit && !committed->borrowed)
-            cordis::detail::releaseCommitted(committed->lease);
+            eve::detail::releaseCommitted(committed->lease);
         return status;
     };
     if (!cleanup && !businessAvailable(committed->endpoint))
-        return rejected(CORDIS_E_CLOSED);
+        return rejected(EVE_E_CLOSED);
     if (!permits(committed->endpoint->metadata, minor, required))
-        return rejected(CORDIS_E_UNSUPPORTED);
-    auto available = cordis::detail::callCommitted(
+        return rejected(EVE_E_UNSUPPORTED);
+    auto available = eve::detail::callCommitted(
         committed->lease, typeid(NativeServiceEndpoint), [](void*) {}, cleanup, self->instance, self->epoch);
     if (!available.hasValue())
         return rejected(statusOf(available.error()));
     auto accepted = resources->operation(!cleanup, std::move(data), std::move(name));
     if (!accepted.hasValue())
-        return rejected(CORDIS_E_LIMIT);
+        return rejected(EVE_E_LIMIT);
     if (newCommit)
         consumers.emplace(serviceKey, committed);
     auto operation = accepted.value();
     operation->endpoint = committed->endpoint;
     auto services = shared_from_this();
-    auto called = cordis::detail::invokeService(
+    auto called = eve::detail::invokeService(
         {}, committed->lease, true, typeid(NativeServiceEndpoint),
         [services, self, operation](void*) {
             self->observe(completedTask(), [services, operation](NativeInstanceControl&, const Result<void>&) {
@@ -525,18 +525,18 @@ CordisStatus NativeServices::invoke(const CordisServiceKeyV1* wireKey, std::uint
             resources->deliver(operation, operation->outcome->status, operation->outcome->json);
     });
     *output = operation->id;
-    return CORDIS_PENDING;
+    return EVE_PENDING;
 }
 void NativeServices::call(const std::shared_ptr<HostOperation>& operation)
 {
-    if (operation->cancelled || (operation->business && owner.lock()->resources->allowed(false) != CORDIS_OK)) {
-        operation->outcome = NativeOutcome{CORDIS_E_CANCELLED, {}, true};
+    if (operation->cancelled || (operation->business && owner.lock()->resources->allowed(false) != EVE_OK)) {
+        operation->outcome = NativeOutcome{EVE_E_CANCELLED, {}, true};
         operation->serviceDone.resolve();
         return;
     }
     auto self = owner.lock();
     if (operation->business && !businessAvailable(operation->endpoint)) {
-        operation->outcome = NativeOutcome{CORDIS_E_CLOSED, {}, false};
+        operation->outcome = NativeOutcome{EVE_E_CLOSED, {}, false};
         operation->serviceDone.resolve();
         return;
     }
@@ -550,7 +550,7 @@ void NativeServices::call(const std::shared_ptr<HostOperation>& operation)
     // 已接受调用可在提供者撤回后进入；close 仍开放受控清理请求，不能用消费者编号冒充目标编号。
     auto source = provider->invoke(
         provider->closing || !operation->business ? NativeRequestKind::Cleanup : NativeRequestKind::Invoke,
-        "native.service.invoke", [&](CordisRequestId request) {
+        "native.service.invoke", [&](EveRequestId request) {
             operation->target = request;
             return provider->root->record->api->table.invoke_service(provider->native, operation->endpoint->token,
                                                                      bytes(operation->method),
@@ -590,7 +590,7 @@ void NativeServices::releaseConsumers()
     released = true;
     for (const auto& pair : consumers)
         if (!pair.second->borrowed)
-            cordis::detail::releaseCommitted(pair.second->lease);
+            eve::detail::releaseCommitted(pair.second->lease);
     consumers.clear();
 }
 std::vector<BindingSnapshot> NativeServices::snapshot() const
@@ -603,4 +603,4 @@ std::vector<BindingSnapshot> NativeServices::snapshot() const
     }
     return result;
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

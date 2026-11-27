@@ -10,12 +10,12 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
-#include <cordis/module/manifest.hpp>
+#include <eve/module/manifest.hpp>
 #include <iostream>
 #include <stdexcept>
 
-using namespace cordis;
-using namespace cordis::module;
+using namespace eve;
+using namespace eve::module;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -25,14 +25,14 @@ using namespace cordis::module;
 QJsonObject manifest(const QByteArray& payload = "abc")
 {
     return {{"manifestVersion", 1},
-            {"moduleId", "org.cordis.example"},
+            {"moduleId", "org.eve.example"},
             {"moduleVersion", "1.0.0"},
             {"loader", "c-abi"},
             {"library", "example.dll"},
             {"sha256", QString::fromLatin1(QCryptographicHash::hash(payload, QCryptographicHash::Sha256).toHex())},
             {"platform", "windows-x64"},
             {"abi", QJsonObject{{"major", 1}, {"minor", 0}}},
-            {"plugins", QJsonArray{"org.cordis.notes"}},
+            {"plugins", QJsonArray{"org.eve.notes"}},
             {"unloadPolicy", "resident"}};
 }
 std::string json(const QJsonObject& object)
@@ -55,7 +55,7 @@ void schema()
 {
     auto value = parseManifest(json(manifest()));
     CHECK(value.hasValue());
-    CHECK(value.value().moduleId == "org.cordis.example" && value.value().plugins.size() == 1);
+    CHECK(value.value().moduleId == "org.eve.example" && value.value().plugins.size() == 1);
     CHECK(value.value().loader == ModuleLoader::CAbi);
     CHECK(value.value().unloadPolicy == ModuleUnloadPolicy::Resident);
     auto qt = manifest();

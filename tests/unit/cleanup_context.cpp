@@ -1,8 +1,8 @@
 /** @file cleanup_context.cpp
  * @brief 验证独立清理上下文的旧代快照、权限边界和异步有效窗口。
  */
-#include <cordis/instance.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/instance.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -10,8 +10,8 @@
 #include <thread>
 #include <type_traits>
 
-using namespace cordis;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using eve::testing::FakeScheduler;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(#x); } while (false)
 
 /** @brief 编译期检测清理上下文是否暴露业务 effect。 */

@@ -3,7 +3,7 @@
  */
 #include "module_unload_p.hpp"
 #include <QObject>
-#include <cordis/qt/object.hpp>
+#include <eve/qt/object.hpp>
 namespace unload_test {
 template <class F> void until(F condition)
 {
@@ -29,7 +29,7 @@ void session(Scene& scene, const QString& name)
     auto scheduler = std::make_shared<qt::QtScheduler>();
     auto module = NativeModule::open(scene.manager, artifact.generation, scheduler).value();
     if (name == "runtime" || state) {
-        std::optional<Runtime> factory{module.runtime({"org.cordis.plugin", {}, {}}).value()};
+        std::optional<Runtime> factory{module.runtime({"org.eve.plugin", {}, {}}).value()};
         CHECK(factory->stateSchema().has_value() == state);
         const auto id = factory->id();
         CHECK(wait(module.close())->value().quiescent);
@@ -46,8 +46,8 @@ void session(Scene& scene, const QString& name)
         finish(scene, artifact, module);
     }
     CHECK(wait(module.close())->value().quiescent); // 已关闭 facade 的幂等入口不再读取已清表。
-    CHECK(!module.runtime({"org.cordis.plugin", {}, {}}).hasValue());
-    CHECK(!module.create("org.cordis.plugin", "null", InstanceId{9}, 1).hasValue());
+    CHECK(!module.runtime({"org.eve.plugin", {}, {}}).hasValue());
+    CHECK(!module.create("org.eve.plugin", "null", InstanceId{9}, 1).hasValue());
     CHECK(scheduler->close().hasValue());
 }
 void instance(Scene& scene, const QString& name)
@@ -56,7 +56,7 @@ void instance(Scene& scene, const QString& name)
     auto artifact = scene.load(cleanup ? 1U : 0U);
     auto scheduler = std::make_shared<qt::QtScheduler>();
     auto module = NativeModule::open(scene.manager, artifact.generation, scheduler).value();
-    auto actor = module.create("org.cordis.plugin",
+    auto actor = module.create("org.eve.plugin",
                                cleanup ? "\"stop\""
                                : setup ? "{}"
                                        : "\"sync\"",
@@ -66,7 +66,7 @@ void instance(Scene& scene, const QString& name)
     if (setup) {
         CHECK(!started.isReady() && scene.records(artifact.generation, ResourceKind::SetupTask) > 0);
         scene.blocked(artifact);
-        CHECK(scene.call<unsigned(CORDIS_CALL*)()>(artifact, "cordis_business_fixture_finish_all") == 1);
+        CHECK(scene.call<unsigned(EVE_CALL*)()>(artifact, "eve_business_fixture_finish_all") == 1);
     }
     CHECK(wait(started)->hasValue() && scene.records(artifact.generation, ResourceKind::Instance) == 1);
     scene.blocked(artifact);
@@ -74,7 +74,7 @@ void instance(Scene& scene, const QString& name)
     if (cleanup) {
         CHECK(!closed.isReady() && scene.records(artifact.generation, ResourceKind::CleanupTask) > 0);
         scene.blocked(artifact);
-        CHECK(scene.call<unsigned(CORDIS_CALL*)()>(artifact, "cordis_business_fixture_finish_all") == 1);
+        CHECK(scene.call<unsigned(EVE_CALL*)()>(artifact, "eve_business_fixture_finish_all") == 1);
     }
     CHECK(wait(closed)->value().quiescent && actor.snapshot().value().state == NativeInstanceState::Destroyed);
     finish(scene, artifact, module);
@@ -82,7 +82,7 @@ void instance(Scene& scene, const QString& name)
         CHECK(!wait(actor.start())->hasValue());
         CHECK(wait(actor.close())->value().quiescent && wait(module.close())->value().quiescent);
         CHECK(module.snapshot().value().closed &&
-              !module.create("org.cordis.plugin", "null", InstanceId{2}, 1).hasValue());
+              !module.create("org.eve.plugin", "null", InstanceId{2}, 1).hasValue());
         const auto generation =
             scene.manager
                 .load(scene.root.toStdString(), artifact.manifest.toStdString(), {}, scene.approval(artifact.manifest))
@@ -91,12 +91,12 @@ void instance(Scene& scene, const QString& name)
         auto again = scene.describe(generation, artifact.manifest);
         CHECK(generation != artifact.generation);
         auto reopened = NativeModule::open(scene.manager, generation, scheduler).value();
-        CHECK(scene.call<unsigned(CORDIS_CALL*)()>(again, "cordis_business_fixture_queries") == 1);
-        CHECK(scene.call<unsigned(CORDIS_CALL*)()>(again, "cordis_business_fixture_creates") == 0);
-        auto fresh = reopened.create("org.cordis.plugin", "\"sync\"", InstanceId{2}, 1).value();
+        CHECK(scene.call<unsigned(EVE_CALL*)()>(again, "eve_business_fixture_queries") == 1);
+        CHECK(scene.call<unsigned(EVE_CALL*)()>(again, "eve_business_fixture_creates") == 0);
+        auto fresh = reopened.create("org.eve.plugin", "\"sync\"", InstanceId{2}, 1).value();
         CHECK(wait(fresh.start())->hasValue() && fresh.snapshot().value().nativeCreated);
-        CHECK(scene.call<unsigned(CORDIS_CALL*)()>(again, "cordis_business_fixture_creates") == 1);
-        CHECK(!module.create("org.cordis.plugin", "null", InstanceId{3}, 1).hasValue());
+        CHECK(scene.call<unsigned(EVE_CALL*)()>(again, "eve_business_fixture_creates") == 1);
+        CHECK(!module.create("org.eve.plugin", "null", InstanceId{3}, 1).hasValue());
         finish(scene, again, reopened);
     }
     CHECK(scheduler->close().hasValue());
@@ -123,13 +123,13 @@ void capture(Scene& scene, const QString& name)
     auto scheduler = std::make_shared<Gate>();
     auto module = NativeModule::open(scene.manager, artifact.generation, scheduler).value();
     auto actor =
-        module.create("org.cordis.plugin", failed ? "\"capture-fail\"" : "\"capture\"", InstanceId{1}, 1).value();
+        module.create("org.eve.plugin", failed ? "\"capture-fail\"" : "\"capture\"", InstanceId{1}, 1).value();
     CHECK(wait(actor.start())->hasValue());
     scheduler->capture = true;
-    CHECK(scene.call<CordisStatus(CORDIS_CALL*)()>(artifact, "cordis_lifecycle_queue") == CORDIS_PENDING &&
+    CHECK(scene.call<EveStatus(EVE_CALL*)()>(artifact, "eve_lifecycle_queue") == EVE_PENDING &&
           scheduler->retained);
     const auto stat = [&](unsigned index) {
-        return scene.call<std::uint64_t(CORDIS_CALL*)(unsigned)>(artifact, "cordis_lifecycle_stat", index);
+        return scene.call<std::uint64_t(EVE_CALL*)(unsigned)>(artifact, "eve_lifecycle_stat", index);
     };
     if (!stale)
         until([&] { return stat(2) == 1; });
@@ -157,25 +157,25 @@ void service(Scene& scene)
     auto artifact = scene.load(2);
     auto scheduler = std::make_shared<qt::QtScheduler>();
     auto module = NativeModule::open(scene.manager, artifact.generation, scheduler).value();
-    auto actor = module.create("org.cordis.plugin", "{}", InstanceId{1}, 1).value();
+    auto actor = module.create("org.eve.plugin", "{}", InstanceId{1}, 1).value();
     CHECK(wait(actor.start())->hasValue());
-    CordisHandle effect = 0;
-    CHECK(scene.call<CordisStatus(CORDIS_CALL*)(unsigned, CordisHandle, CordisHandle*)>(
-              artifact, "cordis_resource_effect", 0U, CordisHandle{11}, &effect) == CORDIS_OK);
+    EveHandle effect = 0;
+    CHECK(scene.call<EveStatus(EVE_CALL*)(unsigned, EveHandle, EveHandle*)>(
+              artifact, "eve_resource_effect", 0U, EveHandle{11}, &effect) == EVE_OK);
     CHECK(scene.records(artifact.generation, ResourceKind::SetupTask) > 0);
     scene.blocked(artifact);
-    CHECK(scene.call<CordisStatus(CORDIS_CALL*)(unsigned, CordisHandle, CordisStatus)>(
-              artifact, "cordis_resource_ready", 0U, effect, CORDIS_OK) == CORDIS_OK);
+    CHECK(scene.call<EveStatus(EVE_CALL*)(unsigned, EveHandle, EveStatus)>(
+              artifact, "eve_resource_ready", 0U, effect, EVE_OK) == EVE_OK);
     std::string label = "unload.service", caps = "[]";
-    const CordisBytesV1 keyBytes{reinterpret_cast<const std::uint8_t*>(label.data()), label.size()},
+    const EveBytesV1 keyBytes{reinterpret_cast<const std::uint8_t*>(label.data()), label.size()},
         capBytes{reinterpret_cast<const std::uint8_t*>(caps.data()), caps.size()};
-    const CordisServiceKeyV1 key{keyBytes, 1, 0, 1};
-    const CordisServiceMetadataV1 metadata{sizeof(CordisServiceMetadataV1), 0, capBytes};
-    CordisHandle binding = 0;
-    CHECK(scene.call<CordisStatus(CORDIS_CALL*)(unsigned, CordisHandle, const CordisServiceKeyV1*,
-                                                const CordisServiceMetadataV1*, CordisHandle, CordisHandle*)>(
-              artifact, "cordis_service_register", 0U, effect, &key, &metadata, CordisHandle{8}, &binding) ==
-              CORDIS_OK &&
+    const EveServiceKeyV1 key{keyBytes, 1, 0, 1};
+    const EveServiceMetadataV1 metadata{sizeof(EveServiceMetadataV1), 0, capBytes};
+    EveHandle binding = 0;
+    CHECK(scene.call<EveStatus(EVE_CALL*)(unsigned, EveHandle, const EveServiceKeyV1*,
+                                                const EveServiceMetadataV1*, EveHandle, EveHandle*)>(
+              artifact, "eve_service_register", 0U, effect, &key, &metadata, EveHandle{8}, &binding) ==
+              EVE_OK &&
           binding);
     until([&] { return scene.records(artifact.generation, ResourceKind::ServiceObject) > 0; });
     scene.blocked(artifact);

@@ -5,7 +5,7 @@
 | 可移植 Core、配置和模块数据契约 | `ctest --preset core-gcc-debug` |
 | Windows x64 Core 和 Native 模块 | `ctest --preset core-msvc-debug` |
 | Qt、Ela、模块和运行日志 | `ctest --preset ela-msvc-release` |
-| 安装目录中的 SDK 与外部消费者 | 配置桌面预设时启用 `CORDIS_INSTALL_SDK=ON`，构建后用 `ctest --preset ela-msvc-release -L sdk` |
+| 安装目录中的 SDK 与外部消费者 | 配置桌面预设时启用 `EVE_INSTALL_SDK=ON`，构建后用 `ctest --preset ela-msvc-release -L sdk` |
 
 先用同一预设配置并构建，Qt 测试需要匹配的 Qt DLL。日常源码 CI 验证 Linux GCC 和 Windows MSVC Core。Windows 桌面验证在具备匹配 Qt kit 的本地环境运行。[工具链和命令](development.md)
 

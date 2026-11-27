@@ -4,12 +4,12 @@
 #pragma once
 #include <atomic>
 #include <chrono>
-#include <cordis/module/native.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/module/native.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <future>
 
 namespace native_host_test {
-using cordis::testing::FakeScheduler;
+using eve::testing::FakeScheduler;
 template <class T> T entry(HMODULE image, const char* name)
 {
     auto address = GetProcAddress(image, name);
@@ -25,7 +25,7 @@ struct Scene {
     GenerationId generation;
     NativeModule module;
     HMODULE image;
-    using Count = unsigned(CORDIS_CALL*)();
+    using Count = unsigned(EVE_CALL*)();
     Count finishAll;
     Count queries;
     Scene(std::shared_ptr<IScheduler> target = std::make_shared<FakeScheduler>(), const QString& name = "business",
@@ -38,12 +38,12 @@ struct Scene {
         const auto path = QDir::toNativeSeparators(QString::fromUtf8(value.libraryPath.c_str())).toStdWString();
         image = GetModuleHandleW(path.c_str());
         CHECK(image);
-        finishAll = entry<Count>(image, "cordis_business_fixture_finish_all");
-        queries = entry<Count>(image, "cordis_business_fixture_queries");
+        finishAll = entry<Count>(image, "eve_business_fixture_finish_all");
+        queries = entry<Count>(image, "eve_business_fixture_queries");
     }
     NativeInstance create(const std::string& config = "\"sync\"", std::uint64_t id = 1, Epoch epoch = 1)
     {
-        return module.create("org.cordis.plugin", config, InstanceId{id}, epoch).value();
+        return module.create("org.eve.plugin", config, InstanceId{id}, epoch).value();
     }
     void pump()
     {
@@ -78,12 +78,12 @@ void synchronous()
     CHECK(!started.isReady());
     s.pump();
     CHECK(started.tryResult()->hasValue() && instance.snapshot().value().state == NativeInstanceState::Started);
-    CHECK(cordis::detail::TaskAccess::sameTask(started, instance.start()));
+    CHECK(eve::detail::TaskAccess::sameTask(started, instance.start()));
     CHECK(!s.manager.drain(s.generation).hasValue());
     s.finish();
     CHECK(instance.snapshot().value().state == NativeInstanceState::Destroyed);
     CHECK(!instance.start().tryResult()->hasValue());
-    CHECK(!s.module.create("org.cordis.plugin", "{}", InstanceId{2}, 1).hasValue());
+    CHECK(!s.module.create("org.eve.plugin", "{}", InstanceId{2}, 1).hasValue());
     CHECK(!NativeModule::open(s.manager, s.generation, s.scheduler).hasValue());
 }
 void asynchronous()
@@ -152,7 +152,7 @@ void closeQueued()
 void startFailure()
 {
     Scene s;
-    CHECK(!s.module.create("org.cordis.plugin", "\"create-fail\"", InstanceId{1}, 1).hasValue());
+    CHECK(!s.module.create("org.eve.plugin", "\"create-fail\"", InstanceId{1}, 1).hasValue());
     CHECK(s.module.snapshot().value().instances.empty());
     auto instance = s.create("\"start-fail\"");
     auto started = instance.start();
@@ -189,7 +189,7 @@ void failedClose(const char* mode)
 void createProtocol(const char* mode)
 {
     Scene s;
-    const auto result = s.module.create("org.cordis.plugin", std::string("\"") + mode + "\"", InstanceId{1}, 1);
+    const auto result = s.module.create("org.eve.plugin", std::string("\"") + mode + "\"", InstanceId{1}, 1);
     CHECK(!result.hasValue() && result.error().code == ErrorCode::AbiProtocol);
     CHECK(s.module.snapshot().value().faulted && s.module.snapshot().value().instances.size() == 1);
     auto closed = s.module.close();
@@ -231,15 +231,15 @@ void guards()
     dead->close();
     CHECK(NativeModule::open(s.manager, s.generation, dead).error().code == ErrorCode::SchedulerClosed);
     CHECK(!s.module.create("unknown", "{}", InstanceId{1}, 1).hasValue());
-    CHECK(!s.module.create("org.cordis.plugin", "{bad}", InstanceId{1}, 1).hasValue());
-    CHECK(!s.module.create("org.cordis.plugin", "{}", {}, 1).hasValue());
-    CHECK(!s.module.create("org.cordis.plugin", "{}", InstanceId{1}, 0).hasValue());
+    CHECK(!s.module.create("org.eve.plugin", "{bad}", InstanceId{1}, 1).hasValue());
+    CHECK(!s.module.create("org.eve.plugin", "{}", {}, 1).hasValue());
+    CHECK(!s.module.create("org.eve.plugin", "{}", InstanceId{1}, 0).hasValue());
     auto instance = s.create();
-    CHECK(!s.module.create("org.cordis.plugin", "{}", InstanceId{1}, 1).hasValue());
+    CHECK(!s.module.create("org.eve.plugin", "{}", InstanceId{1}, 1).hasValue());
     bool rejected = false;
     std::thread worker([&] {
         rejected = !NativeModule::open(s.manager, s.generation, s.scheduler).hasValue() &&
-                   !s.module.create("org.cordis.plugin", "{}", InstanceId{2}, 1).hasValue() &&
+                   !s.module.create("org.eve.plugin", "{}", InstanceId{2}, 1).hasValue() &&
                    instance.start().tryResult()->error().code == ErrorCode::WrongThread &&
                    instance.close().tryResult()->error().code == ErrorCode::WrongThread &&
                    !instance.snapshot().hasValue();
@@ -268,7 +268,7 @@ void reuse()
     CHECK(s.manager.snapshot().value()[0].state == ModuleState::Loaded);
     auto again = NativeModule::open(s.manager, s.generation, s.scheduler).value();
     CHECK(s.queries() == 1);
-    auto instance = again.create("org.cordis.plugin", "\"sync\"", InstanceId{1}, 2).value();
+    auto instance = again.create("org.eve.plugin", "\"sync\"", InstanceId{1}, 2).value();
     auto started = instance.start();
     s.pump();
     CHECK(started.tryResult()->hasValue());
@@ -317,11 +317,11 @@ void callbacks(bool copy, bool lateLog = false)
             CHECK(snapshot.pendingRequests == 0);
         CHECK(!s.manager.drain(s.generation).hasValue());
         if (lateLog) {
-            auto logger = entry<CordisStatus(CORDIS_CALL*)()>(s.image, "cordis_business_fixture_log_one");
-            CordisStatus status = CORDIS_OK;
+            auto logger = entry<EveStatus(EVE_CALL*)()>(s.image, "eve_business_fixture_log_one");
+            EveStatus status = EVE_OK;
             std::thread another([&] { status = logger(); });
             another.join();
-            CHECK(status == CORDIS_E_CLOSED);
+            CHECK(status == EVE_E_CLOSED);
             CHECK(instance.closed().isReady() && !instance.closed().tryResult()->value().quiescent);
         }
     } catch (...) {

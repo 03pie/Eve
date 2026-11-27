@@ -6,7 +6,7 @@
 #include "../module/json_p.hpp"
 #include "operation_p.hpp"
 
-namespace cordis::detail {
+namespace eve::detail {
 namespace {
 ErrorInfo stateError(ErrorInfo error, OperationId operation, InstanceId instance)
 {
@@ -142,4 +142,4 @@ Result<void> ReplacementOperationControl::configureState()
     return CoreReplacementAccess::statePlan(*work.scope, *work.request.kernel, std::move(members), work.state.budget,
                                             !work.state.declared.empty());
 }
-} // namespace cordis::detail
+} // namespace eve::detail

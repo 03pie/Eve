@@ -7,23 +7,23 @@
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QThread>
-#include <cordis/kernel.hpp>
-#include <cordis/module/manager.hpp>
-#include <cordis/module/native.hpp>
-#include <cordis/module/runtime.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
-#ifdef CORDIS_TEST_QT_ORIGIN
-#include <cordis/module/qt_module.hpp>
-#include <cordis/qt/scheduler.hpp>
+#include <eve/kernel.hpp>
+#include <eve/module/manager.hpp>
+#include <eve/module/native.hpp>
+#include <eve/module/runtime.hpp>
+#include <eve/testing/fake_scheduler.hpp>
+#ifdef EVE_TEST_QT_ORIGIN
+#include <eve/module/qt_module.hpp>
+#include <eve/qt/scheduler.hpp>
 #endif
 #include <algorithm>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <thread>
-using namespace cordis;
-using namespace cordis::module;
-namespace files = cordis::testing::modules;
+using namespace eve;
+using namespace eve::module;
+namespace files = eve::testing::modules;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -262,14 +262,14 @@ int main(int argc, char** argv)
         ModuleManager manager;
         auto install = [&](int index, const char* directory, const char* version) {
             return files::install(dlls[index], args[2] + '/' + directory,
-                                  qt ? "org.cordis.qt.example" : "org.cordis.business",
-                                  qt ? QJsonArray{"org.cordis.qt.page", "org.cordis.qt.settings"}
-                                     : QJsonArray{"org.cordis.plugin"},
+                                  qt ? "org.eve.qt.example" : "org.eve.business",
+                                  qt ? QJsonArray{"org.eve.qt.page", "org.eve.qt.settings"}
+                                     : QJsonArray{"org.eve.plugin"},
                                   qt ? "qt-ui" : "c-abi", version)
                 .toStdString();
         };
         auto first = install(0, "old", "1.0.0"), second = install(1, "next", "2.0.0");
-#ifdef CORDIS_TEST_QT_ORIGIN
+#ifdef EVE_TEST_QT_ORIGIN
         if (qt) {
             const auto current = loadQtModule(args[2].toStdString(), first).value().generation;
             const auto candidate = stageQtModule(args[2].toStdString(), second, current).value().generation;
@@ -277,7 +277,7 @@ int main(int argc, char** argv)
             Kernel kernel(scheduler);
             auto services = std::make_shared<ServiceRegistry>(kernel.services());
             auto make = [&](GenerationId id, bool invalid) {
-                QtPlugin plugin{"org.cordis.qt.page", {}, {}};
+                QtPlugin plugin{"org.eve.qt.page", {}, {}};
                 if (invalid)
                     plugin.outputs.push_back(ServiceOutput::of<int>({""}));
                 return qtRuntime(id, std::move(plugin), scheduler);
@@ -293,7 +293,7 @@ int main(int argc, char** argv)
                 }
                 return task.tryResult();
             };
-            origins(manager, current, candidate, scheduler, services, make, wait, "org.cordis.qt.page", true);
+            origins(manager, current, candidate, scheduler, services, make, wait, "org.eve.qt.page", true);
             controlled(
                 manager, current, candidate, scheduler, kernel, make, wait, [] {}, [](const ReplacementScope&) {},
                 true);
@@ -310,7 +310,7 @@ int main(int argc, char** argv)
         auto old = NativeModule::open(manager, current, scheduler, *services).value();
         auto next = NativeModule::open(manager, candidate, scheduler, *services).value();
         auto make = [&](GenerationId id, bool invalid) {
-            NativePlugin plugin{"org.cordis.plugin", {}, {}};
+            NativePlugin plugin{"org.eve.plugin", {}, {}};
             if (invalid)
                 plugin.outputs.push_back({{""}});
             return (id == current ? old : next).runtime(std::move(plugin));
@@ -320,7 +320,7 @@ int main(int argc, char** argv)
             CHECK(task.isReady());
             return task.tryResult();
         };
-        origins(manager, current, candidate, scheduler, services, make, wait, "org.cordis.plugin", false);
+        origins(manager, current, candidate, scheduler, services, make, wait, "org.eve.plugin", false);
         controlled(
             manager, current, candidate, scheduler, kernel, make, wait,
             [&] {
@@ -331,7 +331,7 @@ int main(int argc, char** argv)
                 }
             },
             [&](const ReplacementScope& scope) {
-                auto external = old.create("org.cordis.plugin", "\"sync\"", InstanceId{900001}, 1).value();
+                auto external = old.create("org.eve.plugin", "\"sync\"", InstanceId{900001}, 1).value();
                 auto refused = manager.reserveReplacement(current, candidate, scope);
                 CHECK(!refused.hasValue() && refused.error().code == ErrorCode::ConfigConflict);
                 CHECK(wait(external.close())->value().quiescent);

@@ -5,8 +5,8 @@
 #include <algorithm>
 
 namespace notebook::detail {
-using namespace cordis;
-using namespace cordis::module;
+using namespace eve;
+using namespace eve::module;
 WorkspaceUpgradeExecution::WorkspaceUpgradeExecution(std::shared_ptr<Workspace> workspace,
                                                      const UpgradePreview& preview)
     : owner(std::move(workspace)), previousRuntime(preview.previousRuntime)

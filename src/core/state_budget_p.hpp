@@ -2,12 +2,12 @@
  * @brief 纯值的共享字节预算；不持有实例、工厂或用户回调。
  */
 #pragma once
-#include <cordis/migration_state.hpp>
+#include <eve/migration_state.hpp>
 #include <memory>
 #include <mutex>
 #include <utility>
 
-namespace cordis::detail {
+namespace eve::detail {
 inline constexpr std::size_t maxReplacementStateBytes = 16 * maxStateJsonBytes;
 using StateValueCheck = bool (*)(std::string_view) noexcept;
 class StateBudget;
@@ -57,4 +57,4 @@ struct OwnedStateSnapshot {
 };
 Result<std::shared_ptr<const OwnedStateSnapshot>> ownStateSnapshot(StateSnapshot, std::shared_ptr<StateBudget> = {},
                                                                    StateValueCheck = nullptr);
-} // namespace cordis::detail
+} // namespace eve::detail

@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
-namespace cordis::detail {
+namespace eve::detail {
 namespace {
 Result<ReplacementServiceContract> normalize(ReplacementServiceContract value, const RealmMap& realms)
 {
@@ -146,4 +146,4 @@ Result<void> planConstruction(ReplacementBuildPlan& plan, const std::vector<Repl
             return fail("owner omitted future dynamic contract");
     return Result<void>::success();
 }
-} // namespace cordis::detail
+} // namespace eve::detail

@@ -1,16 +1,16 @@
 /** @file event_demo.cpp
  * @brief 演示实例所有的异步事件如何阻止内核提前报告清理完成。
  */
-#include <cordis/event.hpp>
-#include <cordis/kernel.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/event.hpp>
+#include <eve/kernel.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <cstdlib>
 #include <iostream>
 
 /** @brief 发布任务、停止内核、完成源任务，验证事件与实例的真实清理屏障。 */
 int main()
 {
-    using namespace cordis;
+    using namespace eve;
     using Decision = EventDecision<std::string>;
     auto scheduler = std::make_shared<testing::FakeScheduler>();
     Kernel kernel(scheduler);

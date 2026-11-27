@@ -1,4 +1,4 @@
-# Cordis 仓库外插件 SDK
+# Eve 仓库外插件 SDK
 
 当前交付面向 Windows x64、匹配 MSVC、动态 CRT 与 Qt 5.15.2 的共享 C++ 插件。安装模板的 CMakeLists 指定生产该 SDK 的精确版本。插件和实际宿主使用兼容的同一组 Core/Qt/Ui 共享库，Qt 加载器检查实际 Core 身份和 metadata。
 
@@ -6,10 +6,10 @@
 
 ## 生成与安装
 
-在 x64 MSVC 开发终端中设置 `CORDIS_QT5152_ROOT` 指向匹配 Qt kit。下面使用 Release 预设。
+在 x64 MSVC 开发终端中设置 `EVE_QT5152_ROOT` 指向匹配 Qt kit。下面使用 Release 预设。
 
 ```powershell
-cmake --preset ela-msvc-release -DCORDIS_INSTALL_SDK=ON
+cmake --preset ela-msvc-release -DEVE_INSTALL_SDK=ON
 cmake --build --preset ela-msvc-release
 $sdkPrefix = Join-Path $PWD 'build/sdk-install'
 cmake --install build/ela-msvc-release --prefix $sdkPrefix
@@ -19,7 +19,7 @@ cmake --install build/ela-msvc-release --prefix $sdkPrefix
 
 ## 外部消费
 
-复制安装前缀中的 `share/Cordis/templates/qt-ui-plugin` 到仓库外目录。模板用 `find_package` 的 `EXACT` 模式加载生产者版本并调用 `cordis_add_qt_ui_plugin`。安装包导出 `Cordis::Core`、`Cordis::Qt`、`Cordis::Ui`、`Cordis::QtPluginSdk` 和 `Cordis::QtUiPluginSdk`，常规 UI 插件链接最后一个目标。安装树保留完整的 SDK 头目录以兼容已有消费者。可见的 Loader、ModuleHost 和 Replacement 宿主声明由宿主装配使用，插件的受支持链接接口以导出目标为准。
+复制安装前缀中的 `share/Eve/templates/qt-ui-plugin` 到仓库外目录。模板用 `find_package` 的 `EXACT` 模式加载生产者版本并调用 `eve_add_qt_ui_plugin`。安装包导出 `Eve::Core`、`Eve::Qt`、`Eve::Ui`、`Eve::QtPluginSdk` 和 `Eve::QtUiPluginSdk`，常规 UI 插件链接最后一个目标。安装树保留完整的 SDK 头目录以兼容已有消费者。可见的 Loader、ModuleHost 和 Replacement 宿主声明由宿主装配使用，插件的受支持链接接口以导出目标为准。
 
 构建模板后，在新工作区加载生成的 `module.json`。将 `$moduleManifest` 设置为生成文件的绝对路径，再从平台仓库运行。
 
@@ -30,7 +30,7 @@ cmake --install build/ela-msvc-release --prefix $sdkPrefix
 helper 接口为：
 
 ```cmake
-cordis_add_qt_ui_plugin(my_plugin
+eve_add_qt_ui_plugin(my_plugin
     SOURCE plugin.cpp
     MODULE_ID org.example.my-plugin
     PLUGIN_ID example.my-plugin
@@ -38,7 +38,7 @@ cordis_add_qt_ui_plugin(my_plugin
     SOURCES implementation.cpp contract.hpp)
 ```
 
-`SOURCE` 包含 QObject 工厂、`Q_PLUGIN_METADATA` 和 `<source-stem>.moc`。修改模板的 `PLUGIN_ID` 即可同步生成工厂使用的目标私有字符串宏 `CORDIS_QT_UI_PLUGIN_ID`、Qt metadata 与模块清单。两个 ID 都以 ASCII 字母开头，点分段至少一个字符，段内可使用 ASCII 字母、数字、下划线和连字符，最长 128 个字符。metadata 文件名为 `cordis_plugin_metadata.json`。助手用 SDK 版本填入工具链记录，链接完成后按实际 DLL 生成 `module.json`。输出位于本目标独立的 `module/<target>` 目录，加载器为 `qt-ui`，驻留策略为 `resident`。
+`SOURCE` 包含 QObject 工厂、`Q_PLUGIN_METADATA` 和 `<source-stem>.moc`。修改模板的 `PLUGIN_ID` 即可同步生成工厂使用的目标私有字符串宏 `EVE_QT_UI_PLUGIN_ID`、Qt metadata 与模块清单。两个 ID 都以 ASCII 字母开头，点分段至少一个字符，段内可使用 ASCII 字母、数字、下划线和连字符，最长 128 个字符。metadata 文件名为 `eve_plugin_metadata.json`。助手用 SDK 版本填入工具链记录，链接完成后按实际 DLL 生成 `module.json`。输出位于本目标独立的 `module/<target>` 目录，加载器为 `qt-ui`，驻留策略为 `resident`。
 
 ## 契约与资源
 
@@ -50,10 +50,10 @@ ModuleManager 是唯一动态模块入口。loader root 只做 factory，交给 
 
 ## 分层诊断
 
-- 找不到 Cordis：检查安装完整性、`Cordis_DIR` 或 `CMAKE_PREFIX_PATH`；不要把仓库 build 路径伪装成安装前缀。
+- 找不到 Eve：检查安装完整性、`Eve_DIR` 或 `CMAKE_PREFIX_PATH`；不要把仓库 build 路径伪装成安装前缀。
 - 平台、编译器、CRT、配置不匹配：使用与 producer 完全匹配的 x64 MSVC /MD（Debug 为 /MDd）和单配置 Debug/Release；SDK 配置会给出实际不匹配原因，不自动回退到另一配置。
 - 找不到 Qt/Ela：提供 Qt 5.15.2 开发安装，保持整个 SDK 前缀。CMake 消费需要开发头和 import library；只拿运行包不够。
 - metadata/manifest 或 Core 身份被拒：检查 plugin ID、模块版本、实际工具链以及宿主/插件是否使用同一共享库；不要修改宿主预检或填假摘要。
 - 依赖等待、实例失败、清理保留或业务保存错误：检查宿主 Module/Session 原诊断与插件业务数据契约。不要将配置成功等同于装载成功，或把业务错误改为新的 SDK 批准来源。
 
-启用 `CORDIS_INSTALL_SDK` 后，`ctest --preset ela-msvc-release -L sdk` 从阶段安装目录复制模板，在独立目录构建，并通过工作台验证实际装载、页面贡献与退出。
+启用 `EVE_INSTALL_SDK` 后，`ctest --preset ela-msvc-release -L sdk` 从阶段安装目录复制模板，在独立目录构建，并通过工作台验证实际装载、页面贡献与退出。

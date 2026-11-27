@@ -9,12 +9,12 @@
 #include <QPluginLoader>
 #include <QThread>
 #include <algorithm>
-#include <cordis/module/qt_manifest.hpp>
+#include <eve/module/qt_manifest.hpp>
 
-namespace cordis::module {
+namespace eve::module {
 QtToolchain qtToolchain()
 {
-    QtToolchain value{CORDIS_PROJECT_VERSION, QT_VERSION_STR, "MSVC", CORDIS_QT_COMPILER_VERSION, ""};
+    QtToolchain value{EVE_PROJECT_VERSION, QT_VERSION_STR, "MSVC", EVE_QT_COMPILER_VERSION, ""};
 #if defined(_DLL)
 #if defined(_DEBUG)
     value.runtime = "MDd";
@@ -57,7 +57,7 @@ Result<void> verifyQtMetadata(const PreflightArtifact& artifact, QPluginLoader& 
     if (host.pointerBits != 64 || host.qtVersion != "5.15.2" || host.qtVersion != qVersion() || host.runtime.empty())
         return Result<void>::failure(error(ErrorCode::AbiMismatch, "unsupported host Qt toolchain"));
     const auto metadata = reader.metaData();
-    if (metadata.value("IID") != QJsonValue(QStringLiteral("org.cordis.IQtPluginV1/1.0")) ||
+    if (metadata.value("IID") != QJsonValue(QStringLiteral("org.eve.IQtPluginV1/1.0")) ||
         metadata.value("version") != QJsonValue(QT_VERSION & 0xffff00) ||
         metadata.value("debug") != QJsonValue(host.debug))
         return Result<void>::failure(error(ErrorCode::AbiMismatch, "Qt plugin IID/version/debug differs from host"));
@@ -111,4 +111,4 @@ Result<QtModuleInspection> inspectQtModule(const std::string& root, const std::s
         return Output::failure(checked.error());
     return Output::success({artifact, qtToolchain()});
 }
-} // namespace cordis::module
+} // namespace eve::module

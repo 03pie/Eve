@@ -3,13 +3,13 @@
  */
 #pragma once
 #include "../core/state_budget_p.hpp"
-#include <cordis/identity.hpp>
+#include <eve/identity.hpp>
 #include <map>
 
-namespace cordis::detail {
+namespace eve::detail {
 struct MigrationState {
     std::shared_ptr<StateBudget> budget = StateBudget::create();
     std::map<InstanceId, StateSchema> declared;
     std::map<InstanceId, std::shared_ptr<const OwnedStateSnapshot>> original;
 };
-} // namespace cordis::detail
+} // namespace eve::detail

@@ -19,10 +19,10 @@
     std::string(#condition) + " at line " + std::to_string(__LINE__)); } while (false)
 
 namespace {
-using cordis::ui::OutputLevel;
-using cordis::ui::detail::readSavedLogEvent;
-using cordis::ui::detail::readSavedLogRun;
-namespace files = cordis::testing::modules;
+using eve::ui::OutputLevel;
+using eve::ui::detail::readSavedLogEvent;
+using eve::ui::detail::readSavedLogRun;
+namespace files = eve::testing::modules;
 
 QJsonObject parse(const QByteArray& bytes)
 {
@@ -32,7 +32,7 @@ QJsonObject parse(const QByteArray& bytes)
 }
 
 template<class T>
-typename cordis::Task<T>::Snapshot settle(const cordis::Task<T>& task)
+typename eve::Task<T>::Snapshot settle(const eve::Task<T>& task)
 {
     QElapsedTimer timeout;
     timeout.start();
@@ -45,7 +45,7 @@ typename cordis::Task<T>::Snapshot settle(const cordis::Task<T>& task)
     return result;
 }
 template<class T>
-typename cordis::Task<T>::Snapshot wait(const cordis::Task<T>& task)
+typename eve::Task<T>::Snapshot wait(const eve::Task<T>& task)
 {
     auto result = settle(task);
     LOG_REQUIRE(result->hasValue());
@@ -53,7 +53,7 @@ typename cordis::Task<T>::Snapshot wait(const cordis::Task<T>& task)
 }
 
 struct Producer {
-    cordis::workbench::Workbench host;
+    eve::workbench::Workbench host;
     bool closed = false;
 
     void close()
@@ -82,13 +82,13 @@ struct Producer {
 void produce(const QString& manifest, const QString& workspace, const QDir& evidence, bool conflict)
 {
     const auto applicationSuffix = QCryptographicHash::hash(workspace.toUtf8(), QCryptographicHash::Sha256).toHex().left(16);
-    QCoreApplication::setApplicationName("CordisLogging-" + QString::fromLatin1(applicationSuffix));
+    QCoreApplication::setApplicationName("EveLogging-" + QString::fromLatin1(applicationSuffix));
     QStandardPaths::setTestModeEnabled(true);
     Producer producer;
     producer.host.open(manifest, workspace);
     producer.host.publishUi();
     const auto result = wait(producer.host.applyInitial().settled);
-    LOG_REQUIRE(result->value().outcome == cordis::loader::PlanOutcome::Applied);
+    LOG_REQUIRE(result->value().outcome == eve::loader::PlanOutcome::Applied);
     const auto snapshot = producer.host.shell.output()->snapshot();
     LOG_REQUIRE(snapshot.hasValue());
     const auto& rows = snapshot.value();
@@ -103,7 +103,7 @@ void produce(const QString& manifest, const QString& workspace, const QDir& evid
         const auto config = QDir(workspace).filePath("session.yaml");
         files::write(config, "# External edit before close\n");
         const auto failed = settle(producer.host.close());
-        LOG_REQUIRE(!failed->hasValue() && failed->error().code == cordis::ErrorCode::ConfigConflict);
+        LOG_REQUIRE(!failed->hasValue() && failed->error().code == eve::ErrorCode::ConfigConflict);
         LOG_REQUIRE(producer.host.shell.cancelCloseRequest().hasValue());
         LOG_REQUIRE(producer.host.shell.writeOutput("TEST_AFTER_CANCELLED_CLOSE").hasValue());
         LOG_REQUIRE(producer.host.session->rebaseExternal(revision).hasValue());
@@ -158,7 +158,7 @@ qint64 launch(const QDir& evidence, const QString& program, const QStringList& a
 QJsonObject verifyRun(const QString& workspace, const QString& diagnostic, const QString& source,
                       const QList<QByteArray>& excluded = {})
 {
-    const QDir logs(QDir(workspace).filePath(".cordis/logs"));
+    const QDir logs(QDir(workspace).filePath(".eve/logs"));
     const auto runs = logs.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     LOG_REQUIRE(runs.size() == 1);
     const auto run = runs.front();
@@ -224,7 +224,7 @@ void verify(const QStringList& args, const QDir& evidence)
 {
     const bool conflict = args.size() == 5 && args[4] == "close_retry";
     const auto workspace = evidence.filePath(QString::fromUtf8(u8"测试工作区 𠮷"));
-    const auto fixture = files::install(args[1], evidence.filePath("module"), "org.cordis.test.logging",
+    const auto fixture = files::install(args[1], evidence.filePath("module"), "org.eve.test.logging",
                                        QJsonArray{"test.logging"}, "qt-ui");
     const auto pid = launch(evidence, QCoreApplication::applicationFilePath(),
                             {conflict ? "--cancel-close" : "--producer", fixture, workspace, evidence.path()},
@@ -237,7 +237,7 @@ void verify(const QStringList& args, const QDir& evidence)
     const auto plugin = verifyRun(workspace, "TEST_OPERATION_REJECTED", "plugin/test.logging");
     const auto pluginEvent = plugin.value("rawEvent").toObject();
     LOG_REQUIRE(pluginEvent.value("text") == producer.value("eventText"));
-    LOG_REQUIRE(pluginEvent.value("module") == "org.cordis.test.logging" &&
+    LOG_REQUIRE(pluginEvent.value("module") == "org.eve.test.logging" &&
                 pluginEvent.value("moduleVersion") == "1.0.0" &&
                 pluginEvent.value("generation").toString().toULongLong() > 0 &&
                 pluginEvent.value("sourceSequence") == pluginEvent.value("sequence"));
@@ -247,7 +247,7 @@ void verify(const QStringList& args, const QDir& evidence)
         int continued = 0;
         const auto run = plugin.value("run").toString();
         const auto final = plugin.value("cleanupEventId").toString().toULongLong();
-        const auto warning = cordis::ui::detail::scanSavedDescending(workspace, run, 0, [&](const auto& row) {
+        const auto warning = eve::ui::detail::scanSavedDescending(workspace, run, 0, [&](const auto& row) {
             if (row.entry.text == "TEST_AFTER_CANCELLED_CLOSE") {
                 LOG_REQUIRE(row.sourceId == "platform" && final > row.eventId);
                 ++continued;
@@ -260,8 +260,8 @@ void verify(const QStringList& args, const QDir& evidence)
     }
 
     const auto badModuleWorkspace = evidence.filePath("bad-module-workspace");
-    const QByteArray manifestDirName("CORDIS_L1_PRIVATE_MODULE");
-    const QByteArray invalidContents("CORDIS_L1_PRIVATE_MANIFEST_PAYLOAD");
+    const QByteArray manifestDirName("EVE_L1_PRIVATE_MODULE");
+    const QByteArray invalidContents("EVE_L1_PRIVATE_MANIFEST_PAYLOAD");
     const auto malformedDir = evidence.filePath(QString::fromLatin1(manifestDirName));
     LOG_REQUIRE(QDir().mkpath(malformedDir));
     const auto invalidManifest = QDir(malformedDir).filePath("module.json");

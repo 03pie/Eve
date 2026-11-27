@@ -66,7 +66,7 @@ Result<void> injected(GenerationId generation, HookState& hook)
 void physical(Scene& scene, const QString& name)
 {
     auto module = scene.load();
-    CHECK(scene.call<int(CORDIS_CALL*)()>(module, "cordis_fixture_queries") == 1);
+    CHECK(scene.call<int(EVE_CALL*)()>(module, "eve_fixture_queries") == 1);
     const auto oldSnapshot = scene.state(module.generation);
     CHECK(scene.manager.tryUnload(module.generation).hasValue());
     scene.gone(module);
@@ -88,7 +88,7 @@ void physical(Scene& scene, const QString& name)
                 .generation;
         auto again = scene.describe(id, module.manifest);
         CHECK(id != module.generation && oldSnapshot.generation == module.generation);
-        CHECK(scene.call<int(CORDIS_CALL*)()>(again, "cordis_fixture_queries") == 1);
+        CHECK(scene.call<int(EVE_CALL*)()>(again, "eve_fixture_queries") == 1);
         CHECK(scene.manager.tryUnload(id).hasValue());
         scene.gone(again);
     }
@@ -342,7 +342,7 @@ void budgets(Scene& scene, bool history)
     for (unsigned i = 0; i != failures; ++i) {
         const auto path = scene.prepare(5, "failed-" + QString::number(i), true);
         auto json = QJsonDocument::fromJson(files::read(path)).object();
-        json["moduleId"] = "org.cordis.unload.failed" + QString::number(i);
+        json["moduleId"] = "org.eve.unload.failed" + QString::number(i);
         files::write(path, QJsonDocument(json).toJson());
         CHECK(!scene.manager.load(scene.root.toStdString(), path.toStdString()).hasValue());
         const auto value = scene.manager.snapshot().value().back();
@@ -353,7 +353,7 @@ void budgets(Scene& scene, bool history)
     if (!history) {
         const auto extra = scene.prepare(0, "extra");
         auto json = QJsonDocument::fromJson(files::read(extra)).object();
-        json["moduleId"] = "org.cordis.unload.extra";
+        json["moduleId"] = "org.eve.unload.extra";
         files::write(extra, QJsonDocument(json).toJson());
         const auto denied =
             scene.manager.load(scene.root.toStdString(), extra.toStdString(), {}, scene.approval(extra));
@@ -382,7 +382,7 @@ void budgets(Scene& scene, bool history)
                                     .generation;
                 module = scene.describe(id, module.manifest);
             }
-            CHECK(scene.call<int(CORDIS_CALL*)()>(module, "cordis_fixture_queries") == 1);
+            CHECK(scene.call<int(EVE_CALL*)()>(module, "eve_fixture_queries") == 1);
             historyIds.push_back(module.generation);
             CHECK(scene.manager.tryUnload(module.generation).hasValue());
             scene.gone(module);

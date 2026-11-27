@@ -4,7 +4,7 @@
 #include "workspace.hpp"
 
 namespace notebook {
-using namespace cordis;
+using namespace eve;
 namespace {
 ErrorInfo cleanupFailure(const WorkspaceCloseSnapshot& state)
 {

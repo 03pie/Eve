@@ -19,9 +19,9 @@
 
 namespace
 {
-using namespace cordis;
-using namespace cordis::ui;
-using namespace cordis::ui::detail;
+using namespace eve;
+using namespace eve::ui;
+using namespace eve::ui::detail;
 
 void write(const QString& path, const QByteArray& bytes)
 {
@@ -192,16 +192,16 @@ void structuredSource(const QString& workspace)
         row.instanceKey = QString::fromLatin1(instanceKey);
         CHECK(archive.append(std::move(row)) == sequence);
     };
-    push(1, "plugin/7/2/jobs/status", "org.cordis.a", "first");
-    push(2, "plugin/7/2/jobs/status", "org.cordis.b", "first");
-    push(3, "plugin/7/2/jobs/status", "org.cordis.a", "second");
-    push(4, "plugin/7/2/jobs", "org.cordis.a", "first");
-    push(5, "jobs/status", "org.cordis.a", "first"); // A legacy row with no transport prefix.
-    push(6, "native/7/2/jobs/status", "org.cordis.a", "first", "native/org.cordis.a/alpha");
-    push(7, "plugin/99/2/jobs/status", "org.cordis.a", "first"); // Prefix does not match the recorded owner.
+    push(1, "plugin/7/2/jobs/status", "org.eve.a", "first");
+    push(2, "plugin/7/2/jobs/status", "org.eve.b", "first");
+    push(3, "plugin/7/2/jobs/status", "org.eve.a", "second");
+    push(4, "plugin/7/2/jobs", "org.eve.a", "first");
+    push(5, "jobs/status", "org.eve.a", "first"); // A legacy row with no transport prefix.
+    push(6, "native/7/2/jobs/status", "org.eve.a", "first", "native/org.eve.a/alpha");
+    push(7, "plugin/99/2/jobs/status", "org.eve.a", "first"); // Prefix does not match the recorded owner.
 
     LogFilter filter;
-    filter.moduleId = "org.cordis.a";
+    filter.moduleId = "org.eve.a";
     filter.instanceKey = "first";
     filter.channel = "jobs/status";
     const LogQuery live(archive);
@@ -252,10 +252,42 @@ void checkSourcesCli(const QString& executable, const QString& workspace, const 
     CHECK(query.readAllStandardError().trimmed() == expectedWarning);
 }
 
+/** @brief 新运行写入 Eve 目录，UI 与命令行仍能读取旧目录；同一运行标识优先读 Eve。 */
+void previousWorkspace(const QString& workspace, const QString& executable)
+{
+    const QString run = "c0cd39b9-7694-4ab3-a382-a05fd5641873";
+    const QDir old(QDir(workspace).filePath(".cordis/logs/" + run));
+    CHECK(old.mkpath("."));
+    const QByteArray meta = QJsonDocument(QJsonObject{{"v", 1}, {"run", run}, {"version", "0.1.5"},
+                                                      {"ended", "2026-01-01T00:00:00.000Z"}}).toJson();
+    write(old.filePath("run.json"), meta);
+    const auto event = [](const char* source) {
+        return QJsonDocument(QJsonObject{{"v", 1}, {"event", "1"}, {"sequence", "1"}, {"source", source},
+                                        {"level", 0}, {"text", "saved event"}}).toJson(QJsonDocument::Compact) + '\n';
+    };
+    const QString segment = "events-00000000000000000001.jsonl";
+    write(old.filePath(segment), event("previous"));
+    const auto originals = digests(old.path());
+    RuntimeLogArchive archive(workspace, "eve");
+    CHECK(archive.directory() == QDir(workspace).filePath(".eve/logs"));
+    const LogQuery live(archive);
+    CHECK(live.runs().size() == 2 && live.sources(run).sources.contains("previous"));
+    CHECK(live.page(live.begin(run)).rows.at(0).sourceId == "previous");
+    checkSourcesCli(executable, workspace, run, EXIT_SUCCESS, "previous\t\t1-1", {});
+    const QDir current(QDir(archive.directory()).filePath(run));
+    CHECK(current.mkpath("."));
+    write(current.filePath("run.json"), meta);
+    write(current.filePath(segment), event("current"));
+    CHECK(live.runs().size() == 2 && live.sources(run).sources.contains("current"));
+    checkSourcesCli(executable, workspace, run, EXIT_SUCCESS, "current\t\t1-1", {});
+    archive.finish(true);
+    CHECK(digests(old.path()) == originals);
+}
+
 void truncatedAndGapped(const QString& workspace, const QString& executable)
 {
     const QString run = "87f9eddb-9d82-4d07-bcdd-0a694c571515";
-    const QDir directory(QDir(workspace).filePath(".cordis/logs/" + run));
+    const QDir directory(QDir(workspace).filePath(".eve/logs/" + run));
     CHECK(directory.mkpath("."));
     const auto metadata = QJsonDocument(QJsonObject{{"v", 1}, {"run", run}, {"version", "1.0.0"},
                                                    {"started", "2026-01-01T00:00:00.000Z"}});
@@ -309,8 +341,9 @@ int main(int argc, char** argv)
             std::cout << "L6 evidence: " << workspace.path().toUtf8().constData() << std::endl;
         snapshotAndResume(workspace.filePath("snapshot"), preserveEvidence);
         mergeTailAndSegments(workspace.filePath("merge"));
-        truncatedAndGapped(workspace.filePath("truncated"), arguments.value(
-            2, QDir(app.applicationDirPath()).filePath("cordis_log_query.exe")));
+        const auto cli = arguments.value(2, QDir(app.applicationDirPath()).filePath("eve_log_query.exe"));
+        truncatedAndGapped(workspace.filePath("truncated"), cli);
+        previousWorkspace(workspace.filePath("previous"), cli);
         structuredSource(workspace.filePath("sources"));
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {

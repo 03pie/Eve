@@ -14,10 +14,10 @@
 #include <QThread>
 #include <algorithm>
 #include <iostream>
-using namespace cordis;
-using namespace cordis::module;
-using namespace cordis::loader;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::module;
+using namespace eve::loader;
+using namespace eve::ui;
 using notebook::take;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
@@ -73,8 +73,8 @@ std::vector<PageSnapshot> pages(const notebook::Workspace& state)
 QWidget* page(InstanceId id)
 {
     for (auto widget : QApplication::allWidgets())
-        if (widget->objectName() == "CordisNotebookPage" &&
-            widget->property("cordis.instance").toULongLong() == id.value())
+        if (widget->objectName() == "EveNotebookPage" &&
+            widget->property("eve.instance").toULongLong() == id.value())
             return widget;
     return nullptr;
 }
@@ -82,8 +82,8 @@ void edit(notebook::Workspace& state, InstanceId id, const QString& text)
 {
     auto widget = page(id);
     CHECK(widget);
-    auto editor = widget->findChild<QPlainTextEdit*>("CordisNotebookEditor");
-    auto button = widget->findChild<QPushButton*>("CordisNotebookPublish");
+    auto editor = widget->findChild<QPlainTextEdit*>("EveNotebookEditor");
+    auto button = widget->findChild<QPushButton*>("EveNotebookPublish");
     CHECK(editor && button);
     editor->setPlainText(text);
     button->click();
@@ -164,13 +164,13 @@ int main(int argc, char** argv)
                 take(state->modulesPage->navigate());
                 QWidget* widget = nullptr;
                 for (auto* candidate : QApplication::allWidgets())
-                    if (candidate->objectName() == "CordisModuleDiagnostics")
+                    if (candidate->objectName() == "EveModuleDiagnostics")
                         widget = candidate;
                 CHECK(widget && widget->window()->isVisible());
-                auto text = widget->findChild<QPlainTextEdit*>("CordisModuleDiagnosticsText");
-                CHECK(text && text->isReadOnly() && text->toPlainText().contains("org.cordis.example.notebook"));
+                auto text = widget->findChild<QPlainTextEdit*>("EveModuleDiagnosticsText");
+                CHECK(text && text->isReadOnly() && text->toPlainText().contains("org.eve.example.notebook"));
                 CHECK(text->toPlainText().contains("qt.instance.") && text->toPlainText().contains("nativeProcessPin"));
-                widget->findChild<QPushButton*>("CordisModuleDiagnosticsRefresh")->click();
+                widget->findChild<QPushButton*>("EveModuleDiagnosticsRefresh")->click();
                 CHECK(records(*state, ResourceKind::Instance) == 1);
             } else if (name == "guards") {
                 CHECK(take(state->shell.diagnostics()->snapshot()).instances.empty());
@@ -186,7 +186,7 @@ int main(int argc, char** argv)
                 const auto before = take(state->shell.output()->snapshot()).size();
                 widget->findChild<QPlainTextEdit*>()->setPlainText(QString(5000, 'x'));
                 widget->findChild<QPushButton*>()->click();
-                auto feedback = widget->findChild<QLabel*>("CordisNotebookFeedback");
+                auto feedback = widget->findChild<QLabel*>("EveNotebookFeedback");
                 CHECK(feedback);
                 pump([&] { return feedback->text().contains(QString::fromUtf8("输出失败")); });
                 CHECK(take(state->shell.output()->snapshot()).size() == before);

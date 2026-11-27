@@ -48,8 +48,8 @@
 #include <QWidget>
 #include <algorithm>
 #include <atomic>
-#include <cordis/qt/object.hpp>
-#include <cordis/ui/ela_shell.hpp>
+#include <eve/qt/object.hpp>
+#include <eve/ui/ela_shell.hpp>
 #include <map>
 #include <memory>
 #include <optional>
@@ -58,7 +58,7 @@
 #include <utility>
 #include <vector>
 
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 /** @brief 工作台页面标签只切换宿主页面，不允许拖出独立窗口。 */
 class HostPageTabs final : public ElaTabBar {
 public:
@@ -320,7 +320,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
         configurationHandler = {};
         modulesHandler = {};
         auto self = shared_from_this();
-        cordis::detail::TaskAccess::observe(windowResource->close(), [self](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(windowResource->close(), [self](Task<void>::Snapshot result) {
             if (self->archive) self->archive->finish(result->hasValue());
             if (result->hasValue()) self->closed.resolve();
             else self->closed.reject(result->error());
@@ -333,7 +333,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
         page->watched = true;
         ++waiting;
         auto self = shared_from_this();
-        cordis::detail::TaskAccess::observe(page->effect->close(), [self](Task<CleanupReport>::Snapshot result) {
+        eve::detail::TaskAccess::observe(page->effect->close(), [self](Task<CleanupReport>::Snapshot result) {
             --self->waiting;
             if (!result->hasValue() || !result->value().quiescent) {
                 self->failed = true;
@@ -356,7 +356,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
         settleUiValues(services);
         auto self = shared_from_this();
         // 工作台关闭会同步发出 QAction/模型信号，须在此前关服务入口。
-        cordis::detail::TaskAccess::observe(closeUiServices(services), [self](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(closeUiServices(services), [self](Task<void>::Snapshot result) {
             if (result->hasValue())
                 self->servicesClosed = true;
             else {
@@ -367,7 +367,7 @@ struct ShellControl : std::enable_shared_from_this<ShellControl> {
         });
         closeOutput(output);
         closeWorkbench(workbench);
-        cordis::detail::TaskAccess::observe(closeManagement(management), [self](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(closeManagement(management), [self](Task<void>::Snapshot result) {
             if (result->hasValue())
                 self->managementClosed = true;
             else {
@@ -444,8 +444,8 @@ void HostWindow::closeEvent(QCloseEvent* event) { event->ignore(); state_->reque
 bool HostWindow::event(QEvent* event)
 {
     if (event->type() == QEvent::DynamicPropertyChange && state_ && state_->services &&
-        static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName() == "CordisDoNotDisturb")
-        setNotificationMuted(state_->services, property("CordisDoNotDisturb").toBool());
+        static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName() == "EveDoNotDisturb")
+        setNotificationMuted(state_->services, property("EveDoNotDisturb").toBool());
     return ElaWindow::event(event);
 }
 /** @brief 读取当前导航仅在窗口与贡献都存在时进行，安全页始终在窗口最后删除。 */
@@ -496,7 +496,7 @@ Task<void> PageControl::retire()
     auto state = shell.lock();
     std::weak_ptr<PageControl> weak = shared_from_this();
     // 保留贡献记录直到 effect 的完整关闭报告到达，避免外壳提前结束等待。
-    cordis::detail::TaskAccess::observe(effect->close(), [weak](Task<CleanupReport>::Snapshot result) {
+    eve::detail::TaskAccess::observe(effect->close(), [weak](Task<CleanupReport>::Snapshot result) {
         if (!result->hasValue() || !result->value().quiescent) return;
         if (auto page = weak.lock()) if (auto owner = page->shell.lock()) {
             owner->pages.erase(page->key());
@@ -551,15 +551,15 @@ Task<void> PageControl::retire()
         return closed.task();
     }
     auto self = shared_from_this();
-    cordis::detail::TaskAccess::observe(resource->close(), [self](Task<void>::Snapshot result) {
+    eve::detail::TaskAccess::observe(resource->close(), [self](Task<void>::Snapshot result) {
         if (!result->hasValue()) self->closed.reject(result->error());
         else self->finish();
     });
     return closed.task();
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail
 
-namespace cordis::ui {
+namespace eve::ui {
 /** @brief owner 和 Context 门禁验证在预留 id 之前完成，工厂由 effect setup 捕获调用。 */
 Result<PageHandle> UiPagesService::add(const Context& owner, PageSpec spec) const
 {
@@ -614,7 +614,7 @@ Result<PageHandle> UiPagesService::add(const Context& owner, PageSpec spec) cons
         if (page->spec.presentation == PagePresentation::Dialog) {
             auto dialog = detail::createWorkbenchDialog(state->window);
             page->dialog = dialog;
-            dialog->setObjectName("CordisContributionDialog");
+            dialog->setObjectName("EveContributionDialog");
             dialog->setWindowTitle(QString::fromStdString(page->spec.title));
             dialog->setIsStayTop(false);
             dialog->resize(1100, 760);
@@ -734,7 +734,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     control_->scheduler = std::move(scheduler);
     auto window = std::make_unique<detail::HostWindow>(control_);
     control_->window = window.get();
-    window->setWindowTitle(QString::fromUtf8("Cordis 插件平台"));
+    window->setWindowTitle(QString::fromUtf8("Eve 插件平台"));
     window->setWindowIcon(QApplication::windowIcon());
     window->resize(1200, 800);
     window->setStackSwitchMode(ElaWindowType::None);
@@ -764,22 +764,22 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     control_->stack = qobject_cast<QStackedWidget*>(safe->parentWidget());
     if (!control_->stack) throw std::runtime_error("pinned Ela page stack unavailable");
     auto panel = new detail::FixedDiagnosticsTabs(nullptr);
-    panel->setObjectName("CordisWorkbenchPanel"); panel->setMinimumHeight(110);
+    panel->setObjectName("EveWorkbenchPanel"); panel->setMinimumHeight(110);
     QListView* commandList = nullptr;
     auto commandPanel = detail::createCommandPanel(window.get(), commandList);
     auto output = detail::createOutputEditor(panel);
-    output->setObjectName("CordisWorkbenchOutput");
+    output->setObjectName("EveWorkbenchOutput");
     output->setReadOnly(true);
     output->setFrameShape(QFrame::NoFrame);
     output->setStyleSheet("ElaPlainTextEdit{background-color:transparent;border:0;}");
     panel->addTab(output, QString::fromUtf8("输出"));
     auto header = new QWidget;
     auto headerLayout = new QHBoxLayout(header); headerLayout->setContentsMargins(0, 0, 0, 0);
-    control_->tabs = new detail::HostPageTabs(header); control_->tabs->setObjectName("CordisPageTabs");
+    control_->tabs = new detail::HostPageTabs(header); control_->tabs->setObjectName("EvePageTabs");
     headerLayout->setSpacing(8);
     headerLayout->addWidget(control_->tabs, 1);
     auto togglePanel = new ElaToolButton(header);
-    togglePanel->setObjectName("CordisTogglePanel"); togglePanel->setText(QString::fromUtf8("面板"));
+    togglePanel->setObjectName("EveTogglePanel"); togglePanel->setText(QString::fromUtf8("面板"));
     togglePanel->setElaIcon(ElaIconType::Terminal);
     togglePanel->setToolButtonStyle(Qt::ToolButtonIconOnly);
     togglePanel->setShortcut(QKeySequence("Ctrl+J"));
@@ -791,8 +791,8 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     window->setWorkbenchWidgets(nullptr, panel);
     panel->hide();
     auto statusBar = new ElaStatusBar(window.get());
-    statusBar->setObjectName("CordisStatusBar");
-    statusBar->setStyleSheet(QStringLiteral("#CordisStatusBar{background:transparent;}"));
+    statusBar->setObjectName("EveStatusBar");
+    statusBar->setStyleSheet(QStringLiteral("#EveStatusBar{background:transparent;}"));
     statusBar->setSizeGripEnabled(false);
     statusBar->setContentsMargins(10, 0, 8, 0);
     const auto updateStatusPalette = [statusBar](ElaThemeType::ThemeMode mode) {
@@ -803,7 +803,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     updateStatusPalette(eTheme->getThemeMode());
     QObject::connect(eTheme, &ElaTheme::themeModeChanged, statusBar, updateStatusPalette);
     auto notification = new detail::StatusBarText(QStringLiteral("就绪"), statusBar);
-    notification->setObjectName("CordisNotification");
+    notification->setObjectName("EveNotification");
     statusBar->addWidget(notification, 1);
     window->setStatusBar(statusBar);
     control_->services = detail::createUiServices(control_->scheduler, commandList, notification);
@@ -834,7 +834,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
         return shell ? detail::outputConfigurationKey(shell->management, owner) : QString{};
     });
     control_->managementPage = detail::managementWidget(control_->management);
-    control_->managementKey = "cordis:management";
+    control_->managementKey = "eve:management";
     window->addFooterNode(QString::fromUtf8("输出与问题"), control_->commandsKey, 0, ElaIconType::Terminal);
     management_ = std::shared_ptr<ManagementController>(new ManagementController(control_->management));
     diagnostics_ = std::shared_ptr<DiagnosticsService>(new DiagnosticsService(control_->management));
@@ -1066,14 +1066,14 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     window->addFooterNode(QString::fromUtf8("关于"), detail::workbenchAbout(control_->workbench), control_->aboutKey, 0, ElaIconType::CircleInfo);
     for (const auto& entry : {std::make_pair(control_->safeKey, QString::fromUtf8("概览")),
                              std::make_pair(control_->settingsKey, QString::fromUtf8("设置")),
-                             std::make_pair(control_->aboutKey, QString::fromUtf8("关于 Cordis"))})
+                             std::make_pair(control_->aboutKey, QString::fromUtf8("关于 Eve"))})
         detail::registerWorkbenchPage(control_->workbench, entry.first, entry.second);
     detail::selectWorkbenchPage(control_->workbench, control_->safeKey);
     detail::configureNotificationCenter(control_->services,window.get(),[weak](InstanceId id){
         if (auto state=weak.lock(); state && state->open) return detail::outputPluginName(state->management,id);
         return QString{};
     });
-    detail::setNotificationMuted(control_->services,window->property("CordisDoNotDisturb").toBool());
+    detail::setNotificationMuted(control_->services,window->property("EveDoNotDisturb").toBool());
     detail::setAddedInstanceAction(control_->management, [weak, home = QPointer<detail::HomePage>(safe)](const QString& path) {
         auto state = weak.lock();
         if (!state || !state->open || !home)
@@ -1097,7 +1097,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     });
     std::vector<QAction*> platformCommands;
     for (auto action : window->findChildren<QAction*>())
-        if (action->objectName().startsWith("Cordis")) platformCommands.push_back(action);
+        if (action->objectName().startsWith("Eve")) platformCommands.push_back(action);
     detail::configureCommandPanel(control_->services, commandPanel, platformCommands, control_->output, outputAccess);
     detail::installOutputTools(control_->output, panel);
     detail::installProblemsPanel(panel, diagnostics_, control_->output, outputAccess, [weak](InstanceId id, const QString& path) {
@@ -1276,4 +1276,4 @@ Task<void> ElaShell::close() const
     if (!control->scheduler->isCurrentThread()) return failedTask(makeError(ErrorCode::WrongThread, "shell close requires owner thread"));
     return control->close();
 }
-} // namespace cordis::ui
+} // namespace eve::ui

@@ -3,7 +3,7 @@
  */
 #include "target_commit_p.hpp"
 
-namespace cordis::loader::detail {
+namespace eve::loader::detail {
 Result<PreparedTargetCommit> TargetCommitAccess::prepare(ConfigurationCoordinator& coordinator,
                                                          ConfigurationStore& store,
                                                          std::shared_ptr<const ValidatedCandidate> target,
@@ -39,4 +39,4 @@ std::uint64_t PreparedTargetCommit::revision() const noexcept
 {
     return coordinator_ ? coordinator_->next : 0;
 }
-} // namespace cordis::loader::detail
+} // namespace eve::loader::detail

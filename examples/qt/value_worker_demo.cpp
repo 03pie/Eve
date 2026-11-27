@@ -3,8 +3,8 @@
  */
 #include <QCoreApplication>
 #include <QTimer>
-#include <cordis/kernel.hpp>
-#include <cordis/qt/value_worker.hpp>
+#include <eve/kernel.hpp>
+#include <eve/qt/value_worker.hpp>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
@@ -16,8 +16,8 @@
 /** @brief headless 示例真实交付计算结果，超时仅作为故障保护。 */
 int main(int argc, char** argv)
 {
-    using namespace cordis;
-    using namespace cordis::qt;
+    using namespace eve;
+    using namespace eve::qt;
     try {
         QCoreApplication app(argc, argv);
         auto scheduler = std::make_shared<QtScheduler>();

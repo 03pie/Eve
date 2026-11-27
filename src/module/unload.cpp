@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 namespace {
 ErrorInfo failure(ErrorCode code, std::string message)
 {
@@ -168,4 +168,4 @@ Result<void> unloadGeneration(GenerationId id, const NativeUnloadSystem& system)
     publishUnloaded(generation);
     return Result<void>::success();
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

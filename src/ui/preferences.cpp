@@ -30,7 +30,7 @@
 #include <cmath>
 #include <utility>
 
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 namespace {
 constexpr int minimumMainPaneHeight = 240;
 #ifdef Q_OS_WIN
@@ -57,7 +57,7 @@ private:
 #endif
 void paintWallpaper(QWidget* surface, ElaWindow* owner, qreal opacity)
 {
-    if (!owner || !owner->property("CordisWallpaperVisible").toBool() || surface->size().isEmpty()) return;
+    if (!owner || !owner->property("EveWallpaperVisible").toBool() || surface->size().isEmpty()) return;
     const auto& picture = owner->getWindowPixmap(eTheme->getThemeMode());
     if (picture.isNull()) return;
     auto crop = surface->size();
@@ -89,7 +89,7 @@ class WallpaperLayer final : public QWidget {
 public:
     explicit WallpaperLayer(ElaWindow* owner) : QWidget(owner), owner_(owner)
     {
-        setObjectName("CordisWorkbenchWallpaper");
+        setObjectName("EveWorkbenchWallpaper");
         setAttribute(Qt::WA_TransparentForMouseEvents);
         setFocusPolicy(Qt::NoFocus);
         hide();
@@ -209,8 +209,8 @@ void WorkbenchPreferences::load()
     material_ = integer("material", 0, 5) ? value.value("material").toInt() : 0;
     transition_ = integer("transition", 0, 4) ? value.value("transition").toInt() : 0;
     setUserCardVisible(value.value("userCardVisible").toBool(true));
-    window_->setProperty("CordisDoNotDisturb", value.value("doNotDisturb").toBool());
-    window_->setProperty("CordisOutputSource", value.value("outputSource").toString());
+    window_->setProperty("EveDoNotDisturb", value.value("doNotDisturb").toBool());
+    window_->setProperty("EveOutputSource", value.value("outputSource").toString());
     const auto path = value.value("background").toString();
     if (!path.isEmpty() && (!QDir::isAbsolutePath(path) || !setBackground(path)))
         report(QString::fromUtf8("背景图片无法读取，已使用默认背景。"));
@@ -236,7 +236,7 @@ void WorkbenchPreferences::setTransition(int mode)
 void WorkbenchPreferences::applyMotion()
 {
     const bool animate = animationsEnabled();
-    window_->setProperty("CordisReducedMotion", !animate);
+    window_->setProperty("EveReducedMotion", !animate);
     window_->setStackSwitchMode(static_cast<ElaWindowType::StackSwitchMode>(animate ? transition_ : 0));
 }
 void WorkbenchPreferences::setUserCardVisible(bool visible)
@@ -288,7 +288,7 @@ void WorkbenchPreferences::applySystemSurfaceSettings(SystemSurfaceSettings syst
     const int requested = solid ? 0 : material_;
     eApp->setWindowDisplayMode(static_cast<ElaApplicationType::WindowDisplayMode>(requested));
     const bool supported = requested <= 1 || window_->property("ElaWindowMaterialApplied").toBool();
-    window_->setProperty("CordisRequestedMaterialAccepted", supported && requested == material_);
+    window_->setProperty("EveRequestedMaterialAccepted", supported && requested == material_);
     if (!supported) eApp->setWindowDisplayMode(ElaApplicationType::Normal);
     if (system.highContrast) appearanceHint_ = tr("Windows 已启用对比度主题，当前使用实色。");
     else if (!system.transparencyEnabled) appearanceHint_ = tr("Windows 已关闭透明效果，当前使用实色。");
@@ -296,7 +296,7 @@ void WorkbenchPreferences::applySystemSurfaceSettings(SystemSurfaceSettings syst
     else appearanceHint_.clear();
     const bool image = !solid && !background_.isNull();
     const bool normal = eApp->getWindowDisplayMode() == ElaApplicationType::Normal;
-    window_->setProperty("CordisWallpaperVisible", image);
+    window_->setProperty("EveWallpaperVisible", image);
     window_->setWindowPaintMode(image && normal ? ElaWindowType::Pixmap : ElaWindowType::Normal);
     wallpaper_->setGeometry(window_->rect());
     wallpaper_->setVisible(image && !normal);
@@ -337,7 +337,7 @@ bool WorkbenchPreferences::eventFilter(QObject* watched, QEvent* event)
         if (event->type() == QEvent::ThemeChange) applyAppearance();
         if (event->type() == QEvent::DynamicPropertyChange) {
             const auto key = static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName();
-            if (key == "CordisDoNotDisturb" || key == "CordisOutputSource") changed();
+            if (key == "EveDoNotDisturb" || key == "EveOutputSource") changed();
         }
     }
     if ((watched == panel_ && event->type() == QEvent::Show) || (watched == window_ && event->type() == QEvent::Resize))
@@ -361,8 +361,8 @@ bool WorkbenchPreferences::flush()
     if (transition_) value.insert("transition", transition_);
     if (!userCard_) value.insert("userCardVisible", false);
     if (!backgroundPath_.isEmpty()) value.insert("background", backgroundPath_);
-    if (window_->property("CordisDoNotDisturb").toBool()) value.insert("doNotDisturb", true);
-    const auto source = window_->property("CordisOutputSource").toString();
+    if (window_->property("EveDoNotDisturb").toBool()) value.insert("doNotDisturb", true);
+    const auto source = window_->property("EveOutputSource").toString();
     if (!source.isEmpty()) value.insert("outputSource", source);
     QSaveFile file(file_);
     file.setDirectWriteFallback(false);
@@ -389,4 +389,4 @@ void WorkbenchPreferences::reset()
     setPanelHeight(panelHeightPixels.initial);
     changed();
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

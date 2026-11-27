@@ -1,14 +1,14 @@
 /** @brief Two independently mounted, command-only Qt plugins with the same output channel. */
-#include <cordis/module/qt_plugin.hpp>
-#include <cordis/ui/commands.hpp>
-#include <cordis/ui/output.hpp>
+#include <eve/module/qt_plugin.hpp>
+#include <eve/ui/commands.hpp>
+#include <eve/ui/output.hpp>
 
-using namespace cordis;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::ui;
 
 class LogInstance final : public QObject, public module::IQtInstanceV1 {
     Q_OBJECT
-    Q_INTERFACES(cordis::module::IQtInstanceV1)
+    Q_INTERFACES(eve::module::IQtInstanceV1)
 public:
     explicit LogInstance(std::string marker) : marker_(std::move(marker)) {}
     Task<void> activate(Context context) override
@@ -40,8 +40,8 @@ private:
 
 class LogFactory final : public QObject, public module::IQtPluginV1 {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID "org.cordis.IQtPluginV1/1.0" FILE "interleaved_metadata.json")
-    Q_INTERFACES(cordis::module::IQtPluginV1)
+    Q_PLUGIN_METADATA(IID "org.eve.IQtPluginV1/1.0" FILE "interleaved_metadata.json")
+    Q_INTERFACES(eve::module::IQtPluginV1)
 public:
     QStringList pluginIds() const override { return {"test.logs.alpha", "test.logs.bravo"}; }
     QObject* create(const QString& id) override

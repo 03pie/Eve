@@ -4,11 +4,11 @@
 #include "contract.hpp"
 #include "source_p.hpp"
 #include <algorithm>
-#include <cordis/module/qt_manifest.hpp>
+#include <eve/module/qt_manifest.hpp>
 
 namespace notebook::detail {
-using namespace cordis;
-using namespace cordis::module;
+using namespace eve;
+using namespace eve::module;
 std::string businessPlugin(const std::string& alias)
 {
     if (alias != "counter" && alias != "reporter" && alias != "notebook")
@@ -21,7 +21,7 @@ PreflightArtifact reviewBusinessArtifact(const std::string& alias, const std::st
     const bool qt = alias == "notebook";
     auto artifact = qt ? require(inspectQtModule(root, path)).artifact : require(preflightModule(root, path));
     const auto& value = artifact.manifest();
-    if (value.moduleId != "org.cordis.example." + alias || value.plugins != std::vector<std::string>{plugin} ||
+    if (value.moduleId != "org.eve.example." + alias || value.plugins != std::vector<std::string>{plugin} ||
         value.loader != (qt ? ModuleLoader::QtUi : ModuleLoader::CAbi) ||
         (qt && value.unloadPolicy != ModuleUnloadPolicy::Resident))
         throw InitializationFailure{makeError(ErrorCode::AbiMismatch, "business artifact identity differs")};
@@ -68,7 +68,7 @@ loader::ConfiguredPlugin prepareNotebook(const std::shared_ptr<NotebookModule>& 
                                          {}},
                                         scheduler));
     const auto& schema = record->runtime->stateSchema();
-    if (stateful && (!schema || schema->id != "org.cordis.example.notebook.draft" || schema->version != 1))
+    if (stateful && (!schema || schema->id != "org.eve.example.notebook.draft" || schema->version != 1))
         throw InitializationFailure{makeError(ErrorCode::AbiMismatch, "stateful notebook state schema differs")};
     const std::weak_ptr<ModuleManager> weak = manager;
     return {{"example.notebook",

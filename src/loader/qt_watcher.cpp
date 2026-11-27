@@ -9,11 +9,11 @@
 #include <QPointer>
 #include <QTimer>
 #include <atomic>
-#include <cordis/loader/qt_watcher.hpp>
+#include <eve/loader/qt_watcher.hpp>
 #include <limits>
 #include <stdexcept>
 #include <utility>
-namespace cordis::loader::detail {
+namespace eve::loader::detail {
 /** @brief 仅内容版本相同才忽略，mtime 或多次原生通知不能制造外部修改。 */
 bool sameDisk(const ConfigurationFileVersion& left, const ConfigurationFileVersion& right)
 {
@@ -150,7 +150,7 @@ struct FileWatchControl : std::enable_shared_from_this<FileWatchControl> {
                 state->request();
             ++state->observations;
         });
-        cordis::detail::TaskAccess::observe(receipt, [weak](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(receipt, [weak](Task<void>::Snapshot result) {
             if (!result->hasValue())
                 if (auto state = weak.lock())
                     state->blocked.store(true);
@@ -216,8 +216,8 @@ public:
 private:
     std::shared_ptr<FileWatchControl> state_;
 };
-} // namespace cordis::loader::detail
-namespace cordis::loader {
+} // namespace eve::loader::detail
+namespace eve::loader {
 /** @brief 原始文件与父目录同时注册，目录通知覆盖 QSaveFile 替换和删除重建。 */
 QtConfigurationWatcher::QtConfigurationWatcher(std::shared_ptr<qt::QtScheduler> scheduler,
                                                std::shared_ptr<QtConfigurationIo> io,
@@ -322,4 +322,4 @@ Task<void> QtConfigurationWatcher::close()
     state->beginClose();
     return state->stopped.task();
 }
-} // namespace cordis::loader
+} // namespace eve::loader

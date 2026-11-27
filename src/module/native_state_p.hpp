@@ -7,20 +7,20 @@
 #include <memory>
 #include <vector>
 
-namespace cordis::module {
+namespace eve::module {
 class NativeInstance;
 namespace detail {
 struct NativeModuleControl;
 struct NativeStateApi {
-    CordisStateApiV1 table;
+    EveStateApiV1 table;
     std::map<std::string, StateSchema> schemas;
 };
 /** @brief 仅在 open 的实际 Call/negotiating 窗口中调用；缺失可选符号返回空值。 */
-Result<std::optional<NativeStateApi>> queryNativeState(CordisQueryStateFnV1, const std::vector<std::string>&);
+Result<std::optional<NativeStateApi>> queryNativeState(EveQueryStateFnV1, const std::vector<std::string>&);
 Result<std::string> validateNativeState(const std::shared_ptr<NativeModuleControl>&, const std::string&,
                                         const StateSnapshot&);
 struct NativeStateAccess {
     static Result<StateParticipant> participant(const NativeInstance&, const StateSchema&);
 };
 } // namespace detail
-} // namespace cordis::module
+} // namespace eve::module

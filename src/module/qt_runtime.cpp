@@ -9,11 +9,11 @@
 #include <QCoreApplication>
 #include <QThread>
 #include <algorithm>
-#include <cordis/module/qt_module.hpp>
-#include <cordis/qt/object.hpp>
+#include <eve/module/qt_module.hpp>
+#include <eve/qt/object.hpp>
 #include <stdexcept>
 
-namespace cordis::module {
+namespace eve::module {
 namespace {
 using detail::Generation;
 using detail::QtResidency;
@@ -69,7 +69,7 @@ Result<void> negotiate(const std::shared_ptr<Generation>& generation, const std:
         factory = qobject_cast<IQtPluginV1*>(backend->root.data());
         if (!factory)
             return Result<void>::failure(error(ErrorCode::AbiMismatch, "Qt root does not implement IQtPluginV1"));
-        if (factory->coreRuntimeIdentity() != cordis::coreRuntimeIdentity())
+        if (factory->coreRuntimeIdentity() != eve::coreRuntimeIdentity())
             return Result<void>::failure(error(ErrorCode::AbiMismatch, "Qt plugin uses another Core runtime"));
         const auto ids = factory->pluginIds();
         if (ids.size() != static_cast<int>(generation->data.manifest.plugins.size()))
@@ -172,7 +172,7 @@ struct QtBusiness : std::enable_shared_from_this<QtBusiness> {
             else
                 self->released();
         });
-        cordis::detail::TaskAccess::observe(receipt, [self](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(receipt, [self](Task<void>::Snapshot result) {
             if (!result->hasValue())
                 self->quarantine(result->error());
         });
@@ -361,4 +361,4 @@ Result<Runtime> qtRuntime(GenerationId id, QtPlugin plugin, std::shared_ptr<qt::
         return Output::failure(error(ErrorCode::InvalidArgument, failure.what()));
     }
 }
-} // namespace cordis::module
+} // namespace eve::module

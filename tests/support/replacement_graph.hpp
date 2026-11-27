@@ -4,11 +4,11 @@
 #pragma once
 #include "replacement_subtree.hpp"
 template <class SceneType, class Wait>
-void operationGraphCase(SceneType& scene, const cordis::Runtime& old, const cordis::Runtime& next,
-                        const std::shared_ptr<cordis::IScheduler>& scheduler,
-                        const std::shared_ptr<cordis::Kernel>& kernel, Wait waitFor, const QString& mode)
+void operationGraphCase(SceneType& scene, const eve::Runtime& old, const eve::Runtime& next,
+                        const std::shared_ptr<eve::IScheduler>& scheduler,
+                        const std::shared_ptr<eve::Kernel>& kernel, Wait waitFor, const QString& mode)
 {
-    using namespace cordis;
+    using namespace eve;
     const bool cycle = mode.endsWith("_cycle"), conflict = mode.endsWith("_conflict");
     auto left = std::make_shared<int>(0), right = std::make_shared<int>(0);
     const auto leaf = [&](bool first) {

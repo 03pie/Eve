@@ -27,7 +27,7 @@ public:
 protected:
     bool eventFilter(QObject* object, QEvent* event) override
     {
-        if (!observed && event->type() == QEvent::Show && object->objectName() == "CordisUpgradeFileDialog") {
+        if (!observed && event->type() == QEvent::Show && object->objectName() == "EveUpgradeFileDialog") {
             observed = true;
             try {
                 input_.setText(value_);
@@ -71,7 +71,7 @@ void previewCase(const QString& sourceBin)
         take(scene.state->previewUpgrade("counter", QFileInfo(view.source->text()).absolutePath(), "module.json"));
     PLATFORM_CHECK(value.previousManifest.moduleVersion == "1.1.0" &&
                    value.artifact.manifest().moduleVersion == "1.2.0" &&
-                   value.previousManifest.moduleId == "org.cordis.example.counter" &&
+                   value.previousManifest.moduleId == "org.eve.example.counter" &&
                    (std::set<std::string>(value.affectedPaths.begin(), value.affectedPaths.end()) ==
                     std::set<std::string>{"counter", "disabled_counter", "reporter"}));
     const auto text = view.previewText->toPlainText();
@@ -102,7 +102,7 @@ void pickerClose(const QString& sourceBin)
     scene.apply(scene.state->initial);
     View view(scene);
     view.select("counter");
-    auto* tabs = view.body->findChild<ElaTabWidget*>("CordisModuleTabs");
+    auto* tabs = view.body->findChild<ElaTabWidget*>("EveModuleTabs");
     PLATFORM_CHECK(tabs && tabs->count() == 2 && !tabs->isMovable() && !tabs->tabsClosable() &&
                    !tabs->getIsContainerAcceptDrops());
     const auto originalWindows = QApplication::topLevelWidgets().size();
@@ -124,7 +124,7 @@ void pickerClose(const QString& sourceBin)
     PLATFORM_CHECK(page && tabs->count() == 2 && tabs->indexOf(page) >= 0 &&
                    QApplication::topLevelWidgets().size() == originalWindows);
     view.browse->click();
-    QPointer<QFileDialog> picker = view.body->findChild<QFileDialog*>("CordisUpgradeFileDialog");
+    QPointer<QFileDialog> picker = view.body->findChild<QFileDialog*>("EveUpgradeFileDialog");
     PLATFORM_CHECK(picker && picker->isVisible() && !picker->isModal() && picker->windowModality() == Qt::NonModal &&
                    picker->parentWidget() && view.body->isAncestorOf(picker->parentWidget()));
     view.select("reporter");
@@ -132,7 +132,7 @@ void pickerClose(const QString& sourceBin)
     PLATFORM_CHECK(!view.start->isEnabled());
     view.select("counter");
     view.browse->click();
-    picker = view.body->findChild<QFileDialog*>("CordisUpgradeFileDialog");
+    picker = view.body->findChild<QFileDialog*>("EveUpgradeFileDialog");
     PLATFORM_CHECK(picker && picker->isVisible());
     const auto chosen = candidatePath(sourceBin, "counter");
     picker->setDirectory(QFileInfo(chosen).absolutePath());
@@ -144,7 +144,7 @@ void pickerClose(const QString& sourceBin)
     until([&] { return !picker; });
     PLATFORM_CHECK(QDir::cleanPath(view.source->text()) == QDir::cleanPath(chosen) && !view.start->isEnabled());
     view.browse->click();
-    picker = view.body->findChild<QFileDialog*>("CordisUpgradeFileDialog");
+    picker = view.body->findChild<QFileDialog*>("EveUpgradeFileDialog");
     PLATFORM_CHECK(picker && picker->isVisible());
     PLATFORM_CHECK(wait(scene.state->close(), scene.scheduler)->hasValue());
     PLATFORM_CHECK(!picker && !view.body && !view.window && !page);
@@ -214,7 +214,7 @@ void invalidation(const QString& sourceBin)
         PLATFORM_CHECK(probe.observed && view.source->text() == alternative && !view.start->isEnabled() &&
                        !view.previewText->toPlainText().contains(QString::fromStdString(hash)));
     }
-    QPointer<QFileDialog> chooser = view.body->findChild<QFileDialog*>("CordisUpgradeFileDialog");
+    QPointer<QFileDialog> chooser = view.body->findChild<QFileDialog*>("EveUpgradeFileDialog");
     if (chooser)
         chooser->reject();
     until([&] { return !chooser; });

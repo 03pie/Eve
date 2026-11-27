@@ -1,9 +1,9 @@
 /** @file config_store.cpp
  * @brief 用真实 Qt 文件事务验证 Store 写入、冲突决策、锁失败及真实事件循环退出刷新。
  */
-#include <cordis/loader/qt_store.hpp>
-#include <cordis/qt/scheduler.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/loader/qt_store.hpp>
+#include <eve/qt/scheduler.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <QCoreApplication>
 #include <QEventLoop>
 #include <QFile>
@@ -19,9 +19,9 @@
 #include <string>
 #include <utility>
 
-using namespace cordis;
-using namespace cordis::loader;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using namespace eve::loader;
+using eve::testing::FakeScheduler;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__)); } while (false)
 /** @brief 生成真实验证过的规范目标。 */
 std::shared_ptr<const ValidatedCandidate> target(const std::string& text)
@@ -108,7 +108,7 @@ void qtShutdown()
 {
     QTemporaryDir directory; CHECK(directory.isValid());
     const auto path = directory.filePath(QStringLiteral("exit.yaml"));
-    auto scheduler = std::make_shared<cordis::qt::QtScheduler>();
+    auto scheduler = std::make_shared<eve::qt::QtScheduler>();
     auto writer = std::make_shared<QtConfigurationWriter>(path);
     ConfigurationStore store(scheduler, writer, readConfigurationFile(path).value());
     auto desired = target("exit"); store.track(desired, 5).value();

@@ -3,7 +3,7 @@
  */
 #include "service_p.hpp"
 
-namespace cordis::detail {
+namespace eve::detail {
 namespace {
 bool notify(const std::shared_ptr<ServiceRegistryControl>& registry, const ServiceKey* key)
 {
@@ -56,4 +56,4 @@ bool notifyRegistry(const std::shared_ptr<ServiceRegistryControl>& registry, con
 {
     return notify(registry, &key);
 }
-} // namespace cordis::detail
+} // namespace eve::detail

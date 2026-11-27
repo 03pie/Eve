@@ -2,11 +2,11 @@
  * @brief 宿主整体提交的目标账目准备槽；不是普通接受目标或绕过运行驱动的公开入口。
  */
 #pragma once
-#include <cordis/loader/coordinator.hpp>
-#include <cordis/loader/store.hpp>
+#include <eve/loader/coordinator.hpp>
+#include <eve/loader/store.hpp>
 #include <thread>
 
-namespace cordis::loader::detail {
+namespace eve::loader::detail {
 struct TargetCommitAccess;
 enum class TargetCommitMode { Advance, Preserve };
 struct CoordinatorTargetSlot {
@@ -77,4 +77,4 @@ private:
     static Result<std::unique_ptr<StoreTargetSlot>>
     prepareStore(ConfigurationStore&, std::shared_ptr<const ValidatedCandidate>, std::uint64_t, TargetCommitMode);
 };
-} // namespace cordis::loader::detail
+} // namespace eve::loader::detail

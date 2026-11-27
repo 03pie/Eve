@@ -26,8 +26,8 @@
 #define REQUIRE(check) do { if (!(check)) throw std::runtime_error( \
     std::string(#check) + " at " + std::to_string(__LINE__)); } while (false)
 
-using namespace cordis::ui;
-using namespace cordis::ui::detail;
+using namespace eve::ui;
+using namespace eve::ui::detail;
 
 namespace {
 quint64 append(RuntimeLogArchive& archive, quint64 id, OutputLevel level = OutputLevel::Info)

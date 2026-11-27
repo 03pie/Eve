@@ -4,14 +4,14 @@
 #include "session_commit_p.hpp"
 #include "target_commit_p.hpp"
 #include <atomic>
-#include <cordis/loader/session.hpp>
+#include <eve/loader/session.hpp>
 #include <exception>
 #include <stdexcept>
 #include <thread>
 #include <type_traits>
 #include <utility>
 
-namespace cordis::loader::detail {
+namespace eve::loader::detail {
 /** @brief 跨线程只操作门禁及关闭 Promise，不触碰 owner 状态。 */
 struct SessionDelivery {
     std::atomic_bool blocked{false};
@@ -98,7 +98,7 @@ struct SessionControl : std::enable_shared_from_this<SessionControl> {
     /** @brief 回执失败可从 worker 到达，资源由控制块保守自保留。 */
     void observe(const Task<void>& receipt)
     {
-        cordis::detail::TaskAccess::observe(receipt, [gate = delivery](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(receipt, [gate = delivery](Task<void>::Snapshot result) {
             if (!result->hasValue())
                 gate->fail(result->error());
         });
@@ -425,9 +425,9 @@ std::optional<AcceptedTarget> PreparedSessionCommit::accepted() const
         return std::nullopt;
     return AcceptedTarget{control_->report.revision, control_->done.task()};
 }
-} // namespace cordis::loader::detail
+} // namespace eve::loader::detail
 
-namespace cordis::loader {
+namespace eve::loader {
 ConfigurationSession::ConfigurationSession(std::shared_ptr<IScheduler> scheduler,
                                            std::shared_ptr<IReconcileDriver> driver,
                                            std::vector<PluginDefinition> definitions,
@@ -631,4 +631,4 @@ Task<void> ConfigurationSession::close()
     state->advanceClose();
     return state->delivery->closed.task();
 }
-} // namespace cordis::loader
+} // namespace eve::loader

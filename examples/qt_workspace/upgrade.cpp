@@ -6,7 +6,7 @@
 #include <algorithm>
 
 namespace notebook::detail {
-using namespace cordis;
+using namespace eve;
 bool sameManifest(const module::ModuleManifest& a, const module::ModuleManifest& b)
 {
     return a.moduleId == b.moduleId && a.moduleVersion == b.moduleVersion && a.library == b.library &&
@@ -23,7 +23,7 @@ bool supportsBusinessUpgrade(const std::string& alias, const Runtime* runtime)
         return false;
     if (alias == "notebook") {
         const auto schema = runtime->stateSchema();
-        return schema && schema->id == "org.cordis.example.notebook.draft" && schema->version == 1;
+        return schema && schema->id == "org.eve.example.notebook.draft" && schema->version == 1;
     }
     return alias == "counter" || alias == "reporter";
 }
@@ -43,7 +43,7 @@ bool sameImpact(const ReplacementClosure& a, const ReplacementClosure& b)
 }
 } // namespace notebook::detail
 namespace notebook {
-using namespace cordis;
+using namespace eve;
 Result<void> Workspace::synchronizeUpgrade()
 {
     if (!scheduler->isCurrentThread())

@@ -7,14 +7,14 @@
 #include <QThread>
 #include <QTimer>
 #include <condition_variable>
-#include <cordis/loader/qt_io.hpp>
+#include <eve/loader/qt_io.hpp>
 #include <deque>
 #include <functional>
 #include <limits>
 #include <mutex>
 #include <stdexcept>
 #include <utility>
-namespace cordis::loader::detail {
+namespace eve::loader::detail {
 /** @brief 有界后台任务和关闭上下文由应用保活，不依赖业务 scheduler 完成 join。 */
 struct FileIoControl : std::enable_shared_from_this<FileIoControl> {
     std::shared_ptr<qt::QtScheduler> scheduler;
@@ -143,8 +143,8 @@ ErrorInfo ioError(const char* message)
     error.phase = "loader.io.worker";
     return error;
 }
-} // namespace cordis::loader::detail
-namespace cordis::loader {
+} // namespace eve::loader::detail
+namespace eve::loader {
 /** @brief 专用线程惰性启动并保持到 close，owner 不等待文件 I/O。 */
 QtConfigurationIo::QtConfigurationIo(std::shared_ptr<qt::QtScheduler> scheduler, QString path,
                                      ConfigurationFileLimits limits, std::size_t maximumPending)
@@ -256,4 +256,4 @@ Task<void> QtConfigurationIo::close()
     state->stop();
     return state->stopped.task();
 }
-} // namespace cordis::loader
+} // namespace eve::loader

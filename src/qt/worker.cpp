@@ -4,8 +4,8 @@
 #include <QCoreApplication>
 #include <QObject>
 #include <QTimer>
-#include <cordis/qt/object.hpp>
-#include <cordis/qt/worker.hpp>
+#include <eve/qt/object.hpp>
+#include <eve/qt/worker.hpp>
 #include <exception>
 #include <mutex>
 #if defined(_WIN32)
@@ -19,7 +19,7 @@
 #include <windows.h>
 #endif
 
-namespace cordis::qt::detail {
+namespace eve::qt::detail {
 /** @brief 只有 bodyEntered/bodyReturned/bodyResult 由 worker 在锁下写，其余生命周期仅在 owner 推进。 */
 struct WorkerControl : std::enable_shared_from_this<WorkerControl> {
     std::shared_ptr<QtScheduler> scheduler;
@@ -131,7 +131,7 @@ struct WorkerControl : std::enable_shared_from_this<WorkerControl> {
             if (scheduler->post(
                     {[self, token] {
                          auto report = token.close();
-                         cordis::detail::TaskAccess::observe(report, [self](Task<CleanupReport>::Snapshot result) {
+                         eve::detail::TaskAccess::observe(report, [self](Task<CleanupReport>::Snapshot result) {
                              self->retired = result->hasValue() && result->value().quiescent;
                              if (!self->retired) {
                                  self->retirementBlocked = true;
@@ -218,7 +218,7 @@ struct WorkerControl : std::enable_shared_from_this<WorkerControl> {
             return;
         deleting = true;
         auto self = shared_from_this();
-        cordis::detail::TaskAccess::observe(resource->close(), [self](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(resource->close(), [self](Task<void>::Snapshot result) {
             if (!result->hasValue()) {
                 self->quarantine(result->error());
                 return;
@@ -270,9 +270,9 @@ unsigned __stdcall runNative(void* opaque) noexcept
     return 0;
 }
 #endif
-} // namespace cordis::qt::detail
+} // namespace eve::qt::detail
 
-namespace cordis::qt {
+namespace eve::qt {
 /** @brief 清理登记成功后才启动原生线程，启动失败也走宿主资源退役路径。 */
 Result<QtWorker> QtWorker::start(const Context& owner, std::shared_ptr<QtScheduler> scheduler,
                                  std::function<Result<void>(WorkerCancellation)> work, std::string label)
@@ -322,7 +322,7 @@ Result<QtWorker> QtWorker::start(const Context& owner, std::shared_ptr<QtSchedul
     }
     // 本适配器的 setup 始终同步返回 completedTask，其确认任务先于退役通知进入同一 owner FIFO。
     state->retirementExpected = true;
-    cordis::detail::TaskAccess::observe(
+    eve::detail::TaskAccess::observe(
         state->stopped.task(), [state, token = effect.value()](Task<void>::Snapshot) { state->retire(token); });
     state->cancellation.emplace(WorkerCancellation(state->ownerCancel, state->localCancel.token()));
     std::optional<ErrorInfo> failure;
@@ -402,4 +402,4 @@ Result<WorkerSnapshot> QtWorker::snapshot() const
     value.lastError = state->lastError;
     return Result<WorkerSnapshot>::success(std::move(value));
 }
-} // namespace cordis::qt
+} // namespace eve::qt

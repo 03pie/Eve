@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.21)
 
 # 在独立进程中调用配置助手，确认其在检查其他构建依赖前拒绝错误身份。
 if(DEFINED CHECK_HELPER)
-    include("${CORDIS_CMAKE_DIR}/CordisPlugin.cmake")
-    cordis_add_qt_ui_plugin(sample SOURCE unused.cpp MODULE_ID "${MODULE_ID}"
+    include("${EVE_CMAKE_DIR}/EvePlugin.cmake")
+    eve_add_qt_ui_plugin(sample SOURCE unused.cpp MODULE_ID "${MODULE_ID}"
         PLUGIN_ID "${PLUGIN_ID}" MODULE_VERSION 1.0.0)
     return()
 endif()
@@ -17,9 +17,9 @@ foreach(invalid IN ITEMS "1abc" "example." "org..sample" "${overlong}")
         set(ids "-DMODULE_ID=${MODULE_ID}" "-DPLUGIN_ID=${PLUGIN_ID}")
         foreach(entry IN ITEMS configure writer)
             if(entry STREQUAL "configure")
-                set(probe "-DCHECK_HELPER=ON" "-DCORDIS_CMAKE_DIR=${CORDIS_CMAKE_DIR}" -P "${CMAKE_CURRENT_LIST_FILE}")
+                set(probe "-DCHECK_HELPER=ON" "-DEVE_CMAKE_DIR=${EVE_CMAKE_DIR}" -P "${CMAKE_CURRENT_LIST_FILE}")
             else()
-                set(probe "-DLIBRARY=unused.dll" -P "${CORDIS_CMAKE_DIR}/WriteModuleManifest.cmake")
+                set(probe "-DLIBRARY=unused.dll" -P "${EVE_CMAKE_DIR}/WriteModuleManifest.cmake")
             endif()
             execute_process(COMMAND "${CMAKE_COMMAND}" ${ids} ${probe} RESULT_VARIABLE status ERROR_VARIABLE diagnostic)
             if(status EQUAL 0 OR NOT diagnostic MATCHES "${field} must be an ASCII identifier")

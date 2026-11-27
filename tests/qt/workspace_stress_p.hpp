@@ -24,12 +24,12 @@ struct InvalidTrace final : std::runtime_error {
 
 /** @brief 原 Result 的失败保留完整 ErrorInfo，入口按原错误树保存。 */
 struct ProductError final : std::runtime_error {
-    cordis::ErrorInfo reason;
-    explicit ProductError(cordis::ErrorInfo value) : std::runtime_error(value.message), reason(std::move(value)) {}
+    eve::ErrorInfo reason;
+    explicit ProductError(eve::ErrorInfo value) : std::runtime_error(value.message), reason(std::move(value)) {}
 };
 
 QString decimal(std::uint64_t value);
-QJsonObject error(const cordis::ErrorInfo& value);
+QJsonObject error(const eve::ErrorInfo& value);
 void validateAction(const Action& action);
 /** @brief 普通动作之外收敛原队列/Store/DeferredDelete，不执行或保存任何新目标。 */
 void settle(Scene& scene);

@@ -2,11 +2,11 @@
  * @brief 原生与 Qt 工厂共用的来源租约；不保留插件可调用指针或第二套代次目录。
  */
 #pragma once
-#include <cordis/module/ledger.hpp>
+#include <eve/module/ledger.hpp>
 #include <memory>
 #include <string>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 struct Generation;
 class RuntimeOriginControl {
 public:
@@ -25,4 +25,4 @@ private:
 };
 /** @brief 由既有 GenerationAdmission 保护创建期间；最后激活闭包销毁才解除登记。 */
 Result<std::shared_ptr<RuntimeOriginControl>> retainRuntimeOrigin(GenerationId generation, std::string plugin);
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

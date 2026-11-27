@@ -11,7 +11,7 @@
 #include <QVariant>
 #include <QWidget>
 #include <algorithm>
-#include <cordis/module/install.hpp>
+#include <eve/module/install.hpp>
 #include <set>
 
 namespace platform_workspace_test {
@@ -46,8 +46,8 @@ std::vector<PageSnapshot> Scene::pages() const
 QWidget* Scene::page(InstanceId instance) const
 {
     for (auto* widget : QApplication::allWidgets())
-        if (widget->objectName() == "CordisNotebookPage" &&
-            widget->property("cordis.instance").toULongLong() == instance.value())
+        if (widget->objectName() == "EveNotebookPage" &&
+            widget->property("eve.instance").toULongLong() == instance.value())
             return widget;
     return nullptr;
 }
@@ -55,8 +55,8 @@ void Scene::edit(InstanceId instance, const QString& text) const
 {
     auto* widget = page(instance);
     PLATFORM_CHECK(widget);
-    auto* editor = widget->findChild<QPlainTextEdit*>("CordisNotebookEditor");
-    auto* publish = widget->findChild<QPushButton*>("CordisNotebookPublish");
+    auto* editor = widget->findChild<QPlainTextEdit*>("EveNotebookEditor");
+    auto* publish = widget->findChild<QPushButton*>("EveNotebookPublish");
     PLATFORM_CHECK(editor && publish);
     editor->setPlainText(text);
     publish->click();
@@ -144,7 +144,7 @@ void verifySources(const Scene& scene, const std::string& version)
         PLATFORM_CHECK(row.role == GenerationRole::Current && row.nativeMapped && row.descriptorAccepted &&
                        row.businessAccepted && !row.failure && !row.businessFailure &&
                        row.manifest.moduleVersion == version);
-        const bool qt = row.manifest.moduleId == "org.cordis.example.notebook";
+        const bool qt = row.manifest.moduleId == "org.eve.example.notebook";
         PLATFORM_CHECK(row.manifest.plugins.size() == 1);
         const auto plugin = row.manifest.plugins.front();
         const auto declaration = take(definitions->module(plugin));
@@ -173,10 +173,10 @@ void verifySources(const Scene& scene, const std::string& version)
     }
     PLATFORM_CHECK(runtimeIds.size() == 3 && kernel.runtimes == 4);
     PLATFORM_CHECK(take(scene.state->counter())->runtime->stateSchema() &&
-                   take(scene.state->counter())->runtime->stateSchema()->id == "org.cordis.example.counter" &&
+                   take(scene.state->counter())->runtime->stateSchema()->id == "org.eve.example.counter" &&
                    !take(scene.state->reporter())->runtime->stateSchema());
     PLATFORM_CHECK(take(scene.state->notebookRuntime()).stateSchema() &&
-                   take(scene.state->notebookRuntime()).stateSchema()->id == "org.cordis.example.notebook.draft");
+                   take(scene.state->notebookRuntime()).stateSchema()->id == "org.eve.example.notebook.draft");
 }
 void installSession(Scene& scene, const QString& sourceBin, const std::string& variant, bool invalidCounter)
 {
@@ -232,7 +232,7 @@ void Scene::verifyClosed(bool counterDrained) const
             PLATFORM_CHECK(row.nativePinned && row.resources.records.size() == 1 &&
                            row.resources.records.front().kind == ResourceKind::QObject &&
                            row.resources.records.front().label == "qt.loader.root");
-        } else if (counterDrained || row.manifest.moduleId == "org.cordis.example.reporter")
+        } else if (counterDrained || row.manifest.moduleId == "org.eve.example.reporter")
             PLATFORM_CHECK(row.state == ModuleState::Resident && row.resources.drained());
         else
             PLATFORM_CHECK(!row.resources.drained());

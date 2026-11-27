@@ -9,10 +9,10 @@
 #include <QThread>
 #include <algorithm>
 #include <array>
-#include <cordis/module/native.hpp>
-#include <cordis/module/runtime.hpp>
-#include <cordis/qt/scheduler.hpp>
-#include <cordis/replacement_operation.hpp>
+#include <eve/module/native.hpp>
+#include <eve/module/runtime.hpp>
+#include <eve/qt/scheduler.hpp>
+#include <eve/replacement_operation.hpp>
 #include <cstring>
 #include <exception>
 #include <functional>
@@ -24,17 +24,17 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
-using namespace cordis;
-using namespace cordis::module;
-namespace files = cordis::testing::modules;
-namespace native = cordis::module::detail;
+using namespace eve;
+using namespace eve::module;
+namespace files = eve::testing::modules;
+namespace native = eve::module::detail;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
             throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__));                             \
     } while (false)
 namespace {
-using Hook = void(CORDIS_CALL*)(std::uint32_t);
+using Hook = void(EVE_CALL*)(std::uint32_t);
 std::array<std::function<void(std::uint32_t)>, 2> hooks;
 std::exception_ptr hookFailure;
 void invoke(unsigned image, std::uint32_t phase)
@@ -48,11 +48,11 @@ void invoke(unsigned image, std::uint32_t phase)
             hookFailure = std::current_exception();
     }
 }
-void CORDIS_CALL oldHook(std::uint32_t phase)
+void EVE_CALL oldHook(std::uint32_t phase)
 {
     invoke(0, phase);
 }
-void CORDIS_CALL nextHook(std::uint32_t phase)
+void EVE_CALL nextHook(std::uint32_t phase)
 {
     invoke(1, phase);
 }
@@ -95,31 +95,31 @@ struct Probe {
         std::memcpy(&function, &address, sizeof(function));
         return function(args...);
     }
-    void mode(std::uint32_t value) const { call<void(CORDIS_CALL*)(std::uint32_t)>("cordis_state_set_mode", value); }
+    void mode(std::uint32_t value) const { call<void(EVE_CALL*)(std::uint32_t)>("eve_state_set_mode", value); }
     std::uint32_t count(std::uint32_t index) const
     {
-        return call<std::uint32_t(CORDIS_CALL*)(std::uint32_t)>("cordis_state_count", index);
+        return call<std::uint32_t(EVE_CALL*)(std::uint32_t)>("eve_state_count", index);
     }
-    unsigned creates() const { return call<unsigned(CORDIS_CALL*)()>("cordis_business_fixture_creates"); }
-    unsigned live() const { return call<std::uint32_t(CORDIS_CALL*)()>("cordis_state_live"); }
+    unsigned creates() const { return call<unsigned(EVE_CALL*)()>("eve_business_fixture_creates"); }
+    unsigned live() const { return call<std::uint32_t(EVE_CALL*)()>("eve_state_live"); }
     void observe(unsigned which, std::function<void(std::uint32_t)> action) const
     {
         hooks[which] = std::move(action);
-        call<void(CORDIS_CALL*)(Hook)>("cordis_state_set_hook",
+        call<void(EVE_CALL*)(Hook)>("eve_state_set_hook",
                                        hooks[which] ? (which ? &nextHook : &oldHook) : nullptr);
     }
     void set(unsigned slot, const std::string& text) const
     {
-        const CordisBytesV1 input{reinterpret_cast<const std::uint8_t*>(text.data()), text.size()};
-        CHECK(call<CordisStatus(CORDIS_CALL*)(std::uint32_t, CordisBytesV1)>("cordis_state_set_value", slot, input) ==
-              CORDIS_OK);
+        const EveBytesV1 input{reinterpret_cast<const std::uint8_t*>(text.data()), text.size()};
+        CHECK(call<EveStatus(EVE_CALL*)(std::uint32_t, EveBytesV1)>("eve_state_set_value", slot, input) ==
+              EVE_OK);
     }
     std::string value(unsigned slot) const
     {
         std::array<std::uint8_t, 128> storage{};
-        CordisStateBufferV1 buffer{sizeof(CordisStateBufferV1), 0, storage.data(), storage.size(), 0};
-        CHECK(call<CordisStatus(CORDIS_CALL*)(std::uint32_t, CordisStateBufferV1*)>("cordis_state_value", slot,
-                                                                                    &buffer) == CORDIS_OK);
+        EveStateBufferV1 buffer{sizeof(EveStateBufferV1), 0, storage.data(), storage.size(), 0};
+        CHECK(call<EveStatus(EVE_CALL*)(std::uint32_t, EveStateBufferV1*)>("eve_state_value", slot,
+                                                                                    &buffer) == EVE_OK);
         CHECK(buffer.size <= storage.size());
         return {reinterpret_cast<const char*>(storage.data()), static_cast<std::size_t>(buffer.size)};
     }
@@ -138,8 +138,8 @@ struct Scene {
     explicit Scene(const QString& root, const QStringList& dlls)
     {
         CHECK(dlls.size() == 2);
-        const auto first = files::install(dlls[0], root + "/old", "org.cordis.state", QJsonArray{"org.cordis.plugin"});
-        const auto second = files::install(dlls[1], root + "/next", "org.cordis.state", QJsonArray{"org.cordis.plugin"},
+        const auto first = files::install(dlls[0], root + "/old", "org.eve.state", QJsonArray{"org.eve.plugin"});
+        const auto second = files::install(dlls[1], root + "/next", "org.eve.state", QJsonArray{"org.eve.plugin"},
                                            "c-abi", "2.0.0");
         generations[0] = manager->load(root.toStdString(), first.toStdString()).value().generation;
         generations[1] = manager->stage(root.toStdString(), second.toStdString(), generations[0]).value().generation;
@@ -148,8 +148,8 @@ struct Scene {
             modules[i].emplace(NativeModule::open(*manager, generations[i], scheduler, kernel->services()).value());
         }
         old.emplace(
-            kernel->registerRuntime("counter", modules[0]->runtime({"org.cordis.plugin", {}, {}}).value()).value());
-        next.emplace(modules[1]->runtime({"org.cordis.plugin", {}, {}}).value());
+            kernel->registerRuntime("counter", modules[0]->runtime({"org.eve.plugin", {}, {}}).value()).value());
+        next.emplace(modules[1]->runtime({"org.eve.plugin", {}, {}}).value());
         CHECK(old->stateSchema()->version == 2 && next->stateSchema()->version == 3);
         for (unsigned i = 0; i != 2; ++i) {
             originals.push_back(kernel->mount(*old, "\"sync\"").value());

@@ -5,7 +5,7 @@
 #include "catalog_p.hpp"
 #include <set>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 struct ModuleCatalog {
     std::mutex mutex;
     std::vector<std::shared_ptr<Generation>> generations;
@@ -20,4 +20,4 @@ std::shared_ptr<Generation> catalogGenerationLocked(ModuleCatalog& catalog, Gene
 Result<void> generationReusable(const Generation& generation, ReusePurpose purpose);
 /** @brief 调用方同时持 generation.mutex 和 businessSignal.mutex。 */
 Result<void> generationReusableLockedSignal(const Generation& generation, ReusePurpose purpose);
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

@@ -13,7 +13,7 @@ class ElaScrollPageArea;
 class ElaText;
 class QBoxLayout;
 class ElaPushButton;
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 /** @brief 首页只保存插件值快照及宿主操作，不持有插件工厂或上下文。 */
 class HomePage final : public ElaScrollPage {
 public:
@@ -41,4 +41,4 @@ private:
     std::function<void(const std::function<void()>&)> access_;
     std::function<Result<void>(const QString&, bool)> manage_;
 };
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

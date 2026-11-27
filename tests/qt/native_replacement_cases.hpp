@@ -20,17 +20,17 @@ bool run(const QString& name)
         CHECK(graph.bindings[0].consumers.size() == 1 && graph.bindings[0].consumers[0].managed);
         auto closure = s.kernel->replacementClosure({s.provider.id()}).value();
         CHECK(closure.members.size() == 2 && closure.stopOrder.front() == consumer.snapshot().value().instance);
-        CordisRequestId request = 0;
-        CHECK(s.request(request, 1) == CORDIS_PENDING);
+        EveRequestId request = 0;
+        CHECK(s.request(request, 1) == EVE_PENDING);
         s.pump();
-        CHECK(s.stat(1, 3) == CORDIS_OK);
+        CHECK(s.stat(1, 3) == EVE_OK);
         const auto after = s.kernel->services().dependencyGraph().value();
         CHECK(after.bindings[0].consumers.size() == 1 && after.bindings[0].consumers[0].managed);
         CHECK(s.kernel->replacementClosure({s.provider.id()}).value().members.size() == 2);
     } else {
         auto outside = s.active(99);
-        CordisRequestId request = 0;
-        CHECK(s.request(request, 1) == CORDIS_PENDING);
+        EveRequestId request = 0;
+        CHECK(s.request(request, 1) == EVE_PENDING);
         s.pump();
         auto graph = s.kernel->services().dependencyGraph().value();
         CHECK(graph.bindings[0].consumers.size() == 1 && !graph.bindings[0].consumers[0].managed);

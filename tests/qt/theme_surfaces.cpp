@@ -30,14 +30,14 @@ QImage paint(QWidget& surface)
 }
 void save(const QImage& image, const QString& name)
 {
-    const auto destination = qEnvironmentVariable("CORDIS_THEME_EVIDENCE");
+    const auto destination = qEnvironmentVariable("EVE_THEME_EVIDENCE");
     if (destination.isEmpty()) return;
     QDir directory(destination);
     require(directory.mkpath(".") && image.save(directory.filePath(name + ".png")), "capture Ela surface");
 }
 void saveNative(QWidget& widget, const QString& name)
 {
-    if (qEnvironmentVariableIsEmpty("CORDIS_THEME_EVIDENCE") || QGuiApplication::platformName() != "windows") return;
+    if (qEnvironmentVariableIsEmpty("EVE_THEME_EVIDENCE") || QGuiApplication::platformName() != "windows") return;
     auto window = widget.windowHandle();
     require(window && window->screen(), "native surface window");
     const auto image = window->screen()->grabWindow(widget.winId()).toImage();
@@ -65,7 +65,7 @@ void controls(QWidget* parent, bool renamed)
     table->setFixedHeight(40);
     const std::array<QWidget*, 7> widgets{list, scroll, plain, line, combo, spin, table};
     for (auto widget : widgets) {
-        if (renamed) widget->setObjectName("CordisTest" + widget->objectName());
+        if (renamed) widget->setObjectName("EveTest" + widget->objectName());
         widget->setFocusPolicy(Qt::NoFocus);
         layout->addWidget(widget);
     }
@@ -73,10 +73,10 @@ void controls(QWidget* parent, bool renamed)
 
 void settingsSurfaces(ElaWindow& window)
 {
-    auto theme = window.findChild<QComboBox*>("CordisSettingsTheme");
-    auto material = window.findChild<QComboBox*>("CordisSettingsMaterial");
-    auto nav = window.findChild<ElaListView*>("CordisSettingsNavigation");
-    auto hint = window.findChild<QLabel*>("CordisSettingsMaterialHint");
+    auto theme = window.findChild<QComboBox*>("EveSettingsTheme");
+    auto material = window.findChild<QComboBox*>("EveSettingsMaterial");
+    auto nav = window.findChild<ElaListView*>("EveSettingsNavigation");
+    auto hint = window.findChild<QLabel*>("EveSettingsMaterialHint");
     require(theme && material && nav && hint, "settings appearance controls");
     for (const bool dark : {false, true}) {
         theme->setCurrentIndex(dark);
@@ -141,7 +141,7 @@ void auditElaThemeSurfaces(ElaWindow& workbench)
         save(frame, QString("controls-%1").arg(tag));
         const auto ratio = frame.devicePixelRatio();
         for (auto base : left->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly)) {
-            const auto peer = right->findChild<QWidget*>("CordisTest" + base->objectName(), Qt::FindDirectChildrenOnly);
+            const auto peer = right->findChild<QWidget*>("EveTest" + base->objectName(), Qt::FindDirectChildrenOnly);
             require(peer && peer->size() == base->size(), "mismatched Ela control geometry");
             const auto portion = [&](QWidget* control) {
                 const QPoint origin = control->mapTo(&fixture, {});

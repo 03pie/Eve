@@ -3,14 +3,14 @@
  */
 #pragma once
 #include <algorithm>
-#include <cordis/kernel.hpp>
+#include <eve/kernel.hpp>
 #include <map>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 class ProtectionPolicy {
 public:
     static Result<ProtectionPolicy> bind(const KernelSnapshot& core, const std::vector<RuntimeId>& requested)
@@ -52,4 +52,4 @@ private:
     // 初始身份只兼容原 stopped 缓存，不保留换代过程的其他 RuntimeId。
     std::map<std::string, RuntimeId> slots_;
 };
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

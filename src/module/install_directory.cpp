@@ -8,7 +8,7 @@
 #include <array>
 #include <cstddef>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 namespace {
 ErrorInfo failure(const char* phase, const std::string& message, DWORD native = ERROR_SUCCESS)
 {
@@ -46,6 +46,7 @@ bool dispose(HANDLE handle)
 Result<std::unique_ptr<InstallHandle>> lockModuleInstall(const QString& store, const std::string& hash)
 {
     using Output = Result<std::unique_ptr<InstallHandle>>;
+    // 同一产物库可能被不同版本的宿主使用，继续争用原来的摘要锁。
     const auto path = nativeModulePath(store + "/.cordis-install-" + QString::fromStdString(hash) + ".lock");
     InstallHandle handle(
         CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, CREATE_NEW,
@@ -63,7 +64,7 @@ InstallDirectory::InstallDirectory(QString path, InstallHandle handle, FILE_ID_I
 Result<std::unique_ptr<InstallDirectory>> InstallDirectory::create(const QString& store)
 {
     using Output = Result<std::unique_ptr<InstallDirectory>>;
-    const auto path = store + "/.cordis-install-" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const auto path = store + "/.eve-install-" + QUuid::createUuid().toString(QUuid::WithoutBraces);
     const auto native = nativeModulePath(path);
     if (!CreateDirectoryW(native.c_str(), nullptr))
         return Output::failure(
@@ -197,4 +198,4 @@ bool InstallDirectory::ownsFile(const QString& name, const OpenedPath& file) con
             return file.sameFile(owned.identity);
     return false;
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

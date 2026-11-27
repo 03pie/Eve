@@ -17,9 +17,9 @@
     std::string(#condition) + " at line " + std::to_string(__LINE__)); } while (false)
 
 namespace {
-using cordis::workbench::Workbench;
-using cordis::ui::detail::readSavedLogRun;
-using cordis::ui::detail::scanSavedDescending;
+using eve::workbench::Workbench;
+using eve::ui::detail::readSavedLogRun;
+using eve::ui::detail::scanSavedDescending;
 
 template<class Predicate>
 void until(Predicate condition)
@@ -33,7 +33,7 @@ void until(Predicate condition)
 }
 
 template<class T>
-typename cordis::Task<T>::Snapshot await(const cordis::Task<T>& task)
+typename eve::Task<T>::Snapshot await(const eve::Task<T>& task)
 {
     until([&] { return task.isReady(); });
     auto result = task.tryResult();
@@ -97,7 +97,7 @@ void openEmpty(const QString& workspace, const QString& marker, bool exerciseWin
     scene.host.publishUi();
     const auto target = scene.host.applyInitial();
     const auto applied = await(target.settled);
-    REQUIRE(applied->value().outcome == cordis::loader::PlanOutcome::Applied);
+    REQUIRE(applied->value().outcome == eve::loader::PlanOutcome::Applied);
     REQUIRE(applied->value().entries.empty() && applied->value().errors.empty());
     const auto session = scene.host.session->snapshot().value();
     REQUIRE(session.coordinator.desiredRevision == target.revision && session.coordinator.running.empty());
@@ -112,19 +112,19 @@ void openEmpty(const QString& workspace, const QString& marker, bool exerciseWin
     const auto sequence = scene.host.shell.writeOutput(marker.toStdString()).value();
     if (exerciseWindow) {
         scene.host.shell.show().value();
-        until([] { return visibleWidget<QWidget>("CordisWelcomePage") != nullptr; });
-        auto* welcome = visibleWidget<QWidget>("CordisWelcomePage");
+        until([] { return visibleWidget<QWidget>("EveWelcomePage") != nullptr; });
+        auto* welcome = visibleWidget<QWidget>("EveWelcomePage");
         auto* window = welcome->window();
-        auto* add = window->findChild<QAction*>("CordisAddPlugin");
-        auto* configuration = window->findChild<QAction*>("CordisConfigurationFile");
+        auto* add = window->findChild<QAction*>("EveAddPlugin");
+        auto* configuration = window->findChild<QAction*>("EveConfigurationFile");
         REQUIRE(add && configuration);
         until([&] { return !add->isEnabled() && configuration->isEnabled(); });
         configuration->trigger();
-        until([] { return visibleWidget<QPlainTextEdit>("CordisConfigEditor") != nullptr; });
-        REQUIRE(visibleWidget<QPlainTextEdit>("CordisConfigEditor")->toPlainText().contains("plugins"));
+        until([] { return visibleWidget<QPlainTextEdit>("EveConfigEditor") != nullptr; });
+        REQUIRE(visibleWidget<QPlainTextEdit>("EveConfigEditor")->toPlainText().contains("plugins"));
         scene.host.shell.showOutputEvent(sequence, nullptr).value();
         until([&] {
-            auto* editor = visibleWidget<QPlainTextEdit>("CordisWorkbenchOutput");
+            auto* editor = visibleWidget<QPlainTextEdit>("EveWorkbenchOutput");
             return editor && editor->toPlainText().contains(marker);
         });
     }
@@ -133,7 +133,7 @@ void openEmpty(const QString& workspace, const QString& marker, bool exerciseWin
 
 void verifyClosedRuns(const QString& workspace)
 {
-    const QDir archive(QDir(workspace).filePath(".cordis/logs"));
+    const QDir archive(QDir(workspace).filePath(".eve/logs"));
     const auto runs = archive.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     REQUIRE(runs.size() == 2);
     bool startup = false, reopen = false;
@@ -155,6 +155,28 @@ void verifyClosedRuns(const QString& workspace)
     REQUIRE(startup && reopen);
 }
 
+/** @brief 旧版用户文件原址打开，Eve 已有的同名文件优先；新工作区与嵌入宿主独立。 */
+void verifyWorkbenchDataPaths(const QDir& root)
+{
+    const QDir previous(root.filePath("CordisPluginWorkbench"));
+    const QDir current(root.filePath("EvePluginWorkbench"));
+    for (const QString& name : {QStringLiteral("session.yaml"), QStringLiteral("platform-workspace/session.yaml"),
+                                QStringLiteral("preferences/workbench.json")}) {
+        const auto resolve = [&] { return eve::workbench::workbenchDataFile(current.path(), name); };
+        REQUIRE(resolve() == current.filePath(name));
+        for (const QDir& data : {previous, current}) {
+            const auto path = data.filePath(name);
+            REQUIRE(QFileInfo(path).dir().mkpath("."));
+            QFile file(path);
+            REQUIRE(file.open(QIODevice::WriteOnly));
+            file.close();
+            REQUIRE(resolve() == path);
+        }
+        const QDir embedded(root.filePath("IndependentHost"));
+        REQUIRE(eve::workbench::workbenchDataFile(embedded.path(), name) == embedded.filePath(name));
+    }
+}
+
 void rejectModuleWorkspace(const QString& workspace)
 {
     REQUIRE(QDir().mkpath(workspace));
@@ -171,7 +193,7 @@ void rejectModuleWorkspace(const QString& workspace)
     bool rejected = false;
     try {
         scene.host.open(std::nullopt, workspace);
-    } catch (const cordis::workbench::ModulePreflightError& error) {
+    } catch (const eve::workbench::ModulePreflightError& error) {
         REQUIRE(std::string(error.what()).find("--module") != std::string::npos);
         rejected = true;
     }
@@ -189,7 +211,7 @@ int main(int argc, char** argv)
     try {
         QTemporaryDir temp;
         REQUIRE(temp.isValid());
-        application.setApplicationName("CordisStartup-" + QDir(temp.path()).dirName());
+        application.setApplicationName("EveStartup-" + QDir(temp.path()).dirName());
         const auto workspace = temp.filePath("empty");
         openEmpty(workspace, "PLATFORM_EMPTY_START", true);
         const auto file = QDir(workspace).filePath("session.yaml");
@@ -199,6 +221,7 @@ int main(int argc, char** argv)
         REQUIRE(readFile(file) == saved);
         verifyClosedRuns(workspace);
         rejectModuleWorkspace(temp.filePath("external"));
+        verifyWorkbenchDataPaths(QDir(temp.path()));
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {
         std::cerr << "Platform startup: " << error.what() << '\n';

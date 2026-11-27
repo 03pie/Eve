@@ -7,7 +7,7 @@
 #include "state_wire_p.hpp"
 #include <utility>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 namespace {
 ErrorInfo error(ErrorCode code, const char* message)
 {
@@ -15,7 +15,7 @@ ErrorInfo error(ErrorCode code, const char* message)
     value.phase = "module.qt.state";
     return value;
 }
-CordisBytesV1 bytes(std::string_view value)
+EveBytesV1 bytes(std::string_view value)
 {
     return {reinterpret_cast<const std::uint8_t*>(value.data()), value.size()};
 }
@@ -116,7 +116,7 @@ struct Binding {
     std::shared_ptr<qt::QtScheduler> scheduler;
     qt::QObjectResource resource;
     IQtStateInstanceV1* api;
-    CordisStateSchemaV1 schema;
+    EveStateSchemaV1 schema;
     std::function<void(ErrorInfo)> failure;
     Result<std::string> capture() const
     {
@@ -124,7 +124,7 @@ struct Binding {
         auto entered = call.enter("qt.state.capture");
         if (!entered.hasValue())
             return Result<std::string>::failure(entered.error());
-        return call.checked(readStateJson([&](CordisStateBufferV1* output) { return api->captureState(output); }));
+        return call.checked(readStateJson([&](EveStateBufferV1* output) { return api->captureState(output); }));
     }
     Result<void> restore(std::string_view json) const
     {
@@ -154,7 +154,7 @@ Result<void> negotiateQtState(const std::shared_ptr<QtResidency>& backend, const
         std::map<std::string, StateSchema> schemas;
         for (const auto& plugin : plugins) {
             auto schema =
-                readStateSchema([&](CordisStateSchemaV1* output) { return api->describeState(bytes(plugin), output); });
+                readStateSchema([&](EveStateSchemaV1* output) { return api->describeState(bytes(plugin), output); });
             if (!schema.hasValue())
                 return Result<void>::failure(schema.error());
             if (!backend->root)
@@ -184,7 +184,7 @@ Result<std::string> validateQtState(const std::shared_ptr<Generation>& generatio
         return Output::failure(entered.error());
     if (!backend->stateFactory || !backend->stateSchemas.count(plugin))
         return Output::failure(error(ErrorCode::InvalidArgument, "Qt plugin does not declare state"));
-    return call.checked(readStateJson([&](CordisStateBufferV1* output) {
+    return call.checked(readStateJson([&](EveStateBufferV1* output) {
         return backend->stateFactory->validateState(bytes(plugin), &schema.value(), bytes(input.json), output);
     }));
 }
@@ -219,4 +219,4 @@ Result<StateParticipant> qtStateParticipant(const std::shared_ptr<Generation>& g
                                  [binding](std::string_view json) { return binding->restore(json); }};
     return call.checked(Output::success(std::move(participant)));
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

@@ -43,7 +43,7 @@
 #include <utility>
 #include <vector>
 
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 /** @brief 将运行状态显示为面向管理操作的名称。 */
 QString stateName(InstanceState state)
 {
@@ -234,18 +234,18 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         ViewAccess access(*this);
         auto panel = new QWidget(tabs);
         configurationTab = panel;
-        panel->setObjectName("CordisManagementConfiguration");
+        panel->setObjectName("EveManagementConfiguration");
         auto layout = new QVBoxLayout(panel);
         auto configSummary = new ElaText(panel);
         configSummary->setTextPixelSize(14);
         configSummary->setTextFormat(Qt::PlainText);
         configSummary->setWordWrap(true);
-        configSummary->setObjectName("CordisManagementConfigurationSummary");
+        configSummary->setObjectName("EveManagementConfigurationSummary");
         configurationSummary = configSummary;
         layout->addWidget(configSummary);
         auto configTable = new ElaTableView(panel);
         configurationTable = configTable;
-        configTable->setObjectName("CordisManagementConfigurationTable");
+        configTable->setObjectName("EveManagementConfigurationTable");
         configurationModel = new QStandardItemModel(0, 5, configTable);
         configTable->setModel(configurationModel);
         configurationModel->setHorizontalHeaderLabels({QString::fromUtf8("配置路径"), QString::fromUtf8("插件"),
@@ -267,13 +267,13 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         auto actions = new QHBoxLayout;
         auto enable = new ActionButton(QString::fromUtf8("启用条目"), panel);
         configurationEnable = enable;
-        enable->setObjectName("CordisManagementConfigurationEnable");
+        enable->setObjectName("EveManagementConfigurationEnable");
         auto disable = new ActionButton(QString::fromUtf8("停用条目"), panel);
         configurationDisable = disable;
-        disable->setObjectName("CordisManagementConfigurationDisable");
+        disable->setObjectName("EveManagementConfigurationDisable");
         auto retry = new ActionButton(QString::fromUtf8("重新协调目标"), panel);
         configurationReconcile = retry;
-        retry->setObjectName("CordisManagementConfigurationReconcile");
+        retry->setObjectName("EveManagementConfigurationReconcile");
         for (auto button : {enable, disable, retry}) {
             button->setEnabled(false);
             actions->addWidget(button);
@@ -282,7 +282,7 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         layout->addLayout(actions);
         auto editor = new ElaPlainTextEdit(panel);
         configurationEditor = editor;
-        editor->setObjectName("CordisPluginConfigurationEditor");
+        editor->setObjectName("EvePluginConfigurationEditor");
         editor->setPlaceholderText(QString::fromUtf8("当前插件的 YAML / JSON 配置；应用后仍需显式保存。"));
         editor->setMinimumHeight(120);
         editor->setLineWrapMode(QPlainTextEdit::NoWrap);
@@ -291,9 +291,9 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
         configurationApply = new ActionButton(QString::fromUtf8("应用配置"), panel);
         configurationSave = new ActionButton(QString::fromUtf8("保存目标到磁盘"), panel);
         configurationReload = new ActionButton(QString::fromUtf8("重新载入当前配置"), panel);
-        configurationApply->setObjectName("CordisPluginConfigurationApply");
-        configurationSave->setObjectName("CordisPluginConfigurationSave");
-        configurationReload->setObjectName("CordisPluginConfigurationReload");
+        configurationApply->setObjectName("EvePluginConfigurationApply");
+        configurationSave->setObjectName("EvePluginConfigurationSave");
+        configurationReload->setObjectName("EvePluginConfigurationReload");
         for (auto button : {configurationApply, configurationSave, configurationReload})
             editActions->addWidget(button);
         layout->addLayout(editActions);
@@ -433,7 +433,7 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
                 self->refreshFromSignal();
             }
         });
-        cordis::detail::TaskAccess::observe(receipt, [weak](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(receipt, [weak](Task<void>::Snapshot result) {
             if (!result->hasValue())
                 if (auto self = weak.lock())
                     self->formDeliveryBlocked.store(true);
@@ -1138,7 +1138,7 @@ struct ManagementControl : std::enable_shared_from_this<ManagementControl> {
     void watch(const Task<void>& receipt, const std::shared_ptr<ManagementRecord>& record)
     {
         std::weak_ptr<ManagementRecord> weak = record;
-        cordis::detail::TaskAccess::observe(receipt, [weak](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(receipt, [weak](Task<void>::Snapshot result) {
             if (!result->hasValue()) if (auto held = weak.lock()) held->blocked.store(true);
         });
     }
@@ -1479,7 +1479,7 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
     root->setIsStayTop(false);
     root->setWindowTitle(QString::fromUtf8("插件管理"));
     root->resize(1000, 740);
-    root->setObjectName("CordisManagement");
+    root->setObjectName("EveManagement");
     state->widget = root;
     auto layout = new QVBoxLayout(root);
     layout->setContentsMargins(24, 48, 24, 16);
@@ -1489,10 +1489,10 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
     title->setIsBold(true);
     layout->addWidget(title);
     state->heading = title;
-    auto summary = new ElaText(QString::fromUtf8("管理页未连接内核"), root); summary->setTextPixelSize(14); summary->setObjectName("CordisManagementSummary"); summary->setTextFormat(Qt::PlainText); layout->addWidget(summary); state->summary = summary;
+    auto summary = new ElaText(QString::fromUtf8("管理页未连接内核"), root); summary->setTextPixelSize(14); summary->setObjectName("EveManagementSummary"); summary->setTextFormat(Qt::PlainText); layout->addWidget(summary); state->summary = summary;
     auto table = new ElaTableView(root);
     state->model = new QStandardItemModel(0, 5, table);
-    table->setModel(state->model); table->setObjectName("CordisInstanceTable");
+    table->setModel(state->model); table->setObjectName("EveInstanceTable");
     state->model->setHorizontalHeaderLabels({QString::fromUtf8("实例"), QString::fromUtf8("插件"), QString::fromUtf8("状态"), QString::fromUtf8("配置修订"), QString::fromUtf8("代次")});
     table->setSelectionBehavior(QAbstractItemView::SelectRows); table->setSelectionMode(QAbstractItemView::SingleSelection);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -1507,26 +1507,26 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
     table->horizontalHeader()->setStretchLastSection(true); layout->addWidget(table, 2); state->table = table;
     auto actions = new QHBoxLayout;
     auto refresh = new ActionButton(QString::fromUtf8("刷新"), root);
-    refresh->setObjectName("CordisManagementRefresh");
+    refresh->setObjectName("EveManagementRefresh");
     actions->addWidget(refresh);
     state->refreshButton = refresh;
     auto stop = new ActionButton(QString::fromUtf8("停止实例"), root);
-    stop->setObjectName("CordisManagementStop");
+    stop->setObjectName("EveManagementStop");
     stop->setEnabled(false);
     actions->addWidget(stop);
     state->stopButton = stop;
     auto retry = new ActionButton(QString::fromUtf8("重试失败实例"), root);
-    retry->setObjectName("CordisManagementRetry");
+    retry->setObjectName("EveManagementRetry");
     retry->setEnabled(false);
     actions->addWidget(retry);
     state->retryButton = retry;
     auto logButton = new ActionButton(QStringLiteral("查看日志"), root);
-    logButton->setObjectName("CordisManagementOpenLog");
+    logButton->setObjectName("EveManagementOpenLog");
     logButton->setEnabled(false);
     actions->addWidget(logButton);
     state->logButton = logButton;
     auto centerButton = new ActionButton(QStringLiteral("通知中心"), root);
-    centerButton->setObjectName("CordisManagementOpenNotifications");
+    centerButton->setObjectName("EveManagementOpenNotifications");
     state->notificationButton = centerButton;
     actions->addWidget(centerButton);
     QObject::connect(centerButton, &QPushButton::clicked, root,
@@ -1534,12 +1534,12 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
     actions->addStretch(); layout->addLayout(actions);
     auto tabs = new FixedDiagnosticsTabs(root);
     state->tabs = tabs;
-    tabs->setObjectName("CordisManagementTabs");
+    tabs->setObjectName("EveManagementTabs");
     layout->addWidget(tabs, 3);
-    auto details = new ElaPlainTextEdit(tabs); details->setObjectName("CordisManagementDetails"); details->setReadOnly(true); tabs->addTab(details, QString::fromUtf8("实例详情")); state->details = details;
-    auto services = new ElaPlainTextEdit(tabs); services->setObjectName("CordisManagementServices"); services->setReadOnly(true); tabs->addTab(services, QString::fromUtf8("服务与界面")); state->services = services;
-    auto operations = new ElaPlainTextEdit(tabs); operations->setObjectName("CordisManagementOperations"); operations->setReadOnly(true); tabs->addTab(operations, QString::fromUtf8("操作记录")); state->operationsView = operations;
-    auto status = new ElaText(root); status->setTextPixelSize(14); status->setObjectName("CordisManagementStatus"); status->setTextFormat(Qt::PlainText); status->setWordWrap(true); layout->addWidget(status); state->status = status;
+    auto details = new ElaPlainTextEdit(tabs); details->setObjectName("EveManagementDetails"); details->setReadOnly(true); tabs->addTab(details, QString::fromUtf8("实例详情")); state->details = details;
+    auto services = new ElaPlainTextEdit(tabs); services->setObjectName("EveManagementServices"); services->setReadOnly(true); tabs->addTab(services, QString::fromUtf8("服务与界面")); state->services = services;
+    auto operations = new ElaPlainTextEdit(tabs); operations->setObjectName("EveManagementOperations"); operations->setReadOnly(true); tabs->addTab(operations, QString::fromUtf8("操作记录")); state->operationsView = operations;
+    auto status = new ElaText(root); status->setTextPixelSize(14); status->setObjectName("EveManagementStatus"); status->setTextFormat(Qt::PlainText); status->setWordWrap(true); layout->addWidget(status); state->status = status;
     auto timer = new QTimer(root); timer->setInterval(250); state->timer = timer;
     std::weak_ptr<ManagementControl> weak = state;
     QObject::connect(logButton, &QPushButton::clicked, root, [weak] {
@@ -1710,7 +1710,7 @@ Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& contr
     if (!control->addDialog) {
         auto dialog = createWorkbenchDialog(control->widget->parentWidget());
         control->addDialog = dialog;
-        dialog->setObjectName("CordisAddPluginDialog");
+        dialog->setObjectName("EveAddPluginDialog");
         dialog->setWindowTitle(QStringLiteral("添加插件实例"));
         dialog->setIsStayTop(false);
         dialog->resize(620, 550);
@@ -1724,14 +1724,14 @@ Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& contr
         layout->addWidget(hint);
         layout->addWidget(new ElaText(QString::fromUtf8("插件类型"), 14, dialog));
         control->addType = new ElaComboBox(dialog);
-        control->addType->setObjectName("CordisAddPluginType");
+        control->addType->setObjectName("EveAddPluginType");
         control->addType->setAccessibleName(QString::fromUtf8("已注册插件类型"));
         for (const auto& name : data.value().configuration->availablePlugins)
             control->addType->addItem(QString::fromStdString(name));
         layout->addWidget(control->addType);
         layout->addWidget(new ElaText(QString::fromUtf8("实例标识（当前配置中唯一）"), 14, dialog));
         control->addId = new ElaLineEdit(dialog);
-        control->addId->setObjectName("CordisAddPluginId");
+        control->addId->setObjectName("EveAddPluginId");
         control->addId->setAccessibleName(QString::fromUtf8("插件配置实例标识"));
         layout->addWidget(control->addId);
         auto fieldError = [dialog, layout](const char* name) {
@@ -1743,26 +1743,26 @@ Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& contr
             label->hide();
             return label;
         };
-        control->addIdError = fieldError("CordisAddPluginIdError");
+        control->addIdError = fieldError("EveAddPluginIdError");
         layout->addWidget(new ElaText(QString::fromUtf8("插件配置 · YAML / JSON"), 14, dialog));
         control->addConfiguration = new ElaPlainTextEdit(dialog);
-        control->addConfiguration->setObjectName("CordisAddPluginConfiguration");
+        control->addConfiguration->setObjectName("EveAddPluginConfiguration");
         control->addConfiguration->setAccessibleName(QStringLiteral("插件配置 YAML 或 JSON"));
         control->addConfiguration->setPlainText("{}");
         layout->addWidget(control->addConfiguration, 1);
-        control->addPayloadError = fieldError("CordisAddPluginConfigurationError");
+        control->addPayloadError = fieldError("EveAddPluginConfigurationError");
         control->addStatus = new ElaText(dialog);
         control->addStatus->setTextPixelSize(13);
         control->addStatus->setTextFormat(Qt::PlainText);
         control->addStatus->setWordWrap(true);
         layout->addWidget(control->addStatus);
         auto reload = new ActionButton(QString::fromUtf8("更新目标修订后重试"), dialog);
-        reload->setObjectName("CordisAddPluginReload");
+        reload->setObjectName("EveAddPluginReload");
         layout->addWidget(reload);
         auto submit = new ActionButton(QString::fromUtf8("添加并应用"), dialog);
         primaryButton(submit);
         control->addSubmit = submit;
-        control->addSubmit->setObjectName("CordisAddPluginSubmit");
+        control->addSubmit->setObjectName("EveAddPluginSubmit");
         layout->addWidget(control->addSubmit);
         std::weak_ptr<ManagementControl> weak = control;
         const auto revalidate = [weak] {
@@ -1883,9 +1883,9 @@ Task<void> closeManagement(const std::shared_ptr<ManagementControl>& control)
     }
     return control->uiClosed.task();
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail
 
-namespace cordis::ui {
+namespace eve::ui {
 /** @brief 只读服务不授予停止/重试能力，Kernel 生命周期独立于服务。 */
 Result<DiagnosticsSnapshot> DiagnosticsService::snapshot() const
 {
@@ -2032,4 +2032,4 @@ Result<std::uint64_t> ManagementController::load(InstanceId instance) const
         return Result<std::uint64_t>::failure(makeError(ErrorCode::ContextClosing, "management expired"));
     return control->request(instance, ManagementAction::Load);
 }
-} // namespace cordis::ui
+} // namespace eve::ui

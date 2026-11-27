@@ -4,7 +4,7 @@
 #pragma once
 #include <algorithm>
 #include <atomic>
-#include <cordis/instance.hpp>
+#include <eve/instance.hpp>
 #include <cstddef>
 #include <functional>
 #include <map>
@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace cordis::ui::detail {
+namespace eve::ui::detail {
 /** @brief 同一 owner/epoch 共享原观察，作业不持后端或插件；终态结算后释放。 */
 struct PendingSource : std::enable_shared_from_this<PendingSource> {
     explicit PendingSource(ContextIdentity identity) : owner(identity) {}
@@ -128,4 +128,4 @@ private:
     std::size_t countLimit_, byteLimit_, targetLimit_;
     std::optional<ErrorInfo> failure_;
 };
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

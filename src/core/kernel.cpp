@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-namespace cordis {
+namespace eve {
 /** @brief 校验开放调度器与 owner 线程。 */
 detail::KernelControl::KernelControl(std::shared_ptr<IScheduler> scheduler) : scheduler_(std::move(scheduler))
 {
@@ -316,4 +316,4 @@ Result<void> Kernel::checkMount(const Runtime& runtime, const RealmMap& realms,
     const auto control = control_;
     return control->checkMount(runtime, realms, additionalDependencies);
 }
-} // namespace cordis
+} // namespace eve

@@ -9,7 +9,7 @@
 namespace unload_test {
 namespace {
 namespace tree = replacement_state_tree;
-using StateHook = void(CORDIS_CALL*)(std::uint32_t);
+using StateHook = void(EVE_CALL*)(std::uint32_t);
 std::array<std::function<void(std::uint32_t)>, 2> stateActions;
 std::exception_ptr stateFailure;
 template <class T> T phaseValue(Result<T> result, const char* phase)
@@ -34,11 +34,11 @@ void stateCallback(unsigned image, std::uint32_t phase)
             stateFailure = std::current_exception();
     }
 }
-void CORDIS_CALL previousCallback(std::uint32_t phase)
+void EVE_CALL previousCallback(std::uint32_t phase)
 {
     stateCallback(0, phase);
 }
-void CORDIS_CALL candidateCallback(std::uint32_t phase)
+void EVE_CALL candidateCallback(std::uint32_t phase)
 {
     stateCallback(1, phase);
 }
@@ -46,7 +46,7 @@ void observe(ReplacementSubject& subject, unsigned image, std::function<void(std
 {
     stateActions[image] = std::move(action);
     const StateHook callback = stateActions[image] ? (image ? candidateCallback : previousCallback) : nullptr;
-    subject.scene.call<void(CORDIS_CALL*)(StateHook)>(subject.image(image), "cordis_state_set_hook", callback);
+    subject.scene.call<void(EVE_CALL*)(StateHook)>(subject.image(image), "eve_state_set_hook", callback);
 }
 void stopObserving(ReplacementSubject& subject)
 {

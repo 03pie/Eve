@@ -1,7 +1,7 @@
 #include "appearance_p.hpp"
 #include <QAccessibleWidget>
 
-namespace cordis::ui::detail
+namespace eve::ui::detail
 {
 namespace
 {
@@ -58,4 +58,4 @@ KeyboardToggleSwitch::KeyboardToggleSwitch(QWidget* parent) : ElaToggleSwitch(pa
         QAccessible::updateAccessibility(&event);
     });
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

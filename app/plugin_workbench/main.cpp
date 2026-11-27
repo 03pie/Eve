@@ -11,7 +11,7 @@
 #include <QTimer>
 #include <iostream>
 
-using namespace cordis;
+using namespace eve;
 
 namespace {
 /** @brief 将平台错误码和可用的操作标识附到对应日志事件。 */
@@ -29,10 +29,10 @@ void recordFailure(const ui::ElaShell& shell, const ErrorInfo& error, const char
 int main(int argc, char** argv)
 {
     QApplication application(argc, argv);
-    application.setApplicationName("CordisPluginWorkbench");
+    application.setApplicationName("EvePluginWorkbench");
     application.setQuitOnLastWindowClosed(false);
     QCommandLineParser cli;
-    cli.setApplicationDescription("Cordis Qt UI plugin workbench");
+    cli.setApplicationDescription("Eve Qt UI plugin workbench");
     cli.addHelpOption();
     cli.addOption({{"m", "module"}, "Optional trusted external Qt UI module manifest.", "module.json"});
     cli.addOption({{"w", "workspace"}, "Writable workbench data directory.", "directory"});
@@ -46,7 +46,8 @@ int main(int argc, char** argv)
         manifest = bundled;
     const auto data = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     const auto workspace = cli.isSet("workspace") ? cli.value("workspace")
-        : manifest ? data : QDir(data).filePath("platform-workspace");
+        : QFileInfo(workbench::workbenchDataFile(data, manifest ? QStringLiteral("session.yaml")
+                                                  : QStringLiteral("platform-workspace/session.yaml"))).absolutePath();
     workbench::Workbench host;
     int status = EXIT_SUCCESS;
     auto close = [&] {
@@ -85,7 +86,7 @@ int main(int argc, char** argv)
         const std::string diagnostic = preflight ? preflight->diagnostic() : "工作台启动失败。请检查所选模块和工作区。";
         const auto code = preflight ? diagnostic.substr(0, diagnostic.find(':')) : "WORKBENCH_STARTUP_FAILED";
         (void)host.shell.writeOutput(diagnostic, ui::OutputLevel::Error, {{}, code});
-        std::cerr << "Cordis: " << error.what() << '\n';
+        std::cerr << "Eve: " << error.what() << '\n';
         if (application.arguments().size() == 1)
             QMessageBox::critical(nullptr, QString::fromUtf8("无法打开插件工作台"),
                                   QString::fromUtf8(error.what()));

@@ -1,9 +1,9 @@
 /** @file session.cpp
  * @brief 真实 Kernel/Coordinator/Store 验证候选、期望启停、保存及关闭装配。
  */
-#include <cordis/loader/kernel_driver.hpp>
-#include <cordis/loader/session.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/loader/kernel_driver.hpp>
+#include <eve/loader/session.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -14,8 +14,8 @@
 #include <thread>
 #include <utility>
 #include <vector>
-using namespace cordis;
-using namespace cordis::loader;
+using namespace eve;
+using namespace eve::loader;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

@@ -1,13 +1,13 @@
 /** @file definition_replacement.cpp
  * @brief 完整目录换代保留未改定义，并以真实 Core 定义切换验证新 schema/工厂共同来源。
  */
-#include <cordis/loader/kernel_driver.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/loader/kernel_driver.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
-using namespace cordis;
-using namespace cordis::loader;
+using namespace eve;
+using namespace eve::loader;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

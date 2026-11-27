@@ -4,7 +4,7 @@
 #include "replacement_scope_p.hpp"
 #include "service_p.hpp"
 
-namespace cordis::detail {
+namespace eve::detail {
 bool visiblePublication(const std::shared_ptr<PublicationControl>& binding,
                         const std::shared_ptr<PublicationControl>& viewer)
 {
@@ -58,9 +58,9 @@ void applyPublication(const std::shared_ptr<PublicationControl>& control,
     control->notifying = true;
     control->deliveryBlocked = true;
 }
-} // namespace cordis::detail
+} // namespace eve::detail
 
-namespace cordis {
+namespace eve {
 Result<void> ServiceRegistry::publicationAccess() const
 {
     if (!control_->scheduler->isCurrentThread())
@@ -179,4 +179,4 @@ Result<void> PublicationGroup::abort() const
             makeError(ErrorCode::SchedulerClosed, "aborted group but notification delivery failed"));
     return Result<void>::success();
 }
-} // namespace cordis
+} // namespace eve

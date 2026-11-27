@@ -5,8 +5,8 @@
 #include "workspace_stress_p.hpp"
 
 namespace workspace_stress_test::detail {
-using namespace cordis;
-using namespace cordis::loader;
+using namespace eve;
+using namespace eve::loader;
 
 template <class T> T checked(Result<T> value)
 {

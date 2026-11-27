@@ -16,7 +16,7 @@
 #include <QTabWidget>
 #include <QVBoxLayout>
 
-namespace cordis::ui::detail
+namespace eve::ui::detail
 {
 namespace
 {
@@ -85,9 +85,9 @@ SettingsPage *createSettingsPage(ElaWindow *window, QTabWidget *panel, Workbench
         page->addRow(title, control, keywords);
         return control;
     };
-    page->addGroup("CordisSettingsAppearanceSection", QObject::tr("外观"), "appearance");
+    page->addGroup("EveSettingsAppearanceSection", QObject::tr("外观"), "appearance");
     const auto themeTitle = QObject::tr("工作台主题");
-    auto theme = combo("CordisSettingsTheme", themeTitle, {QObject::tr("浅色"), QObject::tr("深色")},
+    auto theme = combo("EveSettingsTheme", themeTitle, {QObject::tr("浅色"), QObject::tr("深色")},
                        eTheme->getThemeMode() == ElaThemeType::Dark,
                        [](int index) { eTheme->setThemeMode(index ? ElaThemeType::Dark : ElaThemeType::Light); });
     page->addRow(themeTitle, theme, QObject::tr("浅色 深色 theme light dark"));
@@ -101,27 +101,27 @@ SettingsPage *createSettingsPage(ElaWindow *window, QTabWidget *panel, Workbench
     auto controls = new QHBoxLayout;
     stack->addLayout(controls);
     auto picker = new ElaToolButton(materialBox);
-    picker->setObjectName("CordisBackgroundPicker");
+    picker->setObjectName("EveBackgroundPicker");
     picker->setAccessibleName(QObject::tr("选择背景图片"));
     picker->setToolTip(QObject::tr("选择本地背景图片"));
     picker->setFixedSize(66, 34);
     picker->setIconSize(QSize(56, 28));
     controls->addWidget(picker);
     const auto materialTitle = QObject::tr("窗口材质");
-    auto material = combo("CordisSettingsMaterial", materialTitle,
+    auto material = combo("EveSettingsMaterial", materialTitle,
                           {QObject::tr("标准"), QObject::tr("Ela 云母"), QObject::tr("Windows 云母"),
                            QObject::tr("Mica Alt"), QObject::tr("亚克力毛玻璃"), QObject::tr("DWM 模糊")},
                           prefs->material(), [prefs](int value) { prefs->setMaterial(value); });
     controls->addWidget(material);
     auto hint = new ElaText(materialBox);
-    hint->setObjectName("CordisSettingsMaterialHint");
+    hint->setObjectName("EveSettingsMaterialHint");
     hint->setTextPixelSize(12);
     hint->setTextFormat(Qt::PlainText);
     hint->setWordWrap(true);
     secondaryText(hint);
     stack->addWidget(hint);
     auto restore = new ActionButton(QObject::tr("恢复默认背景"), materialBox);
-    restore->setObjectName("CordisResetBackground");
+    restore->setObjectName("EveResetBackground");
     stack->addWidget(restore, 0, Qt::AlignRight);
     const auto refreshImage = [prefs, picker, hint, restore] {
         const bool custom = !prefs->background().isNull();
@@ -162,7 +162,7 @@ SettingsPage *createSettingsPage(ElaWindow *window, QTabWidget *panel, Workbench
                  material);
     const auto transitionTitle = QObject::tr("页面切换效果");
     auto transition = combo(
-        "CordisSettingsTransition", transitionTitle,
+        "EveSettingsTransition", transitionTitle,
         {QObject::tr("无动效"), QObject::tr("上浮"), QObject::tr("缩放"), QObject::tr("翻转"), QObject::tr("模糊")},
         prefs->transition(), [prefs](int value) { prefs->setTransition(value); });
     auto motionControls = new QWidget(page);
@@ -170,7 +170,7 @@ SettingsPage *createSettingsPage(ElaWindow *window, QTabWidget *panel, Workbench
     motionLayout->setContentsMargins(0, 0, 0, 0);
     motionLayout->addWidget(transition);
     auto preview = new ActionButton(QObject::tr("预览"), motionControls);
-    preview->setObjectName("CordisSettingsTransitionPreview");
+    preview->setObjectName("EveSettingsTransitionPreview");
     preview->setAccessibleName(QObject::tr("预览页面切换效果"));
     motionLayout->addWidget(preview);
     const auto refreshMotion = [=] { preview->setEnabled(window->getStackSwitchMode() != ElaWindowType::None); };
@@ -178,12 +178,12 @@ SettingsPage *createSettingsPage(ElaWindow *window, QTabWidget *panel, Workbench
     QObject::connect(preview, &QPushButton::clicked, page, [=] { guard([=] { window->previewStackSwitch(); }); });
     refreshMotion();
     page->addRow(transitionTitle, motionControls, QObject::tr("动画 过渡 动效 transition"), transition);
-    auto user = toggle("CordisSettingsUserCard", QObject::tr("显示用户卡片"), prefs->userCardVisible(),
+    auto user = toggle("EveSettingsUserCard", QObject::tr("显示用户卡片"), prefs->userCardVisible(),
                        QObject::tr("账户 登录 头像"), [prefs](bool visible) { prefs->setUserCardVisible(visible); });
-    page->addGroup("CordisSettingsLayoutSection", QObject::tr("工作区布局"), "layout");
+    page->addGroup("EveSettingsLayoutSection", QObject::tr("工作区布局"), "layout");
     const auto navTitle = QObject::tr("插件导航");
     auto nav =
-        combo("CordisSettingsNavigationMode", navTitle, {QObject::tr("紧凑图标"), QObject::tr("展开名称")},
+        combo("EveSettingsNavigationMode", navTitle, {QObject::tr("紧凑图标"), QObject::tr("展开名称")},
               window->getNavigationBarDisplayMode() == ElaNavigationType::Maximal, [window](int index) {
                   window->setNavigationBarDisplayMode(index ? ElaNavigationType::Maximal : ElaNavigationType::Compact);
               });
@@ -193,17 +193,17 @@ SettingsPage *createSettingsPage(ElaWindow *window, QTabWidget *panel, Workbench
         nav->setCurrentIndex(window->getNavigationBarDisplayMode() == ElaNavigationType::Maximal);
     });
     auto navWidth =
-        spin("CordisSettingsNavigationWidth", QObject::tr("展开导航宽度"), navigationWidthPixels.minimum,
+        spin("EveSettingsNavigationWidth", QObject::tr("展开导航宽度"), navigationWidthPixels.minimum,
              navigationWidthPixels.maximum, window->getNavigationBarWidth(),
              QObject::tr("导航宽度 width"), [window](int width) { window->setNavigationBarWidth(width); });
     QObject::connect(window, &ElaWindow::pNavigationBarWidthChanged, navWidth, [=] {
         QSignalBlocker block(navWidth);
         navWidth->setValue(window->getNavigationBarWidth());
     });
-    auto showPanel = toggle("CordisSettingsPanel", QObject::tr("显示底部工作区"), !panel->isHidden(),
+    auto showPanel = toggle("EveSettingsPanel", QObject::tr("显示底部工作区"), !panel->isHidden(),
                             QObject::tr("底部面板 panel"), [panel](bool visible) { panel->setVisible(visible); });
     new PanelVisibility(panel, showPanel);
-    auto height = spin("CordisSettingsPanelHeight", QObject::tr("底部工作区高度"), panelHeightPixels.minimum,
+    auto height = spin("EveSettingsPanelHeight", QObject::tr("底部工作区高度"), panelHeightPixels.minimum,
                        panelHeightPixels.maximum, prefs->panelHeight(),
                        QObject::tr("面板高度 panel height"), [prefs](int value) { prefs->setPanelHeight(value); });
     if (auto splitter = window->findChild<QSplitter *>("ElaWorkbenchPanelSplitter"))
@@ -212,7 +212,7 @@ SettingsPage *createSettingsPage(ElaWindow *window, QTabWidget *panel, Workbench
             height->setValue(prefs->panelHeight());
         });
     auto reset = new ActionButton(QObject::tr("恢复默认"), page);
-    reset->setObjectName("CordisSettingsReset");
+    reset->setObjectName("EveSettingsReset");
     page->addRow(QObject::tr("默认外观与布局"), reset, QObject::tr("重置 reset"));
     QObject::connect(reset, &QPushButton::clicked, page, [=] {
         guard([&] {
@@ -225,20 +225,20 @@ SettingsPage *createSettingsPage(ElaWindow *window, QTabWidget *panel, Workbench
             refreshImage();
         });
     });
-    page->addGroup("CordisSettingsNotificationsSection", QObject::tr("通知"), "notifications");
-    toggle("CordisSettingsDoNotDisturb", QObject::tr("免打扰"), window->property("CordisDoNotDisturb").toBool(),
-           QObject::tr("静音 通知"), [window](bool muted) { window->setProperty("CordisDoNotDisturb", muted); });
-    page->addGroup("CordisSettingsDeveloperSection", QObject::tr("开发者"), "developer");
+    page->addGroup("EveSettingsNotificationsSection", QObject::tr("通知"), "notifications");
+    toggle("EveSettingsDoNotDisturb", QObject::tr("免打扰"), window->property("EveDoNotDisturb").toBool(),
+           QObject::tr("静音 通知"), [window](bool muted) { window->setProperty("EveDoNotDisturb", muted); });
+    page->addGroup("EveSettingsDeveloperSection", QObject::tr("开发者"), "developer");
     auto output = new ActionButton(QObject::tr("打开输出"), page);
-    output->setObjectName("CordisSettingsOutput");
+    output->setObjectName("EveSettingsOutput");
     page->addRow(QObject::tr("运行日志"), output, QObject::tr("日志 通道 log output"));
     QObject::connect(output, &QPushButton::clicked, page, [=] {
         guard([&] {
-            if (auto action = window->findChild<QAction *>("CordisOpenOutput"))
+            if (auto action = window->findChild<QAction *>("EveOpenOutput"))
                 action->trigger();
         });
     });
-    page->addGroup("CordisSettingsShortcutsSection", QObject::tr("快捷键"), "keyboard shortcuts");
+    page->addGroup("EveSettingsShortcutsSection", QObject::tr("快捷键"), "keyboard shortcuts");
     auto keys = new ElaText(
         QObject::tr("搜索页面　Ctrl+P\n搜索命令　Ctrl+Shift+P\n展开导航　Ctrl+B\n底部工作区　Ctrl+J\n搜索设置　Ctrl+F"),
         14, page);
@@ -252,4 +252,4 @@ SettingsPage *createSettingsPage(ElaWindow *window, QTabWidget *panel, Workbench
     page->finish();
     return page;
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

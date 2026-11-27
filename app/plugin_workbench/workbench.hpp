@@ -4,15 +4,18 @@
 #pragma once
 
 #include <QString>
-#include <cordis/kernel.hpp>
-#include <cordis/loader/kernel_driver.hpp>
-#include <cordis/loader/session.hpp>
-#include <cordis/ui/configuration.hpp>
-#include <cordis/ui/ela_shell.hpp>
+#include <eve/kernel.hpp>
+#include <eve/loader/kernel_driver.hpp>
+#include <eve/loader/session.hpp>
+#include <eve/ui/configuration.hpp>
+#include <eve/ui/ela_shell.hpp>
 #include <optional>
 #include <stdexcept>
 
-namespace cordis::workbench {
+namespace eve::workbench {
+/** @brief 根据当前文件和旧版本同名文件的存在情况，解析工作台管理的工作区或偏好文件。 */
+QString workbenchDataFile(const QString& applicationData, const QString& relativeFile);
+
 /** @brief 保留底层预检错误说明，并提供与失败阶段对应的用户诊断。 */
 class ModulePreflightError final : public std::runtime_error {
 public:
@@ -58,4 +61,4 @@ private:
     bool closing_ = false;
     bool published_ = false;
 };
-} // namespace cordis::workbench
+} // namespace eve::workbench

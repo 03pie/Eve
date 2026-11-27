@@ -1,8 +1,8 @@
 /** @file reconcile_demo.cpp
  * @brief 解析两份目标并用真实 Kernel 启动、更新和停止内置插件，打印期望修订及实际服务值。
  */
-#include <cordis/loader/kernel_driver.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/loader/kernel_driver.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -10,8 +10,8 @@
 #include <string>
 #include <vector>
 
-using namespace cordis;
-using namespace cordis::loader;
+using namespace eve;
+using namespace eve::loader;
 namespace {
 /** @brief 显式推进队列并检查稳定结果，不使用 sleep 或把接受成功当作运行成功。 */
 void settle(const std::shared_ptr<testing::FakeScheduler>& scheduler, const AcceptedTarget& target)

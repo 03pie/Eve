@@ -10,7 +10,7 @@
 #include <QJsonObject>
 #include <stdexcept>
 
-namespace cordis::testing::modules {
+namespace eve::testing::modules {
 inline void write(const QString& path, const QByteArray& bytes)
 {
     QFile file(path);
@@ -48,4 +48,4 @@ inline QString install(const QString& source, const QString& directory, const QS
     write(path, QJsonDocument(manifest).toJson());
     return path;
 }
-} // namespace cordis::testing::modules
+} // namespace eve::testing::modules

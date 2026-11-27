@@ -5,14 +5,14 @@
 #include "replacement_target_p.hpp"
 #include <algorithm>
 #include <charconv>
-#include <cordis/loader/yaml.hpp>
+#include <eve/loader/yaml.hpp>
 #include <initializer_list>
 #include <memory>
 #include <string_view>
 #include <system_error>
 #include <yaml.h>
 
-namespace cordis::loader {
+namespace eve::loader {
 namespace {
 /** @brief 解析外部文本前核对输入长度和所有事件树预算，结构约束在完整文档入口检查。 */
 bool withinYamlInputBudget(std::size_t bytes, const YamlLimits& limits) noexcept
@@ -660,4 +660,4 @@ Result<ParsedConfiguration> mergeReplacementTarget(const ParsedConfiguration& or
     }
 }
 } // namespace detail
-} // namespace cordis::loader
+} // namespace eve::loader

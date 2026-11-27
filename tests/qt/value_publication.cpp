@@ -56,13 +56,13 @@ void held()
     Scene scene;
     auto group = take(scene.kernel->holdPublication());
     auto caller = owner(scene, &group);
-    auto* targets = scene.find<QComboBox>("CordisOutputTarget");
-    auto* label = scene.find<QLabel>("CordisNotification");
+    auto* targets = scene.find<QComboBox>("EveOutputTarget");
+    auto* label = scene.find<QLabel>("EveNotification");
     const auto before = take(scene.shell.output()->snapshot());
     const auto status = label->text(), tooltip = label->toolTip();
     const auto selection = targets->currentData();
     unsigned changed = 0;
-    auto connection = QObject::connect(scene.find<QPlainTextEdit>("CordisWorkbenchOutput"),
+    auto connection = QObject::connect(scene.find<QPlainTextEdit>("EveWorkbenchOutput"),
                                        &QPlainTextEdit::textChanged, targets, [&] { ++changed; });
     const auto outputSequence = write(scene, caller, "held-output");
     const auto noticeSequence = post(scene, caller, "held-notice");
@@ -93,7 +93,7 @@ void order()
     CHECK(post(scene, first, "older-notice") == 1 && post(scene, second, "newer-notice") == 2);
     take(secondGroup.commit());
     barrier(scene.scheduler);
-    CHECK(scene.find<QLabel>("CordisNotification")->text().contains("newer-notice"));
+    CHECK(scene.find<QLabel>("EveNotification")->text().contains("newer-notice"));
     take(firstGroup.commit());
     barrier(scene.scheduler);
     const auto history = take(scene.shell.output()->snapshot());
@@ -105,7 +105,7 @@ void order()
                       [&](const auto& row) { return row.sequence == secondOutput && row.text == "newer-output"; }));
     const auto notices = take(scene.shell.notifications()->snapshot());
     CHECK(notices.size() == 2 && notices[0].sequence == 1 && notices[1].sequence == 2);
-    CHECK(scene.find<QLabel>("CordisNotification")->text().contains("newer-notice"));
+    CHECK(scene.find<QLabel>("EveNotification")->text().contains("newer-notice"));
     CHECK(outputCount(scene, "older-notice") == 1 && outputCount(scene, "newer-notice") == 1);
     auto aborted = take(scene.kernel->holdPublication());
     auto rejected = owner(scene, &aborted);
@@ -126,9 +126,9 @@ void archivePublication()
     CHECK(workspace.isValid());
     Scene scene;
     take(scene.shell.startOutputArchive(workspace.path().toStdString(), "log-publication-test"));
-    const auto runId = scene.find<QComboBox>("CordisOutputRun")->currentData().toString();
+    const auto runId = scene.find<QComboBox>("EveOutputRun")->currentData().toString();
     CHECK(!runId.isEmpty());
-    const QDir archive(workspace.filePath(".cordis/logs/" + runId));
+    const QDir archive(workspace.filePath(".eve/logs/" + runId));
     const auto archivedBytes = [&] {
         const auto names = archive.entryList({"events-*.jsonl"}, QDir::Files);
         CHECK(names.size() <= 1);
@@ -157,8 +157,8 @@ void archivePublication()
     const auto abandonedSequence = write(scene, rejected, "l2-abandoned", "abandoned-only");
     CHECK(post(scene, rejected, "l2-abandoned-notice") == 3);
 
-    auto* targets = scene.find<QComboBox>("CordisOutputTarget");
-    auto* output = scene.find<QPlainTextEdit>("CordisWorkbenchOutput");
+    auto* targets = scene.find<QComboBox>("EveOutputTarget");
+    auto* output = scene.find<QPlainTextEdit>("EveWorkbenchOutput");
     barrier(scene.scheduler);
     CHECK(targets->findData(ordinary.source) >= 0);
     CHECK(targets->findData(first.source) < 0 && targets->findData(second.source) < 0 &&
@@ -251,15 +251,15 @@ void archivePublication()
 
     Scene reader;
     take(reader.shell.startOutputArchive(workspace.path().toStdString(), "log-publication-reader"));
-    auto* runs = reader.find<QComboBox>("CordisOutputRun");
+    auto* runs = reader.find<QComboBox>("EveOutputRun");
     const auto history = runs->findData(runId);
     CHECK(history > 0);
     runs->setCurrentIndex(history);
-    auto* sources = reader.find<QComboBox>("CordisOutputTarget");
+    auto* sources = reader.find<QComboBox>("EveOutputTarget");
     const auto selected = sources->findData(first.source);
     CHECK(selected >= 0 && sources->findData(rejected.source) < 0);
     sources->setCurrentIndex(selected);
-    const auto recovered = reader.find<QPlainTextEdit>("CordisWorkbenchOutput")->toPlainText();
+    const auto recovered = reader.find<QPlainTextEdit>("EveWorkbenchOutput")->toPlainText();
     CHECK(recovered.split('\n').size() == 2 && recovered.contains("l2-first-notice") &&
           recovered.contains("l2-first\n") && !recovered.contains("l2-second"));
     reader.close();
@@ -295,7 +295,7 @@ void closeBeforeRefresh()
     post(scene, accepted, "close-notice");
     write(scene, abandoned, "still-held-output");
     post(scene, abandoned, "still-held-notice");
-    auto* action = scene.find<QAction>("CordisClearOutput");
+    auto* action = scene.find<QAction>("EveClearOutput");
     CHECK(action->isEnabled());
     unsigned closeAttempts = 0;
     bool rejected = true;
@@ -334,17 +334,17 @@ void clear()
     const auto row =
         std::find_if(history.begin(), history.end(), [&](const auto& entry) { return entry.sequence == later; });
     CHECK(row != history.end());
-    auto* targets = scene.find<QComboBox>("CordisOutputTarget");
+    auto* targets = scene.find<QComboBox>("EveOutputTarget");
     targets->setCurrentIndex(0);
-    scene.find<QAction>("CordisClearOutput")->trigger();
+    scene.find<QAction>("EveClearOutput")->trigger();
     barrier(scene.scheduler);
     CHECK(outputCount(scene, "before-commit") == 1 && outputCount(scene, "after-commit") == 1);
-    CHECK(scene.find<QPlainTextEdit>("CordisWorkbenchOutput")->toPlainText().isEmpty());
+    CHECK(scene.find<QPlainTextEdit>("EveWorkbenchOutput")->toPlainText().isEmpty());
     CHECK(write(scene, caller, "after-clear") == later + 1);
     auto future = take(scene.kernel->holdPublication());
     auto futureCaller = owner(scene, &future);
     post(scene, futureCaller, "future-mirror");
-    scene.find<QAction>("CordisClearOutput")->trigger();
+    scene.find<QAction>("EveClearOutput")->trigger();
     take(future.commit());
     barrier(scene.scheduler);
     CHECK(outputCount(scene, "future-mirror") == 1);
@@ -362,7 +362,7 @@ void reentry()
     post(scene, caller, "batch-notice-one");
     post(scene, caller, "batch-notice-two");
     std::optional<Task<void>> closed;
-    auto* editor = scene.find<QPlainTextEdit>("CordisWorkbenchOutput");
+    auto* editor = scene.find<QPlainTextEdit>("EveWorkbenchOutput");
     QObject::connect(editor, &QPlainTextEdit::textChanged, editor, [&] {
         if (!closed)
             closed.emplace(scene.shell.close());
@@ -393,7 +393,7 @@ void count()
     // 候选满额不阻断当前业务；失败提交不占号，不淘汰已公开记录。
     CHECK(write(scene, ordinary, "ordinary-at-capacity") == last + 1);
     CHECK(post(scene, ordinary, "ordinary-notice-at-capacity") == NotificationService::pendingCountLimit + 1);
-    CHECK(scene.find<QComboBox>("CordisOutputTarget")->count() == 3);
+    CHECK(scene.find<QComboBox>("EveOutputTarget")->count() == 3);
     CHECK(outputCount(scene, "pending-count") == 0 && take(scene.shell.notifications()->snapshot()).size() == 1);
     take(group.abort());
     barrier(scene.scheduler);
@@ -439,11 +439,11 @@ void targets()
         last = write(scene, index % 2 ? first : second, "target-pending", std::to_string(index));
     CHECK(!scene.shell.output()->write(**first.context, "extra-target", "overflow").hasValue());
     CHECK(write(scene, first, "existing-target", "1") == last + 1);
-    CHECK(scene.find<QComboBox>("CordisOutputTarget")->count() == 2);
+    CHECK(scene.find<QComboBox>("EveOutputTarget")->count() == 2);
     take(group.commit());
     barrier(scene.scheduler);
     // The two published owners each contribute a source even when both choose the same channel labels.
-    auto targets=scene.find<QComboBox>("CordisOutputTarget");
+    auto targets=scene.find<QComboBox>("EveOutputTarget");
     CHECK(targets->count()==4 && targets->findData("platform")>=0);
     CHECK(outputCount(scene, "existing-target") == 1);
     scene.close();

@@ -47,7 +47,7 @@
 #include <QTest>
 #include <QTimer>
 #include <QToolButton>
-#include <cordis/ui/ela_shell.hpp>
+#include <eve/ui/ela_shell.hpp>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -60,8 +60,8 @@
 #include <windows.h>
 #endif
 
-using namespace cordis;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::ui;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -131,7 +131,7 @@ struct Scene {
         return value;
     }
     /** @brief 设置通过真实 QAction 导航进入。 */
-    void settings() { find<QAction>("CordisOpenSettings")->trigger(); }
+    void settings() { find<QAction>("EveOpenSettings")->trigger(); }
     /** @brief 关闭必须经过 Kernel 和窗口的完整屏障，写盘不能改变实例账目。 */
     void close()
     {
@@ -156,12 +156,12 @@ void roundtrip()
         Scene scene(path);
         CHECK(!QFile::exists(path));
         scene.settings();
-        scene.find<ElaComboBox>("CordisSettingsTheme")->setCurrentIndex(1);
-        scene.find<ElaComboBox>("CordisSettingsNavigationMode")->setCurrentIndex(1);
-        scene.find<ElaSpinBox>("CordisSettingsNavigationWidth")->setValue(310);
-        scene.find<ElaSpinBox>("CordisSettingsPanelHeight")->setValue(230);
-        scene.find<QAction>("CordisViewPanel")->trigger();
-        CHECK(!scene.find<QTabWidget>("CordisWorkbenchPanel")->isHidden());
+        scene.find<ElaComboBox>("EveSettingsTheme")->setCurrentIndex(1);
+        scene.find<ElaComboBox>("EveSettingsNavigationMode")->setCurrentIndex(1);
+        scene.find<ElaSpinBox>("EveSettingsNavigationWidth")->setValue(310);
+        scene.find<ElaSpinBox>("EveSettingsPanelHeight")->setValue(230);
+        scene.find<QAction>("EveViewPanel")->trigger();
+        CHECK(!scene.find<QTabWidget>("EveWorkbenchPanel")->isHidden());
         scene.close(); // debounce 尚未完成也必须落盘。
     }
     auto saved = read(path);
@@ -174,10 +174,10 @@ void roundtrip()
         CHECK(eTheme->getThemeMode() == ElaThemeType::Dark);
         CHECK(scene.window->getNavigationBarWidth() == 310);
         CHECK(scene.window->getNavigationBarDisplayMode() == ElaNavigationType::Maximal);
-        CHECK(scene.find<QTabWidget>("CordisWorkbenchPanel")->isHidden());
+        CHECK(scene.find<QTabWidget>("EveWorkbenchPanel")->isHidden());
         scene.settings();
-        CHECK(scene.find<ElaSpinBox>("CordisSettingsPanelHeight")->value() == 230);
-        scene.find<QPushButton>("CordisSettingsReset")->click();
+        CHECK(scene.find<ElaSpinBox>("EveSettingsPanelHeight")->value() == 230);
+        scene.find<QPushButton>("EveSettingsReset")->click();
         CHECK(scene.window->getNavigationBarWidth() == 240);
         CHECK(eTheme->getThemeMode() == ElaThemeType::Light);
         scene.close();
@@ -196,8 +196,8 @@ void roundtrip()
         write(path, QJsonDocument(saved).toJson());
         Scene scene(path);
         scene.settings();
-        auto* widthControl = scene.find<ElaSpinBox>("CordisSettingsNavigationWidth");
-        auto* heightControl = scene.find<ElaSpinBox>("CordisSettingsPanelHeight");
+        auto* widthControl = scene.find<ElaSpinBox>("EveSettingsNavigationWidth");
+        auto* heightControl = scene.find<ElaSpinBox>("EveSettingsPanelHeight");
         CHECK(widthControl->value() == dimensions.loaded.width() && heightControl->value() == dimensions.loaded.height());
         CHECK(widthControl->minimum() == 180 && widthControl->maximum() == 360);
         CHECK(heightControl->minimum() == 120 && heightControl->maximum() == 480);
@@ -227,9 +227,9 @@ void invalid()
         write(path, bytes);
         Scene scene(path);
         scene.settings();
-        CHECK(scene.find<ElaText>("CordisPreferencesStatus")->text().contains(QString::fromUtf8("无效")));
+        CHECK(scene.find<ElaText>("EvePreferencesStatus")->text().contains(QString::fromUtf8("无效")));
         CHECK(scene.window->getNavigationBarWidth() == 240);
-        CHECK(scene.find<ElaSpinBox>("CordisSettingsPanelHeight")->value() == 160);
+        CHECK(scene.find<ElaSpinBox>("EveSettingsPanelHeight")->value() == 160);
         scene.close();
         QFile file(path);
         CHECK(file.open(QIODevice::ReadOnly) && file.readAll() == bytes);
@@ -245,12 +245,12 @@ void failure()
     const auto path = parent + "/ui.json";
     Scene scene(path);
     scene.settings();
-    scene.find<ElaSpinBox>("CordisSettingsNavigationWidth")->setValue(280);
+    scene.find<ElaSpinBox>("EveSettingsNavigationWidth")->setValue(280);
     until(
-        [&] { return scene.find<ElaText>("CordisPreferencesStatus")->text().contains(QString::fromUtf8("保存失败")); });
+        [&] { return scene.find<ElaText>("EvePreferencesStatus")->text().contains(QString::fromUtf8("保存失败")); });
     CHECK(scene.window->getNavigationBarWidth() == 280 && !QFile::exists(path));
     CHECK(QFile::remove(parent));
-    scene.find<ElaSpinBox>("CordisSettingsNavigationWidth")->setValue(290);
+    scene.find<ElaSpinBox>("EveSettingsNavigationWidth")->setValue(290);
     until([&] { return read(path).value("navigationWidth").toInt() == 290; });
     CHECK(scene.kernel->snapshot().value().instances.empty());
     scene.close();
@@ -270,12 +270,12 @@ void locked()
     CHECK(handle != INVALID_HANDLE_VALUE);
     Scene scene(path);
     scene.settings();
-    scene.find<ElaSpinBox>("CordisSettingsNavigationWidth")->setValue(300);
+    scene.find<ElaSpinBox>("EveSettingsNavigationWidth")->setValue(300);
     until(
-        [&] { return scene.find<ElaText>("CordisPreferencesStatus")->text().contains(QString::fromUtf8("保存失败")); });
+        [&] { return scene.find<ElaText>("EvePreferencesStatus")->text().contains(QString::fromUtf8("保存失败")); });
     CHECK(read(path).value("navigationWidth").toInt() == 240);
     CHECK(CloseHandle(handle));
-    scene.find<ElaSpinBox>("CordisSettingsNavigationWidth")->setValue(320);
+    scene.find<ElaSpinBox>("EveSettingsNavigationWidth")->setValue(320);
     until([&] { return read(path).value("navigationWidth").toInt() == 320; });
     scene.close();
 }
@@ -310,8 +310,8 @@ void keyboard()
 {
     Scene scene({});
     scene.settings();
-    auto toggle = scene.find<ElaToggleSwitch>("CordisSettingsPanel");
-    auto panel = scene.find<QTabWidget>("CordisWorkbenchPanel");
+    auto toggle = scene.find<ElaToggleSwitch>("EveSettingsPanel");
+    auto panel = scene.find<QTabWidget>("EveWorkbenchPanel");
     CHECK(toggle->focusPolicy() == Qt::StrongFocus && !toggle->accessibleName().isEmpty());
     auto accessible = QAccessible::queryAccessibleInterface(toggle);
     CHECK(accessible && accessible->role() == QAccessible::CheckBox && accessible->state().checkable);
@@ -322,15 +322,15 @@ void keyboard()
     QTest::keyClick(toggle, Qt::Key_Space);
     until([&] { return !panel->isHidden(); });
     CHECK(accessible->state().checked);
-    auto target = scene.find<QComboBox>("CordisOutputTarget");
+    auto target = scene.find<QComboBox>("EveOutputTarget");
     auto source = QAccessible::queryAccessibleInterface(target);
     CHECK(source && source->role() == QAccessible::ComboBox && !source->text(QAccessible::Name).isEmpty());
     CHECK(source->text(QAccessible::Value) == target->currentText());
-    auto followButton = scene.find<QAbstractButton>("CordisOutputFollow");
+    auto followButton = scene.find<QAbstractButton>("EveOutputFollow");
     auto follow = QAccessible::queryAccessibleInterface(followButton);
     CHECK(follow && follow->state().checkable && follow->state().checked == followButton->isChecked());
     CHECK(!follow->text(QAccessible::Name).isEmpty());
-    auto bell = QAccessible::queryAccessibleInterface(scene.find<QToolButton>("CordisShowNotifications"));
+    auto bell = QAccessible::queryAccessibleInterface(scene.find<QToolButton>("EveShowNotifications"));
     CHECK(bell && bell->role() == QAccessible::Button && bell->text(QAccessible::Name).contains(QStringLiteral("通知")));
     QTest::keyClick(toggle, Qt::Key_Return);
     until([&] { return panel->isHidden(); });
@@ -372,7 +372,7 @@ void reentry()
         loop.exec();
         retained = scene.window && !closing->isReady();
     });
-    scene.find<ElaComboBox>("CordisSettingsTheme")->setCurrentIndex(1);
+    scene.find<ElaComboBox>("EveSettingsTheme")->setCurrentIndex(1);
     CHECK(entered && retained && closing);
     QObject::disconnect(callback);
     until([&] { return closing->isReady(); });
@@ -384,7 +384,7 @@ void reentry()
 void states()
 {
     Scene scene({});
-    CHECK(scene.find<ElaText>("CordisHomeEmpty")->isVisible());
+    CHECK(scene.find<ElaText>("EveHomeEmpty")->isVisible());
     const auto notice = std::string(300, 'x') + "\n" + std::string(300, 'y');
     auto live = scene.kernel
                     ->registerPlugin(
@@ -410,34 +410,34 @@ void states()
         return a.ready().isReady() && b.operation().value().target.isReady() && c.operation().value().target.isReady();
     });
     scene.shell.management()->refresh().value();
-    auto table = scene.find<ElaTableView>("CordisInstanceTable");
+    auto table = scene.find<ElaTableView>("EveInstanceTable");
     CHECK(table->model()->rowCount() == 3);
     for (int row = 0; row < 3; ++row) {
         CHECK(!table->model()->index(row, 2).data(Qt::DecorationRole).value<QIcon>().isNull());
         CHECK(!table->model()->index(row, 2).data(Qt::AccessibleDescriptionRole).toString().isEmpty());
     }
-    until([&] { return scene.window->findChildren<QWidget*>("CordisPluginCard").size() == 3; });
-    CHECK(!scene.find<ElaText>("CordisHomeEmpty")->isVisible());
-    const auto originalCards = scene.window->findChildren<QWidget*>("CordisPluginCard");
-    for (auto card : scene.window->findChildren<QWidget*>("CordisPluginCard")) {
-        CHECK(card->findChild<ElaText*>("CordisPluginStateIcon"));
+    until([&] { return scene.window->findChildren<QWidget*>("EvePluginCard").size() == 3; });
+    CHECK(!scene.find<ElaText>("EveHomeEmpty")->isVisible());
+    const auto originalCards = scene.window->findChildren<QWidget*>("EvePluginCard");
+    for (auto card : scene.window->findChildren<QWidget*>("EvePluginCard")) {
+        CHECK(card->findChild<ElaText*>("EvePluginStateIcon"));
         CHECK(card->font().family() == QApplication::font().family());
     }
     CHECK(QApplication::font().family() == "Microsoft YaHei");
     eTheme->setThemeMode(ElaThemeType::Dark);
-    const auto refreshedCards = scene.window->findChildren<QWidget*>("CordisPluginCard");
+    const auto refreshedCards = scene.window->findChildren<QWidget*>("EvePluginCard");
     CHECK(originalCards.size() == refreshedCards.size());
     for (int index = 0; index < originalCards.size(); ++index)
         CHECK(originalCards[index] == refreshedCards[index]);
     scene.window->resize(1000, 600);
     QCoreApplication::processEvents();
     scene.shell.management()->refresh().value();
-    CHECK(scene.find<ElaText>("CordisNotification")->height() <= 24);
+    CHECK(scene.find<ElaText>("EveNotification")->height() <= 24);
     CHECK(scene.window->statusBar()->height() <= 40);
-    scene.find<ElaComboBox>("CordisOutputTarget")->setCurrentIndex(0);
+    scene.find<ElaComboBox>("EveOutputTarget")->setCurrentIndex(0);
     CHECK(
-        scene.find<ElaPlainTextEdit>("CordisWorkbenchOutput")->toPlainText().contains(QString::fromStdString(notice)));
-    CHECK(scene.find<QTabWidget>("CordisWorkbenchPanel")->isHidden());
+        scene.find<ElaPlainTextEdit>("EveWorkbenchOutput")->toPlainText().contains(QString::fromStdString(notice)));
+    CHECK(scene.find<QTabWidget>("EveWorkbenchPanel")->isHidden());
     CHECK(a.snapshot().value().state == InstanceState::Active && b.snapshot().value().state == InstanceState::Failed);
     scene.close();
 }
@@ -452,10 +452,10 @@ void showcase()
     auto instance = scene.kernel->mount(live).value();
     until([&] { return instance.ready().isReady(); });
     scene.shell.management()->refresh().value();
-    until([&] { return scene.window->findChildren<QWidget*>("CordisPluginCard").size() == 1; });
+    until([&] { return scene.window->findChildren<QWidget*>("EvePluginCard").size() == 1; });
     for (auto theme : {ElaThemeType::Light, ElaThemeType::Dark}) {
         eTheme->setThemeMode(theme);
-        for (const auto& action : {"CordisOpenHome", "CordisOpenPlugins", "CordisOpenSettings", "CordisOpenAbout"}) {
+        for (const auto& action : {"EveOpenHome", "EveOpenPlugins", "EveOpenSettings", "EveOpenAbout"}) {
             scene.find<QAction>(action)->trigger();
             scene.window->resize(1200, 800);
             QTest::qWait(40);
@@ -470,11 +470,11 @@ void showcase()
             const auto contained = [&](QWidget* widget) {
                 return scene.window->rect().contains(QRect(widget->mapTo(scene.window, QPoint()), widget->size()));
             };
-            auto menu = scene.find<ElaMenuBar>("CordisMenuBar");
+            auto menu = scene.find<ElaMenuBar>("EveMenuBar");
             CHECK(contained(menu) && menu->rect().contains(menu->actionGeometry(menu->actions().back())));
-            CHECK(contained(scene.find<ElaSuggestBox>("CordisPageSearch")));
-            CHECK(contained(scene.find<QWidget>("CordisNavigateBack")));
-            CHECK(contained(scene.find<QWidget>("CordisNavigateForward")));
+            CHECK(contained(scene.find<ElaSuggestBox>("EvePageSearch")));
+            CHECK(contained(scene.find<QWidget>("EveNavigateBack")));
+            CHECK(contained(scene.find<QWidget>("EveNavigateForward")));
         }
         const auto capture = [&](const QString& name) {
             QTest::qWait(40);
@@ -485,27 +485,27 @@ void showcase()
         };
         scene.window->resize(1000, 600);
         scene.settings();
-        auto search = scene.find<ElaLineEdit>("CordisSettingsSearch");
+        auto search = scene.find<ElaLineEdit>("EveSettingsSearch");
         search->setText("layout");
         capture("settings-filter");
-        CHECK(scene.find<QWidget>("CordisSettingsLayoutSection")->isVisible());
+        CHECK(scene.find<QWidget>("EveSettingsLayoutSection")->isVisible());
         search->setText("no-such-setting");
         capture("settings-empty");
-        CHECK(scene.find<QWidget>("CordisSettingsSearchEmpty")->isVisible());
+        CHECK(scene.find<QWidget>("EveSettingsSearchEmpty")->isVisible());
         search->clear();
-        scene.find<QAction>("CordisOpenOutput")->trigger();
-        auto panel = scene.find<QTabWidget>("CordisWorkbenchPanel");
-        auto output = scene.find<ElaPlainTextEdit>("CordisWorkbenchOutput");
+        scene.find<QAction>("EveOpenOutput")->trigger();
+        auto panel = scene.find<QTabWidget>("EveWorkbenchPanel");
+        auto output = scene.find<ElaPlainTextEdit>("EveWorkbenchOutput");
         output->setPlainText(QString::fromUtf8("工作台输出\n通知不会自动展开此面板。\n复制与清空仅作用于当前输出。"));
         panel->setCurrentWidget(output);
         capture("output-tools");
-        for (auto name : {"CordisOutputMore", "CordisHidePanel"}) {
+        for (auto name : {"EveOutputMore", "EveHidePanel"}) {
             auto button = scene.find<QWidget>(name);
             CHECK(button->isVisible());
             CHECK(panel->rect().contains(QRect(button->mapTo(panel, QPoint()), button->size())));
         }
-        scene.find<QToolButton>("CordisHidePanel")->click();
-        auto tabs = scene.find<QTabBar>("CordisPageTabs");
+        scene.find<QToolButton>("EveHidePanel")->click();
+        auto tabs = scene.find<QTabBar>("EvePageTabs");
         const auto point = tabs->tabRect(0).center();
         CHECK(
             QMetaObject::invokeMethod(tabs, "customContextMenuRequested", Qt::DirectConnection, Q_ARG(QPoint, point)));
@@ -525,12 +525,12 @@ void showcase()
 /** @brief 对真实页签发出上下文请求，返回有界的原生 Ela 菜单。 */
 ElaMenu* tabMenu(Scene& scene, int index)
 {
-    auto tabs = scene.find<QTabBar>("CordisPageTabs");
+    auto tabs = scene.find<QTabBar>("EvePageTabs");
     QCoreApplication::processEvents();
     const auto point = tabs->tabRect(index).center();
     CHECK(QMetaObject::invokeMethod(tabs, "customContextMenuRequested", Qt::DirectConnection, Q_ARG(QPoint, point)));
     auto menu = qobject_cast<ElaMenu*>(QApplication::activePopupWidget());
-    CHECK(menu && menu->objectName() == "CordisTabContextMenu");
+    CHECK(menu && menu->objectName() == "EveTabContextMenu");
     return menu;
 }
 /** @brief 使用菜单的真实动作，关闭弹层不强制处理延迟销毁。 */
@@ -547,22 +547,22 @@ void tabAction(ElaMenu* menu, const char* name)
 void tabContext()
 {
     Scene scene({});
-    for (auto name : {"CordisOpenSettings", "CordisOpenAbout"})
+    for (auto name : {"EveOpenSettings", "EveOpenAbout"})
         scene.find<QAction>(name)->trigger();
-    auto tabs = scene.find<QTabBar>("CordisPageTabs");
+    auto tabs = scene.find<QTabBar>("EvePageTabs");
     CHECK(tabs->count() == 3);
-    auto settings = scene.find<QWidget>("CordisSettingsPage");
-    auto width = scene.find<ElaSpinBox>("CordisSettingsNavigationWidth");
+    auto settings = scene.find<QWidget>("EveSettingsPage");
+    auto width = scene.find<ElaSpinBox>("EveSettingsNavigationWidth");
     width->setValue(280);
-    tabAction(tabMenu(scene, 1), "CordisTabCloseRight");
+    tabAction(tabMenu(scene, 1), "EveTabCloseRight");
     CHECK(tabs->count() == 2 && settings->isVisible());
-    scene.find<QAction>("CordisOpenAbout")->trigger();
-    tabAction(tabMenu(scene, 1), "CordisTabCloseOthers");
+    scene.find<QAction>("EveOpenAbout")->trigger();
+    tabAction(tabMenu(scene, 1), "EveTabCloseOthers");
     CHECK(tabs->count() == 1 && settings->isVisible() && width->value() == 280);
-    tabAction(tabMenu(scene, 0), "CordisTabCloseAll");
+    tabAction(tabMenu(scene, 0), "EveTabCloseAll");
     CHECK(tabs->count() == 0 && scene.find<QWidget>("ElaEmptyWorkbench")->isVisible());
     scene.settings();
-    CHECK(scene.find<QWidget>("CordisSettingsPage") == settings && width->value() == 280);
+    CHECK(scene.find<QWidget>("EveSettingsPage") == settings && width->value() == 280);
     CHECK(scene.kernel->snapshot().value().instances.empty());
     scene.close();
 }
@@ -571,32 +571,32 @@ void tabSnapshot()
 {
     Scene scene({});
     scene.settings();
-    auto tabs = scene.find<QTabBar>("CordisPageTabs");
+    auto tabs = scene.find<QTabBar>("EvePageTabs");
     auto menu = tabMenu(scene, 1);
-    scene.find<QAction>("CordisOpenAbout")->trigger();
-    tabAction(menu, "CordisTabCloseAll");
-    CHECK(tabs->count() == 1 && tabs->tabText(0) == QString::fromUtf8("关于 Cordis"));
+    scene.find<QAction>("EveOpenAbout")->trigger();
+    tabAction(menu, "EveTabCloseAll");
+    CHECK(tabs->count() == 1 && tabs->tabText(0) == QString::fromUtf8("关于 Eve"));
     scene.settings();
     menu = tabMenu(scene, 1);
-    scene.find<QAction>("CordisCloseView")->trigger();
-    tabAction(menu, "CordisTabCloseOthers");
+    scene.find<QAction>("EveCloseView")->trigger();
+    tabAction(menu, "EveTabCloseOthers");
     CHECK(tabs->count() == 1);
     scene.settings();
-    QPointer<QAction> stale(tabMenu(scene, 0)->findChild<QAction*>("CordisTabCloseAll"));
+    QPointer<QAction> stale(tabMenu(scene, 0)->findChild<QAction*>("EveTabCloseAll"));
     menu = tabMenu(scene, 1);
     if (stale)
         stale->trigger();
     CHECK(tabs->count() == 2);
     menu->close();
     menu = tabMenu(scene, 0);
-    scene.find<QAction>("CordisCloseView")->trigger();
+    scene.find<QAction>("EveCloseView")->trigger();
     scene.settings();
-    tabAction(menu, "CordisTabCloseAll");
+    tabAction(menu, "EveTabCloseAll");
     CHECK(tabs->count() == 1 && tabs->tabText(0) == QString::fromUtf8("设置"));
     menu = tabMenu(scene, 0);
-    scene.find<QAction>("CordisCloseView")->trigger();
+    scene.find<QAction>("EveCloseView")->trigger();
     scene.settings();
-    tabAction(menu, "CordisTabCloseAll");
+    tabAction(menu, "EveTabCloseAll");
     CHECK(tabs->count() == 1);
     scene.close();
 }
@@ -605,7 +605,7 @@ void tabReentry()
 {
     Scene scene({});
     scene.settings();
-    scene.find<QAction>("CordisOpenAbout")->trigger();
+    scene.find<QAction>("EveOpenAbout")->trigger();
     bool entered = false, retained = false;
     std::optional<Task<void>> closing;
     struct Probe : QObject {
@@ -627,8 +627,8 @@ void tabReentry()
         nested.exec();
         retained = scene.window && !closing->isReady();
     };
-    scene.find<QWidget>("CordisAboutPage")->installEventFilter(&probe);
-    tabAction(tabMenu(scene, 2), "CordisTabCloseAll");
+    scene.find<QWidget>("EveAboutPage")->installEventFilter(&probe);
+    tabAction(tabMenu(scene, 2), "EveTabCloseAll");
     CHECK(entered && retained && closing);
     until([&] { return closing->isReady(); });
     scene.close();
@@ -638,16 +638,16 @@ void panelTools()
 {
     Scene scene({});
     scene.window->resize(1380,800);
-    auto panel = scene.find<QTabWidget>("CordisWorkbenchPanel");
-    auto output = scene.find<ElaPlainTextEdit>("CordisWorkbenchOutput");
-    auto copy = scene.find<QToolButton>("CordisCopyPanelOutput");
-    auto clear = scene.find<QToolButton>("CordisClearPanelOutput");
+    auto panel = scene.find<QTabWidget>("EveWorkbenchPanel");
+    auto output = scene.find<ElaPlainTextEdit>("EveWorkbenchOutput");
+    auto copy = scene.find<QToolButton>("EveCopyPanelOutput");
+    auto clear = scene.find<QToolButton>("EveClearPanelOutput");
     CHECK(panel->isHidden() && !copy->isVisible() && !clear->isVisible());
-    scene.find<QAction>("CordisOpenCommands")->trigger();
+    scene.find<QAction>("EveOpenCommands")->trigger();
     CHECK(panel->isHidden() && !copy->isVisible());
-    CHECK(scene.find<QWidget>("CordisCommandPanel")->isVisible());
-    QTest::keyClick(scene.find<QLineEdit>("CordisCommandFilter"),Qt::Key_Escape);
-    scene.find<QAction>("CordisOpenOutput")->trigger();
+    CHECK(scene.find<QWidget>("EveCommandPanel")->isVisible());
+    QTest::keyClick(scene.find<QLineEdit>("EveCommandFilter"),Qt::Key_Escape);
+    scene.find<QAction>("EveOpenOutput")->trigger();
     panel->setCurrentWidget(output);
     CHECK(!copy->isHidden() && !clear->isHidden());
     scene.shell.writeOutput("line one\nline two").value();
@@ -657,7 +657,7 @@ void panelTools()
     CHECK(output->toPlainText().isEmpty());
     scene.shell.writeOutput("kept output").value();
     const auto kept = output->toPlainText();
-    scene.find<QToolButton>("CordisHidePanel")->click();
+    scene.find<QToolButton>("EveHidePanel")->click();
     CHECK(panel->isHidden() && output->toPlainText() == kept);
     scene.close();
 }
@@ -668,17 +668,17 @@ void settingsSearch()
     const auto path = directory.filePath("preferences.json");
     Scene scene(path);
     scene.settings();
-    auto search = scene.find<ElaLineEdit>("CordisSettingsSearch");
-    auto appearance = scene.find<QWidget>("CordisSettingsAppearanceSection");
-    auto layout = scene.find<QWidget>("CordisSettingsLayoutSection");
-    auto shortcuts = scene.find<QWidget>("CordisSettingsShortcutsSection");
-    const auto width = scene.find<ElaSpinBox>("CordisSettingsNavigationWidth")->value();
+    auto search = scene.find<ElaLineEdit>("EveSettingsSearch");
+    auto appearance = scene.find<QWidget>("EveSettingsAppearanceSection");
+    auto layout = scene.find<QWidget>("EveSettingsLayoutSection");
+    auto shortcuts = scene.find<QWidget>("EveSettingsShortcutsSection");
+    const auto width = scene.find<ElaSpinBox>("EveSettingsNavigationWidth")->value();
     search->setText("theme");
     CHECK(!appearance->isHidden() && layout->isHidden() && shortcuts->isHidden());
     search->setText(QString::fromUtf8("宽度"));
     CHECK(appearance->isHidden() && !layout->isHidden());
     search->setText("no-such-setting");
-    CHECK(scene.find<ElaText>("CordisSettingsSearchEmpty")->isVisible());
+    CHECK(scene.find<ElaText>("EveSettingsSearchEmpty")->isVisible());
     CHECK(QTest::qWaitForWindowExposed(scene.window));
     scene.window->raise();
     scene.window->activateWindow();
@@ -688,17 +688,17 @@ void settingsSearch()
     until([&] { return QApplication::activeWindow() == scene.window && QApplication::focusWidget() == search; });
     QTest::keyClick(search, Qt::Key_Escape);
     CHECK(search->text().isEmpty() && !appearance->isHidden() && !layout->isHidden() && !shortcuts->isHidden());
-    scene.find<ElaComboBox>("CordisSettingsTheme")->setFocus();
+    scene.find<ElaComboBox>("EveSettingsTheme")->setFocus();
     QTest::keyClick(QApplication::focusWidget(), Qt::Key_F, Qt::ControlModifier);
     CHECK(QApplication::focusWidget() == search);
-    CHECK(scene.find<ElaSpinBox>("CordisSettingsNavigationWidth")->value() == width);
+    CHECK(scene.find<ElaSpinBox>("EveSettingsNavigationWidth")->value() == width);
     scene.close();
     CHECK(!QFile::exists(path));
 }
 void captureSettingWindow(ElaWindow* window, const QString& name)
 {
-    if (!qEnvironmentVariableIsSet("CORDIS_SETTINGS_EVIDENCE")) return;
-    const QDir evidence(qEnvironmentVariable("CORDIS_SETTINGS_EVIDENCE"));
+    if (!qEnvironmentVariableIsSet("EVE_SETTINGS_EVIDENCE")) return;
+    const QDir evidence(qEnvironmentVariable("EVE_SETTINGS_EVIDENCE"));
     CHECK(QApplication::platformName()=="windows" && evidence.mkpath("."));
     window->raise();
     QTest::qWait(100);
@@ -708,10 +708,10 @@ void captureSettingWindow(ElaWindow* window, const QString& name)
 void settingsNavigation()
 {
     Scene scene({});
-    auto page = scene.find<QWidget>("CordisSettingsPage");
-    auto nav = scene.find<QListView>("CordisSettingsNavigation");
+    auto page = scene.find<QWidget>("EveSettingsPage");
+    auto nav = scene.find<QListView>("EveSettingsNavigation");
     auto content = page->findChild<QScrollArea*>();
-    auto search = scene.find<ElaLineEdit>("CordisSettingsSearch");
+    auto search = scene.find<ElaLineEdit>("EveSettingsSearch");
     CHECK(content && nav->model()->rowCount() == 5);
     CHECK(QTest::qWaitForWindowExposed(scene.window));
     scene.window->raise();
@@ -726,7 +726,7 @@ void settingsNavigation()
     QTest::keyClick(nav, Qt::Key_Down);
     CHECK(nav->currentIndex().row() == 1);
     QTest::keyClick(nav, Qt::Key_Return);
-    CHECK(page->findChild<QWidget*>("CordisSettingsLayoutSection")->isAncestorOf(QApplication::focusWidget()));
+    CHECK(page->findChild<QWidget*>("EveSettingsLayoutSection")->isAncestorOf(QApplication::focusWidget()));
     const auto last = nav->model()->index(4, 0);
     QTest::mouseClick(nav->viewport(), Qt::LeftButton, {}, nav->visualRect(last).center());
     until([&]{ return content->verticalScrollBar()->value() > 0 && nav->currentIndex() == last; });
@@ -737,8 +737,8 @@ void settingsNavigation()
     search->setFocus();
     until([&] { return QApplication::focusWidget()==search; });
     QTest::keyClick(search, Qt::Key_Return);
-    CHECK(scene.find<ElaSpinBox>("CordisSettingsPanelHeight")->hasFocus() ||
-          scene.find<ElaSpinBox>("CordisSettingsPanelHeight")->isAncestorOf(QApplication::focusWidget()));
+    CHECK(scene.find<ElaSpinBox>("EveSettingsPanelHeight")->hasFocus() ||
+          scene.find<ElaSpinBox>("EveSettingsPanelHeight")->isAncestorOf(QApplication::focusWidget()));
     search->clear();
     scene.window->resize(700, 640);
     until([&]{ return nav->flow() == QListView::LeftToRight; });
@@ -748,7 +748,7 @@ void settingsNavigation()
     QTest::keyClick(nav, Qt::Key_Space);
     CHECK(nav->currentIndex().row() == 3 && !nav->isRowHidden(3));
     captureSettingWindow(scene.window, "navigation-narrow.png");
-    CHECK(page->findChild<QWidget*>("CordisSettingsDeveloperSection")->isAncestorOf(QApplication::focusWidget()));
+    CHECK(page->findChild<QWidget*>("EveSettingsDeveloperSection")->isAncestorOf(QApplication::focusWidget()));
     scene.close();
 }
 #ifdef Q_OS_WIN
@@ -756,12 +756,12 @@ void settingsNativeIme()
 {
     Scene scene({});
     scene.settings();
-    cordis::test::verifyNativePinyin(scene.find<QLineEdit>("CordisSettingsSearch"));
+    eve::test::verifyNativePinyin(scene.find<QLineEdit>("EveSettingsSearch"));
     captureSettingWindow(scene.window, "settings-ime-commit.png");
-    scene.find<QAction>("CordisOpenCommands")->trigger();
-    auto commandPanel = scene.find<QWidget>("CordisCommandPanel");
+    scene.find<QAction>("EveOpenCommands")->trigger();
+    auto commandPanel = scene.find<QWidget>("EveCommandPanel");
     CHECK(commandPanel->isVisible());
-    cordis::test::verifyNativePinyin(scene.find<QLineEdit>("CordisCommandFilter"));
+    eve::test::verifyNativePinyin(scene.find<QLineEdit>("EveCommandFilter"));
     CHECK(commandPanel->isVisible());
     scene.close();
 }
@@ -770,8 +770,8 @@ void outputSourceSpeech()
     CHECK(QApplication::platformName() == "windows");
     Scene scene({});
     scene.shell.writeOutput("native accessibility source", OutputLevel::Info).value();
-    scene.find<QAction>("CordisOpenOutput")->trigger();
-    const auto combo = scene.find<QComboBox>("CordisOutputTarget");
+    scene.find<QAction>("EveOpenOutput")->trigger();
+    const auto combo = scene.find<QComboBox>("EveOutputTarget");
     const int platform = combo->findText(QStringLiteral("平台"));
     CHECK(platform >= 0);
     scene.window->raise();
@@ -801,7 +801,7 @@ void settingsAppearance()
         scene.settings();
         for (const auto& path : {dir.filePath("a.png"), dir.filePath("b.jpg"), picture}) {
             CHECK(sample.save(path));
-            scene.find<QToolButton>("CordisBackgroundPicker")->click();
+            scene.find<QToolButton>("EveBackgroundPicker")->click();
             auto dialog = scene.window->findChild<QFileDialog*>();
             CHECK(dialog);
             QPointer<QFileDialog> lifetime(dialog);
@@ -810,27 +810,27 @@ void settingsAppearance()
             until([&] { return !lifetime; });
             CHECK(!scene.window->getWindowPixmap(ElaThemeType::Light).isNull());
         }
-        until([&]{ return !scene.find<QPushButton>("CordisResetBackground")->isHidden(); });
-        auto effects = scene.find<ElaComboBox>("CordisSettingsTransition");
+        until([&]{ return !scene.find<QPushButton>("EveResetBackground")->isHidden(); });
+        auto effects = scene.find<ElaComboBox>("EveSettingsTransition");
         const auto settingsKey = scene.window->getCurrentNavigationPageKey();
         for(int mode : {0, 2, 3, 4, 1}) {
             effects->setCurrentIndex(mode);
-            scene.find<QPushButton>("CordisSettingsTransitionPreview")->click();
-            scene.find<QAction>("CordisOpenAbout")->trigger();
+            scene.find<QPushButton>("EveSettingsTransitionPreview")->click();
+            scene.find<QAction>("EveOpenAbout")->trigger();
             CHECK(scene.window->getCurrentNavigationPageKey()!=settingsKey);
             scene.settings();
             CHECK(scene.window->getCurrentNavigationPageKey()==settingsKey);
         }
-        scene.find<ElaToggleSwitch>("CordisSettingsUserCard")->setIsToggled(false);
-        scene.find<ElaToggleSwitch>("CordisSettingsDoNotDisturb")->setIsToggled(true);
+        scene.find<ElaToggleSwitch>("EveSettingsUserCard")->setIsToggled(false);
+        scene.find<ElaToggleSwitch>("EveSettingsDoNotDisturb")->setIsToggled(true);
         for (int theme : {0, 1}) {
-            scene.find<ElaComboBox>("CordisSettingsTheme")->setCurrentIndex(theme);
+            scene.find<ElaComboBox>("EveSettingsTheme")->setCurrentIndex(theme);
             for (int mode : {0, 1, 4, 3, 5, 2}) {
-                scene.find<ElaComboBox>("CordisSettingsMaterial")->setCurrentIndex(mode);
-                CHECK(scene.find<ElaComboBox>("CordisSettingsMaterial")->currentIndex()==mode);
+                scene.find<ElaComboBox>("EveSettingsMaterial")->setCurrentIndex(mode);
+                CHECK(scene.find<ElaComboBox>("EveSettingsMaterial")->currentIndex()==mode);
                 CHECK(!scene.window->getWindowPixmap(theme ? ElaThemeType::Dark : ElaThemeType::Light).isNull());
-                const QDir evidence(qEnvironmentVariable("CORDIS_SETTINGS_EVIDENCE"));
-                if (qEnvironmentVariableIsSet("CORDIS_SETTINGS_EVIDENCE")) {
+                const QDir evidence(qEnvironmentVariable("EVE_SETTINGS_EVIDENCE"));
+                if (qEnvironmentVariableIsSet("EVE_SETTINGS_EVIDENCE")) {
                     CHECK(QApplication::platformName()=="windows" && evidence.mkpath("."));
                     scene.window->raise();
                     QTest::qWait(350);
@@ -840,13 +840,13 @@ void settingsAppearance()
                     CHECK(!image.isNull() && image.save(evidence.filePath(QString("settings-%1-material-%2.png").arg(theme).arg(mode))));
                     std::cout << "theme=" << theme << " requestedMaterial=" << mode
                               << " appliedMaterial=" << static_cast<int>(eApp->getWindowDisplayMode())
-                              << " systemAccepted=" << scene.window->property("CordisRequestedMaterialAccepted").toBool()
+                              << " systemAccepted=" << scene.window->property("EveRequestedMaterialAccepted").toBool()
                               << " nativeSize=" << image.width() << "x" << image.height()
                               << " dpr=" << image.devicePixelRatio() << std::endl;
                 }
             }
         }
-        CHECK(scene.find<ElaComboBox>("CordisSettingsMaterial")->currentIndex() == 2);
+        CHECK(scene.find<ElaComboBox>("EveSettingsMaterial")->currentIndex() == 2);
         scene.close();
     }
     const auto saved = read(file);
@@ -855,17 +855,17 @@ void settingsAppearance()
     {
         Scene scene(file);
         scene.settings();
-        CHECK(!scene.find<ElaToggleSwitch>("CordisSettingsUserCard")->getIsToggled());
-        CHECK(!scene.find<QPushButton>("CordisResetBackground")->isHidden());
-        CHECK(scene.find<ElaComboBox>("CordisSettingsTransition")->currentIndex()==1);
-        scene.find<QPushButton>("CordisResetBackground")->click();
-        CHECK(scene.find<ElaComboBox>("CordisSettingsMaterial")->currentIndex()==2);
-        scene.find<QPushButton>("CordisSettingsReset")->click();
-        CHECK(scene.find<ElaComboBox>("CordisSettingsMaterial")->currentIndex()==0);
-        CHECK(scene.find<ElaToggleSwitch>("CordisSettingsUserCard")->getIsToggled());
-        CHECK(scene.find<ElaToggleSwitch>("CordisSettingsDoNotDisturb")->getIsToggled());
-        scene.find<QPushButton>("CordisSettingsOutput")->click();
-        CHECK(!scene.find<QTabWidget>("CordisWorkbenchPanel")->isHidden());
+        CHECK(!scene.find<ElaToggleSwitch>("EveSettingsUserCard")->getIsToggled());
+        CHECK(!scene.find<QPushButton>("EveResetBackground")->isHidden());
+        CHECK(scene.find<ElaComboBox>("EveSettingsTransition")->currentIndex()==1);
+        scene.find<QPushButton>("EveResetBackground")->click();
+        CHECK(scene.find<ElaComboBox>("EveSettingsMaterial")->currentIndex()==2);
+        scene.find<QPushButton>("EveSettingsReset")->click();
+        CHECK(scene.find<ElaComboBox>("EveSettingsMaterial")->currentIndex()==0);
+        CHECK(scene.find<ElaToggleSwitch>("EveSettingsUserCard")->getIsToggled());
+        CHECK(scene.find<ElaToggleSwitch>("EveSettingsDoNotDisturb")->getIsToggled());
+        scene.find<QPushButton>("EveSettingsOutput")->click();
+        CHECK(!scene.find<QTabWidget>("EveWorkbenchPanel")->isHidden());
         scene.close();
     }
     CHECK(!read(file).contains("background") && read(file).value("doNotDisturb").toBool());
@@ -875,7 +875,7 @@ void settingsReentry()
 {
     Scene scene({});
     scene.settings();
-    auto search = scene.find<ElaLineEdit>("CordisSettingsSearch");
+    auto search = scene.find<ElaLineEdit>("EveSettingsSearch");
     bool normalized = false, entered = false, retained = false;
     std::optional<Task<void>> closing;
     struct Probe : QObject {
@@ -893,10 +893,10 @@ void settingsReentry()
             search->setText("layout");
         }
     };
-    scene.find<QWidget>("CordisSettingsLayoutSection")->installEventFilter(&normalize);
+    scene.find<QWidget>("EveSettingsLayoutSection")->installEventFilter(&normalize);
     search->setText("theme");
-    until([&] { return !scene.find<QWidget>("CordisSettingsLayoutSection")->isHidden(); });
-    CHECK(normalized && scene.find<QWidget>("CordisSettingsAppearanceSection")->isHidden());
+    until([&] { return !scene.find<QWidget>("EveSettingsLayoutSection")->isHidden(); });
+    CHECK(normalized && scene.find<QWidget>("EveSettingsAppearanceSection")->isHidden());
     search->clear();
     close.callback = [&] {
         if (entered)
@@ -908,7 +908,7 @@ void settingsReentry()
         nested.exec();
         retained = scene.window && !closing->isReady();
     };
-    scene.find<QWidget>("CordisSettingsAppearanceSection")->installEventFilter(&close);
+    scene.find<QWidget>("EveSettingsAppearanceSection")->installEventFilter(&close);
     search->setText("layout");
     CHECK(entered && retained && closing);
     until([&] { return closing->isReady(); });
@@ -918,24 +918,24 @@ void settingsReentry()
 void notifications()
 {
     Scene scene({}, false);
-    auto bell = scene.find<QToolButton>("CordisShowNotifications");
-    auto center = scene.find<QWidget>("CordisNotificationCenter");
-    auto list = scene.find<QListView>("CordisNotificationList");
-    auto empty = scene.find<QLabel>("CordisNotificationEmpty");
+    auto bell = scene.find<QToolButton>("EveShowNotifications");
+    auto center = scene.find<QWidget>("EveNotificationCenter");
+    auto list = scene.find<QListView>("EveNotificationList");
+    auto empty = scene.find<QLabel>("EveNotificationEmpty");
     until([&] { return scene.window->isActiveWindow(); });
     bell->click();
     CHECK(empty->isVisible() && !list->isVisible() && list->model()->rowCount() == 0);
-    CHECK(!scene.find<QPushButton>("CordisNotificationMarkRead")->isEnabled() &&
-          !scene.find<QPushButton>("CordisNotificationOpenLog")->isEnabled());
-    until([&] { return scene.find<QPushButton>("CordisNotificationClose")->hasFocus(); });
+    CHECK(!scene.find<QPushButton>("EveNotificationMarkRead")->isEnabled() &&
+          !scene.find<QPushButton>("EveNotificationOpenLog")->isEnabled());
+    until([&] { return scene.find<QPushButton>("EveNotificationClose")->hasFocus(); });
     QTest::keyClick(QApplication::focusWidget(), Qt::Key_Escape);
     CHECK(!center->isVisible());
     scene.settings();
-    auto search = scene.find<QLineEdit>("CordisSettingsSearch");
+    auto search = scene.find<QLineEdit>("EveSettingsSearch");
     search->setText(QStringLiteral("主题"));
     search->setFocus();
     search->selectAll();
-    const int pageCount = scene.find<QTabBar>("CordisPageTabs")->count();
+    const int pageCount = scene.find<QTabBar>("EvePageTabs")->count();
     std::optional<Context> activeOwner;
     auto runtime =
         scene.kernel
@@ -953,10 +953,10 @@ void notifications()
             .value();
     auto instance = scene.kernel->mount(runtime).value();
     until([&] { return instance.ready().isReady(); });
-    CHECK(scene.find<QTabWidget>("CordisWorkbenchPanel")->isHidden());
-    CHECK(scene.find<QTabBar>("CordisPageTabs")->count() == pageCount);
+    CHECK(scene.find<QTabWidget>("EveWorkbenchPanel")->isHidden());
+    CHECK(scene.find<QTabBar>("EvePageTabs")->count() == pageCount);
     CHECK(search->hasFocus() && search->selectedText() == QStringLiteral("主题"));
-    scene.find<QToolButton>("CordisShowNotifications")->click();
+    scene.find<QToolButton>("EveShowNotifications")->click();
     CHECK(center->isVisible() && !center->isWindow() && list->isVisible() && !empty->isVisible() &&
           list->model()->rowCount() == 2);
     for (auto mode : {ElaThemeType::Dark, ElaThemeType::Light}) {
@@ -971,23 +971,23 @@ void notifications()
     CHECK(warning.contains("literal <b>warning</b>") && warning.contains(QStringLiteral("×10")));
     CHECK(list->model()->index(0, 0).data().toString().contains(QStringLiteral("错误")));
     CHECK(scene.window->grab().save(QCoreApplication::applicationDirPath() + "/ui-special-notification-center.png"));
-    CHECK(scene.find<QTabWidget>("CordisWorkbenchPanel")->isHidden());
-    auto markRead = center->findChild<QPushButton*>("CordisNotificationMarkRead");
+    CHECK(scene.find<QTabWidget>("EveWorkbenchPanel")->isHidden());
+    auto markRead = center->findChild<QPushButton*>("EveNotificationMarkRead");
     CHECK(markRead && markRead->isEnabled());
     markRead->click();
     CHECK(!markRead->isEnabled() && !list->model()->index(0, 0).data().toString().contains(QStringLiteral("未读")));
     QTest::keyClick(list, Qt::Key_Escape);
     CHECK(!center->isVisible() && search->hasFocus() && search->selectedText() == QStringLiteral("主题"));
-    scene.find<ElaToggleSwitch>("CordisSettingsDoNotDisturb")->setIsToggled(true);
+    scene.find<ElaToggleSwitch>("EveSettingsDoNotDisturb")->setIsToggled(true);
     const auto bars = scene.window->findChildren<QWidget*>("ElaMessageBar").size();
     scene.shell.notifications()->post(*activeOwner, {NotificationLevel::Warning, "muted warning", {}}).value();
-    const auto status = scene.find<QLabel>("CordisNotification");
+    const auto status = scene.find<QLabel>("EveNotification");
     CHECK(status->toolTip() == status->text() && status->text().contains("muted warning"));
     CHECK(scene.window->findChildren<QWidget*>("ElaMessageBar").size() == bars && !center->isVisible());
-    scene.find<QToolButton>("CordisShowNotifications")->click();
+    scene.find<QToolButton>("EveShowNotifications")->click();
     CHECK(list->model()->index(0, 0).data().toString().contains("muted warning"));
-    scene.find<QPushButton>("CordisNotificationOpenLog")->click();
-    CHECK(!center->isVisible() && scene.find<QTabWidget>("CordisWorkbenchPanel")->isVisible());
+    scene.find<QPushButton>("EveNotificationOpenLog")->click();
+    CHECK(!center->isVisible() && scene.find<QTabWidget>("EveWorkbenchPanel")->isVisible());
     scene.close();
 }
 
@@ -997,7 +997,7 @@ void notificationArchiveWorker(const QString& workspace, bool seed)
     scene.shell.startOutputArchive(workspace.toStdString(), "notification-qa").value();
     if (seed) {
         scene.settings();
-        scene.find<ElaToggleSwitch>("CordisSettingsDoNotDisturb")->setIsToggled(true);
+        scene.find<ElaToggleSwitch>("EveSettingsDoNotDisturb")->setIsToggled(true);
         const auto runtime =
             scene.kernel
                 ->registerPlugin("history-notifier",
@@ -1017,8 +1017,8 @@ void notificationArchiveWorker(const QString& workspace, bool seed)
         auto instance = scene.kernel->mount(runtime).value();
         until([&] { return instance.ready().isReady(); });
     }
-    scene.find<QToolButton>("CordisShowNotifications")->click();
-    auto list = scene.find<QListView>("CordisNotificationList");
+    scene.find<QToolButton>("EveShowNotifications")->click();
+    auto list = scene.find<QListView>("EveNotificationList");
     until([&] { return list->model()->rowCount() == 2; });
     CHECK(list->model()->index(1, 0).data().toString().contains("archived-read"));
     CHECK(list->model()->index(0, 0).data().toString().contains("archived-unread"));
@@ -1030,12 +1030,12 @@ void notificationArchiveWorker(const QString& workspace, bool seed)
     }
     list->setCurrentIndex(list->model()->index(seed ? 1 : 0, 0));
     const auto run = list->currentIndex().data(Qt::UserRole + 3).toString();
-    scene.find<QPushButton>("CordisNotificationOpenLog")->click();
-    CHECK(scene.find<QComboBox>("CordisOutputRun")->currentData().toString() == run);
-    CHECK(scene.find<QPlainTextEdit>("CordisWorkbenchOutput")->textCursor().selectedText().contains(
+    scene.find<QPushButton>("EveNotificationOpenLog")->click();
+    CHECK(scene.find<QComboBox>("EveOutputRun")->currentData().toString() == run);
+    CHECK(scene.find<QPlainTextEdit>("EveWorkbenchOutput")->textCursor().selectedText().contains(
         seed ? "archived-read" : "archived-unread"));
     if (!seed)
-        CHECK(scene.find<QComboBox>("CordisOutputRun")->currentIndex() != 0);
+        CHECK(scene.find<QComboBox>("EveOutputRun")->currentIndex() != 0);
     scene.close();
 }
 void notificationArchive()
@@ -1043,7 +1043,7 @@ void notificationArchive()
     QTemporaryDir workspace;
     CHECK(workspace.isValid());
     auto env = QProcessEnvironment::systemEnvironment();
-    env.insert("CORDIS_QA_NOTICE_WORKSPACE", workspace.path());
+    env.insert("EVE_QA_NOTICE_WORKSPACE", workspace.path());
     for (const auto name : {"notification_archive_seed", "notification_archive_read"}) {
         QProcess worker;
         worker.setProcessEnvironment(env);
@@ -1058,7 +1058,7 @@ void notificationArchiveFault()
     QTemporaryDir workspace;
     CHECK(workspace.isValid());
     QStandardPaths::setTestModeEnabled(true);
-    write(workspace.filePath(".cordis"), "test fixture blocks the project log directory");
+    write(workspace.filePath(".eve"), "test fixture blocks the project log directory");
     const auto key =
         QCryptographicHash::hash(QFileInfo(workspace.path()).absoluteFilePath().toUtf8(), QCryptographicHash::Sha256)
             .toHex();
@@ -1070,14 +1070,14 @@ void notificationArchiveFault()
     const auto runs = logs.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     CHECK(runs.size() == 1);
     scene.shell.writeOutput("trigger archive fault", OutputLevel::Info).value();
-    auto bell = scene.find<QToolButton>("CordisShowNotifications");
+    auto bell = scene.find<QToolButton>("EveShowNotifications");
     until([&] { return bell->accessibleName().contains(QStringLiteral("1 条未读")); });
     auto bars = scene.window->findChildren<QWidget*>("ElaMessageBar");
-    CHECK(bars.size() == (scene.window->property("CordisReducedMotion").toBool() ? 0 : 1));
+    CHECK(bars.size() == (scene.window->property("EveReducedMotion").toBool() ? 0 : 1));
     bell->click();
-    auto status = scene.find<QLabel>("CordisNotificationArchiveStatus");
+    auto status = scene.find<QLabel>("EveNotificationArchiveStatus");
     CHECK(status->isVisible() && status->text().contains(QStringLiteral("已改存到")));
-    scene.find<QPushButton>("CordisNotificationMarkRead")->click();
+    scene.find<QPushButton>("EveNotificationMarkRead")->click();
     CHECK(bell->accessibleName().contains(QStringLiteral("0 条未读")));
     scene.shell.writeOutput("still usable", OutputLevel::Info).value();
     QTest::qWait(550);
@@ -1146,7 +1146,7 @@ void settingsSystemSurfaces(const QString& isolatedRestriction = {})
     write(path, QJsonDocument(values).toJson());
     Scene scene(path, true, true);
     scene.settings();
-    until([&] { return scene.find<QComboBox>("CordisSettingsMaterial")->isVisible(); });
+    until([&] { return scene.find<QComboBox>("EveSettingsMaterial")->isVisible(); });
     observeSystemSurfaces(*scene.window, path, imagePath, isolatedRestriction);
     scene.close();
 }
@@ -1160,8 +1160,8 @@ void settingsSystemAnimation()
     const auto file = dir.filePath("preferences.json");
     Scene scene(file, true, true);
     scene.settings();
-    auto transition = scene.find<QComboBox>("CordisSettingsTransition");
-    auto preview = scene.find<QPushButton>("CordisSettingsTransitionPreview");
+    auto transition = scene.find<QComboBox>("EveSettingsTransition");
+    auto preview = scene.find<QPushButton>("EveSettingsTransitionPreview");
     const auto hwnd = reinterpret_cast<HWND>(scene.window->winId());
     const auto key = scene.window->getCurrentNavigationPageKey();
     transition->setCurrentIndex(static_cast<int>(ElaWindowType::Popup));
@@ -1221,7 +1221,7 @@ void settingsSystemAnimation()
                !preview->isEnabled();
     });
     post("during");
-    CHECK(barCount() == 0 && scene.find<QLabel>("CordisNotification")->text().contains("during"));
+    CHECK(barCount() == 0 && scene.find<QLabel>("EveNotification")->text().contains("during"));
     CHECK(scene.window->getCurrentNavigationPageKey() == key && transition->currentIndex() == ElaWindowType::Popup);
     const auto during = state();
     system.restore();
@@ -1314,7 +1314,7 @@ int main(int argc, char** argv)
         else if (name == "notification_archive_fault")
             notificationArchiveFault();
         else if (name == "notification_archive_seed" || name == "notification_archive_read")
-            notificationArchiveWorker(qEnvironmentVariable("CORDIS_QA_NOTICE_WORKSPACE"),name=="notification_archive_seed");
+            notificationArchiveWorker(qEnvironmentVariable("EVE_QA_NOTICE_WORKSPACE"),name=="notification_archive_seed");
 #ifdef Q_OS_WIN
         else if (name == "locked")
             locked();

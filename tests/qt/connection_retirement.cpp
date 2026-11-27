@@ -11,20 +11,20 @@
 /** @brief 释放观察是 host 内部测试数据，不通过 observeValues 注册自定义参数类型。 */
 void retirementBudget(bool guardFailure)
 {
-    using namespace cordis;
-    using namespace cordis::qt;
+    using namespace eve;
+    using namespace eve::qt;
     auto scheduler = std::make_shared<QtScheduler>();
-    auto state = std::make_shared<cordis::qt::detail::ConnectionControl>();
+    auto state = std::make_shared<eve::qt::detail::ConnectionControl>();
     state->scheduler = scheduler;
     state->armed = true;
     state->maximumPending = 1;
     state->guard = [] { return Result<void>::failure(makeError(ErrorCode::ContextClosing, "test guard")); };
-    cordis::qt::detail::SignalBridge bridge(state);
+    eve::qt::detail::SignalBridge bridge(state);
     auto ticket = bridge.reserve();
     if (!ticket)
         throw std::runtime_error("initial ticket rejected");
     bool observed = false;
-    std::shared_ptr<cordis::qt::detail::ConnectionTicket> extra;
+    std::shared_ptr<eve::qt::detail::ConnectionTicket> extra;
     auto payload = std::shared_ptr<const void>(new int(42), [&](const void* value) {
         // 与并发发射相同，重入 reserve 使用真实锁和预算判断；此时旧存储尚未释放。
         observed = true;

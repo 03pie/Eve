@@ -7,8 +7,8 @@
 #include <QEventLoop>
 #include <QPointer>
 #include <QTimer>
-#include <cordis/kernel.hpp>
-#include <cordis/ui/ela_shell.hpp>
+#include <eve/kernel.hpp>
+#include <eve/ui/ela_shell.hpp>
 #include <functional>
 #include <memory>
 #include <stdexcept>
@@ -21,8 +21,8 @@
     } while (false)
 
 namespace presentation_test {
-using namespace cordis;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::ui;
 template <class T> T take(Result<T> result)
 {
     if (!result.hasValue())

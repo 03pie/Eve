@@ -20,7 +20,7 @@
 #include <unistd.h>
 #endif
 
-namespace cordis::ui::detail
+namespace eve::ui::detail
 {
 namespace
 {
@@ -417,4 +417,4 @@ bool hasLogExpirations(const QDir& root, const QString& run)
 {
     return !readLogExpirations(root, run).empty();
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

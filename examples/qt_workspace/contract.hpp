@@ -4,19 +4,19 @@
 #pragma once
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <cordis/result.hpp>
+#include <eve/result.hpp>
 
 namespace notebook {
 struct Configuration {
     QString title = QString::fromUtf8("插件笔记"), text;
     bool failStart = false, failCleanup = false;
 };
-inline cordis::Result<Configuration> configuration(const std::string& source)
+inline eve::Result<Configuration> configuration(const std::string& source)
 {
-    using Output = cordis::Result<Configuration>;
+    using Output = eve::Result<Configuration>;
     auto invalid = [] {
         return Output::failure(
-            cordis::makeError(cordis::ErrorCode::ConfigInvalid,
+            eve::makeError(eve::ErrorCode::ConfigInvalid,
                               "notebook expects title/text strings and optional failStart/failCleanup booleans"));
     };
     const auto json = QJsonDocument::fromJson(QByteArray::fromStdString(source));

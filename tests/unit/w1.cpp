@@ -2,9 +2,9 @@
  * @file w1.cpp
  * @brief 测试结果类型、调度器、异步任务及取消状态。
  */
-#include <cordis/cancellation.hpp>
-#include <cordis/task.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/cancellation.hpp>
+#include <eve/task.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include "../support/reentrant_callable.hpp"
 #include <atomic>
 #include <cstdlib>
@@ -17,12 +17,12 @@
 #include <type_traits>
 #include <vector>
 
-using cordis::ErrorCode;
-using cordis::ErrorInfo;
-using cordis::Promise;
-using cordis::Result;
-using cordis::makeError;
-using cordis::testing::FakeScheduler;
+using eve::ErrorCode;
+using eve::ErrorInfo;
+using eve::Promise;
+using eve::Result;
+using eve::makeError;
+using eve::testing::FakeScheduler;
 
 /** @brief 条件不成立时抛出包含表达式和行号的测试异常。 */
 #define CHECK(expression) do { if (!(expression)) throw std::runtime_error( \
@@ -36,7 +36,7 @@ using cordis::testing::FakeScheduler;
 template<class F> void badAccess(F function)
 {
     bool caught = false;
-    try { function(); } catch (const cordis::BadResultAccess&) { caught = true; }
+    try { function(); } catch (const eve::BadResultAccess&) { caught = true; }
     CHECK(caught);
 }
 
@@ -377,10 +377,10 @@ void taskInvalidObserver()
 /** @brief 验证取消状态与任务完成彼此独立且可跨线程共享。 */
 void cancellationIndependent()
 {
-    cordis::CancellationSource source;
+    eve::CancellationSource source;
     auto token = source.token();
     CHECK(!token.isCancellationRequested());
-    CHECK(!cordis::CancellationToken{}.isCancellationRequested());
+    CHECK(!eve::CancellationToken{}.isCancellationRequested());
     Promise<void> producer;
     bool first = false;
     std::thread worker([copy = source, &first] { first = copy.requestCancel(); });
@@ -391,7 +391,7 @@ void cancellationIndependent()
     CHECK(producer.resolve()); // 协作式取消状态与任务完成彼此独立。
     CHECK(producer.task().tryResult()->hasValue());
     auto surviving = [] {
-        cordis::CancellationSource local;
+        eve::CancellationSource local;
         local.requestCancel();
         return local.token();
     }();
@@ -424,10 +424,10 @@ void taskThrowingScheduler()
     /**
      * @brief 模拟投递操作抛出异常的调度器。
      */
-    class ThrowingScheduler final : public cordis::IScheduler {
+    class ThrowingScheduler final : public eve::IScheduler {
     public:
         /** @brief 投递任务时抛出测试异常。 */
-        bool post(cordis::ScheduledJob) override { throw std::runtime_error("post failed"); }
+        bool post(eve::ScheduledJob) override { throw std::runtime_error("post failed"); }
         /** @brief 测试调度器始终报告当前线程为所属线程。 */
         bool isCurrentThread() const noexcept override { return true; }
         /** @brief 测试调度器始终报告处于开启状态。 */
@@ -447,7 +447,7 @@ void schedulerCloseRace()
 {
     auto scheduler = std::make_shared<FakeScheduler>();
     Promise<void> producer;
-    std::vector<cordis::Task<void>> receipts;
+    std::vector<eve::Task<void>> receipts;
     for (int i = 0; i < 24; ++i) {
         receipts.push_back(producer.task().thenOn(scheduler, [](const Result<void>&) {
             throw std::runtime_error("closed queue must not execute");
@@ -493,13 +493,13 @@ void schedulerCallableReentry()
 {
     FakeScheduler scheduler;
     int ran = 0, discarded = 0;
-    CHECK(scheduler.post({cordis::test::ReentrantCallable(scheduler, ran), cordis::test::ReentrantCallable(scheduler, discarded)}));
+    CHECK(scheduler.post({eve::test::ReentrantCallable(scheduler, ran), eve::test::ReentrantCallable(scheduler, discarded)}));
     CHECK(scheduler.runOne().value());
     CHECK(ran == 1 && discarded == 0);
-    CHECK(scheduler.post({cordis::test::ReentrantCallable(scheduler, ran), cordis::test::ReentrantCallable(scheduler, discarded)}));
+    CHECK(scheduler.post({eve::test::ReentrantCallable(scheduler, ran), eve::test::ReentrantCallable(scheduler, discarded)}));
     scheduler.close();
     CHECK(ran == 1 && discarded == 1 && scheduler.pending() == 0);
-    CHECK(!scheduler.post({cordis::test::ReentrantCallable(scheduler, ran), cordis::test::ReentrantCallable(scheduler, discarded)}));
+    CHECK(!scheduler.post({eve::test::ReentrantCallable(scheduler, ran), eve::test::ReentrantCallable(scheduler, discarded)}));
     CHECK(ran == 1 && discarded == 1);
 }
 
@@ -536,18 +536,18 @@ void taskSnapshotForwarding()
     auto frozen = std::make_shared<const Result<Value>>(Result<Value>::success(std::make_unique<int>(42)));
     int observed = 0;
     auto receipt = task.thenOn(scheduler, [&](const Result<Value>& value) { observed = *value.value(); });
-    CHECK(cordis::detail::TaskAccess::completeSnapshot(promise, frozen));
+    CHECK(eve::detail::TaskAccess::completeSnapshot(promise, frozen));
     CHECK(task.tryResult() == frozen && observed == 0 && !receipt.isReady());
     CHECK(!promise.reject(makeError(ErrorCode::CallbackFailed, "late failure")));
-    CHECK(!cordis::detail::TaskAccess::completeSnapshot(promise, frozen));
+    CHECK(!eve::detail::TaskAccess::completeSnapshot(promise, frozen));
     CHECK(scheduler->runUntilIdle().hasValue());
     CHECK(receipt.tryResult()->hasValue() && observed == 42);
     Promise<int> missing;
-    CHECK(cordis::detail::TaskAccess::completeSnapshot(missing, {}));
+    CHECK(eve::detail::TaskAccess::completeSnapshot(missing, {}));
     CHECK(missing.task().tryResult()->error().code == ErrorCode::InvalidArgument);
     Promise<void> failed;
     auto error = std::make_shared<const Result<void>>(Result<void>::failure(makeError(ErrorCode::CleanupFailed, "exit")));
-    CHECK(cordis::detail::TaskAccess::completeSnapshot(failed, error));
+    CHECK(eve::detail::TaskAccess::completeSnapshot(failed, error));
     CHECK(failed.task().tryResult() == error);
 }
 

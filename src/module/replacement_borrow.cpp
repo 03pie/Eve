@@ -5,7 +5,7 @@
 #include "replacement_commit_p.hpp"
 #include <algorithm>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 namespace {
 ErrorInfo conflict(const char* message, OperationId operation = {})
 {
@@ -100,4 +100,4 @@ Result<void> ReplacementAccess::borrowSources(const ReplacementReservation& rese
     catalog.readers.swap(readers);
     return Result<void>::success();
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

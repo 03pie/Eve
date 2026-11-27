@@ -5,11 +5,11 @@
 #include "replacement_peer.hpp"
 #include "replacement_subtree.hpp"
 template <class SceneType, class Wait>
-void operationOutputsCase(SceneType& scene, const cordis::Runtime& old, const cordis::Runtime& next,
-                          const std::shared_ptr<cordis::IScheduler>& scheduler,
-                          const std::shared_ptr<cordis::Kernel>& kernel, Wait waitFor, const QString& mode)
+void operationOutputsCase(SceneType& scene, const eve::Runtime& old, const eve::Runtime& next,
+                          const std::shared_ptr<eve::IScheduler>& scheduler,
+                          const std::shared_ptr<eve::Kernel>& kernel, Wait waitFor, const QString& mode)
 {
-    using namespace cordis;
+    using namespace eve;
     auto peer = openReplacementPeer(scene, scheduler, kernel);
     kernel->registerRuntime("outputs.peer", peer.previousRuntime).value();
     const auto plain = Runtime([](Context) { return completedTask(); });

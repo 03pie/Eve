@@ -1,5 +1,5 @@
 /* C-only discovery DLL. Modes intentionally violate one contract at a time. */
-#include <cordis_abi/module_query.h>
+#include <eve_abi/module_query.h>
 #include <string.h>
 #ifdef FIXTURE_BLOCKING
 #include <Windows.h>
@@ -9,9 +9,9 @@ static int await_release(void)
     char name[96];
     HANDLE entered, release;
     DWORD waited;
-    (void)snprintf(name, sizeof(name), "Local\\CordisQueryEntered%lu", (unsigned long)GetCurrentProcessId());
+    (void)snprintf(name, sizeof(name), "Local\\EveQueryEntered%lu", (unsigned long)GetCurrentProcessId());
     entered = OpenEventA(EVENT_MODIFY_STATE, FALSE, name);
-    (void)snprintf(name, sizeof(name), "Local\\CordisQueryRelease%lu", (unsigned long)GetCurrentProcessId());
+    (void)snprintf(name, sizeof(name), "Local\\EveQueryRelease%lu", (unsigned long)GetCurrentProcessId());
     release = OpenEventA(SYNCHRONIZE, FALSE, name);
     if (!entered || !release) {
         if (entered)
@@ -30,33 +30,33 @@ static int await_release(void)
 #define FIXTURE_MODE 0
 #endif
 #ifndef FIXTURE_ID
-#define FIXTURE_ID "org.cordis.good"
+#define FIXTURE_ID "org.eve.good"
 #endif
 #ifndef FIXTURE_VERSION
 #define FIXTURE_VERSION "1.0.0"
 #endif
 #ifdef FIXTURE_DEPENDENT
-__declspec(dllimport) int __cdecl cordis_fixture_dependency(void);
+__declspec(dllimport) int __cdecl eve_fixture_dependency(void);
 #endif
 static int queries;
 static uint32_t last_query_minor = UINT32_MAX;
 #ifndef FIXTURE_PLUGIN_ID
-#define FIXTURE_PLUGIN_ID "org.cordis.plugin"
+#define FIXTURE_PLUGIN_ID "org.eve.plugin"
 #endif
-static const CordisQueryBytesV1 plugins[] = {{(const uint8_t*)FIXTURE_PLUGIN_ID, sizeof(FIXTURE_PLUGIN_ID) - 1}};
-__declspec(dllexport) int __cdecl cordis_fixture_queries(void)
+static const EveQueryBytesV1 plugins[] = {{(const uint8_t*)FIXTURE_PLUGIN_ID, sizeof(FIXTURE_PLUGIN_ID) - 1}};
+__declspec(dllexport) int __cdecl eve_fixture_queries(void)
 {
     return queries;
 }
-__declspec(dllexport) uint32_t __cdecl cordis_fixture_last_query_minor(void)
+__declspec(dllexport) uint32_t __cdecl eve_fixture_last_query_minor(void)
 {
     return last_query_minor;
 }
 
-CordisQueryStatus CORDIS_QUERY_CALL cordis_module_query_v1(const CordisModuleQueryV1* request,
-                                                           CordisModuleDescriptorV1* output)
+EveQueryStatus EVE_QUERY_CALL eve_module_query_v1(const EveModuleQueryV1* request,
+                                                           EveModuleDescriptorV1* output)
 {
-    CordisModuleDescriptorV1 result;
+    EveModuleDescriptorV1 result;
     uint32_t capacity;
     ++queries;
     last_query_minor =
@@ -64,40 +64,40 @@ CordisQueryStatus CORDIS_QUERY_CALL cordis_module_query_v1(const CordisModuleQue
     if (!request || !output || request->header.struct_size < sizeof(*request) || request->header.query_major != 1 ||
         request->header.reserved || request->runtime_abi_major != 1 || request->runtime_abi_minor != 0 ||
         request->flags)
-        return CORDIS_QUERY_UNSUPPORTED;
+        return EVE_QUERY_UNSUPPORTED;
 #ifdef FIXTURE_EXPLICIT_UNLOAD
-    if (request->header.query_minor != CORDIS_MODULE_QUERY_MINOR &&
-        request->header.query_minor != CORDIS_MODULE_QUERY_EXPLICIT_UNLOAD_MINOR)
-        return CORDIS_QUERY_UNSUPPORTED;
+    if (request->header.query_minor != EVE_MODULE_QUERY_MINOR &&
+        request->header.query_minor != EVE_MODULE_QUERY_EXPLICIT_UNLOAD_MINOR)
+        return EVE_QUERY_UNSUPPORTED;
 #else
-    if (request->header.query_minor != CORDIS_MODULE_QUERY_MINOR)
-        return CORDIS_QUERY_UNSUPPORTED;
+    if (request->header.query_minor != EVE_MODULE_QUERY_MINOR)
+        return EVE_QUERY_UNSUPPORTED;
 #endif
     capacity = output->header.struct_size;
     if (capacity < sizeof(*output))
-        return CORDIS_QUERY_INVALID_ARGUMENT;
+        return EVE_QUERY_INVALID_ARGUMENT;
 #ifdef FIXTURE_BLOCKING
     if (!await_release())
-        return CORDIS_QUERY_FAILED;
+        return EVE_QUERY_FAILED;
 #endif
 #ifdef FIXTURE_DEPENDENT
-    if (cordis_fixture_dependency() != 42)
-        return CORDIS_QUERY_FAILED;
+    if (eve_fixture_dependency() != 42)
+        return EVE_QUERY_FAILED;
 #endif
     memset(&result, 0, sizeof(result));
     result.header.struct_size = sizeof(result);
     result.header.query_major = 1;
     result.runtime_abi_major = 1;
-    result.flags = CORDIS_MODULE_RESIDENT;
+    result.flags = EVE_MODULE_RESIDENT;
 #ifdef FIXTURE_EXPLICIT_UNLOAD
     result.header.query_minor = request->header.query_minor;
-    if (request->header.query_minor == CORDIS_MODULE_QUERY_EXPLICIT_UNLOAD_MINOR)
-        result.flags = CORDIS_MODULE_EXPLICIT_UNLOAD;
+    if (request->header.query_minor == EVE_MODULE_QUERY_EXPLICIT_UNLOAD_MINOR)
+        result.flags = EVE_MODULE_EXPLICIT_UNLOAD;
 #ifdef FIXTURE_BAD_FLAGS
-    result.flags = CORDIS_MODULE_RESIDENT | CORDIS_MODULE_EXPLICIT_UNLOAD;
+    result.flags = EVE_MODULE_RESIDENT | EVE_MODULE_EXPLICIT_UNLOAD;
 #endif
 #ifdef FIXTURE_BAD_MINOR
-    result.header.query_minor = CORDIS_MODULE_QUERY_MINOR;
+    result.header.query_minor = EVE_MODULE_QUERY_MINOR;
 #endif
 #endif
     result.module_id.data = (const uint8_t*)FIXTURE_ID;
@@ -109,8 +109,9 @@ CordisQueryStatus CORDIS_QUERY_CALL cordis_module_query_v1(const CordisModuleQue
 #if FIXTURE_MODE == 1
     result.header.query_major = 2;
 #elif FIXTURE_MODE == 2
-    result.module_id.data = (const uint8_t*)"org.cordis.wrong";
-    result.module_id.size = 16;
+    static const uint8_t wrong_id[] = "org.eve.wrong";
+    result.module_id.data = wrong_id;
+    result.module_id.size = sizeof(wrong_id) - 1;
 #elif FIXTURE_MODE == 3
     result.header.reserved = 1;
 #elif FIXTURE_MODE == 4
@@ -123,7 +124,8 @@ CordisQueryStatus CORDIS_QUERY_CALL cordis_module_query_v1(const CordisModuleQue
     result.flags = UINT64_C(2);
 #elif FIXTURE_MODE == 9
     {
-        static const CordisQueryBytesV1 other[] = {{(const uint8_t*)"org.cordis.other", 16}};
+        static const uint8_t other_id[] = "org.eve.other";
+        static const EveQueryBytesV1 other[] = {{other_id, sizeof(other_id) - 1}};
         result.plugins = other;
     }
 #elif FIXTURE_MODE == 10
@@ -131,8 +133,8 @@ CordisQueryStatus CORDIS_QUERY_CALL cordis_module_query_v1(const CordisModuleQue
 #endif
     memcpy(output, &result, capacity < sizeof(result) ? capacity : sizeof(result));
 #if FIXTURE_MODE == 5
-    return CORDIS_QUERY_FAILED;
+    return EVE_QUERY_FAILED;
 #else
-    return CORDIS_QUERY_OK;
+    return EVE_QUERY_OK;
 #endif
 }

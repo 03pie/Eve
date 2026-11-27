@@ -5,10 +5,10 @@
 #include <QElapsedTimer>
 #include <QTemporaryDir>
 #include <QTest>
-#include <cordis/module/manager.hpp>
-#include <cordis/module/native.hpp>
-#include <cordis/ui/ela_shell.hpp>
-#include <cordis_abi/plugin.h>
+#include <eve/module/manager.hpp>
+#include <eve/module/native.hpp>
+#include <eve/ui/ela_shell.hpp>
+#include <eve_abi/plugin.h>
 #include <windows.h>
 #include <cstring>
 #include <iostream>
@@ -18,13 +18,13 @@
     std::string(#condition) + " at line " + std::to_string(__LINE__)); } while (false)
 
 namespace {
-using namespace cordis;
-using namespace cordis::module;
-using namespace cordis::ui;
-using cordis::ui::detail::LogSeverity;
-using cordis::ui::detail::readSavedLogEvent;
-using cordis::ui::detail::readSavedLogRun;
-namespace fixture = cordis::testing::modules;
+using namespace eve;
+using namespace eve::module;
+using namespace eve::ui;
+using eve::ui::detail::LogSeverity;
+using eve::ui::detail::readSavedLogEvent;
+using eve::ui::detail::readSavedLogRun;
+namespace fixture = eve::testing::modules;
 
 template<class T> T take(Result<T> value)
 {
@@ -49,13 +49,13 @@ template<class T> typename Task<T>::Snapshot wait(const Task<T>& task)
     REQUIRE(result && result->hasValue());
     return result;
 }
-using EmitLog = CordisStatus(CORDIS_CALL*)(CordisHandle, std::uint32_t, CordisBytesV1);
+using EmitLog = EveStatus(EVE_CALL*)(EveHandle, std::uint32_t, EveBytesV1);
 EmitLog resolveEndpoint(const QString& manifest)
 {
     const auto imagePath = QDir::toNativeSeparators(QFileInfo(manifest).absolutePath() + "/module.dll").toStdWString();
     const auto image = GetModuleHandleW(imagePath.c_str());
     REQUIRE(image);
-    const auto address = GetProcAddress(image, "cordis_logging_fixture_emit");
+    const auto address = GetProcAddress(image, "eve_logging_fixture_emit");
     REQUIRE(address);
     EmitLog emitLog = nullptr;
     static_assert(sizeof(address) == sizeof(emitLog));
@@ -90,22 +90,22 @@ void exercise(const QString& modulePath, const QDir& workspace)
     wait(alpha.start());
     wait(bravo.start());
     const auto emitLog = resolveEndpoint(modulePath);
-    const std::string full(CORDIS_MAX_LOG_BYTES, '"');
+    const std::string full(EVE_MAX_LOG_BYTES, '"');
     const std::string shortText = u8"shared native text 日志";
-    for (auto level = CORDIS_LOG_TRACE; level <= CORDIS_LOG_ERROR; ++level) {
-        const auto& value = level == CORDIS_LOG_ERROR ? full : shortText;
-        REQUIRE(emitLog(1, level, {reinterpret_cast<const std::uint8_t*>(value.data()), value.size()}) == CORDIS_OK);
+    for (auto level = EVE_LOG_TRACE; level <= EVE_LOG_ERROR; ++level) {
+        const auto& value = level == EVE_LOG_ERROR ? full : shortText;
+        REQUIRE(emitLog(1, level, {reinterpret_cast<const std::uint8_t*>(value.data()), value.size()}) == EVE_OK);
     }
     (void)take(shell->writeOutput("platform test marker"));
     REQUIRE(wait(module.close())->value().quiescent);
     wait(shell->close());
     REQUIRE(delivered == 9 && !failedDelivery && lastAccepted.has_value());
-    REQUIRE(emitLog(1, CORDIS_LOG_ERROR, {nullptr, 0}) == CORDIS_E_CLOSED);
+    REQUIRE(emitLog(1, EVE_LOG_ERROR, {nullptr, 0}) == EVE_E_CLOSED);
     const auto late = shell->writeNativeOutput(*lastAccepted);
     REQUIRE(!late.hasValue() && late.error().code == ErrorCode::ContextClosing);
     take(scheduler->close());
 
-    const QDir root(workspace.filePath(".cordis/logs"));
+    const QDir root(workspace.filePath(".eve/logs"));
     const auto runs = root.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     REQUIRE(runs.size() == 1);
     const auto run = runs.front();
@@ -136,11 +136,11 @@ void exercise(const QString& modulePath, const QDir& workspace)
                 ++platformEntries;
                 continue;
             }
-            REQUIRE(row.value("module") == "org.cordis.test.native.logging" && row.value("moduleVersion") == "1.0.0");
+            REQUIRE(row.value("module") == "org.eve.test.native.logging" && row.value("moduleVersion") == "1.0.0");
             REQUIRE(row.value("generation").toString().toULongLong() == generation.value());
             REQUIRE(row.value("utcMs").toString().toLongLong() > 0);
-            const auto isAlpha = row.value("source") == "native/org.cordis.test.native.logging/test.native.alpha";
-            REQUIRE(isAlpha || row.value("source") == "native/org.cordis.test.native.logging/test.native.bravo");
+            const auto isAlpha = row.value("source") == "native/org.eve.test.native.logging/test.native.alpha";
+            REQUIRE(isAlpha || row.value("source") == "native/org.eve.test.native.logging/test.native.bravo");
             REQUIRE(row.value("instance") == (isAlpha ? "901" : "902") && row.value("epoch") == (isAlpha ? "5" : "8"));
             const auto message = row.value("text").toString();
             if (message == "native fixture destroyed") {
@@ -180,7 +180,7 @@ int main(int argc, char** argv)
         workspace.setAutoRemove(false);
         std::cout << "LOG_NATIVE_EVIDENCE=" << workspace.path().toUtf8().constData() << '\n' << std::flush;
         const QDir root(workspace.path());
-        const auto manifest = fixture::install(args[1], root.filePath("fixture"), "org.cordis.test.native.logging",
+        const auto manifest = fixture::install(args[1], root.filePath("fixture"), "org.eve.test.native.logging",
                                                 {"test.native.alpha", "test.native.bravo"});
         exercise(manifest, root);
         return EXIT_SUCCESS;

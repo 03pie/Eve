@@ -9,8 +9,8 @@
 #include <QThread>
 #include <QTimer>
 #include <QVariant>
-#include <cordis/module/qt_module.hpp>
-#include <cordis/qt/scheduler.hpp>
+#include <eve/module/qt_module.hpp>
+#include <eve/qt/scheduler.hpp>
 #include <cstring>
 #include <iostream>
 #include <optional>
@@ -18,8 +18,8 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
-using namespace cordis;
-using namespace cordis::module;
+using namespace eve;
+using namespace eve::module;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -71,29 +71,29 @@ int main(int argc, char** argv)
         temporary.setAutoRemove(false);
         const auto root = temporary.path();
         const auto manifest =
-            testing::modules::install(args[3], root + "/plugin", "org.cordis.qt.example",
-                                      QJsonArray{"org.cordis.qt.page", "org.cordis.qt.settings"}, "qt-ui");
+            testing::modules::install(args[3], root + "/plugin", "org.eve.qt.example",
+                                      QJsonArray{"org.eve.qt.page", "org.eve.qt.settings"}, "qt-ui");
         auto loaded = loadQtModule(root.toStdString(), manifest.toStdString());
         CHECK(loaded.hasValue());
         auto scheduler = std::make_shared<qt::QtScheduler>();
         const auto library = (root + "/plugin/module.dll").toStdWString();
         const auto image = GetModuleHandleW(library.c_str());
         CHECK(image);
-        const auto address = GetProcAddress(image, "cordis_qt_business_count");
+        const auto address = GetProcAddress(image, "eve_qt_business_count");
         CHECK(address);
         int(__cdecl * count)(int) = nullptr;
         static_assert(sizeof(count) == sizeof(address), "entry");
         std::memcpy(&count, &address, sizeof(count));
         bool queryObserved = false, queryRejected = false;
         if (mode == "query") {
-            app.setProperty("cordis.qt.factoryMode", "query_reentry");
+            app.setProperty("eve.qt.factoryMode", "query_reentry");
             QTimer::singleShot(0, &app, [&] {
-                auto nested = qtRuntime(loaded.value().generation, {"org.cordis.qt.page", {}, {}}, scheduler);
+                auto nested = qtRuntime(loaded.value().generation, {"org.eve.qt.page", {}, {}}, scheduler);
                 queryObserved = true;
                 queryRejected = !nested.hasValue() && nested.error().code == ErrorCode::ModuleLoad;
             });
         }
-        auto runtime = qtRuntime(loaded.value().generation, {"org.cordis.qt.page", {}, {}}, scheduler);
+        auto runtime = qtRuntime(loaded.value().generation, {"org.eve.qt.page", {}, {}}, scheduler);
         CHECK(runtime.hasValue());
         if (mode == "query") {
             CHECK(queryObserved && queryRejected && count(1) == 1 && count(2) == 0);
@@ -103,7 +103,7 @@ int main(int argc, char** argv)
         std::optional<Instance> instance, second;
         std::optional<OperationHandle> update;
         auto other = std::make_shared<qt::QtScheduler>();
-        auto secondRuntime = qtRuntime(loaded.value().generation, {"org.cordis.qt.settings", {}, {}}, other);
+        auto secondRuntime = qtRuntime(loaded.value().generation, {"org.eve.qt.settings", {}, {}}, other);
         CHECK(secondRuntime.hasValue());
         bool createRejected = false;
         ConstructionFilter filter;

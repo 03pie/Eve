@@ -1,8 +1,8 @@
 include("${PROJECT_SOURCE_DIR}/cmake/ModuleExceptionModel.cmake")
-cordis_module_exception_model()
+eve_module_exception_model()
 add_test(NAME p4.exception_flags COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_SOURCE_DIR}/module_exception_flags.cmake")
 set_tests_properties(p4.exception_flags PROPERTIES LABELS "p4;module;abi" TIMEOUT 10)
-function(cordis_abi_test_defaults target)
+function(eve_abi_test_defaults target)
     set_target_properties(${target} PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS OFF)
     target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}/sdk/include")
     target_compile_features(${target} PRIVATE c_std_11)
@@ -11,84 +11,82 @@ function(cordis_abi_test_defaults target)
         if(CMAKE_CXX_FLAGS MATCHES "/fsanitize=address")
             target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:C>:/fsanitize=address>")
         endif()
-        if(CORDIS_WARNINGS_AS_ERRORS)
+        if(EVE_WARNINGS_AS_ERRORS)
             target_compile_options(${target} PRIVATE /WX)
         endif()
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
-        if(CORDIS_WARNINGS_AS_ERRORS)
+        if(EVE_WARNINGS_AS_ERRORS)
             target_compile_options(${target} PRIVATE -Werror)
         endif()
     endif()
 endfunction()
 
-add_executable(cordis_module_query_layout module_query_layout.c module_query_layout.cpp)
-cordis_abi_test_defaults(cordis_module_query_layout)
-add_test(NAME p4.query_layout COMMAND cordis_module_query_layout)
+add_executable(eve_module_query_layout module_query_layout.c module_query_layout.cpp)
+eve_abi_test_defaults(eve_module_query_layout)
+add_test(NAME p4.query_layout COMMAND eve_module_query_layout)
 set_tests_properties(p4.query_layout PROPERTIES LABELS "p4;module;abi" TIMEOUT 10)
 
-add_executable(cordis_business_layout business_layout.c business_layout.cpp)
-cordis_abi_test_defaults(cordis_business_layout)
-add_test(NAME p4.business_layout COMMAND cordis_business_layout)
+add_executable(eve_business_layout business_layout.c business_layout.cpp)
+eve_abi_test_defaults(eve_business_layout)
+add_test(NAME p4.business_layout COMMAND eve_business_layout)
 set_tests_properties(p4.business_layout PROPERTIES LABELS "p4;module;abi" TIMEOUT 10)
 
-add_executable(cordis_business_tests business.cpp "${PROJECT_SOURCE_DIR}/tests/fixtures/business_fixture.c")
-cordis_abi_test_defaults(cordis_business_tests)
-target_compile_definitions(cordis_business_tests PRIVATE CORDIS_ABI_EXPORTS)
-target_link_libraries(cordis_business_tests PRIVATE Cordis::ModuleAbi)
+add_executable(eve_business_tests business.cpp "${PROJECT_SOURCE_DIR}/tests/fixtures/business_fixture.c")
+eve_abi_test_defaults(eve_business_tests)
+target_compile_definitions(eve_business_tests PRIVATE EVE_ABI_EXPORTS)
+target_link_libraries(eve_business_tests PRIVATE Eve::ModuleAbi)
 foreach(case IN ITEMS negotiation hosts plugins capacity lifecycle)
-    add_test(NAME p4.business_${case} COMMAND cordis_business_tests ${case})
+    add_test(NAME p4.business_${case} COMMAND eve_business_tests ${case})
     set_tests_properties(p4.business_${case} PROPERTIES LABELS "p4;module;abi;business" TIMEOUT 15)
 endforeach()
 
-add_executable(cordis_request_tests requests.cpp)
-target_link_libraries(cordis_request_tests PRIVATE Cordis::ModuleRequests)
-cordis_target_defaults(cordis_request_tests)
+add_executable(eve_request_tests requests.cpp)
+target_link_libraries(eve_request_tests PRIVATE Eve::ModuleRequests)
+eve_target_defaults(eve_request_tests)
 foreach(case IN ITEMS sync fence pending early race cancel protocol input quota closing reject discard throw retire abandoned threads json_valid json_invalid)
-    add_test(NAME p4.request_${case} COMMAND cordis_request_tests ${case})
+    add_test(NAME p4.request_${case} COMMAND eve_request_tests ${case})
     set_tests_properties(p4.request_${case} PROPERTIES LABELS "p4;module;requests" TIMEOUT 20)
 endforeach()
 
-if(TARGET cordis_module_native)
-    function(cordis_query_fixture name mode)
+if(TARGET eve_module_native)
+    function(eve_query_fixture name mode)
         if(name STREQUAL "throwing")
             set(source "${PROJECT_SOURCE_DIR}/tests/fixtures/module_throw.cpp")
-        elseif(name STREQUAL "missing")
-            set(source "${PROJECT_SOURCE_DIR}/tests/fixtures/module_missing.c")
         else()
             set(source "${PROJECT_SOURCE_DIR}/tests/fixtures/module_fixture.c")
         endif()
-        add_library(cordis_fixture_${name} MODULE "${source}")
-        cordis_abi_test_defaults(cordis_fixture_${name})
-        target_compile_definitions(cordis_fixture_${name} PRIVATE CORDIS_MODULE_EXPORTS FIXTURE_MODE=${mode} "FIXTURE_ID=\"org.cordis.${name}\"")
-        set_target_properties(cordis_fixture_${name} PROPERTIES PREFIX ""
+        add_library(eve_fixture_${name} MODULE "${source}")
+        eve_abi_test_defaults(eve_fixture_${name})
+        target_compile_definitions(eve_fixture_${name} PRIVATE EVE_MODULE_EXPORTS FIXTURE_MODE=${mode} "FIXTURE_ID=\"org.eve.${name}\"")
+        set_target_properties(eve_fixture_${name} PROPERTIES PREFIX ""
             RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/module-fixtures"
             LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/module-fixtures")
     endfunction()
-    cordis_query_fixture(good 0)
-    cordis_query_fixture(business 0)
-    target_sources(cordis_fixture_business PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/business_fixture.c")
-    target_compile_definitions(cordis_fixture_business PRIVATE CORDIS_ABI_EXPORTS)
-    cordis_query_fixture(business_throw 0)
-    target_sources(cordis_fixture_business_throw PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/business_fixture.c" "${PROJECT_SOURCE_DIR}/tests/fixtures/business_throw.cpp")
-    target_compile_definitions(cordis_fixture_business_throw PRIVATE CORDIS_ABI_EXPORTS FIXTURE_THROW_START)
-    cordis_query_fixture(state 0)
-    target_sources(cordis_fixture_state PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/business_fixture.c"
+    eve_query_fixture(good 0)
+    eve_query_fixture(business 0)
+    target_sources(eve_fixture_business PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/business_fixture.c")
+    target_compile_definitions(eve_fixture_business PRIVATE EVE_ABI_EXPORTS)
+    eve_query_fixture(business_throw 0)
+    target_sources(eve_fixture_business_throw PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/business_fixture.c" "${PROJECT_SOURCE_DIR}/tests/fixtures/business_throw.cpp")
+    target_compile_definitions(eve_fixture_business_throw PRIVATE EVE_ABI_EXPORTS FIXTURE_THROW_START)
+    eve_query_fixture(state 0)
+    target_sources(eve_fixture_state PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/business_fixture.c"
         "${PROJECT_SOURCE_DIR}/tests/fixtures/business_throw.cpp")
-    target_compile_definitions(cordis_fixture_state PRIVATE CORDIS_ABI_EXPORTS FIXTURE_STATE)
-    add_executable(cordis_module_state_native_tests "${PROJECT_SOURCE_DIR}/tests/qt/module_state_native.cpp")
-    target_link_libraries(cordis_module_state_native_tests PRIVATE Cordis::ModuleHost Qt5::Core)
-    cordis_target_defaults(cordis_module_state_native_tests)
-    add_dependencies(cordis_module_state_native_tests cordis_fixture_state cordis_fixture_business)
+    target_compile_definitions(eve_fixture_state PRIVATE EVE_ABI_EXPORTS FIXTURE_STATE)
+    add_executable(eve_module_state_native_tests "${PROJECT_SOURCE_DIR}/tests/qt/module_state_native.cpp")
+    target_link_libraries(eve_module_state_native_tests PRIVATE Eve::ModuleHost Qt5::Core)
+    eve_target_defaults(eve_module_state_native_tests)
+    add_dependencies(eve_module_state_native_tests eve_fixture_state eve_fixture_business)
     foreach(case IN ITEMS metadata roundtrip legacy stateless origin_lifetime schema_id schema_version query_pending query_table describe_bad
             query_throw describe_throw query_reject
             capture_close capture_close_busy restore_close module_close factory_close validate_reject validate_pending validate_throw
             restore_reject restore_pending restore_throw capture_json capture_pointer capture_pending
             wrong_thread restore_started reentry)
         add_test(NAME p5.native_state_${case} COMMAND "${CMAKE_COMMAND}"
-            "-DTEST_EXE=$<TARGET_FILE:cordis_module_state_native_tests>" "-DCASE=${case}"
+            "-DTEST_EXE=$<TARGET_FILE:eve_module_state_native_tests>" "-DCASE=${case}"
             "-DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/state-fixtures"
-            "-DFIXTURES=$<TARGET_FILE:cordis_fixture_state>;$<TARGET_FILE:cordis_fixture_business>"
+            "-DFIXTURES=$<TARGET_FILE:eve_fixture_state>;$<TARGET_FILE:eve_fixture_business>"
             -P "${PROJECT_SOURCE_DIR}/tests/module_native_case.cmake")
         set_tests_properties(p5.native_state_${case} PROPERTIES LABELS "p5;module;native;state" TIMEOUT 25)
     endforeach()
@@ -96,73 +94,75 @@ if(TARGET cordis_module_native)
     include("${PROJECT_SOURCE_DIR}/tests/qt/module_load_policy.cmake")
     include("${PROJECT_SOURCE_DIR}/tests/qt/module_unload.cmake")
     include("${PROJECT_SOURCE_DIR}/tests/qt/module_unload_replacement.cmake")
-    cordis_query_fixture(resources 0)
-    target_sources(cordis_fixture_resources PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/resource_fixture.c")
-    target_compile_definitions(cordis_fixture_resources PRIVATE CORDIS_ABI_EXPORTS)
-    cordis_query_fixture(lifecycle 0)
-    target_sources(cordis_fixture_lifecycle PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/lifecycle_fixture.cpp")
-    target_compile_definitions(cordis_fixture_lifecycle PRIVATE CORDIS_ABI_EXPORTS)
+    eve_query_fixture(resources 0)
+    target_sources(eve_fixture_resources PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/resource_fixture.c")
+    target_compile_definitions(eve_fixture_resources PRIVATE EVE_ABI_EXPORTS)
+    eve_query_fixture(lifecycle 0)
+    target_sources(eve_fixture_lifecycle PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/lifecycle_fixture.cpp")
+    target_compile_definitions(eve_fixture_lifecycle PRIVATE EVE_ABI_EXPORTS)
     foreach(name IN ITEMS services services_peer)
-        cordis_query_fixture(${name} 0)
-        target_sources(cordis_fixture_${name} PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/resource_fixture.c")
-        target_compile_definitions(cordis_fixture_${name} PRIVATE CORDIS_ABI_EXPORTS FIXTURE_SERVICES)
+        eve_query_fixture(${name} 0)
+        target_sources(eve_fixture_${name} PRIVATE "${PROJECT_SOURCE_DIR}/tests/fixtures/resource_fixture.c")
+        target_compile_definitions(eve_fixture_${name} PRIVATE EVE_ABI_EXPORTS FIXTURE_SERVICES)
     endforeach()
-    cordis_query_fixture(blocking 0)
-    target_compile_definitions(cordis_fixture_blocking PRIVATE FIXTURE_BLOCKING)
-    cordis_query_fixture(bad_header 1)
-    cordis_query_fixture(bad_identity 2)
-    cordis_query_fixture(bad_reserved 3)
-    cordis_query_fixture(bad_null 4)
-    cordis_query_fixture(rejected 5)
-    cordis_query_fixture(short_table 6)
-    cordis_query_fixture(bad_runtime 7)
-    cordis_query_fixture(bad_flags 8)
-    cordis_query_fixture(bad_catalog 9)
-    cordis_query_fixture(bad_span 10)
-    cordis_query_fixture(missing 0)
-    cordis_query_fixture(throwing 0)
-    cordis_query_fixture(dependent 0)
-    add_library(cordis_fixture_dependency SHARED "${PROJECT_SOURCE_DIR}/tests/fixtures/module_dependency.c")
-    cordis_abi_test_defaults(cordis_fixture_dependency)
-    set_target_properties(cordis_fixture_dependency PROPERTIES PREFIX "" RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/module-fixtures")
-    target_compile_definitions(cordis_fixture_dependent PRIVATE FIXTURE_DEPENDENT)
-    target_link_libraries(cordis_fixture_dependent PRIVATE cordis_fixture_dependency)
+    eve_query_fixture(blocking 0)
+    target_compile_definitions(eve_fixture_blocking PRIVATE FIXTURE_BLOCKING)
+    eve_query_fixture(bad_header 1)
+    eve_query_fixture(bad_identity 2)
+    eve_query_fixture(bad_reserved 3)
+    eve_query_fixture(bad_null 4)
+    eve_query_fixture(rejected 5)
+    eve_query_fixture(short_table 6)
+    eve_query_fixture(bad_runtime 7)
+    eve_query_fixture(bad_flags 8)
+    eve_query_fixture(bad_catalog 9)
+    eve_query_fixture(bad_span 10)
+    eve_query_fixture(missing 0)
+    # 导出旧产品的真实入口并保持有效描述，确保 Eve 宿主只接受当前发现协议。
+    target_compile_definitions(eve_fixture_missing PRIVATE eve_module_query_v1=cordis_module_query_v1)
+    eve_query_fixture(throwing 0)
+    eve_query_fixture(dependent 0)
+    add_library(eve_fixture_dependency SHARED "${PROJECT_SOURCE_DIR}/tests/fixtures/module_dependency.c")
+    eve_abi_test_defaults(eve_fixture_dependency)
+    set_target_properties(eve_fixture_dependency PROPERTIES PREFIX "" RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/module-fixtures")
+    target_compile_definitions(eve_fixture_dependent PRIVATE FIXTURE_DEPENDENT)
+    target_link_libraries(eve_fixture_dependent PRIVATE eve_fixture_dependency)
 
-    add_executable(cordis_module_native_tests "${PROJECT_SOURCE_DIR}/tests/qt/module_native.cpp")
-    target_link_libraries(cordis_module_native_tests PRIVATE Cordis::ModuleNative Cordis::ModuleAbi Cordis::ModuleHost Cordis::ConfigKernel Cordis::ConfigSession Cordis::Qt Qt5::Core)
-    set_target_properties(cordis_module_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-    cordis_target_defaults(cordis_module_native_tests)
+    add_executable(eve_module_native_tests "${PROJECT_SOURCE_DIR}/tests/qt/module_native.cpp")
+    target_link_libraries(eve_module_native_tests PRIVATE Eve::ModuleNative Eve::ModuleAbi Eve::ModuleHost Eve::ConfigKernel Eve::ConfigSession Eve::Qt Qt5::Core)
+    set_target_properties(eve_module_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    eve_target_defaults(eve_module_native_tests)
     foreach(name IN ITEMS good business business_throw resources lifecycle services services_peer blocking bad_header bad_identity bad_reserved bad_null rejected short_table bad_runtime bad_flags bad_catalog bad_span missing throwing dependent dependency)
-        add_dependencies(cordis_module_native_tests cordis_fixture_${name})
+        add_dependencies(eve_module_native_tests eve_fixture_${name})
     endforeach()
     foreach(case IN ITEMS scope_freeze scope_stop scope_external)
         add_test(NAME p5.native_${case} COMMAND "${CMAKE_COMMAND}"
-            "-DTEST_EXE=$<TARGET_FILE:cordis_module_native_tests>"
-            "-DFIXTURES=$<TARGET_FILE_DIR:cordis_fixture_good>"
+            "-DTEST_EXE=$<TARGET_FILE:eve_module_native_tests>"
+            "-DFIXTURES=$<TARGET_FILE_DIR:eve_fixture_good>"
             "-DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/native-fixtures" "-DCASE=${case}"
             -P "${PROJECT_SOURCE_DIR}/tests/module_native_case.cmake")
         set_tests_properties(p5.native_${case} PROPERTIES LABELS "p5;module;native;replacement_scope" TIMEOUT 25)
     endforeach()
     foreach(case IN ITEMS replacement_graph replacement_external)
         add_test(NAME p5.native_${case} COMMAND "${CMAKE_COMMAND}"
-            "-DTEST_EXE=$<TARGET_FILE:cordis_module_native_tests>"
-            "-DFIXTURES=$<TARGET_FILE_DIR:cordis_fixture_good>"
+            "-DTEST_EXE=$<TARGET_FILE:eve_module_native_tests>"
+            "-DFIXTURES=$<TARGET_FILE_DIR:eve_fixture_good>"
             "-DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/native-fixtures" "-DCASE=${case}"
             -P "${PROJECT_SOURCE_DIR}/tests/module_native_case.cmake")
         set_tests_properties(p5.native_${case} PROPERTIES LABELS "p5;module;native;replacement_closure" TIMEOUT 25)
     endforeach()
     foreach(case IN ITEMS service_read_conflict service_effect_read_conflict service_instance_read_conflict service_module_read_conflict)
         add_test(NAME p5.native_${case} COMMAND "${CMAKE_COMMAND}"
-            "-DTEST_EXE=$<TARGET_FILE:cordis_module_native_tests>"
-            "-DFIXTURES=$<TARGET_FILE_DIR:cordis_fixture_good>"
+            "-DTEST_EXE=$<TARGET_FILE:eve_module_native_tests>"
+            "-DFIXTURES=$<TARGET_FILE_DIR:eve_fixture_good>"
             "-DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/native-fixtures" "-DCASE=${case}"
             -P "${PROJECT_SOURCE_DIR}/tests/module_native_case.cmake")
         set_tests_properties(p5.native_${case} PROPERTIES LABELS "p5;module;native;abi;services;replacement_inputs" TIMEOUT 25)
     endforeach()
     foreach(case IN ITEMS publication_commit publication_abort)
         add_test(NAME p5.native_${case} COMMAND "${CMAKE_COMMAND}"
-            "-DTEST_EXE=$<TARGET_FILE:cordis_module_native_tests>"
-            "-DFIXTURES=$<TARGET_FILE_DIR:cordis_fixture_good>"
+            "-DTEST_EXE=$<TARGET_FILE:eve_module_native_tests>"
+            "-DFIXTURES=$<TARGET_FILE_DIR:eve_fixture_good>"
             "-DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/native-fixtures" "-DCASE=${case}"
             -P "${PROJECT_SOURCE_DIR}/tests/module_native_case.cmake")
         set_tests_properties(p5.native_${case} PROPERTIES LABELS "p5;module;native;publication" TIMEOUT 25)
@@ -181,8 +181,8 @@ if(TARGET cordis_module_native)
         managed_metadata managed_undeclared managed_setup_failure managed_scheduler managed_index managed_generation managed_incoming_budget managed_ack_capacity managed_create_failure
         lifecycle_cancel_stop lifecycle_pending_stop lifecycle_stale_capture lifecycle_live_capture lifecycle_failed_capture)
         add_test(NAME p4.native_${case} COMMAND "${CMAKE_COMMAND}"
-            "-DTEST_EXE=$<TARGET_FILE:cordis_module_native_tests>"
-            "-DFIXTURES=$<TARGET_FILE_DIR:cordis_fixture_good>"
+            "-DTEST_EXE=$<TARGET_FILE:eve_module_native_tests>"
+            "-DFIXTURES=$<TARGET_FILE_DIR:eve_fixture_good>"
             "-DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/native-fixtures" "-DCASE=${case}"
             -P "${PROJECT_SOURCE_DIR}/tests/module_native_case.cmake")
         set_tests_properties(p4.native_${case} PROPERTIES LABELS "p4;module;native;abi" TIMEOUT 25)

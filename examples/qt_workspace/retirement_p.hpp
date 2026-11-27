@@ -5,8 +5,8 @@
 #include "workspace.hpp"
 
 namespace notebook::detail {
-cordis::Result<cordis::module::ModuleGenerationSnapshot> retirementTarget(const WorkspaceModulesSnapshot& snapshot,
-                                                                          cordis::GenerationId generation);
-WorkspaceRetirementReport attemptRetirement(cordis::module::ModuleManager& manager,
-                                            const cordis::module::ModuleGenerationSnapshot& target);
+eve::Result<eve::module::ModuleGenerationSnapshot> retirementTarget(const WorkspaceModulesSnapshot& snapshot,
+                                                                          eve::GenerationId generation);
+WorkspaceRetirementReport attemptRetirement(eve::module::ModuleManager& manager,
+                                            const eve::module::ModuleGenerationSnapshot& target);
 } // namespace notebook::detail

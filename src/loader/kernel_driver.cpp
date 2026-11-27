@@ -7,7 +7,7 @@
 #include "configuration_commit_p.hpp"
 #include "definitions_p.hpp"
 #include "module_catalog_p.hpp"
-#include <cordis/loader/kernel_driver.hpp>
+#include <eve/loader/kernel_driver.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -24,7 +24,7 @@
 #include <utility>
 #include <vector>
 
-namespace cordis::loader {
+namespace eve::loader {
 namespace {
 /** @brief 运行适配错误保留规范条目路径，不在消息中输出配置负载。 */
 ErrorInfo driverError(ErrorCode code, std::string message, const std::string& path = {})
@@ -201,8 +201,8 @@ struct KernelDelivery {
 struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     std::shared_ptr<IScheduler> scheduler;
     std::shared_ptr<Kernel> kernel;
-    std::shared_ptr<const cordis::detail::InstanceOwnerIdentity> instanceOwner =
-        std::make_shared<const cordis::detail::InstanceOwnerIdentity>();
+    std::shared_ptr<const eve::detail::InstanceOwnerIdentity> instanceOwner =
+        std::make_shared<const eve::detail::InstanceOwnerIdentity>();
     std::shared_ptr<const ConfigurationDefinitions> definitions;
     const auto& plugins() const { return definitions->data_->entries; }
     const ConfiguredPlugin& plugin(const std::string& id) const { return *plugins().at(id); }
@@ -407,13 +407,13 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
                                            bool validateProviders = true,
                                            const DefinitionsData* catalogue = nullptr) const
     {
-        std::vector<cordis::detail::ServicePlanNode> nodes;
+        std::vector<eve::detail::ServicePlanNode> nodes;
         for (const auto& entry : entries) {
             auto view = realmMap(entry.second);
             auto parent = parentPath(entry.first);
             const auto& definition =
                 catalogue ? *catalogue->entries.at(entry.second.plugin) : plugin(entry.second.plugin);
-            cordis::detail::ServicePlanNode node{
+            eve::detail::ServicePlanNode node{
                 entry.first, {}, contracts.at(entry.first), definition.runtime.outputs()};
             if (!parent.empty() && entries.count(parent))
                 node.parent = parent;
@@ -423,7 +423,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
                 output.key = view.resolve(output.key);
             nodes.push_back(std::move(node));
         }
-        return cordis::detail::planServices(nodes, {}, cordis::detail::MissingServicePolicy::Pending,
+        return eve::detail::planServices(nodes, {}, eve::detail::MissingServicePolicy::Pending,
                                             validateProviders);
     }
 
@@ -549,7 +549,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
     /** @brief 所有 Task 回执都由 owner 接收，投递失败不从 worker 改运行表。 */
     void observe(const Task<void>& receipt, const std::shared_ptr<KernelAction>& action = {})
     {
-        cordis::detail::TaskAccess::observe(receipt, [gate = delivery, action](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(receipt, [gate = delivery, action](Task<void>::Snapshot result) {
             if (!result->hasValue())
                 gate->fail(action, result->error());
         });
@@ -613,7 +613,7 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
         KernelRecord record{value, {}, typed};
         const auto parent = parentPath(path);
         if (parent.empty()) {
-            auto mounted = cordis::detail::InstanceOwnershipAccess::mount(
+            auto mounted = eve::detail::InstanceOwnershipAccess::mount(
                 *kernel, instanceOwner, plugin(value.plugin).runtime, value.config, realmMap(value), typed);
             if (!mounted.hasValue())
                 return Result<KernelRecord>::failure(mounted.error());
@@ -919,10 +919,10 @@ struct DriverCommitControl {
     std::shared_ptr<KernelDriverControl> owner;
     std::shared_ptr<const ConfigurationDefinitions> baseline, definitions;
     std::shared_ptr<const ValidatedCandidate> previousTarget, target;
-    cordis::detail::PreparedReplacementView view;
+    eve::detail::PreparedReplacementView view;
     std::map<std::string, KernelRecord> updates;
     std::map<std::string, KernelRecord> additions;
-    std::vector<cordis::detail::PreparedInstanceOwnership> ownership;
+    std::vector<eve::detail::PreparedInstanceOwnership> ownership;
     std::optional<DriverReplacementClaim> temporaryClaim;
     std::weak_ptr<DriverClaimControl> claim;
     std::thread::id thread = std::this_thread::get_id();
@@ -951,7 +951,7 @@ bool PreparedDriverCommit::ready() const noexcept
 {
     const auto& value = control_;
     return value && value->thread == std::this_thread::get_id() && !value->published &&
-           cordis::detail::CoreReplacementAccess::current(value->view) &&
+           eve::detail::CoreReplacementAccess::current(value->view) &&
            value->owner->replacementClaims.owns(value->claim, value->view.operation) &&
            value->owner->replacementPrepared && !value->owner->closing && !value->owner->delivery->blocked.load() &&
            !value->owner->backgroundUnsafe && !value->owner->active && value->owner->accesses == 1 &&
@@ -998,7 +998,7 @@ Result<PreparedDriverCommit> DriverCommitAccess::prepare(KernelReconcileDriver& 
     value->owner = state;
     ++state->accesses;
     state->replacementPrepared = true;
-    auto inspected = cordis::detail::CoreReplacementAccess::inspect(scope, *state->kernel);
+    auto inspected = eve::detail::CoreReplacementAccess::inspect(scope, *state->kernel);
     if (!inspected.hasValue())
         return Output::failure(inspected.error());
     value->view = std::move(inspected).value();
@@ -1059,7 +1059,7 @@ Result<PreparedDriverCommit> DriverCommitAccess::prepare(KernelReconcileDriver& 
     for (const auto& mapping : mappings)
         if (!rows.emplace(mapping.path, &mapping).second || !used.insert(mapping.candidate).second)
             return Output::failure(driverError(ErrorCode::ConfigConflict, "duplicate replacement mapping"));
-    std::map<InstanceId, const cordis::detail::ReplacementInstanceInput*> candidates;
+    std::map<InstanceId, const eve::detail::ReplacementInstanceInput*> candidates;
     std::set<InstanceId> originals;
     for (const auto& member : value->view.members)
         candidates.emplace(member.input.instance, &member);
@@ -1146,7 +1146,7 @@ Result<PreparedDriverCommit> DriverCommitAccess::prepare(KernelReconcileDriver& 
     if (affected.size() != mappings.size())
         return Output::failure(driverError(ErrorCode::ConfigConflict, "replacement contains unrelated entry mappings"));
     for (const auto& entry : value->updates) {
-        auto ownership = cordis::detail::InstanceOwnershipAccess::prepare(*entry.second.instance, state->instanceOwner);
+        auto ownership = eve::detail::InstanceOwnershipAccess::prepare(*entry.second.instance, state->instanceOwner);
         if (!ownership.hasValue())
             return Output::failure(ownership.error());
         value->ownership.push_back(std::move(ownership).value());
@@ -1175,7 +1175,7 @@ Result<bool> DriverCommitAccess::owns(const KernelReconcileDriver& facade, const
     auto admitted = state->check(false);
     if (!admitted.hasValue())
         return Result<bool>::failure(admitted.error());
-    auto owner = cordis::detail::InstanceOwnershipAccess::owner(instance);
+    auto owner = eve::detail::InstanceOwnershipAccess::owner(instance);
     if (!owner.hasValue())
         return Result<bool>::failure(owner.error());
     return Result<bool>::success(owner.value() == state->instanceOwner);
@@ -1244,7 +1244,7 @@ DriverCommitAccess::inspectReconstruction(KernelReconcileDriver& facade, const R
         !definitions || !target || !definitions->owns(*target))
         return Output::failure(driverError(ErrorCode::ConfigConflict, "driver cannot inspect reconstruction inputs"));
     KernelDriverControl::Access access(*state);
-    auto original = cordis::detail::CoreReplacementAccess::original(scope, *state->kernel);
+    auto original = eve::detail::CoreReplacementAccess::original(scope, *state->kernel);
     if (!original.hasValue())
         return Output::failure(original.error());
     DriverReconstructionPlan plan{std::this_thread::get_id(),
@@ -1268,7 +1268,7 @@ DriverCommitAccess::inspectReconstruction(KernelReconcileDriver& facade, const R
         return Output::failure(projected.error());
     const auto& records = projected.value();
     const auto logicalPaths = reconstructionPaths(records, changed.value());
-    std::map<InstanceId, const cordis::detail::ReplacementInstanceInput*> actual;
+    std::map<InstanceId, const eve::detail::ReplacementInstanceInput*> actual;
     for (const auto& member : plan.original.members)
         actual.emplace(member.input.instance, &member);
     std::map<InstanceId, std::string> configured;
@@ -1363,7 +1363,7 @@ DriverCommitAccess::inspectReconstruction(KernelReconcileDriver& facade, const R
     if (!order.hasValue())
         return Output::failure(order.error());
     for (const auto& member : plan.original.members) {
-        auto owner = cordis::detail::InstanceOwnershipAccess::owner(member.instance);
+        auto owner = eve::detail::InstanceOwnershipAccess::owner(member.instance);
         if (!owner.hasValue())
             return Output::failure(owner.error());
         if (owner.value() && owner.value() != state->instanceOwner) {
@@ -1385,7 +1385,7 @@ DriverCommitAccess::inspectReconstruction(KernelReconcileDriver& facade, const R
         }
     }
     // 回调只能发生在准备窗口外。最后重验真实 scope/目录/目标和关闭状态，不返回失效输入。
-    auto current = cordis::detail::CoreReplacementAccess::original(scope, *state->kernel);
+    auto current = eve::detail::CoreReplacementAccess::original(scope, *state->kernel);
     if (!current.hasValue())
         return Output::failure(current.error());
     if (state->closing || state->delivery->blocked.load() || state->backgroundUnsafe || state->active ||
@@ -1435,7 +1435,7 @@ bool DriverCommitAccess::current(const KernelReconcileDriver& facade, const Driv
     if (plan.thread != std::this_thread::get_id())
         return false;
     const auto& state = facade.control_;
-    return cordis::detail::CoreReplacementAccess::current(plan.original) && !state->closing &&
+    return eve::detail::CoreReplacementAccess::current(plan.original) && !state->closing &&
            !state->replacementPrepared && !state->delivery->blocked.load() && !state->backgroundUnsafe &&
            !state->active && !state->accesses && !state->pendingStops && state->definitions == plan.change.baseline &&
            state->currentTarget == plan.previousTarget;
@@ -1749,4 +1749,4 @@ Task<CleanupReport> KernelReconcileDriver::close()
         state->delivery->fail({}, health.error());
     return state->delivery->closed.task();
 }
-} // namespace cordis::loader
+} // namespace eve::loader

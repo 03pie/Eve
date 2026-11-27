@@ -1,15 +1,15 @@
 /** @file loader.cpp
  * @brief 验证配置结构边界、规范化、禁用级联及无副作用差异预览。
  */
-#include <cordis/loader/configuration.hpp>
+#include <eve/loader/configuration.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
-using namespace cordis;
-using namespace cordis::loader;
+using namespace eve;
+using namespace eve::loader;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__)); } while (false)
 /** @brief 创建最小内置插件条目，不引入任何内核实例。 */
 EntrySpec entry(std::string id = "notes")

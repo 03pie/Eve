@@ -12,16 +12,16 @@
 #include <QThread>
 #include <QTimer>
 #include <QVariant>
-#include <cordis/loader/kernel_driver.hpp>
-#include <cordis/loader/qt_store.hpp>
-#include <cordis/loader/session.hpp>
-#include <cordis/module/manager.hpp>
-#include <cordis/module/native.hpp>
-#include <cordis/module/runtime.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
-#ifdef CORDIS_TEST_QT_RESERVATION
-#include <cordis/module/qt_module.hpp>
-#include <cordis/qt/scheduler.hpp>
+#include <eve/loader/kernel_driver.hpp>
+#include <eve/loader/qt_store.hpp>
+#include <eve/loader/session.hpp>
+#include <eve/module/manager.hpp>
+#include <eve/module/native.hpp>
+#include <eve/module/runtime.hpp>
+#include <eve/testing/fake_scheduler.hpp>
+#ifdef EVE_TEST_QT_RESERVATION
+#include <eve/module/qt_module.hpp>
+#include <eve/qt/scheduler.hpp>
 #endif
 #include <algorithm>
 #include <atomic>
@@ -34,9 +34,9 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
-using namespace cordis;
-using namespace cordis::module;
-namespace files = cordis::testing::modules;
+using namespace eve;
+using namespace eve::module;
+namespace files = eve::testing::modules;
 static_assert(!std::is_copy_constructible_v<ReplacementReservation> &&
               std::is_nothrow_move_constructible_v<ReplacementReservation>);
 void generic(Scene& s, const QString& name)
@@ -111,8 +111,8 @@ void generic(Scene& s, const QString& name)
         }
     } else if (name == "parallel") {
         auto peerOld =
-            files::install(s.dlls[3], s.root + "/peer-old", "org.cordis.peer", {"org.cordis.peer.plugin"}, "c-abi");
-        auto peerNext = files::install(s.dlls[4], s.root + "/peer-next", "org.cordis.peer", {"org.cordis.peer.plugin"},
+            files::install(s.dlls[3], s.root + "/peer-old", "org.eve.peer", {"org.eve.peer.plugin"}, "c-abi");
+        auto peerNext = files::install(s.dlls[4], s.root + "/peer-next", "org.eve.peer", {"org.eve.peer.plugin"},
                                        "c-abi", "2.0.0");
         const auto a = s.manager.load(s.root.toStdString(), peerOld.toStdString()).value().generation;
         const auto b = s.manager.stage(s.root.toStdString(), peerNext.toStdString(), a).value().generation;
@@ -163,7 +163,7 @@ void native(Scene& s, const QString& name)
         s.checkReserved(false);
         auto healthy = s.reserve();
     } else if (name == "candidate_live") {
-        auto instance = next.create("org.cordis.plugin", "\"sync\"", InstanceId{77}, 1).value();
+        auto instance = next.create("org.eve.plugin", "\"sync\"", InstanceId{77}, 1).value();
         CHECK(s.manager.reserveReplacement(s.current, s.candidate).error().code == ErrorCode::ConfigConflict);
         auto closed = instance.close();
         run();
@@ -171,18 +171,18 @@ void native(Scene& s, const QString& name)
         auto scope = s.reserve();
     } else {
         CHECK(name == "admission");
-        auto first = old.create("org.cordis.plugin", "\"sync\"", InstanceId{77}, 1).value();
+        auto first = old.create("org.eve.plugin", "\"sync\"", InstanceId{77}, 1).value();
         auto started = first.start();
         run();
         CHECK(started.tryResult()->hasValue());
-        auto runtime = old.runtime({"org.cordis.plugin", {}, {}}).value();
+        auto runtime = old.runtime({"org.eve.plugin", {}, {}}).value();
         auto scope = s.reserve();
         const auto before = s.state(s.current).resources.records.size();
-        CHECK(old.create("org.cordis.plugin", "\"sync\"", InstanceId{78}, 1).error().code == ErrorCode::ConfigConflict);
-        CHECK(next.create("org.cordis.plugin", "\"sync\"", InstanceId{79}, 1).error().code ==
+        CHECK(old.create("org.eve.plugin", "\"sync\"", InstanceId{78}, 1).error().code == ErrorCode::ConfigConflict);
+        CHECK(next.create("org.eve.plugin", "\"sync\"", InstanceId{79}, 1).error().code ==
               ErrorCode::ConfigConflict);
         CHECK(NativeModule::open(s.manager, s.current, scheduler).error().code == ErrorCode::ConfigConflict);
-        CHECK(old.runtime({"org.cordis.plugin", {}, {}}).error().code == ErrorCode::ConfigConflict);
+        CHECK(old.runtime({"org.eve.plugin", {}, {}}).error().code == ErrorCode::ConfigConflict);
         auto actor = Instance::mount(runtime, scheduler, "\"sync\"", services);
         run();
         CHECK(actor.ready().tryResult()->error().code == ErrorCode::ConfigConflict);
@@ -195,8 +195,8 @@ void native(Scene& s, const QString& name)
         auto stopped = actor.stop();
         run();
         CHECK(stopped.tryResult()->value().quiescent);
-        old.create("org.cordis.plugin", "\"sync\"", InstanceId{78}, 1).value();
-        next.create("org.cordis.plugin", "\"sync\"", InstanceId{79}, 1).value();
+        old.create("org.eve.plugin", "\"sync\"", InstanceId{78}, 1).value();
+        next.create("org.eve.plugin", "\"sync\"", InstanceId{79}, 1).value();
     }
     for (const auto& module : {old, next}) {
         auto closed = module.close();
@@ -209,14 +209,14 @@ template <class Wait>
 void definitionBinding(Scene& s, const Runtime& old, const Runtime& next, const std::shared_ptr<IScheduler>& scheduler,
                        const std::shared_ptr<Kernel>& kernel, Wait waitFor)
 {
-    using namespace cordis::loader;
+    using namespace eve::loader;
     auto take = [](auto result, const char* phase) {
         if (!result.hasValue())
             throw std::runtime_error(std::string(phase) + ": " + result.error().message + " [" + result.error().phase +
                                      "]");
         return std::move(result).value();
     };
-    const auto id = s.qt ? "org.cordis.qt.page" : "org.cordis.plugin";
+    const auto id = s.qt ? "org.eve.qt.page" : "org.eve.plugin";
     auto schema = [](const std::string& value) {
         return value == "null" || value == "\"sync\""
                    ? Result<void>::success()
@@ -263,8 +263,8 @@ void configurationCommit(Scene& s, const Runtime& old, const Runtime& next,
                          const std::shared_ptr<IScheduler>& scheduler, const std::shared_ptr<Kernel>& kernel,
                          Wait waitFor, bool recovering)
 {
-    using namespace cordis::loader;
-    const auto id = s.qt ? "org.cordis.qt.page" : "org.cordis.plugin";
+    using namespace eve::loader;
+    const auto id = s.qt ? "org.eve.qt.page" : "org.eve.plugin";
     auto schema = [](const std::string&) { return Result<void>::success(); };
     auto stable = kernel->registerPlugin("stable", [](Context) { return completedTask(); }).value();
     auto first = ConfigurationDefinitions::create(
@@ -392,8 +392,8 @@ void nativeDefinitions(Scene& s, bool replacing = false, bool recovering = false
     auto kernel = std::make_shared<Kernel>(scheduler);
     auto old = NativeModule::open(s.manager, s.current, scheduler, kernel->services()).value(),
          next = NativeModule::open(s.manager, s.candidate, scheduler, kernel->services()).value();
-    auto a = old.runtime({"org.cordis.plugin", {}, {}}).value(),
-         b = next.runtime({"org.cordis.plugin", {}, {}}).value();
+    auto a = old.runtime({"org.eve.plugin", {}, {}}).value(),
+         b = next.runtime({"org.eve.plugin", {}, {}}).value();
     kernel->registerRuntime(replacing ? "canonical" : "old", a).value();
     if (!replacing)
         kernel->registerRuntime("next", b).value();
@@ -449,7 +449,7 @@ void nativeDefinitions(Scene& s, bool replacing = false, bool recovering = false
     CHECK(waitFor(old.close())->value().quiescent && waitFor(next.close())->value().quiescent);
     queue->close();
 }
-#ifdef CORDIS_TEST_QT_RESERVATION
+#ifdef EVE_TEST_QT_RESERVATION
 template <class T> auto wait(const Task<T>& task)
 {
     QElapsedTimer timer;
@@ -481,7 +481,7 @@ protected:
 void qtCase(Scene& s, const QString& name)
 {
     auto scheduler = std::make_shared<qt::QtScheduler>();
-    auto definition = [&](GenerationId id) { return qtRuntime(id, {"org.cordis.qt.page", {}, {}}, scheduler); };
+    auto definition = [&](GenerationId id) { return qtRuntime(id, {"org.eve.qt.page", {}, {}}, scheduler); };
     if (name == "stage_reentry") {
         bool observed = false, denied = false;
         std::optional<ReplacementReservation> unexpected;
@@ -500,7 +500,7 @@ void qtCase(Scene& s, const QString& name)
     } else if (name == "sibling_query_reentry") {
         auto path = s.install(s.dlls[2], "third", "2.0.0");
         auto third = s.stage(path.toStdString()).value().generation;
-        QCoreApplication::instance()->setProperty("cordis.qt.factoryMode", "query_reentry");
+        QCoreApplication::instance()->setProperty("eve.qt.factoryMode", "query_reentry");
         bool observed = false, denied = false;
         QTimer::singleShot(0, QCoreApplication::instance(), [&] {
             auto guard = s.manager.reserveReplacement(s.current, third);
@@ -511,7 +511,7 @@ void qtCase(Scene& s, const QString& name)
         CHECK(observed && denied);
         auto scope = s.manager.reserveReplacement(s.current, third).value();
     } else if (name == "query_reentry") {
-        QCoreApplication::instance()->setProperty("cordis.qt.factoryMode", "query_reentry");
+        QCoreApplication::instance()->setProperty("eve.qt.factoryMode", "query_reentry");
         bool observed = false, denied = false;
         QTimer::singleShot(0, QCoreApplication::instance(), [&] {
             auto guard = s.manager.reserveReplacement(s.current, s.candidate);
@@ -577,8 +577,8 @@ void qtDefinitions(Scene& s, bool replacing = false, bool recovering = false, co
 {
     auto scheduler = std::make_shared<qt::QtScheduler>();
     auto kernel = std::make_shared<Kernel>(scheduler);
-    auto old = qtRuntime(s.current, {"org.cordis.qt.page", {}, {}}, scheduler).value(),
-         next = qtRuntime(s.candidate, {"org.cordis.qt.page", {}, {}}, scheduler).value();
+    auto old = qtRuntime(s.current, {"org.eve.qt.page", {}, {}}, scheduler).value(),
+         next = qtRuntime(s.candidate, {"org.eve.qt.page", {}, {}}, scheduler).value();
     kernel->registerRuntime(replacing ? "canonical" : "old", old).value();
     if (!replacing)
         kernel->registerRuntime("next", next).value();
@@ -623,7 +623,7 @@ int main(int argc, char** argv)
         Scene scene(qt, args[2], args[3].split(';'));
         if (name.startsWith("operation") || name == "definitions" || name == "configuration_commit" ||
             name == "configuration_recovery") {
-#ifdef CORDIS_TEST_QT_RESERVATION
+#ifdef EVE_TEST_QT_RESERVATION
             if (qt)
                 qtDefinitions(scene, name != "definitions", name == "configuration_recovery",
                               name.startsWith("operation") ? name : QString{});
@@ -632,7 +632,7 @@ int main(int argc, char** argv)
                 nativeDefinitions(scene, name != "definitions", name == "configuration_recovery",
                                   name.startsWith("operation") ? name : QString{});
         } else if (name == "admission" || name == "candidate_live" || name == "failure" || name.endsWith("reentry")) {
-#ifdef CORDIS_TEST_QT_RESERVATION
+#ifdef EVE_TEST_QT_RESERVATION
             if (qt)
                 qtCase(scene, name);
             else

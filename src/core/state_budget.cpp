@@ -4,7 +4,7 @@
 #include "state_budget_p.hpp"
 #include "state_value_p.hpp"
 
-namespace cordis::detail {
+namespace eve::detail {
 StateBudgetLease& StateBudgetLease::operator=(StateBudgetLease&& value) noexcept
 {
     if (this != &value) {
@@ -64,4 +64,4 @@ ownStateSnapshot(StateSnapshot value, std::shared_ptr<StateBudget> budget, State
     return Output::success(
         std::make_shared<const OwnedStateSnapshot>(OwnedStateSnapshot{std::move(bytes), std::move(value), format}));
 }
-} // namespace cordis::detail
+} // namespace eve::detail

@@ -4,12 +4,12 @@
     [string]$EvidenceFile
 )
 $ErrorActionPreference = 'Stop'
-if (-not ('CordisVerification.ClientAnimation' -as [type])) {
+if (-not ('EveVerification.ClientAnimation' -as [type])) {
     Add-Type @'
 using System;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
-namespace CordisVerification {
+namespace EveVerification {
     public static class ClientAnimation {
         [DllImport("user32.dll", EntryPoint="SystemParametersInfoW", SetLastError=true)]
         private static extern bool Read(uint action, uint parameter, out int result, uint flags);
@@ -29,7 +29,7 @@ namespace CordisVerification {
 }
 $exe = (Resolve-Path -LiteralPath $TestExecutable).Path
 $qt = (Resolve-Path -LiteralPath $QtRoot).Path
-$before = [CordisVerification.ClientAnimation]::Get()
+$before = [EveVerification.ClientAnimation]::Get()
 $report = [ordered]@{
     systemBefore = $before
     systemAfter = $null
@@ -57,9 +57,9 @@ try {
     $env:PATH = $oldPath
     $env:QT_PLUGIN_PATH = $oldPlugins
     $env:QT_QPA_PLATFORM = $oldPlatform
-    $actual = [CordisVerification.ClientAnimation]::Get()
-    if ($before -and !$actual) { [CordisVerification.ClientAnimation]::Set($before) }
-    $report.systemAfter = [CordisVerification.ClientAnimation]::Get()
+    $actual = [EveVerification.ClientAnimation]::Get()
+    if ($before -and !$actual) { [EveVerification.ClientAnimation]::Set($before) }
+    $report.systemAfter = [EveVerification.ClientAnimation]::Get()
     if ($report.systemAfter -ne $before) { throw 'System animation setting differs from its original state.' }
     $json = $report | ConvertTo-Json -Depth 5
     if ($EvidenceFile) { $json | Set-Content -Encoding utf8 -LiteralPath $EvidenceFile }

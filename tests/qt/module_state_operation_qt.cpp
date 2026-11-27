@@ -12,10 +12,10 @@
 #include <QVariant>
 #include <algorithm>
 #include <array>
-#include <cordis/module/qt_module.hpp>
-#include <cordis/qt/scheduler.hpp>
-#include <cordis/replacement_operation.hpp>
-#include <cordis_abi/state.h>
+#include <eve/module/qt_module.hpp>
+#include <eve/qt/scheduler.hpp>
+#include <eve/replacement_operation.hpp>
+#include <eve_abi/state.h>
 #include <cstring>
 #include <exception>
 #include <functional>
@@ -25,9 +25,9 @@
 #include <set>
 #include <stdexcept>
 #include <string_view>
-using namespace cordis;
-using namespace cordis::module;
-namespace files = cordis::testing::modules;
+using namespace eve;
+using namespace eve::module;
+namespace files = eve::testing::modules;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -47,11 +47,11 @@ void invoke(std::size_t image, int phase)
             hookFailure = std::current_exception();
     }
 }
-void CORDIS_CALL oldHook(int phase)
+void EVE_CALL oldHook(int phase)
 {
     invoke(0, phase);
 }
-void CORDIS_CALL nextHook(int phase)
+void EVE_CALL nextHook(int phase)
 {
     invoke(1, phase);
 }
@@ -84,7 +84,7 @@ struct Probe {
     HMODULE image = nullptr;
     ModuleLease call() const
     {
-        const auto actual = cordis::module::detail::findGeneration(generation);
+        const auto actual = eve::module::detail::findGeneration(generation);
         CHECK(actual);
         return actual->ledger.acquire(ResourceKind::Call, "test.qt.state.operation").value();
     }
@@ -97,8 +97,8 @@ struct Probe {
         std::memcpy(&result, &address, sizeof(result));
         return result;
     }
-    int countHeld(int index) const { return entry<int(CORDIS_CALL*)(int)>("cordis_qt_state_count")(index); }
-    QObject* objectHeld(int index) const { return entry<QObject*(CORDIS_CALL*)(int)>("cordis_qt_state_object")(index); }
+    int countHeld(int index) const { return entry<int(EVE_CALL*)(int)>("eve_qt_state_count")(index); }
+    QObject* objectHeld(int index) const { return entry<QObject*(EVE_CALL*)(int)>("eve_qt_state_object")(index); }
     int count(int index) const
     {
         const auto held = call();
@@ -114,14 +114,14 @@ struct Probe {
     void mode(std::string_view value) const
     {
         const auto held = call();
-        entry<void(CORDIS_CALL*)(CordisBytesV1)>("cordis_qt_state_mode")(
+        entry<void(EVE_CALL*)(EveBytesV1)>("eve_qt_state_mode")(
             {reinterpret_cast<const std::uint8_t*>(value.data()), value.size()});
     }
     void observe(std::size_t index, std::function<void(int)> callback) const
     {
         const auto held = call();
         hooks[index] = std::move(callback);
-        entry<void(CORDIS_CALL*)(void(CORDIS_CALL*)(int))>("cordis_qt_state_hook")(
+        entry<void(EVE_CALL*)(void(EVE_CALL*)(int))>("eve_qt_state_hook")(
             hooks[index] ? (index == 0 ? &oldHook : &nextHook) : nullptr);
     }
     std::map<InstanceId, Observation> values() const
@@ -178,11 +178,11 @@ struct Scene {
     Scene(const QString& root, const QStringList& fixtures)
     {
         CHECK(fixtures.size() == 2);
-        const auto first = files::install(fixtures[0], root + "/old", "org.cordis.qt.example",
-                                          QJsonArray{"org.cordis.qt.page", "org.cordis.qt.settings"}, "qt-ui");
+        const auto first = files::install(fixtures[0], root + "/old", "org.eve.qt.example",
+                                          QJsonArray{"org.eve.qt.page", "org.eve.qt.settings"}, "qt-ui");
         const auto second =
-            files::install(fixtures[1], root + "/next", "org.cordis.qt.example",
-                           QJsonArray{"org.cordis.qt.page", "org.cordis.qt.settings"}, "qt-ui", "2.0.0");
+            files::install(fixtures[1], root + "/next", "org.eve.qt.example",
+                           QJsonArray{"org.eve.qt.page", "org.eve.qt.settings"}, "qt-ui", "2.0.0");
         old.generation = loadQtModule(root.toStdString(), first.toStdString()).value().generation;
         next.generation = stageQtModule(root.toStdString(), second.toStdString(), old.generation).value().generation;
         old.image = GetModuleHandleW(QDir::toNativeSeparators(root + "/old/module.dll").toStdWString().c_str());
@@ -192,9 +192,9 @@ struct Scene {
         next.mode("");
         original.emplace(
             kernel
-                ->registerRuntime("state", qtRuntime(old.generation, {"org.cordis.qt.page", {}, {}}, scheduler).value())
+                ->registerRuntime("state", qtRuntime(old.generation, {"org.eve.qt.page", {}, {}}, scheduler).value())
                 .value());
-        replacement.emplace(qtRuntime(next.generation, {"org.cordis.qt.page", {}, {}}, scheduler).value());
+        replacement.emplace(qtRuntime(next.generation, {"org.eve.qt.page", {}, {}}, scheduler).value());
         CHECK(original->stateSchema()->version == 2 && replacement->stateSchema()->version == 3);
         for (const auto value : {QByteArray("11"), QByteArray("9007199254740993")}) {
             auto instance = kernel->mount(*original).value();
@@ -227,7 +227,7 @@ struct Scene {
     }
     std::size_t records(GenerationId generation, ResourceKind kind) const
     {
-        const auto data = cordis::module::detail::findGeneration(generation)->ledger.snapshot();
+        const auto data = eve::module::detail::findGeneration(generation)->ledger.snapshot();
         return static_cast<std::size_t>(
             std::count_if(data.records.begin(), data.records.end(),
                           [&](const ResourceRecord& record) { return record.kind == kind; }));

@@ -29,11 +29,11 @@
 #include <QTest>
 #include <QTimer>
 #include <QWidget>
-#include <cordis/loader/kernel_driver.hpp>
-#include <cordis/loader/qt_store.hpp>
-#include <cordis/loader/qt_watcher.hpp>
-#include <cordis/ui/configuration.hpp>
-#include <cordis/ui/ela_shell.hpp>
+#include <eve/loader/kernel_driver.hpp>
+#include <eve/loader/qt_store.hpp>
+#include <eve/loader/qt_watcher.hpp>
+#include <eve/ui/configuration.hpp>
+#include <eve/ui/ela_shell.hpp>
 #include <cstdlib>
 #include <cstring>
 #include <functional>
@@ -41,9 +41,9 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
-using namespace cordis;
-using namespace cordis::loader;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::loader;
+using namespace eve::ui;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -145,7 +145,7 @@ struct Scene {
         page->show();
     }
     /** @brief 写入目的地固定，冲突不能切换为另一个文件。 */
-    QString path() const { return directory.filePath("cordis.yaml"); }
+    QString path() const { return directory.filePath("eve.yaml"); }
     /** @brief 稳定 objectName 是宿主测试接口，不进入插件 SDK。 */
     template <class T> T* child(const char* name)
     {
@@ -156,9 +156,9 @@ struct Scene {
     /** @brief 使用实际点击入口触发预览/接受，等待真实运行结果。 */
     void apply()
     {
-        child<QPushButton>("CordisConfigPreview")->click();
-        CHECK(child<QPushButton>("CordisConfigApply")->isEnabled());
-        child<QPushButton>("CordisConfigApply")->click();
+        child<QPushButton>("EveConfigPreview")->click();
+        CHECK(child<QPushButton>("EveConfigApply")->isEnabled());
+        child<QPushButton>("EveConfigApply")->click();
         until([&] {
             auto value = session->snapshot().value();
             return value.latestPlan.has_value();
@@ -189,22 +189,22 @@ struct Scene {
 void workflow()
 {
     Scene scene;
-    scene.child<QPushButton>("CordisConfigPreview")->click();
+    scene.child<QPushButton>("EveConfigPreview")->click();
     CHECK(scene.activations == 0 && !QFile::exists(scene.path()));
     scene.apply();
     CHECK(scene.activations == 2 && scene.session->snapshot().value().store.dirty);
-    auto table = scene.child<QTableView>("CordisConfigEntries");
+    auto table = scene.child<QTableView>("EveConfigEntries");
     until([&] { return table->model()->rowCount() == 2; });
     table->setCurrentIndex(table->model()->index(0, 0));
     table->selectRow(0);
-    auto toggle = scene.child<QWidget>("CordisConfigEnabled");
+    auto toggle = scene.child<QWidget>("EveConfigEnabled");
     CHECK(toggle->isEnabled());
     QTest::mouseClick(toggle, Qt::LeftButton);
     until([&] { return scene.session->snapshot().value().coordinator.desiredRevision == 2; });
     until([&] { return scene.session->snapshot().value().coordinator.running.empty(); });
     CHECK(scene.session->snapshot().value().coordinator.desired->source().structure().entries().at("r").disabled);
     CHECK(!QFile::exists(scene.path()));
-    scene.child<QPushButton>("CordisConfigSave")->click();
+    scene.child<QPushButton>("EveConfigSave")->click();
     until([&] { return !scene.session->snapshot().value().store.dirty; });
     CHECK(QFile::exists(scene.path()) && scene.session->snapshot().value().store.persistedRevision == 2);
     scene.close();
@@ -227,33 +227,33 @@ void conflict(bool speechReview = false)
     CHECK(file.open(QIODevice::WriteOnly));
     file.write("external: true\n");
     file.close();
-    scene.child<QPushButton>("CordisConfigSave")->click();
+    scene.child<QPushButton>("EveConfigSave")->click();
     until([&] { return static_cast<bool>(scene.session->snapshot().value().store.external); });
     CHECK(scene.session->snapshot().value().store.dirty);
-    until([&] { return scene.child<QPushButton>("CordisConfigRebase")->isEnabled(); });
-    CHECK(scene.child<QPlainTextEdit>("CordisConfigDetails")->toPlainText().contains("external: true"));
+    until([&] { return scene.child<QPushButton>("EveConfigRebase")->isEnabled(); });
+    CHECK(scene.child<QPlainTextEdit>("EveConfigDetails")->toPlainText().contains("external: true"));
     until([&] { return !records.empty() && records.back().second == OutputLevel::Error; });
     if (speechReview) {
         CHECK(QApplication::platformName() == "windows");
         scene.page->raise();
         scene.page->activateWindow();
         CHECK(QTest::qWaitForWindowActive(scene.page));
-        const auto details = scene.child<QPlainTextEdit>("CordisConfigDetails");
+        const auto details = scene.child<QPlainTextEdit>("EveConfigDetails");
         details->setFocus();
         details->selectAll();
         QTest::qWait(1500);
-        scene.child<QPushButton>("CordisConfigOpenLog")->setFocus();
+        scene.child<QPushButton>("EveConfigOpenLog")->setFocus();
         QTest::qWait(1500);
-        scene.child<QPushButton>("CordisConfigRebase")->setFocus();
+        scene.child<QPushButton>("EveConfigRebase")->setFocus();
         QTest::qWait(1800);
     }
-    scene.child<QPushButton>("CordisConfigOpenLog")->click();
+    scene.child<QPushButton>("EveConfigOpenLog")->click();
     CHECK(selected == records.size() && records.back().first.find("external: true") == std::string::npos);
     CHECK(scene.page->grab().save(QCoreApplication::applicationDirPath() + "/ui-special-configuration-conflict.png"));
-    scene.child<QPushButton>("CordisConfigRebase")->click();
+    scene.child<QPushButton>("EveConfigRebase")->click();
     CHECK(!scene.session->snapshot().value().store.external && scene.activations == 2);
-    until([&] { return scene.child<QPushButton>("CordisConfigSave")->isEnabled(); });
-    scene.child<QPushButton>("CordisConfigSave")->click();
+    until([&] { return scene.child<QPushButton>("EveConfigSave")->isEnabled(); });
+    scene.child<QPushButton>("EveConfigSave")->click();
     until([&] { return !scene.session->snapshot().value().store.dirty; });
     CHECK(file.open(QIODevice::ReadOnly));
     CHECK(file.readAll().toStdString() ==
@@ -267,18 +267,18 @@ void stale()
 {
     Scene scene;
     scene.apply();
-    auto editor = scene.child<QPlainTextEdit>("CordisConfigEditor");
+    auto editor = scene.child<QPlainTextEdit>("EveConfigEditor");
     editor->setPlainText("invalid");
-    scene.child<QPushButton>("CordisConfigPreview")->click();
-    CHECK(!scene.child<QPushButton>("CordisConfigApply")->isEnabled() &&
+    scene.child<QPushButton>("EveConfigPreview")->click();
+    CHECK(!scene.child<QPushButton>("EveConfigApply")->isEnabled() &&
           scene.session->snapshot().value().coordinator.desiredRevision == 1);
-    scene.child<QPushButton>("CordisConfigReset")->click();
-    scene.child<QPushButton>("CordisConfigPreview")->click();
+    scene.child<QPushButton>("EveConfigReset")->click();
+    scene.child<QPushButton>("EveConfigPreview")->click();
     scene.session->setEnabled("r", false, 1).value();
-    until([&] { return !scene.child<QPushButton>("CordisConfigApply")->isEnabled(); });
+    until([&] { return !scene.child<QPushButton>("EveConfigApply")->isEnabled(); });
     CHECK(editor->toPlainText().toStdString() !=
           scene.session->snapshot().value().coordinator.desired->source().normalizedYaml());
-    scene.child<QPushButton>("CordisConfigApply")->click();
+    scene.child<QPushButton>("EveConfigApply")->click();
     CHECK(scene.session->snapshot().value().coordinator.desiredRevision == 2);
     scene.close();
 }
@@ -288,7 +288,7 @@ void reentry()
     Scene scene;
     bool entered = false, survived = false;
     std::optional<Task<void>> closed;
-    auto model = scene.child<QTableView>("CordisConfigEntries")->model();
+    auto model = scene.child<QTableView>("EveConfigEntries")->model();
     QObject::connect(model, &QAbstractItemModel::rowsInserted, model, [&] {
         if (entered)
             return;
@@ -298,8 +298,8 @@ void reentry()
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         survived = static_cast<bool>(scene.page);
     });
-    scene.child<QPushButton>("CordisConfigPreview")->click();
-    scene.child<QPushButton>("CordisConfigApply")->click();
+    scene.child<QPushButton>("EveConfigPreview")->click();
+    scene.child<QPushButton>("EveConfigApply")->click();
     until([&] { return !scene.page; });
     CHECK(entered && survived);
     wait(*closed);
@@ -312,7 +312,7 @@ void layout()
     Scene scene;
     scene.apply();
     until([&] {
-        return scene.child<QTableView>("CordisConfigEntries")->model()->index(0, 2).data().toString() ==
+        return scene.child<QTableView>("EveConfigEntries")->model()->index(0, 2).data().toString() ==
                QString::fromUtf8("运行中");
     });
     for (auto theme : {ElaThemeType::Light, ElaThemeType::Dark}) {
@@ -320,12 +320,12 @@ void layout()
         for (auto size : {QSize(1200, 800), QSize(900, 600)}) {
             scene.page->resize(size);
             QCoreApplication::processEvents();
-            auto editor = scene.child<QPlainTextEdit>("CordisConfigEditor"),
-                 details = scene.child<QPlainTextEdit>("CordisConfigDetails");
+            auto editor = scene.child<QPlainTextEdit>("EveConfigEditor"),
+                 details = scene.child<QPlainTextEdit>("EveConfigDetails");
             CHECK(editor->height() >= 100 && details->height() >= 80 && editor->width() >= 150);
             const auto pixels = scene.page->grab().toImage();
             const auto ratio = scene.page->devicePixelRatioF();
-            const auto divider = scene.child<QSplitter>("CordisConfigSplitter")->handle(1);
+            const auto divider = scene.child<QSplitter>("EveConfigSplitter")->handle(1);
             const auto dividerColor = pixels.pixelColor(divider->mapTo(scene.page, divider->rect().center()) * ratio);
             CHECK(theme == ElaThemeType::Dark ? dividerColor.lightness() < 120 : dividerColor.lightness() > 160);
             for (auto view : {editor, details}) {
@@ -341,22 +341,22 @@ void layout()
         const auto suffix = theme == ElaThemeType::Light ? "light" : "dark";
         CHECK(scene.page->grab().save(QCoreApplication::applicationDirPath() + "/configuration-panel-" + suffix +
                                       ".png"));
-        const auto text = scene.child<QPlainTextEdit>("CordisConfigEditor")->toPlainText();
+        const auto text = scene.child<QPlainTextEdit>("EveConfigEditor")->toPlainText();
         for (int width : {759, 760, 1079, 1080}) {
             scene.page->resize(width, 720);
             QCoreApplication::processEvents();
-            auto region = scene.child<QComboBox>("CordisConfigRegion");
+            auto region = scene.child<QComboBox>("EveConfigRegion");
             CHECK(region->isVisible() == (scene.page->width() < 760));
             if (region->isVisible()) {
                 for (int section : {1, 2, 0}) {
                     region->setCurrentIndex(section);
                     QCoreApplication::processEvents();
-                    CHECK(scene.child<QPlainTextEdit>("CordisConfigEditor")->isVisible() == (section == 0));
-                    CHECK(scene.child<QTableView>("CordisConfigEntries")->isVisible() == (section == 1));
+                    CHECK(scene.child<QPlainTextEdit>("EveConfigEditor")->isVisible() == (section == 0));
+                    CHECK(scene.child<QTableView>("EveConfigEntries")->isVisible() == (section == 1));
                     QWidget* shown =
-                        section == 2   ? static_cast<QWidget*>(scene.child<QPlainTextEdit>("CordisConfigDetails"))
-                        : section == 1 ? static_cast<QWidget*>(scene.child<QTableView>("CordisConfigEntries"))
-                                       : scene.child<QPlainTextEdit>("CordisConfigEditor");
+                        section == 2   ? static_cast<QWidget*>(scene.child<QPlainTextEdit>("EveConfigDetails"))
+                        : section == 1 ? static_cast<QWidget*>(scene.child<QTableView>("EveConfigEntries"))
+                                       : scene.child<QPlainTextEdit>("EveConfigEditor");
                     CHECK(shown->width() >= 180 && shown->height() >= 90);
                     const auto center = shown->rect().center();
                     CHECK(shown->visibleRegion().contains(center));
@@ -365,7 +365,7 @@ void layout()
                 CHECK(scene.page->grab().save(QCoreApplication::applicationDirPath() +
                                               "/ui-special-configuration-narrow-" + suffix + ".png"));
             }
-            CHECK(scene.child<QPlainTextEdit>("CordisConfigEditor")->toPlainText() == text);
+            CHECK(scene.child<QPlainTextEdit>("EveConfigEditor")->toPlainText() == text);
         }
     }
     scene.close();
@@ -380,7 +380,7 @@ void closeRetry()
     shell.show().value();
     QWidget* window = nullptr;
     for (auto value : QApplication::topLevelWidgets())
-        if (value->objectName() == "CordisElaShell")
+        if (value->objectName() == "EveElaShell")
             window = value;
     if (!window)
         for (auto value : QApplication::topLevelWidgets())
@@ -404,22 +404,22 @@ void diskChanges()
 {
     Scene scene(true);
     scene.apply();
-    auto editor = scene.child<QPlainTextEdit>("CordisConfigEditor");
+    auto editor = scene.child<QPlainTextEdit>("EveConfigEditor");
     editor->setPlainText("unapplied editor");
     QFile file(scene.path());
     CHECK(file.open(QIODevice::WriteOnly));
     file.write("external invalid yaml");
     file.close();
-    auto load = scene.child<QPushButton>("CordisConfigDiskLoad");
+    auto load = scene.child<QPushButton>("EveConfigDiskLoad");
     until([&] { return load->isEnabled(); });
     CHECK(editor->toPlainText() == "unapplied editor" &&
           scene.session->snapshot().value().coordinator.desiredRevision == 1);
     load->click();
     CHECK(editor->toPlainText() == "external invalid yaml");
     CHECK(scene.session->snapshot().value().coordinator.desiredRevision == 1 &&
-          !scene.child<QPushButton>("CordisConfigApply")->isEnabled());
-    auto save = scene.child<QPushButton>("CordisConfigSave");
-    auto rebase = scene.child<QPushButton>("CordisConfigRebase");
+          !scene.child<QPushButton>("EveConfigApply")->isEnabled());
+    auto save = scene.child<QPushButton>("EveConfigSave");
+    auto rebase = scene.child<QPushButton>("EveConfigRebase");
     save->click();
     until([&] { return rebase->isEnabled() && save->isEnabled(); });
     CHECK(scene.session->snapshot().value().store.external);
@@ -440,25 +440,25 @@ void diskChanges()
 void editorReentry()
 {
     Scene scene;
-    auto editor = scene.child<QPlainTextEdit>("CordisConfigEditor");
+    auto editor = scene.child<QPlainTextEdit>("EveConfigEditor");
     const auto original = editor->toPlainText();
     scene.driver->onPreflight = [&] { editor->setPlainText("edited during preview"); };
-    scene.child<QPushButton>("CordisConfigPreview")->click();
-    CHECK(!scene.child<QPushButton>("CordisConfigApply")->isEnabled());
+    scene.child<QPushButton>("EveConfigPreview")->click();
+    CHECK(!scene.child<QPushButton>("EveConfigApply")->isEnabled());
     CHECK(editor->toPlainText() == "edited during preview");
     editor->setPlainText(original);
-    scene.child<QPushButton>("CordisConfigPreview")->click();
+    scene.child<QPushButton>("EveConfigPreview")->click();
     scene.driver->onPreflight = [&] { editor->setPlainText("edited during apply"); };
-    scene.child<QPushButton>("CordisConfigApply")->click();
+    scene.child<QPushButton>("EveConfigApply")->click();
     until([&] { return scene.session->snapshot().value().latestPlan.has_value(); });
-    auto table = scene.child<QTableView>("CordisConfigEntries");
+    auto table = scene.child<QTableView>("EveConfigEntries");
     until([&] { return table->model()->rowCount() == 2; });
     table->setCurrentIndex(table->model()->index(0, 0));
     table->selectRow(0);
-    auto enabled = scene.child<QWidget>("CordisConfigEnabled");
+    auto enabled = scene.child<QWidget>("EveConfigEnabled");
     CHECK(!enabled->isEnabled());
     CHECK(editor->toPlainText() == "edited during apply");
-    scene.child<QPushButton>("CordisConfigReset")->click();
+    scene.child<QPushButton>("EveConfigReset")->click();
     CHECK(enabled->isEnabled());
     scene.driver->onPreflight = [&] { editor->setPlainText("edited during toggle"); };
     QTest::mouseClick(enabled, Qt::LeftButton);
@@ -470,10 +470,10 @@ void editorReentry()
 void feedback()
 {
     Scene scene;
-    auto edit = scene.child<ElaText>("CordisConfigEditStatus");
-    auto runtime = scene.child<ElaText>("CordisConfigSummary");
-    auto disk = scene.child<ElaText>("CordisConfigSaveStatus");
-    auto editor = scene.child<QPlainTextEdit>("CordisConfigEditor");
+    auto edit = scene.child<ElaText>("EveConfigEditStatus");
+    auto runtime = scene.child<ElaText>("EveConfigSummary");
+    auto disk = scene.child<ElaText>("EveConfigSaveStatus");
+    auto editor = scene.child<QPlainTextEdit>("EveConfigEditor");
     CHECK(editor->font().family() == QApplication::font().family());
     CHECK(runtime->text().contains(QString::fromUtf8("尚未应用")));
     scene.apply();
@@ -481,7 +481,7 @@ void feedback()
     CHECK(edit->text().contains(QString::fromUtf8("已应用")));
     CHECK(disk->text().contains(QString::fromUtf8("未保存")));
     const auto ink = [&] {
-        auto table = scene.child<QTableView>("CordisConfigEntries");
+        auto table = scene.child<QTableView>("EveConfigEntries");
         const auto icon = table->model()->index(0, 2).data(Qt::DecorationRole).value<QIcon>();
         const auto image = icon.pixmap(14, 14).toImage();
         QColor strongest(0, 0, 0, 0);
@@ -498,7 +498,7 @@ void feedback()
     editor->setPlainText("UNAPPLIED_DRAFT");
     until([&] { return edit->text().contains(QString::fromUtf8("尚未应用")); });
     CHECK(runtime->text().contains(QString::fromUtf8("已应用")));
-    scene.child<QPushButton>("CordisConfigSave")->click();
+    scene.child<QPushButton>("EveConfigSave")->click();
     until([&] { return disk->text().contains(QString::fromUtf8("已保存")); });
     CHECK(editor->toPlainText() == "UNAPPLIED_DRAFT");
     QFile file(scene.path());
@@ -507,7 +507,7 @@ void feedback()
     CHECK(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
     CHECK(file.write("external: true\n") > 0);
     file.close();
-    scene.child<QPushButton>("CordisConfigSave")->click();
+    scene.child<QPushButton>("EveConfigSave")->click();
     until([&] { return disk->text().contains(QString::fromUtf8("冲突")); });
     CHECK(runtime->text().contains(QString::fromUtf8("已应用")) && editor->toPlainText() == "UNAPPLIED_DRAFT");
     scene.session->rebaseExternal(1).value();
@@ -549,7 +549,7 @@ void logging()
         [&](std::uint64_t seq, QWidget*) { focusedLog = seq; });
     scene.apply();
     const auto beforeOperation = allocateOperationId();
-    auto editor = scene.child<QPlainTextEdit>("CordisConfigEditor");
+    auto editor = scene.child<QPlainTextEdit>("EveConfigEditor");
     editor->setPlainText(privateDraft);
 
     QProcess outside;
@@ -559,18 +559,18 @@ void logging()
     const qint64 outsidePid = outside.readAllStandardOutput().trimmed().toLongLong();
     CHECK(outsidePid > 0 && outsidePid != QCoreApplication::applicationPid());
 
-    auto save = scene.child<QPushButton>("CordisConfigSave");
-    auto rebase = scene.child<QPushButton>("CordisConfigRebase");
+    auto save = scene.child<QPushButton>("EveConfigSave");
+    auto rebase = scene.child<QPushButton>("EveConfigRebase");
     const auto recorded = [&](const char* code) { return !accepted.empty() && accepted.back().first.code == code; };
     save->click();
     until([&] { return rebase->isEnabled() && save->isEnabled() && recorded("CONFIG_SAVE_CONFLICT"); });
     const auto conflictSeq = accepted.back().second;
     const auto operation = accepted.back().first.operation;
     CHECK(operation && beforeOperation < *operation);
-    scene.child<QPushButton>("CordisConfigOpenLog")->click();
+    scene.child<QPushButton>("EveConfigOpenLog")->click();
     CHECK(focusedLog == conflictSeq && editor->toPlainText() == privateDraft);
     CHECK(loadFile(scene.path()) == privateDisk && scene.session->snapshot().value().store.dirty);
-    CHECK(scene.child<QPlainTextEdit>("CordisConfigDetails")->toPlainText().contains("CONFIDENTIAL_DISK_TOKEN_A675C4"));
+    CHECK(scene.child<QPlainTextEdit>("EveConfigDetails")->toPlainText().contains("CONFIDENTIAL_DISK_TOKEN_A675C4"));
 
     rebase->click();
     CHECK(recorded("CONFIG_REBASE_ACCEPTED") && accepted.back().first.operation == operation);
@@ -590,8 +590,8 @@ void logging()
     CHECK(*separateOperation < allocateOperationId());
     scene.close();
 
-    using namespace cordis::ui::detail;
-    const QDir root(QDir(workspace).filePath(".cordis/logs"));
+    using namespace eve::ui::detail;
+    const QDir root(QDir(workspace).filePath(".eve/logs"));
     const auto runs = root.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     CHECK(runs.size() == 1);
     const auto run = runs.front();
@@ -623,7 +623,7 @@ void logging()
     QString error;
     CHECK(query.exportText(cursor, output, error));
     const auto result = output.data();
-    const auto folderPath = qEnvironmentVariable("CORDIS_LOG_L7_EVIDENCE");
+    const auto folderPath = qEnvironmentVariable("EVE_LOG_L7_EVIDENCE");
     const QDir evidence(QDir(folderPath).filePath(run));
     if (!folderPath.isEmpty())
         CHECK(QDir().mkpath(evidence.path()));

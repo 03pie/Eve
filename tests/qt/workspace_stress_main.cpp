@@ -25,12 +25,12 @@ void expectedResult(const QJsonObject& result)
     for (const auto& entry : plan["entries"].toArray()) {
         const auto row = entry.toObject();
         const auto status = row["status"].toInt(-1);
-        PLATFORM_CHECK((status == static_cast<int>(cordis::loader::EntryStatus::Applied) ||
-                        status == static_cast<int>(cordis::loader::EntryStatus::Pending)) &&
+        PLATFORM_CHECK((status == static_cast<int>(eve::loader::EntryStatus::Applied) ||
+                        status == static_cast<int>(eve::loader::EntryStatus::Pending)) &&
                        row["error"].isNull());
-        pending = pending || status == static_cast<int>(cordis::loader::EntryStatus::Pending);
+        pending = pending || status == static_cast<int>(eve::loader::EntryStatus::Pending);
     }
-    const auto expected = pending ? cordis::loader::PlanOutcome::Pending : cordis::loader::PlanOutcome::Applied;
+    const auto expected = pending ? eve::loader::PlanOutcome::Pending : eve::loader::PlanOutcome::Applied;
     PLATFORM_CHECK(plan["outcome"].toInt(-1) == static_cast<int>(expected));
 }
 int run(const Trace& trace, const QString& sourceBin, Evidence& evidence)

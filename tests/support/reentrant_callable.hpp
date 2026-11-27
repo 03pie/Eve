@@ -2,9 +2,9 @@
  * @brief 提供在移动和析构时重入调度器的可调用对象，覆盖标准库小对象存储路径。
  */
 #pragma once
-#include <cordis/scheduler.hpp>
+#include <eve/scheduler.hpp>
 
-namespace cordis::test {
+namespace eve::test {
 /** @brief 仅持有测试作用域内的借用指针；每次生命周期回调都查询调度器锁。 */
 class ReentrantCallable {
 public:
@@ -25,4 +25,4 @@ private:
     IScheduler* scheduler_;
     int* calls_;
 };
-} // namespace cordis::test
+} // namespace eve::test

@@ -13,22 +13,22 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cordis/module/manager.hpp>
-#include <cordis/module/native.hpp>
+#include <eve/module/manager.hpp>
+#include <eve/module/native.hpp>
 #include <map>
 #include <mutex>
 #include <thread>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 ErrorInfo hostError(ErrorCode code, const char* message)
 {
     auto error = makeError(code, message);
     error.phase = "module.host";
     return error;
 }
-bool finalStatus(CordisStatus status)
+bool finalStatus(EveStatus status)
 {
-    return status <= CORDIS_OK && status >= CORDIS_E_BUSY;
+    return status <= EVE_OK && status >= EVE_E_BUSY;
 }
 namespace {
 Task<CleanupReport> failedCleanupTask(ErrorInfo error)
@@ -38,7 +38,7 @@ Task<CleanupReport> failedCleanupTask(ErrorInfo error)
     return promise.task();
 }
 } // namespace
-CordisBytesV1 bytes(const std::string& value)
+EveBytesV1 bytes(const std::string& value)
 {
     return {reinterpret_cast<const uint8_t*>(value.data()), value.size()};
 }
@@ -46,7 +46,7 @@ namespace {
 struct HostRegistry {
     std::mutex mutex;
     std::map<GenerationId, std::weak_ptr<BusinessRecord>> modules;
-    std::map<CordisHandle, std::weak_ptr<NativeInstanceControl>> contexts;
+    std::map<EveHandle, std::weak_ptr<NativeInstanceControl>> contexts;
 };
 HostRegistry& registry()
 {
@@ -83,7 +83,7 @@ struct NativeBackendResidency final : BackendResidency {
 } // namespace
 
 namespace {
-std::shared_ptr<NativeInstanceControl> lookup(CordisHandle context)
+std::shared_ptr<NativeInstanceControl> lookup(EveHandle context)
 {
     auto& directory = registry();
     std::lock_guard<std::mutex> lock(directory.mutex);
@@ -139,53 +139,53 @@ std::optional<HostCall> enter(const std::shared_ptr<NativeInstanceControl>& self
     ++self->hostCalls;
     return std::optional<HostCall>(std::in_place, self, std::move(call.value()));
 }
-CordisStatus CORDIS_CALL complete(CordisHandle context, CordisRequestId request, CordisStatus status,
-                                  CordisBytesV1 json) noexcept
+EveStatus EVE_CALL complete(EveHandle context, EveRequestId request, EveStatus status,
+                                  EveBytesV1 json) noexcept
 {
     try {
         auto self = lookup(context);
         if (!self)
-            return CORDIS_E_CLOSED;
+            return EVE_E_CLOSED;
         auto call = enter(self, false);
         if (!call) {
             self->quarantine(hostError(ErrorCode::AbiProtocol, "late native completion after callback gate closed"));
-            return CORDIS_E_CLOSED;
+            return EVE_E_CLOSED;
         }
         const auto accepted = self->channel.complete(context, request, status, json);
-        if (accepted == CORDIS_E_ABI_PROTOCOL || accepted == CORDIS_E_INVALID_ARGUMENT || accepted == CORDIS_E_FAILED)
+        if (accepted == EVE_E_ABI_PROTOCOL || accepted == EVE_E_INVALID_ARGUMENT || accepted == EVE_E_FAILED)
             self->quarantine(hostError(ErrorCode::AbiProtocol, "native completion violated host protocol"));
         return accepted;
     } catch (...) {
-        return CORDIS_E_FAILED;
+        return EVE_E_FAILED;
     }
 }
-CordisStatus CORDIS_CALL log(CordisHandle context, std::uint32_t level, CordisBytesV1 text) noexcept
+EveStatus EVE_CALL log(EveHandle context, std::uint32_t level, EveBytesV1 text) noexcept
 {
     try {
         auto self = lookup(context);
         if (!self)
-            return CORDIS_E_CLOSED;
+            return EVE_E_CLOSED;
         auto call = enter(self, true);
         if (!call) {
             self->quarantine(hostError(ErrorCode::AbiProtocol, "late native log after callback gate closed"));
-            return CORDIS_E_CLOSED;
+            return EVE_E_CLOSED;
         }
-        if (level > CORDIS_LOG_ERROR || (text.size && !text.data))
-            return CORDIS_E_INVALID_ARGUMENT;
-        if (text.size > CORDIS_MAX_LOG_BYTES)
-            return CORDIS_E_LIMIT;
+        if (level > EVE_LOG_ERROR || (text.size && !text.data))
+            return EVE_E_INVALID_ARGUMENT;
+        if (text.size > EVE_MAX_LOG_BYTES)
+            return EVE_E_LIMIT;
         std::string value;
         if (text.size)
             value.assign(reinterpret_cast<const char*>(text.data), static_cast<std::size_t>(text.size));
         if (!validAbiUtf8(value))
-            return CORDIS_E_INVALID_ARGUMENT;
+            return EVE_E_INVALID_ARGUMENT;
         const auto stamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                                std::chrono::system_clock::now().time_since_epoch()).count();
         bool queued;
         {
             std::lock_guard<std::mutex> lock(self->mutex);
             if (self->logs.size() >= 128 || value.size() > 256 * 1024 - self->logBytes)
-                return CORDIS_E_LIMIT;
+                return EVE_E_LIMIT;
             const auto length = value.size();
             const auto operation = self->logPublication == NativeInstanceControl::LogPublication::Pending
                                        ? self->logOperation : std::nullopt;
@@ -195,76 +195,76 @@ CordisStatus CORDIS_CALL log(CordisHandle context, std::uint32_t level, CordisBy
         }
         if (queued)
             self->queueLogDelivery();
-        return CORDIS_OK;
+        return EVE_OK;
     } catch (...) {
-        return CORDIS_E_FAILED;
+        return EVE_E_FAILED;
     }
 }
-CordisStatus CORDIS_CALL cancelHost(CordisHandle context, CordisRequestId request) noexcept
+EveStatus EVE_CALL cancelHost(EveHandle context, EveRequestId request) noexcept
 {
     try {
         auto self = lookup(context);
         if (!self)
-            return CORDIS_E_CLOSED;
+            return EVE_E_CLOSED;
         auto call = enter(self, false);
         if (!call) {
             self->quarantine(hostError(ErrorCode::AbiProtocol, "late native host request after callback gate closed"));
-            return CORDIS_E_CLOSED;
+            return EVE_E_CLOSED;
         }
         return self->resources->cancel(request);
     } catch (...) {
-        return CORDIS_E_FAILED;
+        return EVE_E_FAILED;
     }
 }
-template <class F> CordisStatus withResources(CordisHandle context, F action) noexcept
+template <class F> EveStatus withResources(EveHandle context, F action) noexcept
 {
     try {
         auto self = lookup(context);
         if (!self)
-            return CORDIS_E_CLOSED;
+            return EVE_E_CLOSED;
         auto call = enter(self, false);
         if (!call) {
             self->quarantine(hostError(ErrorCode::AbiProtocol, "late native resource call after callback gate closed"));
-            return CORDIS_E_CLOSED;
+            return EVE_E_CLOSED;
         }
         return action(*self->resources);
     } catch (...) {
         if (auto self = lookup(context))
             self->quarantine(hostError(ErrorCode::CallbackFailed, "native resource host failure"));
-        return CORDIS_E_FAILED;
+        return EVE_E_FAILED;
     }
 }
-CordisStatus CORDIS_CALL dispatchHost(CordisHandle context, CordisHandle callback, CordisBytesV1 payload,
-                                      CordisRequestId* output) noexcept
+EveStatus EVE_CALL dispatchHost(EveHandle context, EveHandle callback, EveBytesV1 payload,
+                                      EveRequestId* output) noexcept
 {
     if (output)
         *output = 0;
     return withResources(context,
                          [&](NativeResources& resources) { return resources.dispatch(callback, payload, output); });
 }
-CordisStatus CORDIS_CALL createEffectHost(CordisHandle context, CordisBytesV1 label, CordisHandle callback,
-                                          CordisHandle* output) noexcept
+EveStatus EVE_CALL createEffectHost(EveHandle context, EveBytesV1 label, EveHandle callback,
+                                          EveHandle* output) noexcept
 {
     if (output)
         *output = 0;
     return withResources(context,
                          [&](NativeResources& resources) { return resources.effectCreate(label, callback, output); });
 }
-CordisStatus CORDIS_CALL readyEffectHost(CordisHandle context, CordisHandle effect, CordisStatus status,
-                                         CordisBytesV1 details) noexcept
+EveStatus EVE_CALL readyEffectHost(EveHandle context, EveHandle effect, EveStatus status,
+                                         EveBytesV1 details) noexcept
 {
     return withResources(context,
                          [&](NativeResources& resources) { return resources.effectReady(effect, status, details); });
 }
-CordisStatus CORDIS_CALL closeEffectHost(CordisHandle context, CordisHandle effect, CordisRequestId* output) noexcept
+EveStatus EVE_CALL closeEffectHost(EveHandle context, EveHandle effect, EveRequestId* output) noexcept
 {
     if (output)
         *output = 0;
     return withResources(context, [&](NativeResources& resources) { return resources.effectClose(effect, output); });
 }
-CordisStatus CORDIS_CALL registerServiceHost(CordisHandle context, CordisHandle effect, const CordisServiceKeyV1* key,
-                                             const CordisServiceMetadataV1* metadata, CordisHandle token,
-                                             CordisHandle* output) noexcept
+EveStatus EVE_CALL registerServiceHost(EveHandle context, EveHandle effect, const EveServiceKeyV1* key,
+                                             const EveServiceMetadataV1* metadata, EveHandle token,
+                                             EveHandle* output) noexcept
 {
     if (output)
         *output = 0;
@@ -272,17 +272,17 @@ CordisStatus CORDIS_CALL registerServiceHost(CordisHandle context, CordisHandle 
         return resources.services->add(effect, key, metadata, token, output);
     });
 }
-CordisStatus CORDIS_CALL withdrawServiceHost(CordisHandle context, CordisHandle binding,
-                                             CordisRequestId* output) noexcept
+EveStatus EVE_CALL withdrawServiceHost(EveHandle context, EveHandle binding,
+                                             EveRequestId* output) noexcept
 {
     if (output)
         *output = 0;
     return withResources(context,
                          [&](NativeResources& resources) { return resources.services->withdraw(binding, output); });
 }
-CordisStatus CORDIS_CALL invokeServiceHost(CordisHandle context, const CordisServiceKeyV1* key, std::uint32_t minor,
-                                           CordisBytesV1 capabilities, CordisBytesV1 method, CordisBytesV1 payload,
-                                           CordisRequestId* output) noexcept
+EveStatus EVE_CALL invokeServiceHost(EveHandle context, const EveServiceKeyV1* key, std::uint32_t minor,
+                                           EveBytesV1 capabilities, EveBytesV1 method, EveBytesV1 payload,
+                                           EveRequestId* output) noexcept
 {
     if (output)
         *output = 0;
@@ -290,8 +290,8 @@ CordisStatus CORDIS_CALL invokeServiceHost(CordisHandle context, const CordisSer
         return resources.services->invoke(key, minor, capabilities, method, payload, output);
     });
 }
-const CordisHostV1 hostTable{{sizeof(CordisHostV1), CORDIS_ABI_MAJOR, CORDIS_ABI_MINOR, 0},
-                             CORDIS_CAP_ALL,
+const EveHostV1 hostTable{{sizeof(EveHostV1), EVE_ABI_MAJOR, EVE_ABI_MINOR, 0},
+                             EVE_CAP_ALL,
                              0,
                              complete,
                              log,
@@ -304,10 +304,10 @@ const CordisHostV1 hostTable{{sizeof(CordisHostV1), CORDIS_ABI_MAJOR, CORDIS_ABI
                              readyEffectHost,
                              closeEffectHost};
 } // namespace
-ErrorInfo operationError(CordisStatus status, bool stopping, const std::string& details)
+ErrorInfo operationError(EveStatus status, bool stopping, const std::string& details)
 {
     auto error =
-        hostError(status == CORDIS_E_CANCELLED ? ErrorCode::OperationCancelled
+        hostError(status == EVE_E_CANCELLED ? ErrorCode::OperationCancelled
                                                : (stopping ? ErrorCode::CleanupFailed : ErrorCode::ActivationFailed),
                   stopping ? "native stop rejected" : "native start rejected");
     error.message += ", status " + std::to_string(status);
@@ -435,7 +435,7 @@ void NativeInstanceControl::quarantine(ErrorInfo error) noexcept
 void NativeInstanceControl::watch(const Task<void>& receipt)
 {
     std::weak_ptr<NativeInstanceControl> weak = shared_from_this();
-    cordis::detail::TaskAccess::observe(receipt, [weak](Task<void>::Snapshot value) {
+    eve::detail::TaskAccess::observe(receipt, [weak](Task<void>::Snapshot value) {
         if (!value->hasValue())
             if (auto self = weak.lock())
                 self->quarantine(value->error());
@@ -455,7 +455,7 @@ void NativeInstanceControl::advanceClose()
         quarantine(ticket.error());
         return;
     }
-    CordisStatus status;
+    EveStatus status;
     try {
         status = root->record->api->table.request_stop(native, ticket.value().id);
     } catch (...) {
@@ -471,7 +471,7 @@ void NativeInstanceControl::advanceClose()
             self.quarantine(value.error());
             return;
         }
-        if (value.value().status != CORDIS_OK) {
+        if (value.value().status != EVE_OK) {
             self.quarantine(operationError(value.value().status, true, value.value().json));
             return;
         }
@@ -504,21 +504,21 @@ void NativeInstanceControl::closeResources()
     });
 }
 Task<NativeOutcome> NativeInstanceControl::invoke(NativeRequestKind kind, const char* label,
-                                                  const std::function<CordisStatus(CordisRequestId)>& action)
+                                                  const std::function<EveStatus(EveRequestId)>& action)
 {
     auto ticket = channel.begin(kind, label);
     if (!ticket.hasValue()) {
         Promise<NativeOutcome> failed;
         if ((kind == NativeRequestKind::Invoke || kind == NativeRequestKind::Callback) &&
             ticket.error().code == ErrorCode::ModulePinned)
-            failed.resolve({CORDIS_E_LIMIT, {}, false});
+            failed.resolve({EVE_E_LIMIT, {}, false});
         else {
             quarantine(ticket.error());
             failed.reject(ticket.error());
         }
         return failed.task();
     }
-    CordisStatus status;
+    EveStatus status;
     try {
         status = action(ticket.value().id);
     } catch (...) {
@@ -561,7 +561,7 @@ void NativeInstanceControl::destroy()
         quarantine(call.error());
         return;
     }
-    CordisStatus status;
+    EveStatus status;
     try {
         status = root->record->api->table.destroy(native);
     } catch (...) {
@@ -574,7 +574,7 @@ void NativeInstanceControl::destroy()
         if (uncertain)
             return;
     }
-    if (status != CORDIS_OK) {
+    if (status != EVE_OK) {
         quarantine(hostError(finalStatus(status) ? ErrorCode::CleanupFailed : ErrorCode::AbiProtocol,
                              "native destroy failed; instance retained"));
         return;
@@ -663,9 +663,9 @@ void NativeModuleControl::finish()
     }
     stopped.resolve(std::move(result));
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail
 
-namespace cordis::module {
+namespace eve::module {
 using namespace detail;
 Result<NativeModule> NativeModule::open(ModuleManager& manager, GenerationId id, std::shared_ptr<IScheduler> scheduler,
                                         std::optional<ServiceRegistry> services)
@@ -812,7 +812,7 @@ Result<NativeInstance> NativeModule::createBound(std::string plugin, std::string
         if (!guard.hasValue())
             return Result<NativeInstance>::failure(guard.error());
     }
-    if (!id.valid() || epoch == 0 || config.size() > CORDIS_MAX_JSON_BYTES || !validAbiJson(config))
+    if (!id.valid() || epoch == 0 || config.size() > EVE_MAX_JSON_BYTES || !validAbiJson(config))
         return Result<NativeInstance>::failure(
             hostError(ErrorCode::InvalidArgument, "invalid native plugin/configuration/identity"));
     {
@@ -893,7 +893,7 @@ Result<NativeInstance> NativeModule::createBound(std::string plugin, std::string
                 value->managedClosing = true;
                 auto closed = NativeInstance(value).close();
                 Promise<void> done;
-                cordis::detail::TaskAccess::observe(closed, [done](Task<CleanupReport>::Snapshot result) {
+                eve::detail::TaskAccess::observe(closed, [done](Task<CleanupReport>::Snapshot result) {
                     if (result->hasValue() && result->value().quiescent)
                         done.resolve();
                     else {
@@ -918,7 +918,7 @@ Result<NativeInstance> NativeModule::createBound(std::string plugin, std::string
         discardUncreated(self);
         return Result<NativeInstance>::failure(call.error());
     }
-    CordisStatus status;
+    EveStatus status;
     try {
         status = root->record->api->table.create(self->channel.context(), bytes(self->pluginId), bytes(config),
                                                  &self->native);
@@ -932,13 +932,13 @@ Result<NativeInstance> NativeModule::createBound(std::string plugin, std::string
             return Result<NativeInstance>::failure(*self->failure);
     }
     auto requestState = self->channel.snapshot();
-    if (!finalStatus(status) || (status == CORDIS_OK) != (self->native != 0) || !requestState.hasValue() ||
+    if (!finalStatus(status) || (status == EVE_OK) != (self->native != 0) || !requestState.hasValue() ||
         requestState.value().faulted) {
         auto error = hostError(ErrorCode::AbiProtocol, "native create violated synchronous handle contract");
         self->quarantine(error);
         return Result<NativeInstance>::failure(std::move(error));
     }
-    if (status != CORDIS_OK) {
+    if (status != EVE_OK) {
         // Core owns these precommitted inputs; they are not resources retained by a failed foreign create.
         if (self->managed)
             self->resources->services->releaseConsumers();
@@ -995,7 +995,7 @@ Task<void> NativeInstance::start() const
     }
     self->startRequest = ticket.value().id;
     self->startWire = ticket.value().result;
-    CordisStatus status;
+    EveStatus status;
     try {
         status = self->root->record->api->table.start(self->native, ticket.value().id);
     } catch (...) {
@@ -1018,7 +1018,7 @@ Task<void> NativeInstance::start() const
             return;
         }
         std::optional<ErrorInfo> error;
-        if (value.value().status != CORDIS_OK)
+        if (value.value().status != EVE_OK)
             error = operationError(value.value().status, false, value.value().json);
         bool closing;
         {
@@ -1104,7 +1104,7 @@ void detail::NativeInstanceControl::beginClose()
         if (uncertain || !closing || stateCalling || closeStarted)
             return;
         closeStarted = true;
-        pending = startIssued && !startSettled && startReturn == CORDIS_PENDING && startWire && !startWire->isReady();
+        pending = startIssued && !startSettled && startReturn == EVE_PENDING && startWire && !startWire->isReady();
     }
     if (self->managed)
         self->started.reject(hostError(ErrorCode::OperationCancelled, "managed native instance closing"));
@@ -1132,7 +1132,7 @@ void detail::NativeInstanceControl::beginClose()
                 self->quarantine(call.error());
                 return;
             }
-            CordisStatus status;
+            EveStatus status;
             try {
                 status = self->root->record->api->table.cancel_request(self->native, self->startRequest);
             } catch (...) {
@@ -1195,7 +1195,7 @@ Task<CleanupReport> NativeModule::close() const
     for (const auto& instance : instances) {
         NativeInstance wrapper(instance);
         auto task = wrapper.close();
-        cordis::detail::TaskAccess::observe(task,
+        eve::detail::TaskAccess::observe(task,
                                             [root](Task<CleanupReport>::Snapshot value) { root->finishOne(*value); });
     }
     return root->stopped.task();
@@ -1221,4 +1221,4 @@ Result<NativeModuleSnapshot> NativeModule::snapshot() const
     }
     return Result<NativeModuleSnapshot>::success(std::move(result));
 }
-} // namespace cordis::module
+} // namespace eve::module

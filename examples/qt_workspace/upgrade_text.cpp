@@ -6,7 +6,7 @@
 
 namespace notebook::detail {
 namespace {
-using namespace cordis;
+using namespace eve;
 QString policy(const module::ModuleManifest& manifest)
 {
     return manifest.loader == module::ModuleLoader::QtUi ? QString::fromUtf8("Qt / 进程驻留")
@@ -135,7 +135,7 @@ QString upgradePhaseText(const WorkspaceUpgradeSnapshot& upgrade)
                                  : QString::fromUtf8("当前不接纳升级操作。");
     QString text = QString::fromUtf8("原执行在途");
     if (upgrade.phase) {
-        using Phase = cordis::ReplacementPhase;
+        using Phase = eve::ReplacementPhase;
         switch (*upgrade.phase) {
         case Phase::Prepared:
             text = "Prepared · 已准备";
@@ -176,9 +176,9 @@ QString upgradePhaseText(const WorkspaceUpgradeSnapshot& upgrade)
     return text;
 }
 
-bool upgradePhaseTerminal(cordis::ReplacementPhase phase)
+bool upgradePhaseTerminal(eve::ReplacementPhase phase)
 {
-    using Phase = cordis::ReplacementPhase;
+    using Phase = eve::ReplacementPhase;
     return phase == Phase::Committed || phase == Phase::Restored || phase == Phase::Failed || phase == Phase::Cancelled;
 }
 
@@ -194,7 +194,7 @@ QString upgradeReportText(const WorkspaceUpgradeSnapshot& upgrade, const Workspa
 }
 
 QString upgradeSaveText(const WorkspaceModulesSnapshot& modules,
-                        const cordis::Task<cordis::loader::SaveReport>::Snapshot& result, bool pending)
+                        const eve::Task<eve::loader::SaveReport>::Snapshot& result, bool pending)
 {
     QString text =
         QString::fromUtf8("当前目标修订 %1 · 已保存 %2 · %3")
@@ -210,19 +210,19 @@ QString upgradeSaveText(const WorkspaceModulesSnapshot& modules,
     const auto& report = result->value();
     const char* outcome = "Failed";
     switch (report.outcome) {
-    case cordis::loader::SaveOutcome::Written:
+    case eve::loader::SaveOutcome::Written:
         outcome = "Written";
         break;
-    case cordis::loader::SaveOutcome::Unchanged:
+    case eve::loader::SaveOutcome::Unchanged:
         outcome = "Unchanged";
         break;
-    case cordis::loader::SaveOutcome::Conflict:
+    case eve::loader::SaveOutcome::Conflict:
         outcome = "Conflict";
         break;
-    case cordis::loader::SaveOutcome::Failed:
+    case eve::loader::SaveOutcome::Failed:
         outcome = "Failed";
         break;
-    case cordis::loader::SaveOutcome::Skipped:
+    case eve::loader::SaveOutcome::Skipped:
         outcome = "Skipped";
         break;
     }

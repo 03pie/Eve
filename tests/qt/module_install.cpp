@@ -3,12 +3,12 @@
  */
 #include "../../src/module/install_directory_p.hpp"
 #include "../support/module_artifacts.hpp"
-#include <cordis/module/install.hpp>
-#include <cordis/module/manager.hpp>
-#include <cordis/module/native.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
-#ifdef CORDIS_TEST_QT_INSTALL
-#include <cordis/module/qt_module.hpp>
+#include <eve/module/install.hpp>
+#include <eve/module/manager.hpp>
+#include <eve/module/native.hpp>
+#include <eve/testing/fake_scheduler.hpp>
+#ifdef EVE_TEST_QT_INSTALL
+#include <eve/module/qt_module.hpp>
 #endif
 #include <QCoreApplication>
 #include <QFileInfo>
@@ -19,10 +19,10 @@
 #include <optional>
 #include <thread>
 
-using namespace cordis;
-using namespace cordis::module;
-namespace files = cordis::testing::modules;
-namespace native = cordis::module::detail;
+using namespace eve;
+using namespace eve::module;
+namespace files = eve::testing::modules;
+namespace native = eve::module::detail;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -56,9 +56,9 @@ struct Fixture {
     QString root, manifest, store, hash, destination;
     Fixture(QString directory, const QString& dll, bool qt) : root(std::move(directory)), store(root + "/store")
     {
-        manifest = files::install(dll, root + "/source", qt ? "org.cordis.qt.example" : "org.cordis.business",
-                                  qt ? QJsonArray{"org.cordis.qt.page", "org.cordis.qt.settings"}
-                                     : QJsonArray{"org.cordis.plugin"},
+        manifest = files::install(dll, root + "/source", qt ? "org.eve.qt.example" : "org.eve.business",
+                                  qt ? QJsonArray{"org.eve.qt.page", "org.eve.qt.settings"}
+                                     : QJsonArray{"org.eve.plugin"},
                                   qt ? "qt-ui" : "c-abi", "2.0.0");
         CHECK(QDir().mkpath(store));
         hash = QJsonDocument::fromJson(files::read(manifest)).object()["sha256"].toString();
@@ -71,7 +71,7 @@ struct Fixture {
     void noTemporary() const
     {
         for (const auto& entry : entries(store))
-            CHECK(!entry.startsWith(".cordis-install-"));
+            CHECK(!entry.startsWith(".eve-install-") && !entry.startsWith(".cordis-install-"));
     }
 };
 int main(int argc, char** argv)
@@ -273,7 +273,7 @@ int main(int argc, char** argv)
         if (name == "redirected") {
             const auto external = root + "/external";
             const auto externalManifest =
-                files::install(dlls[1], external, "org.cordis.business", {"org.cordis.plugin"}, "c-abi", "2.0.0");
+                files::install(dlls[1], external, "org.eve.business", {"org.eve.plugin"}, "c-abi", "2.0.0");
             const auto externalBytes = files::read(externalManifest);
             const auto process =
                 QProcess::execute("cmd.exe", {"/c", "mklink", "/J", QDir::toNativeSeparators(fixture.destination),
@@ -333,10 +333,10 @@ int main(int argc, char** argv)
                      {QString("moduleId"), QString("moduleVersion"), QString("loader"), QString("plugins")}) {
                     files::write(fixture.manifest, original);
                     modify(fixture.manifest, field,
-                           field == "plugins" ? QJsonValue(QJsonArray{"org.cordis.other"})
+                           field == "plugins" ? QJsonValue(QJsonArray{"org.eve.other"})
                                               : QJsonValue(field == "moduleVersion" ? "3.0.0"
                                                            : field == "loader"      ? "qt-ui"
-                                                                                    : "org.cordis.other"));
+                                                                                    : "org.eve.other"));
                     CHECK(!fixture.install().hasValue() && files::read(manifest) == original);
                 }
                 files::write(fixture.manifest, original);
@@ -346,12 +346,12 @@ int main(int argc, char** argv)
                 files::write(fixture.manifest, original);
             } else if (name == "native_stage" || name == "qt_stage") {
                 const auto previous = files::install(
-                    dlls[qt ? 2 : 0], root + "/previous", qt ? "org.cordis.qt.example" : "org.cordis.business",
-                    qt ? QJsonArray{"org.cordis.qt.page", "org.cordis.qt.settings"} : QJsonArray{"org.cordis.plugin"},
+                    dlls[qt ? 2 : 0], root + "/previous", qt ? "org.eve.qt.example" : "org.eve.business",
+                    qt ? QJsonArray{"org.eve.qt.page", "org.eve.qt.settings"} : QJsonArray{"org.eve.plugin"},
                     qt ? "qt-ui" : "c-abi");
                 ModuleManager manager;
                 const auto load = [&](const QString& path) {
-#ifdef CORDIS_TEST_QT_INSTALL
+#ifdef EVE_TEST_QT_INSTALL
                     if (qt)
                         return loadQtModule(utf8(root), utf8(path));
 #endif
@@ -363,14 +363,14 @@ int main(int argc, char** argv)
                 std::optional<NativeInstance> instance;
                 if (!qt) {
                     business = std::make_unique<NativeModule>(NativeModule::open(manager, old, scheduler).value());
-                    instance.emplace(business->create("org.cordis.plugin", "\"sync\"", InstanceId{1}, 1).value());
+                    instance.emplace(business->create("org.eve.plugin", "\"sync\"", InstanceId{1}, 1).value());
                     auto started = instance->start();
                     scheduler->runUntilIdle().value();
                     CHECK(started.tryResult() && started.tryResult()->hasValue());
                 }
                 const auto staged =
                     [&] {
-#ifdef CORDIS_TEST_QT_INSTALL
+#ifdef EVE_TEST_QT_INSTALL
                         if (qt)
                             return stageQtModule(utf8(root), utf8(manifest), old);
 #endif

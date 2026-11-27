@@ -4,7 +4,7 @@
 #include "upgrade_p.hpp"
 
 namespace notebook {
-using namespace cordis;
+using namespace eve;
 Result<WorkspaceModulesSnapshot> Workspace::modulesSnapshot()
 {
     using Output = Result<WorkspaceModulesSnapshot>;

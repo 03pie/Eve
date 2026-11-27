@@ -7,26 +7,26 @@
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <algorithm>
-#include <cordis_abi/module_query.h>
+#include <eve_abi/module_query.h>
 #include <cstddef>
 #include <cstring>
 #include <exception>
 #include <iostream>
 #include <optional>
 #include <thread>
-using namespace cordis;
-using namespace cordis::module;
-namespace files = cordis::testing::modules;
-namespace native = cordis::module::detail;
+using namespace eve;
+using namespace eve::module;
+namespace files = eve::testing::modules;
+namespace native = eve::module::detail;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
             throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__));                             \
     } while (false)
-static_assert(CORDIS_MODULE_QUERY_MINOR == 0 && CORDIS_MODULE_QUERY_EXPLICIT_UNLOAD_MINOR == 1, "minor compatibility");
-static_assert(CORDIS_MODULE_RESIDENT == 1 && CORDIS_MODULE_EXPLICIT_UNLOAD == 2, "exclusive declarations");
-static_assert(sizeof(CordisModuleQueryV1) == 32 && sizeof(CordisModuleDescriptorV1) == 80, "V1 x64 layout");
-static_assert(offsetof(CordisModuleDescriptorV1, plugins) == 72, "V1 catalog offset");
+static_assert(EVE_MODULE_QUERY_MINOR == 0 && EVE_MODULE_QUERY_EXPLICIT_UNLOAD_MINOR == 1, "minor compatibility");
+static_assert(EVE_MODULE_RESIDENT == 1 && EVE_MODULE_EXPLICIT_UNLOAD == 2, "exclusive declarations");
+static_assert(sizeof(EveModuleQueryV1) == 32 && sizeof(EveModuleDescriptorV1) == 80, "V1 x64 layout");
+static_assert(offsetof(EveModuleDescriptorV1, plugins) == 72, "V1 catalog offset");
 namespace {
 template <class F> F entry(HMODULE image, const char* name)
 {
@@ -52,11 +52,11 @@ QueryObservation observe(const ModuleGenerationSnapshot& value)
     auto call = source.ledger.acquire(ResourceKind::Call, "test.load.policy.observe").value();
     const auto module = image(QString::fromStdString(value.libraryPath));
     CHECK(module);
-    return {entry<int(CORDIS_QUERY_CALL*)()>(module, "cordis_fixture_queries")(),
-            entry<std::uint32_t(CORDIS_QUERY_CALL*)()>(module, "cordis_fixture_last_query_minor")()};
+    return {entry<int(EVE_QUERY_CALL*)()>(module, "eve_fixture_queries")(),
+            entry<std::uint32_t(EVE_QUERY_CALL*)()>(module, "eve_fixture_last_query_minor")()};
 }
 struct WireObservation {
-    CordisQueryStatus status;
+    EveQueryStatus status;
     std::uint32_t minor;
     std::uint64_t flags;
 };
@@ -67,10 +67,10 @@ WireObservation ask(const ModuleGenerationSnapshot& value, std::uint32_t minor, 
     auto call = source.ledger.acquire(ResourceKind::Call, "test.load.policy.query").value();
     const auto module = image(QString::fromStdString(value.libraryPath));
     CHECK(module);
-    CordisModuleQueryV1 request{{sizeof(request), CORDIS_MODULE_QUERY_MAJOR, minor, 0}, 1, runtimeMinor, flags};
-    CordisModuleDescriptorV1 descriptor{};
+    EveModuleQueryV1 request{{sizeof(request), EVE_MODULE_QUERY_MAJOR, minor, 0}, 1, runtimeMinor, flags};
+    EveModuleDescriptorV1 descriptor{};
     descriptor.header.struct_size = sizeof(descriptor);
-    const auto status = entry<CordisModuleQueryFnV1>(module, "cordis_module_query_v1")(&request, &descriptor);
+    const auto status = entry<EveModuleQueryFnV1>(module, "eve_module_query_v1")(&request, &descriptor);
     return {status, descriptor.header.query_minor, descriptor.flags};
 }
 bool pinned(const ModuleGenerationSnapshot& value, const char* reason)
@@ -88,13 +88,13 @@ struct Scene {
     }
     QString put(unsigned fixture, const QString& folder = "module", bool explicitPolicy = true) const
     {
-        const auto id = fixture == 0   ? "org.cordis.business"
-                        : fixture == 3 ? "org.cordis.policy.blocking"
-                        : fixture == 4 ? "org.cordis.bad_flags"
-                                       : "org.cordis.policy";
+        const auto id = fixture == 0   ? "org.eve.business"
+                        : fixture == 3 ? "org.eve.policy.blocking"
+                        : fixture == 4 ? "org.eve.bad_flags"
+                                       : "org.eve.policy";
         const auto manifest =
             files::install(fixtures[static_cast<int>(fixture)], root + '/' + folder, id,
-                           QJsonArray{"org.cordis.plugin"}, "c-abi", fixture == 2 ? "2.0.0" : "1.0.0");
+                           QJsonArray{"org.eve.plugin"}, "c-abi", fixture == 2 ? "2.0.0" : "1.0.0");
         policy(manifest, explicitPolicy);
         return manifest;
     }
@@ -153,7 +153,7 @@ void denied(Scene& scene, const QString& name)
     if (name == "unauthorized")
         approvals.clear();
     else if (name == "wrong_id")
-        approvals[0].moduleId = "org.cordis.other";
+        approvals[0].moduleId = "org.eve.other";
     else if (name == "wrong_hash")
         approvals[0].sha256 = std::string(64, '0');
     else
@@ -186,7 +186,7 @@ void initial(Scene& scene, const QString& name)
     const auto report = scene.load(manifest, scene.approve(manifest)).value();
     scene.loaded(report.generation, approved, approved ? 1U : 0U);
     if (name == "resident")
-        CHECK(ask(scene.state(report.generation), 1).status == CORDIS_QUERY_UNSUPPORTED);
+        CHECK(ask(scene.state(report.generation), 1).status == EVE_QUERY_UNSUPPORTED);
     const auto module = image(Scene::library(manifest));
     CHECK(scene.manager.drain(report.generation).hasValue());
     const auto drained = scene.state(report.generation);
@@ -203,11 +203,11 @@ void wire(Scene& scene)
     scene.loaded(generation, true, 1);
     const auto value = scene.state(generation);
     const auto current = ask(value, 1), legacy = ask(value, 0);
-    CHECK(current.status == CORDIS_QUERY_OK && current.minor == 1 && current.flags == CORDIS_MODULE_EXPLICIT_UNLOAD);
-    CHECK(legacy.status == CORDIS_QUERY_OK && legacy.minor == 0 && legacy.flags == CORDIS_MODULE_RESIDENT);
-    CHECK(ask(value, 2).status == CORDIS_QUERY_UNSUPPORTED);
-    CHECK(ask(value, 1, CORDIS_MODULE_EXPLICIT_UNLOAD).status == CORDIS_QUERY_UNSUPPORTED);
-    CHECK(ask(value, 1, 0, 1).status == CORDIS_QUERY_UNSUPPORTED);
+    CHECK(current.status == EVE_QUERY_OK && current.minor == 1 && current.flags == EVE_MODULE_EXPLICIT_UNLOAD);
+    CHECK(legacy.status == EVE_QUERY_OK && legacy.minor == 0 && legacy.flags == EVE_MODULE_RESIDENT);
+    CHECK(ask(value, 2).status == EVE_QUERY_UNSUPPORTED);
+    CHECK(ask(value, 1, EVE_MODULE_EXPLICIT_UNLOAD).status == EVE_QUERY_UNSUPPORTED);
+    CHECK(ask(value, 1, 0, 1).status == EVE_QUERY_UNSUPPORTED);
     CHECK(scene.state(generation).resources.records.empty());
 }
 void rejectedDiscovery(Scene& scene, const QString& name)
@@ -339,8 +339,8 @@ void reentry(Scene& scene)
             if (handle)
                 CloseHandle(handle);
         }
-    } entered{CreateEventW(nullptr, TRUE, FALSE, (L"Local\\CordisQueryEntered" + suffix).c_str())},
-        release{CreateEventW(nullptr, TRUE, FALSE, (L"Local\\CordisQueryRelease" + suffix).c_str())};
+    } entered{CreateEventW(nullptr, TRUE, FALSE, (L"Local\\EveQueryEntered" + suffix).c_str())},
+        release{CreateEventW(nullptr, TRUE, FALSE, (L"Local\\EveQueryRelease" + suffix).c_str())};
     CHECK(entered.handle && release.handle);
     std::optional<ModuleLoadReport> accepted;
     std::exception_ptr failure;

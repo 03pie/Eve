@@ -20,10 +20,10 @@
 
 class QWidget;
 namespace platform_workspace_test {
-using namespace cordis;
-using namespace cordis::loader;
-using namespace cordis::module;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::loader;
+using namespace eve::module;
+using namespace eve::ui;
 using notebook::take;
 
 inline void until(const std::function<bool()>& predicate)

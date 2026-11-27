@@ -6,7 +6,7 @@
 #include "replacement_owner.hpp"
 #include "replacement_peer.hpp"
 #include "replacement_subtree.hpp"
-#include <cordis_abi/plugin.h>
+#include <eve_abi/plugin.h>
 
 template <class T> T replacementSourceEntry(HMODULE module, const char* name)
 {
@@ -18,41 +18,41 @@ template <class T> T replacementSourceEntry(HMODULE module, const char* name)
     return result;
 }
 template <class SceneType, class Wait>
-bool operationRawSourceCase(SceneType& scene, const cordis::Runtime& old, const cordis::Runtime& next,
-                            const std::shared_ptr<cordis::IScheduler>& scheduler,
-                            const std::shared_ptr<cordis::Kernel>& kernel, Wait waitFor)
+bool operationRawSourceCase(SceneType& scene, const eve::Runtime& old, const eve::Runtime& next,
+                            const std::shared_ptr<eve::IScheduler>& scheduler,
+                            const std::shared_ptr<eve::Kernel>& kernel, Wait waitFor)
 {
-    using namespace cordis;
-    using namespace cordis::module;
+    using namespace eve;
+    using namespace eve::module;
     const auto artifact =
-        testing::modules::install(qEnvironmentVariable("CORDIS_TEST_RAW_SOURCE_DLL"), scene.root + "/raw-source",
-                                  "org.cordis.services", {"org.cordis.plugin"});
+        testing::modules::install(qEnvironmentVariable("EVE_TEST_RAW_SOURCE_DLL"), scene.root + "/raw-source",
+                                  "org.eve.services", {"org.eve.plugin"});
     const auto generation = scene.manager.load(scene.root.toStdString(), artifact.toStdString()).value().generation;
     auto module = NativeModule::open(scene.manager, generation, scheduler, kernel->services()).value();
-    const auto provider = module.create("org.cordis.plugin", "{}", InstanceId{100001}, 1).value();
+    const auto provider = module.create("org.eve.plugin", "{}", InstanceId{100001}, 1).value();
     CHECK(waitFor(provider.start())->hasValue());
     const auto path =
         QDir::toNativeSeparators(QString::fromStdString(scene.state(generation).libraryPath)).toStdWString();
     const auto image = GetModuleHandleW(path.c_str());
     CHECK(image);
-    using Effect = CordisStatus(CORDIS_CALL*)(unsigned, CordisHandle, CordisHandle*);
-    using Ready = CordisStatus(CORDIS_CALL*)(unsigned, CordisHandle, CordisStatus);
-    using Register = CordisStatus(CORDIS_CALL*)(unsigned, CordisHandle, const CordisServiceKeyV1*,
-                                                const CordisServiceMetadataV1*, CordisHandle, CordisHandle*);
-    using Ack = void(CORDIS_CALL*)(unsigned, CordisStatus);
-    using Dispatch = CordisStatus(CORDIS_CALL*)(unsigned, CordisHandle, CordisBytesV1, CordisRequestId*);
-    const auto effect = replacementSourceEntry<Effect>(image, "cordis_resource_effect");
-    const auto ready = replacementSourceEntry<Ready>(image, "cordis_resource_ready");
-    const auto reg = replacementSourceEntry<Register>(image, "cordis_service_register");
-    const auto ack = replacementSourceEntry<Ack>(image, "cordis_resource_ack_status");
-    const auto dispatch = replacementSourceEntry<Dispatch>(image, "cordis_resource_dispatch");
-    CordisHandle ownedEffect = 0, binding = 0;
-    CHECK(effect(0, 11, &ownedEffect) == CORDIS_OK && ownedEffect);
-    CHECK(ready(0, ownedEffect, CORDIS_OK) == CORDIS_OK);
-    CordisServiceKeyV1 key{{reinterpret_cast<const uint8_t*>("raw.input"), 9}, 1, 0, 1};
-    CordisServiceMetadataV1 metadata{sizeof(CordisServiceMetadataV1), 0, {reinterpret_cast<const uint8_t*>("[]"), 2}};
-    CHECK(reg(0, ownedEffect, &key, &metadata, 8, &binding) == CORDIS_OK && binding);
-    const auto requirement = ServiceRequirement::of<cordis::module::detail::NativeServiceEndpoint>({"raw.input"});
+    using Effect = EveStatus(EVE_CALL*)(unsigned, EveHandle, EveHandle*);
+    using Ready = EveStatus(EVE_CALL*)(unsigned, EveHandle, EveStatus);
+    using Register = EveStatus(EVE_CALL*)(unsigned, EveHandle, const EveServiceKeyV1*,
+                                                const EveServiceMetadataV1*, EveHandle, EveHandle*);
+    using Ack = void(EVE_CALL*)(unsigned, EveStatus);
+    using Dispatch = EveStatus(EVE_CALL*)(unsigned, EveHandle, EveBytesV1, EveRequestId*);
+    const auto effect = replacementSourceEntry<Effect>(image, "eve_resource_effect");
+    const auto ready = replacementSourceEntry<Ready>(image, "eve_resource_ready");
+    const auto reg = replacementSourceEntry<Register>(image, "eve_service_register");
+    const auto ack = replacementSourceEntry<Ack>(image, "eve_resource_ack_status");
+    const auto dispatch = replacementSourceEntry<Dispatch>(image, "eve_resource_dispatch");
+    EveHandle ownedEffect = 0, binding = 0;
+    CHECK(effect(0, 11, &ownedEffect) == EVE_OK && ownedEffect);
+    CHECK(ready(0, ownedEffect, EVE_OK) == EVE_OK);
+    EveServiceKeyV1 key{{reinterpret_cast<const uint8_t*>("raw.input"), 9}, 1, 0, 1};
+    EveServiceMetadataV1 metadata{sizeof(EveServiceMetadataV1), 0, {reinterpret_cast<const uint8_t*>("[]"), 2}};
+    CHECK(reg(0, ownedEffect, &key, &metadata, 8, &binding) == EVE_OK && binding);
+    const auto requirement = ServiceRequirement::of<eve::module::detail::NativeServiceEndpoint>({"raw.input"});
     const auto root = kernel->mount(old, scene.qt ? "normal" : "\"sync\"", {}, {requirement}).value();
     CHECK(waitFor(root.ready())->hasValue());
     CHECK(provider.snapshot().value().services.size() == 1 &&
@@ -72,9 +72,9 @@ bool operationRawSourceCase(SceneType& scene, const cordis::Runtime& old, const 
     CHECK(waitFor(owner->entered.task())->hasValue() && !operation.settled().isReady());
     const auto drained = scene.manager.drain(generation);
     CHECK(!drained.hasValue() && drained.error().code == ErrorCode::ConfigConflict);
-    ack(0, CORDIS_PENDING);
-    CordisRequestId call = 0;
-    CHECK(dispatch(0, 8, {reinterpret_cast<const uint8_t*>("{}"), 2}, &call) == CORDIS_PENDING && call);
+    ack(0, EVE_PENDING);
+    EveRequestId call = 0;
+    CHECK(dispatch(0, 8, {reinterpret_cast<const uint8_t*>("{}"), 2}, &call) == EVE_PENDING && call);
     for (int i = 0; i != 16; ++i) {
         Promise<void> advanced;
         CHECK(scheduler->post({[advanced] { advanced.resolve(); }, {}}));
@@ -96,11 +96,11 @@ bool operationRawSourceCase(SceneType& scene, const cordis::Runtime& old, const 
     return true;
 }
 template <class SceneType, class Wait>
-bool operationSourcesCase(SceneType& scene, const cordis::Runtime& old, const cordis::Runtime& next,
-                          const std::shared_ptr<cordis::IScheduler>& scheduler,
-                          const std::shared_ptr<cordis::Kernel>& kernel, Wait waitFor, const QString& mode)
+bool operationSourcesCase(SceneType& scene, const eve::Runtime& old, const eve::Runtime& next,
+                          const std::shared_ptr<eve::IScheduler>& scheduler,
+                          const std::shared_ptr<eve::Kernel>& kernel, Wait waitFor, const QString& mode)
 {
-    using namespace cordis;
+    using namespace eve;
     if (mode == "operation_sources_raw_loss")
         return operationRawSourceCase(scene, old, next, scheduler, kernel, waitFor);
     auto peer = openReplacementPeer(scene, scheduler, kernel);
@@ -131,25 +131,25 @@ bool operationSourcesCase(SceneType& scene, const cordis::Runtime& old, const co
     CHECK(waitFor(second.ready())->hasValue());
     auto owner = std::make_shared<SubtreeReplacementOwner>(scheduler, transient);
     owner->suspendCandidate = lostSource;
-    using Count = unsigned(CORDIS_CALL*)();
+    using Count = unsigned(EVE_CALL*)();
     const auto counter = [&](GenerationId generation) {
         const auto path =
             QDir::toNativeSeparators(QString::fromStdString(scene.state(generation).libraryPath)).toStdWString();
-        return replacementSourceEntry<Count>(GetModuleHandleW(path.c_str()), "cordis_business_fixture_creates");
+        return replacementSourceEntry<Count>(GetModuleHandleW(path.c_str()), "eve_business_fixture_creates");
     };
     const auto creates = counter(peer.previous), nextCreates = counter(peer.candidate);
     const auto before = creates(), nextBefore = nextCreates();
     const bool dynamic = mode != "operation_sources_ancestor";
     if (dynamic) {
         const auto factory = mode == "operation_sources_declared"
-                                 ? peer.previousModule.runtime({"org.cordis.peer.plugin", {}, {}}).value()
+                                 ? peer.previousModule.runtime({"org.eve.peer.plugin", {}, {}}).value()
                                  : peer.previousRuntime;
         if (mode == "operation_sources_declared")
             CHECK(factory.id() != peer.previousRuntime.id());
         owner->candidateFactories.emplace("second", factory);
         owner->candidateFactories.emplace("\"sync\"", factory);
         owner->candidateConfigs.emplace("second", "\"sync\"");
-        const module::ModuleFactorySource declared{peer.previous, "org.cordis.peer.plugin"};
+        const module::ModuleFactorySource declared{peer.previous, "org.eve.peer.plugin"};
         if (mode == "operation_sources_declared" || independent || mode == "operation_sources_mismatch" || sharedLoss)
             owner->candidateSources.emplace("second", declared);
         else if (mode == "operation_sources_misattributed")
@@ -207,7 +207,7 @@ bool operationSourcesCase(SceneType& scene, const cordis::Runtime& old, const co
         if (lostSource) {
             CHECK(waitFor(owner->entered.task())->hasValue() && !operation.settled().isReady());
             auto fault =
-                peer.previousModule.create("org.cordis.peer.plugin", "\"create-live-error\"", InstanceId{100001}, 1);
+                peer.previousModule.create("org.eve.peer.plugin", "\"create-live-error\"", InstanceId{100001}, 1);
             CHECK(!fault.hasValue() && fault.error().code == ErrorCode::AbiProtocol);
             CHECK(scene.state(peer.previous).businessFailure);
             for (int i = 0; i != 16; ++i) {

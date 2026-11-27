@@ -3,14 +3,14 @@
  */
 #pragma once
 #include "definition_validation_p.hpp"
-#include <cordis/loader/definitions.hpp>
+#include <eve/loader/definitions.hpp>
 #include <map>
 
-namespace cordis::loader::detail {
+namespace eve::loader::detail {
 struct DefinitionIdentity {};
 struct DefinitionsData {
     std::map<std::string, std::shared_ptr<const ConfiguredPlugin>> entries;
     std::map<std::string, PluginModule> modules;
     std::shared_ptr<const DefinitionIdentity> identity;
 };
-} // namespace cordis::loader::detail
+} // namespace eve::loader::detail

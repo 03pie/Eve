@@ -16,8 +16,8 @@ using namespace presentation_test;
 void commandHeld()
 {
     Scene scene;
-    auto* list = scene.find<QListView>("CordisCommandList");
-    auto* search = scene.find<QLineEdit>("CordisCommandFilter");
+    auto* list = scene.find<QListView>("EveCommandList");
+    auto* search = scene.find<QLineEdit>("EveCommandFilter");
     search->setText("publication-command");
     CHECK(list->model()->rowCount() == 0);
     auto group = take(scene.kernel->holdPublication());
@@ -66,8 +66,8 @@ void commandHeld()
 void commandAborted()
 {
     Scene scene;
-    auto* list = scene.find<QListView>("CordisCommandList");
-    scene.find<QLineEdit>("CordisCommandFilter")->setText("aborted-command");
+    auto* list = scene.find<QListView>("EveCommandList");
+    scene.find<QLineEdit>("EveCommandFilter")->setText("aborted-command");
     auto group = take(scene.kernel->holdPublication());
     std::optional<CommandHandle> command;
     std::weak_ptr<int> capture;

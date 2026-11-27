@@ -14,9 +14,9 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <cordis/kernel.hpp>
-#include <cordis/qt/connection.hpp>
-#include <cordis/qt/object.hpp>
+#include <eve/kernel.hpp>
+#include <eve/qt/connection.hpp>
+#include <eve/qt/object.hpp>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -29,8 +29,8 @@
 #include <thread>
 #include <utility>
 #include <vector>
-using namespace cordis;
-using namespace cordis::qt;
+using namespace eve;
+using namespace eve::qt;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \
@@ -536,10 +536,10 @@ void cancelledDelivery()
 /** @brief 借用 Qt 缓冲区与标准字符串在发射后立即失效，owner 仍收到独立完整数据。 */
 void typedFreeze()
 {
-    static_assert(cordis::qt::detail::signalValue<QString> && cordis::qt::detail::signalValue<QByteArray> &&
-                  cordis::qt::detail::signalValue<std::string>);
-    static_assert(!cordis::qt::detail::signalValue<Payload> && !cordis::qt::detail::signalValue<QObject*> &&
-                  !cordis::qt::detail::signalValue<const char*>);
+    static_assert(eve::qt::detail::signalValue<QString> && eve::qt::detail::signalValue<QByteArray> &&
+                  eve::qt::detail::signalValue<std::string>);
+    static_assert(!eve::qt::detail::signalValue<Payload> && !eve::qt::detail::signalValue<QObject*> &&
+                  !eve::qt::detail::signalValue<const char*>);
     Scene scene;
     scene.connectValues(&Source::values, [&](const QString& text, const QByteArray& bytes, const std::string& standard,
                                              int number) {

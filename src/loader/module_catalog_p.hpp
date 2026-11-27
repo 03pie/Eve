@@ -2,9 +2,9 @@
  * @brief 只读核对宿主已验证的模块目录，不执行文件或原生代码。
  */
 #pragma once
-#include <cordis/loader/configuration.hpp>
+#include <eve/loader/configuration.hpp>
 
-namespace cordis::loader::detail {
+namespace eve::loader::detail {
 inline Result<void> checkModuleCatalog(const std::map<std::string, PluginModule>& catalog)
 {
     std::map<std::string, std::string> aliases;
@@ -53,4 +53,4 @@ inline Result<void> checkModuleBindings(const DocumentCandidate& source,
     }
     return Result<void>::success();
 }
-} // namespace cordis::loader::detail
+} // namespace eve::loader::detail

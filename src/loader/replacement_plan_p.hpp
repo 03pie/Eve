@@ -3,9 +3,9 @@
  */
 #pragma once
 #include "../core/replacement_inspect_p.hpp"
-#include <cordis/loader/kernel_driver.hpp>
+#include <eve/loader/kernel_driver.hpp>
 #include <thread>
-namespace cordis::loader::detail {
+namespace eve::loader::detail {
 struct ConfiguredReconstruction {
     std::string path;
     InstanceId previous;
@@ -26,7 +26,7 @@ struct DriverDefinitionChange {
 };
 struct DriverReconstructionPlan {
     std::thread::id thread = std::this_thread::get_id();
-    cordis::detail::OriginalReplacementView original;
+    eve::detail::OriginalReplacementView original;
     DriverDefinitionChange change;
     std::shared_ptr<const ValidatedCandidate> previousTarget, target;
     std::vector<ConfiguredReconstruction> entries;
@@ -47,4 +47,4 @@ struct ConfigurationReconstructionAccess {
                                                            std::vector<DriverReconstructionRequest>);
     static bool current(const ConfigurationReconstructionPlan&) noexcept;
 };
-} // namespace cordis::loader::detail
+} // namespace eve::loader::detail

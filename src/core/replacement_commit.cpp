@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <type_traits>
 
-namespace cordis::detail {
+namespace eve::detail {
 static_assert(std::is_nothrow_swappable_v<Runtime>);
 namespace {
 ErrorInfo commitError(ErrorCode code, const char* message, OperationId operation)
@@ -171,8 +171,8 @@ Result<void> ReplacementScopeControl::commitPrepared()
     state = ReplacementScopeState::Committed;
     return Result<void>::success();
 }
-} // namespace cordis::detail
-namespace cordis {
+} // namespace eve::detail
+namespace eve {
 Result<void> ReplacementScope::prepareDefinitions(std::vector<RuntimeReplacement> definitions) const
 {
     const auto control = control_;
@@ -208,4 +208,4 @@ Result<ReplacementPreparation> ReplacementScope::preparation() const
         value.definitions.push_back({definition.first, definition.second.id()});
     return Output::success(std::move(value));
 }
-} // namespace cordis
+} // namespace eve

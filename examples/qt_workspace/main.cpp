@@ -15,7 +15,7 @@
 #include <set>
 
 namespace {
-using namespace cordis;
+using namespace eve;
 using notebook::Workspace;
 std::vector<QPointer<QWidget>> shellWindows()
 {
@@ -121,11 +121,11 @@ int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
-    app.setApplicationName("CordisDllNotebook");
+    app.setApplicationName("EveDllNotebook");
     try {
         const auto args = app.arguments();
         if (args.size() > 2)
-            throw std::runtime_error("usage: cordis_qt_workspace_demo [session.yaml]");
+            throw std::runtime_error("usage: eve_qt_workspace_demo [session.yaml]");
         const auto data = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
         const auto file = args.size() > 1 ? args[1] : data + "/session.yaml";
         if (!QDir().mkpath(QFileInfo(file).absolutePath()))

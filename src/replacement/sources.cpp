@@ -2,7 +2,7 @@
  * @brief 宿主合成并兑现纯工厂来源；实际代次权限仍由 Module 预约持有。
  */
 #include "operation_p.hpp"
-namespace cordis::detail {
+namespace eve::detail {
 Result<void> ReplacementOperationControl::borrowInputs()
 {
     auto& work = *execution;
@@ -85,4 +85,4 @@ Result<void> ReplacementOperationControl::sealSources()
     execution->sourceEvents = std::move(events).value();
     return Result<void>::success();
 }
-} // namespace cordis::detail
+} // namespace eve::detail

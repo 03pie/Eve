@@ -25,7 +25,7 @@
 #include <map>
 #include <algorithm>
 
-namespace cordis::ui::detail
+namespace eve::ui::detail
 {
 namespace
 {
@@ -51,7 +51,7 @@ class CommandPalette final : public QWidget
         place();
         show();
         raise();
-        if (auto search = findChild<QLineEdit*>("CordisCommandFilter")) {
+        if (auto search = findChild<QLineEdit*>("EveCommandFilter")) {
             search->selectAll();
             search->setFocus(Qt::ShortcutFocusReason);
         }
@@ -99,36 +99,36 @@ class CommandPalette final : public QWidget
 } // namespace
 void showCommandPanel(QWidget* window, QWidget* anchor)
 {
-    if (auto page = window->findChild<QWidget*>("CordisCommandPanel"))
+    if (auto page = window->findChild<QWidget*>("EveCommandPanel"))
         static_cast<CommandPalette*>(page)->present(anchor);
 }
 void dismissCommandPanel(QWidget* list)
 {
-    if (list && list->parentWidget() && list->parentWidget()->objectName() == "CordisCommandPanel")
+    if (list && list->parentWidget() && list->parentWidget()->objectName() == "EveCommandPanel")
         static_cast<CommandPalette*>(list->parentWidget())->dismiss();
 }
 QWidget* createCommandPanel(QWidget* parent, QListView*& list)
 {
     auto page = new CommandPalette(parent);
-    page->setObjectName("CordisCommandPanel");
+    page->setObjectName("EveCommandPanel");
     auto layout = new QVBoxLayout(page);
     layout->setContentsMargins(10, 6, 10, 6);
     layout->setSpacing(4);
     auto toolbar = new QHBoxLayout;
     auto search = new ElaLineEdit(page);
-    search->setObjectName("CordisCommandFilter");
+    search->setObjectName("EveCommandFilter");
     search->setPlaceholderText(QString::fromUtf8("搜索平台和插件命令（名称或 ID）"));
     search->setClearButtonEnabled(true);
     search->setAccessibleName(QString::fromUtf8("搜索命令"));
     auto run = new ElaPushButton(QString::fromUtf8("执行"), page);
-    run->setObjectName("CordisRunCommand");
+    run->setObjectName("EveRunCommand");
     run->setFixedWidth(72);
     toolbar->addWidget(search, 1);
     toolbar->addWidget(run);
     layout->addLayout(toolbar);
     auto view = new ElaListView(page);
     list = view;
-    view->setObjectName("CordisCommandList");
+    view->setObjectName("EveCommandList");
     view->setEditTriggers(QAbstractItemView::NoEditTriggers);
     view->setItemHeight(32);
     view->setFrameShape(QFrame::NoFrame);
@@ -136,7 +136,7 @@ QWidget* createCommandPanel(QWidget* parent, QListView*& list)
     layout->addWidget(view, 1);
     auto result = new ElaText(QString::fromUtf8("选择命令后按回车、双击或点击执行。"), 12, page);
     result->setTextFormat(Qt::PlainText);
-    result->setObjectName("CordisCommandResult");
+    result->setObjectName("EveCommandResult");
     result->setWordWrap(true);
     layout->addWidget(result);
     page->setFocusProxy(search);
@@ -166,24 +166,24 @@ void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService>
                           std::function<Result<void>(InstanceId, const QString&)> locate)
 {
     auto page = new QWidget(panel);
-    page->setObjectName("CordisProblemsPanel");
+    page->setObjectName("EveProblemsPanel");
     auto layout = new QVBoxLayout(page);
     layout->setContentsMargins(10, 6, 10, 6);
     layout->setSpacing(4);
     auto filter = new ElaLineEdit(page);
-    filter->setObjectName("CordisProblemsFilter");
+    filter->setObjectName("EveProblemsFilter");
     filter->setPlaceholderText(QString::fromUtf8("筛选问题：插件、路径或错误信息"));
     filter->setClearButtonEnabled(true);
     auto actions = new QHBoxLayout;
     actions->addWidget(filter, 1);
     auto related = new ElaPushButton(QString::fromUtf8("查看相关日志"), page);
-    related->setObjectName("CordisProblemLog");
+    related->setObjectName("EveProblemLog");
     related->setEnabled(false);
     actions->addWidget(related);
     layout->addLayout(actions);
     auto split = new QSplitter(Qt::Horizontal, page);
     auto tree = new QTreeWidget(split);
-    tree->setObjectName("CordisProblemsTree");
+    tree->setObjectName("EveProblemsTree");
     tree->setHeaderLabels({QString::fromUtf8("来源 / 问题"), QString::fromUtf8("说明")});
     tree->setRootIsDecorated(true);
     tree->setUniformRowHeights(true);
@@ -216,7 +216,7 @@ void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService>
     };
     theme(eTheme->getThemeMode());
     QObject::connect(eTheme, &ElaTheme::themeModeChanged, page, theme);
-    detail->setObjectName("CordisProblemDetails");
+    detail->setObjectName("EveProblemDetails");
     detail->setPlaceholderText(QString::fromUtf8("选择问题查看原因；双击定位到插件管理。"));
     split->addWidget(tree);
     split->addWidget(detail);
@@ -225,7 +225,7 @@ void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService>
     layout->addWidget(split, 1);
     auto status = new ElaText(QString::fromUtf8("正在读取运行诊断…"), 12, page);
     status->setTextFormat(Qt::PlainText);
-    status->setObjectName("CordisProblemsStatus");
+    status->setObjectName("EveProblemsStatus");
     layout->addWidget(status);
     panel->addTab(page, QString::fromUtf8("问题"));
     auto previous = std::make_shared<QString>();
@@ -391,4 +391,4 @@ void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService>
     QObject::connect(filter, &QLineEdit::textChanged, page, [refresh](const QString&) { refresh(); });
     timer->start();
 }
-} // namespace cordis::ui::detail
+} // namespace eve::ui::detail

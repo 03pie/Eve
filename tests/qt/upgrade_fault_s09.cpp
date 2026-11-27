@@ -3,7 +3,7 @@
  */
 #include "upgrade_fault_p.hpp"
 #include <algorithm>
-#include <cordis/module/install.hpp>
+#include <eve/module/install.hpp>
 #include <map>
 
 namespace upgrade_fault_test {

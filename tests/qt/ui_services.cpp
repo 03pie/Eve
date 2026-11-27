@@ -1,8 +1,8 @@
 /** @file ui_services.cpp
  * @brief 真实 Qt/Ela 中验证命令排空、重入、服务恢复及纯值通知。
  */
-#include <cordis/kernel.hpp>
-#include <cordis/ui/ela_shell.hpp>
+#include <eve/kernel.hpp>
+#include <eve/ui/ela_shell.hpp>
 #include <QAbstractItemModel>
 #include <QApplication>
 #include <QEventLoop>
@@ -26,8 +26,8 @@
 #include <utility>
 #include <vector>
 
-using namespace cordis;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::ui;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__)); } while (false)
 /** @brief 超时仅用于诊断失败，业务断言依赖任务和显式 gate。 */
 void until(const std::function<bool()>& predicate)
@@ -127,7 +127,7 @@ void rowReentry()
     auto runtime = scene.kernel.registerPlugin("row", [&](Context ctx) { context = ctx; return completedTask(); }).value();
     auto instance = scene.kernel.mount(runtime).value(); wait(instance.ready(), scene.scheduler);
     QListView* list = nullptr;
-    for (auto window : QApplication::topLevelWidgets()) if (auto found = window->findChild<QListView*>("CordisCommandList")) list = found;
+    for (auto window : QApplication::topLevelWidgets()) if (auto found = window->findChild<QListView*>("EveCommandList")) list = found;
     CHECK(list);
     bool captureHeldInside = false;
     std::optional<Task<void>> closed;
@@ -324,14 +324,14 @@ void notifications()
     CHECK(history.size() == NotificationService::historyLimit && history.front().sequence == 21 && history.back().sequence == 120);
     CHECK(history.back().owner.instance == context->identity().value().instance && history.back().notification.operation == OperationId(120));
     QLabel* label = nullptr;
-    for (auto window : QApplication::topLevelWidgets()) if (auto found = window->findChild<QLabel*>("CordisNotification")) label = found;
+    for (auto window : QApplication::topLevelWidgets()) if (auto found = window->findChild<QLabel*>("EveNotification")) label = found;
     CHECK(label && label->textFormat() == Qt::PlainText && label->text().contains("<b>"));
     QPlainTextEdit* output = nullptr;
     for (auto window : QApplication::topLevelWidgets())
-        if (auto found = window->findChild<QPlainTextEdit*>("CordisWorkbenchOutput")) output = found;
+        if (auto found = window->findChild<QPlainTextEdit*>("EveWorkbenchOutput")) output = found;
     CHECK(output);
     for (auto window : QApplication::topLevelWidgets())
-        if (auto target = window->findChild<QComboBox*>("CordisOutputTarget")) target->setCurrentIndex(0);
+        if (auto target = window->findChild<QComboBox*>("EveOutputTarget")) target->setCurrentIndex(0);
     std::optional<Result<std::uint64_t>> nested;
     bool entered = false;
     auto connection = QObject::connect(output, &QPlainTextEdit::textChanged, output, [&] {
@@ -418,9 +418,9 @@ void interaction()
     }).value();
     auto instance = scene.kernel.mount(runtime).value(); wait(instance.ready(), scene.scheduler);
     QListView* list = nullptr;
-    for (auto window : QApplication::topLevelWidgets()) if (auto found = window->findChild<QListView*>("CordisCommandList")) list = found;
+    for (auto window : QApplication::topLevelWidgets()) if (auto found = window->findChild<QListView*>("EveCommandList")) list = found;
     CHECK(list);
-    auto filter = list->parentWidget()->findChild<QLineEdit*>("CordisCommandFilter");
+    auto filter = list->parentWidget()->findChild<QLineEdit*>("EveCommandFilter");
     CHECK(filter); filter->setText("run");
     CHECK(list->model()->rowCount() == 1);
     list->setCurrentIndex(list->model()->index(0, 0));

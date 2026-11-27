@@ -17,10 +17,10 @@
 
 namespace
 {
-using cordis::ui::OutputEntry;
-using cordis::ui::OutputLevel;
-using namespace cordis::ui::detail;
-namespace files = cordis::testing::modules;
+using eve::ui::OutputEntry;
+using eve::ui::OutputLevel;
+using namespace eve::ui::detail;
+namespace files = eve::testing::modules;
 
 constexpr auto records = 32;
 constexpr auto segmentBytes = 1600;
@@ -41,7 +41,7 @@ QJsonObject readJson(const QString& path)
 
 QDir archiveRoot(const QString& workspace)
 {
-    return QDir(QDir(workspace).filePath(".cordis/logs"));
+    return QDir(QDir(workspace).filePath(".eve/logs"));
 }
 
 std::vector<QString> segments(const QDir& run)

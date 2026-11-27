@@ -4,16 +4,16 @@
 
 ## 构建和启动
 
-在 Windows x64 的 MSVC 开发环境中设置 `CORDIS_QT5152_ROOT`，指向 Qt 5.15.2 的 MSVC x64 安装目录。从仓库根目录运行以下命令。
+在 Windows x64 的 MSVC 开发环境中设置 `EVE_QT5152_ROOT`，指向 Qt 5.15.2 的 MSVC x64 安装目录。从仓库根目录运行以下命令。
 
 ```powershell
 cmake --preset ela-msvc-release
-cmake --build --preset ela-msvc-release --target cordis_qt_workspace_demo
-$env:Path = "$env:CORDIS_QT5152_ROOT/bin;$env:Path"
-./build/ela-msvc-release/bin/cordis_qt_workspace_demo.exe
+cmake --build --preset ela-msvc-release --target eve_qt_workspace_demo
+$env:Path = "$env:EVE_QT5152_ROOT/bin;$env:Path"
+./build/ela-msvc-release/bin/eve_qt_workspace_demo.exe
 ```
 
-默认将 `session.yaml` 保存在 `CordisDllNotebook` 的应用数据目录。也可在启动时传入独立的 `session.yaml` 路径。首次启动使用 [workspace.yaml](workspace.yaml) 的默认配置。样例 DLL 与 `module.json` 位于同一构建的 `bin/qt-workspace/notebook` 下。
+默认将 `session.yaml` 保存在 `EveDllNotebook` 的应用数据目录。也可在启动时传入独立的 `session.yaml` 路径。首次启动使用 [workspace.yaml](workspace.yaml) 的默认配置。样例 DLL 与 `module.json` 位于同一构建的 `bin/qt-workspace/notebook` 下。
 
 ## 使用样例
 

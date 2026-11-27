@@ -3,8 +3,8 @@
  */
 #pragma once
 #include "target_commit_p.hpp"
-#include <cordis/loader/session.hpp>
-namespace cordis::loader::detail {
+#include <eve/loader/session.hpp>
+namespace eve::loader::detail {
 struct SessionCommitControl;
 struct SessionHoldControl;
 /** @brief 在途宿主工作阻止会话后端提前关闭；仅同会话凭据允许 Preserve 恢复。 */
@@ -53,4 +53,4 @@ struct SessionCommitAccess {
                                                  TargetCommitMode, const std::vector<EntryOperation>& applied,
                                                  const SessionReplacementHold* = nullptr);
 };
-} // namespace cordis::loader::detail
+} // namespace eve::loader::detail

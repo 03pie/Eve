@@ -3,79 +3,79 @@
  */
 #include "support.hpp"
 #include <charconv>
-#if CORDIS_EXAMPLE_COUNTER_STATE
+#if EVE_EXAMPLE_COUNTER_STATE
 #include "counter_state.hpp"
 #endif
 
 namespace {
 using namespace example;
-constexpr char moduleId[] = "org.cordis.example.counter", pluginId[] = "example.counter";
-CordisStatus CORDIS_CALL createCounter(CordisHandle context, CordisBytesV1 plugin, CordisBytesV1 config,
-                                       CordisHandle* output) noexcept
+constexpr char moduleId[] = "org.eve.example.counter", pluginId[] = "example.counter";
+EveStatus EVE_CALL createCounter(EveHandle context, EveBytesV1 plugin, EveBytesV1 config,
+                                       EveHandle* output) noexcept
 {
     return create(context, plugin, config, output, pluginId, "{\"failCleanup\":true}");
 }
-CordisStatus CORDIS_CALL start(CordisHandle id, CordisRequestId request) noexcept
+EveStatus EVE_CALL start(EveHandle id, EveRequestId request) noexcept
 {
     auto* value = find(id);
     if (!value || !request || value->started)
-        return CORDIS_E_INVALID_ARGUMENT;
-#if CORDIS_EXAMPLE_COUNTER_STATE
+        return EVE_E_INVALID_ARGUMENT;
+#if EVE_EXAMPLE_COUNTER_STATE
     value->startedOnce = true;
 #endif
     value->started = true;
     return publish(*value, "example.counter", "[\"next\"]");
 }
-CordisStatus CORDIS_CALL invoke(CordisHandle id, CordisHandle token, CordisBytesV1 method, CordisBytesV1 payload,
-                                CordisRequestId request) noexcept
+EveStatus EVE_CALL invoke(EveHandle id, EveHandle token, EveBytesV1 method, EveBytesV1 payload,
+                                EveRequestId request) noexcept
 {
     auto* value = find(id);
     if (!value || !value->started || token != 1 || !request || !equals(payload, "{}"))
-        return CORDIS_E_INVALID_ARGUMENT;
+        return EVE_E_INVALID_ARGUMENT;
     if (!equals(method, "next"))
-        return CORDIS_E_NOT_FOUND;
+        return EVE_E_NOT_FOUND;
     if (value->counter == std::numeric_limits<std::uint64_t>::max())
-        return CORDIS_E_LIMIT;
+        return EVE_E_LIMIT;
     std::array<char, 64> result{};
     std::memcpy(result.data(), "{\"value\":", 9);
     auto converted = std::to_chars(result.data() + 9, result.data() + result.size() - 1, ++value->counter);
     if (converted.ec != std::errc{})
-        return CORDIS_E_FAILED;
+        return EVE_E_FAILED;
     *converted.ptr++ = '}';
     const auto accepted = host->complete(
-        value->context, request, CORDIS_OK,
+        value->context, request, EVE_OK,
         {reinterpret_cast<const uint8_t*>(result.data()), static_cast<std::uint64_t>(converted.ptr - result.data())});
-    return accepted == CORDIS_OK ? CORDIS_PENDING : CORDIS_E_FAILED;
+    return accepted == EVE_OK ? EVE_PENDING : EVE_E_FAILED;
 }
-CordisStatus CORDIS_CALL cleanup(CordisHandle id, CordisHandle effect, CordisHandle callback,
-                                 CordisRequestId request) noexcept
+EveStatus EVE_CALL cleanup(EveHandle id, EveHandle effect, EveHandle callback,
+                                 EveRequestId request) noexcept
 {
     auto* value = find(id);
     if (!value || effect != value->effect || callback != 1 || !request)
-        return CORDIS_E_INVALID_ARGUMENT;
+        return EVE_E_INVALID_ARGUMENT;
     if (value->fail)
-        return CORDIS_E_FAILED;
+        return EVE_E_FAILED;
     value->effect = value->binding = 0;
-    return CORDIS_OK;
+    return EVE_OK;
 }
-CordisStatus CORDIS_CALL cancel(CordisHandle, CordisRequestId) noexcept
+EveStatus EVE_CALL cancel(EveHandle, EveRequestId) noexcept
 {
-    return CORDIS_E_NOT_FOUND;
+    return EVE_E_NOT_FOUND;
 }
-CordisStatus CORDIS_CALL ack(CordisHandle, CordisRequestId, CordisStatus, CordisBytesV1) noexcept
+EveStatus EVE_CALL ack(EveHandle, EveRequestId, EveStatus, EveBytesV1) noexcept
 {
-    return CORDIS_E_NOT_FOUND;
+    return EVE_E_NOT_FOUND;
 }
 } // namespace
-extern "C" CORDIS_QUERY_EXPORT CordisQueryStatus CORDIS_QUERY_CALL
-cordis_module_query_v1(const CordisModuleQueryV1* request, CordisModuleDescriptorV1* output)
+extern "C" EVE_QUERY_EXPORT EveQueryStatus EVE_QUERY_CALL
+eve_module_query_v1(const EveModuleQueryV1* request, EveModuleDescriptorV1* output)
 {
     return example::discover(request, output, moduleId, pluginId);
 }
-extern "C" CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_query_v1(std::uint32_t abi, const CordisHostV1* input,
-                                                                  CordisPluginApiV1* output)
+extern "C" EVE_EXPORT EveStatus EVE_CALL eve_query_v1(std::uint32_t abi, const EveHostV1* input,
+                                                                  EvePluginApiV1* output)
 {
-    CordisPluginApiV1 result{};
+    EvePluginApiV1 result{};
     result.create = createCounter;
     result.start = start;
     result.request_stop = example::stop;
@@ -86,8 +86,8 @@ extern "C" CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_query_v1(std::uint32_t 
     result.request_cleanup = cleanup;
     return example::negotiate(abi, input, output, moduleId, pluginId, result);
 }
-#if CORDIS_EXAMPLE_COUNTER_STATE
-extern "C" CORDIS_EXPORT CordisStatus CORDIS_CALL cordis_query_state_v1(std::uint32_t abi, CordisStateApiV1* output)
+#if EVE_EXAMPLE_COUNTER_STATE
+extern "C" EVE_EXPORT EveStatus EVE_CALL eve_query_state_v1(std::uint32_t abi, EveStateApiV1* output)
 {
     return example::counter_state::query(abi, output);
 }

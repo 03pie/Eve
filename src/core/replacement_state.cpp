@@ -6,7 +6,7 @@
 #include "service_p.hpp"
 #include "state_value_p.hpp"
 
-namespace cordis::detail {
+namespace eve::detail {
 namespace {
 ErrorInfo error(ErrorCode code, const char* message)
 {
@@ -131,8 +131,8 @@ Result<void> CoreReplacementAccess::statePlan(const ReplacementScope& scope, con
         return Result<void>::failure(error(ErrorCode::ConfigConflict, "state plan requires actual scope Kernel"));
     return scope.control_->configureStatePlan(std::move(members), std::move(budget), required);
 }
-} // namespace cordis::detail
-namespace cordis {
+} // namespace eve::detail
+namespace eve {
 Result<Instance> ReplacementBuilder::stageMember(std::size_t key, const Runtime& runtime, std::string config,
                                                  RealmMap realms, std::vector<ServiceRequirement> dependencies) const
 {
@@ -160,4 +160,4 @@ Result<Instance> ReplacementBuilder::injectMember(std::size_t key, const Context
     return parent.injectWithState(runtime, std::move(config), std::move(dependencies), {},
                                   std::move(admission.value()));
 }
-} // namespace cordis
+} // namespace eve

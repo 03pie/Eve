@@ -126,8 +126,8 @@ std::string counterValue(Scene& scene)
         const auto instance = take(scene.state->kernel->findInstance(actual.instance));
         auto scope = take(scene.state->kernel->reserveReplacement({id}));
         take(scope.freeze());
-        const auto captured = take(cordis::detail::InstanceStateAccess::capture(scope, instance));
-        PLATFORM_CHECK(captured && captured->schema.id == "org.cordis.example.counter");
+        const auto captured = take(eve::detail::InstanceStateAccess::capture(scope, instance));
+        PLATFORM_CHECK(captured && captured->schema.id == "org.eve.example.counter");
         json = captured->json;
         take(scope.release());
     }

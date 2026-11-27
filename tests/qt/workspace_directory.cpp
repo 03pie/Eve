@@ -8,8 +8,8 @@
 #include <mutex>
 
 namespace workspace_directory_test {
-namespace native = cordis::module::detail;
-using cordis::module::ModuleState;
+namespace native = eve::module::detail;
+using eve::module::ModuleState;
 namespace {
 QString text(const std::string& value)
 {

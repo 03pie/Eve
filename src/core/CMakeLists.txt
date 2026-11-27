@@ -1,9 +1,9 @@
 find_package(Threads REQUIRED)
-set(cordis_core_type STATIC)
-if(CORDIS_SHARED_CORE)
-    set(cordis_core_type SHARED)
+set(eve_core_type STATIC)
+if(EVE_SHARED_CORE)
+    set(eve_core_type SHARED)
 endif()
-add_library(cordis_core ${cordis_core_type}
+add_library(eve_core ${eve_core_type}
     replacement_borrow.cpp
     replacement_outputs.cpp
     replacement_inputs.cpp
@@ -27,17 +27,17 @@ add_library(cordis_core ${cordis_core_type}
     replacement_commit.cpp
     replacement_inspect.cpp
 )
-add_library(Cordis::Core ALIAS cordis_core)
-target_include_directories(cordis_core PUBLIC
+add_library(Eve::Core ALIAS eve_core)
+target_include_directories(eve_core PUBLIC
     "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/sdk/include>"
 )
-target_compile_definitions(cordis_core PRIVATE CORDIS_PROJECT_VERSION="${PROJECT_VERSION}")
-target_link_libraries(cordis_core PUBLIC Threads::Threads)
-cordis_target_defaults(cordis_core)
+target_compile_definitions(eve_core PRIVATE EVE_PROJECT_VERSION="${PROJECT_VERSION}")
+target_link_libraries(eve_core PUBLIC Threads::Threads)
+eve_target_defaults(eve_core)
 
-if(CORDIS_SHARED_CORE)
+if(EVE_SHARED_CORE)
     # All current SDK out-of-line APIs are functions, not imported global data.
     # This remains an exact-toolchain source SDK, not a stable public binary ABI.
-    set_target_properties(cordis_core PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON DEBUG_POSTFIX d)
-    target_compile_definitions(cordis_core PRIVATE CORDIS_CORE_SHARED=1)
+    set_target_properties(eve_core PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON DEBUG_POSTFIX d)
+    target_compile_definitions(eve_core PRIVATE EVE_CORE_SHARED=1)
 endif()

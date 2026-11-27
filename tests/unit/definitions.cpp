@@ -1,15 +1,15 @@
 /** @file definitions.cpp
  * @brief 用真实目录、Kernel/Session 验证定义来源；协议替身仅注入预检重入。
  */
-#include <cordis/loader/kernel_driver.hpp>
-#include <cordis/loader/session.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/loader/kernel_driver.hpp>
+#include <eve/loader/session.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <thread>
-using namespace cordis;
-using namespace cordis::loader;
+using namespace eve;
+using namespace eve::loader;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

@@ -2,14 +2,14 @@
  * @brief 隔离验证目标/保存账目的同步提交，不代替 Core、模块或完整运行替换测试。
  */
 #include "../../src/loader/target_commit_p.hpp"
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <functional>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
-using namespace cordis;
-using namespace cordis::loader;
-using cordis::loader::detail::TargetCommitAccess;
+using namespace eve;
+using namespace eve::loader;
+using eve::loader::detail::TargetCommitAccess;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

@@ -7,7 +7,7 @@
 #include "service_contract_p.hpp"
 #include "service_p.hpp"
 #include "state_p.hpp"
-#include <cordis/instance.hpp>
+#include <eve/instance.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -24,7 +24,7 @@
 #include <utility>
 #include <vector>
 
-namespace cordis::detail {
+namespace eve::detail {
 /** @brief 一次清理调用的访问窗口；完成可在工作线程原子撤销。 */
 struct CleanupAccess {
     std::weak_ptr<IScheduler> scheduler;
@@ -609,9 +609,9 @@ struct InstanceControl : std::enable_shared_from_this<InstanceControl> {
         }));
     }
 };
-} // namespace cordis::detail
+} // namespace eve::detail
 
-namespace cordis {
+namespace eve {
 OperationId allocateOperationId()
 {
     return detail::nextOperationId();
@@ -1497,4 +1497,4 @@ Task<ActiveReport> Instance::awaitActive(Epoch epoch) const
     if (found == control_->active.end()) return detail::queryFailure<ActiveReport>(ErrorCode::InvalidArgument, "unknown epoch");
     return found->second.task();
 }
-} // namespace cordis
+} // namespace eve

@@ -1,8 +1,8 @@
 /** @file pages.cpp
  * @brief 在真实固定版本 Ela 中验证页面 effect、分类隔离、服务恢复及异步销毁。
  */
-#include <cordis/ui/ela_shell.hpp>
-#include <cordis/kernel.hpp>
+#include <eve/ui/ela_shell.hpp>
+#include <eve/kernel.hpp>
 #include <ElaWindow.h>
 #include <ElaMenu.h>
 #include <QAction>
@@ -34,8 +34,8 @@
 #include <utility>
 #include <vector>
 
-using namespace cordis;
-using namespace cordis::ui;
+using namespace eve;
+using namespace eve::ui;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__)); } while (false)
 /** @brief 真实 Qt 循环等待，保护超时不伪造完成。 */
 void until(const std::function<bool()>& predicate)
@@ -416,7 +416,7 @@ void nativeModes()
     wait(closed, scene.scheduler);
     window->navigation(key);
     CHECK(window->getCurrentNavigationPageKey() != management && !page->snapshot().value().current);
-    CHECK(window->findChild<QWidget*>("CordisManagement")->isVisible());
+    CHECK(window->findChild<QWidget*>("EveManagement")->isVisible());
     CHECK(nativePage.isNull());
     scene.close();
 }
@@ -475,7 +475,7 @@ void nativeCloseReentry()
     QPointer<ElaWindow> window;
     for (auto widget : QApplication::topLevelWidgets()) if (auto host = qobject_cast<ElaWindow*>(widget)) window = host;
     CHECK(window);
-    auto management = window->findChild<QWidget*>("CordisManagement");
+    auto management = window->findChild<QWidget*>("EveManagement");
     CHECK(management);
     std::optional<Task<void>> closed;
     struct Probe : QObject {

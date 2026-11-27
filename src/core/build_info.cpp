@@ -2,12 +2,12 @@
  * @file build_info.cpp
  * @brief 生成当前编译器和目标平台的构建信息。
  */
-#include <cordis/build_info.hpp>
-#if defined(CORDIS_CORE_SHARED) && !defined(_DLL)
+#include <eve/build_info.hpp>
+#if defined(EVE_CORE_SHARED) && !defined(_DLL)
 #error "Shared Core requires the dynamic MSVC CRT (/MD or /MDd)"
 #endif
 
-namespace cordis {
+namespace eve {
 /**
  * @brief 返回编译时确定的版本、编译器和指针宽度。
  * @return 当前构建信息。
@@ -23,11 +23,11 @@ BuildInfo buildInfo() noexcept
 #else
     constexpr auto compiler = "unknown";
 #endif
-    return {CORDIS_PROJECT_VERSION, compiler, sizeof(void*) * 8U};
+    return {EVE_PROJECT_VERSION, compiler, sizeof(void*) * 8U};
 }
 const void* coreRuntimeIdentity() noexcept
 {
     static unsigned char identity = 0;
     return &identity;
 }
-} // namespace cordis
+} // namespace eve

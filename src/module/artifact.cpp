@@ -6,7 +6,7 @@
 #include <QFileInfo>
 #include <algorithm>
 
-namespace cordis::module::detail {
+namespace eve::module::detail {
 bool sameManifest(const ModuleManifest& left, const ModuleManifest& right)
 {
     auto a = left.plugins, b = right.plugins;
@@ -76,4 +76,4 @@ Result<std::unique_ptr<VerifiedSource>> verifyModuleSource(const std::string& pl
     result->directories = std::move(directories);
     return Output::success(std::move(result));
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

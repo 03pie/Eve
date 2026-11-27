@@ -7,7 +7,7 @@
 #include <memory>
 #include <optional>
 
-namespace cordis::detail {
+namespace eve::detail {
 class EpochState {
 public:
     EpochState(std::shared_ptr<const StateContract>, std::shared_ptr<const OwnedStateSnapshot>);
@@ -26,4 +26,4 @@ private:
     bool prepared_ = false;
     bool imported_ = false;
 };
-} // namespace cordis::detail
+} // namespace eve::detail

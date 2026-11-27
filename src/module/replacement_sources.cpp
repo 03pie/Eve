@@ -5,7 +5,7 @@
 #include "replacement_commit_p.hpp"
 #include <algorithm>
 #include <type_traits>
-namespace cordis::module::detail {
+namespace eve::module::detail {
 namespace {
 ErrorInfo sourceError(const char* message, OperationId operation)
 {
@@ -138,4 +138,4 @@ Result<void> ReplacementAccess::sealSources(const ReplacementReservation& reserv
     held->factorySources.swap(next);
     return Result<void>::success();
 }
-} // namespace cordis::module::detail
+} // namespace eve::module::detail

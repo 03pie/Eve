@@ -1,9 +1,9 @@
 /** @file w3.cpp
  * @brief 验证单次激活实例的停止屏障和弱上下文。
  */
-#include <cordis/instance.hpp>
-#include <cordis/kernel.hpp>
-#include <cordis/testing/fake_scheduler.hpp>
+#include <eve/instance.hpp>
+#include <eve/kernel.hpp>
+#include <eve/testing/fake_scheduler.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -11,8 +11,8 @@
 #include <thread>
 
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(#x); } while (false)
-using namespace cordis;
-using cordis::testing::FakeScheduler;
+using namespace eve;
+using eve::testing::FakeScheduler;
 
 /** @brief 停止尚未进入队列的实例，不执行插件。 */
 void stopBeforeStart()

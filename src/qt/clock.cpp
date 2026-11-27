@@ -1,8 +1,8 @@
 /** @file clock.cpp
  * @brief 以 Qt 原生计时触发宿主调度，关闭等待 QObject 删除及全部业务载荷释放。
  */
-#include <cordis/qt/clock.hpp>
-#include <cordis/qt/object.hpp>
+#include <eve/qt/clock.hpp>
+#include <eve/qt/object.hpp>
 #include <QCoreApplication>
 #include <QObject>
 #include <QPointer>
@@ -17,7 +17,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace cordis::qt::detail {
+namespace eve::qt::detail {
 /** @brief Qt 排队载荷只持宿主记录；业务闭包可在关闭时独立释放。 */
 struct TimerEntry {
     std::uint64_t id = 0;
@@ -103,7 +103,7 @@ struct ClockControl : std::enable_shared_from_this<ClockControl> {
         closing = true;
         stop();
         auto self = shared_from_this();
-        cordis::detail::TaskAccess::observe(resource->close(), [self](Task<void>::Snapshot result) {
+        eve::detail::TaskAccess::observe(resource->close(), [self](Task<void>::Snapshot result) {
             if (!result->hasValue()) self->closed.reject(result->error());
             else { self->nativeDestroyed = true; self->checkClosed(); }
         });
@@ -120,9 +120,9 @@ public:
 private:
     std::shared_ptr<ClockControl> control_;
 };
-} // namespace cordis::qt::detail
+} // namespace eve::qt::detail
 
-namespace cordis::qt {
+namespace eve::qt {
 /** @brief 构造不依赖时间流逝；所有原生资源从建立起就有应用线程删除守卫。 */
 QtClock::QtClock(std::shared_ptr<QtScheduler> scheduler)
 {
@@ -181,4 +181,4 @@ Result<ClockSnapshot> QtClock::snapshot() const
     return Result<ClockSnapshot>::success({control_->open, control_->nativeDestroyed, control_->entries.size(), control_->running,
         control_->accepted, control_->executed, control_->discarded, control_->cancelled, control_->errors});
 }
-} // namespace cordis::qt
+} // namespace eve::qt

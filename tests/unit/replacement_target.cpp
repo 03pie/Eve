@@ -4,8 +4,8 @@
 #include "../../src/loader/replacement_target_p.hpp"
 #include <iostream>
 #include <stdexcept>
-using namespace cordis;
-using namespace cordis::loader;
+using namespace eve;
+using namespace eve::loader;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
         if (!(x))                                                                                                      \

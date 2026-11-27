@@ -1,10 +1,10 @@
 /** @file resources.cpp
  * @brief 使用真实 Qt 循环验证对象完整析构、计时取消、回调释放及 Kernel 资源屏障。
  */
-#include <cordis/qt/clock.hpp>
-#include <cordis/qt/object.hpp>
-#include <cordis/kernel.hpp>
-#include <cordis/observation.hpp>
+#include <eve/qt/clock.hpp>
+#include <eve/qt/object.hpp>
+#include <eve/kernel.hpp>
+#include <eve/observation.hpp>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QEvent>
@@ -25,8 +25,8 @@
 #include <thread>
 #include <utility>
 
-using namespace cordis;
-using namespace cordis::qt;
+using namespace eve;
+using namespace eve::qt;
 using namespace std::chrono_literals;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(std::string(#x) + " at " + std::to_string(__LINE__)); } while (false)
 

@@ -44,7 +44,7 @@ void unchangedNative(const Scene& scene, const NativeIdentity& previous)
 QListView* commandList()
 {
     for (auto* window : QApplication::topLevelWidgets())
-        if (auto* list = window->findChild<QListView*>("CordisCommandList"))
+        if (auto* list = window->findChild<QListView*>("EveCommandList"))
             return list;
     throw std::runtime_error("Workspace command list missing");
 }
@@ -59,7 +59,7 @@ QPlainTextEdit* editor(const Scene& scene, InstanceId instance)
 {
     auto* widget = scene.page(instance);
     PLATFORM_CHECK(widget);
-    auto* value = widget->findChild<QPlainTextEdit*>("CordisNotebookEditor");
+    auto* value = widget->findChild<QPlainTextEdit*>("EveNotebookEditor");
     PLATFORM_CHECK(value);
     return value;
 }
@@ -89,7 +89,7 @@ void notebookUpgrade(const QString& sourceBin, bool restore)
     PLATFORM_CHECK(target);
     QPointer<QWidget> oldPage = scene.page(original.instance);
     QPointer<QPlainTextEdit> oldEditor = editor(scene, original.instance);
-    QPointer<QPushButton> oldPublish = oldPage->findChild<QPushButton*>("CordisNotebookPublish");
+    QPointer<QPushButton> oldPublish = oldPage->findChild<QPushButton*>("EveNotebookPublish");
     const auto key = oldPage->property("ElaPageKey").toString();
     PLATFORM_CHECK(oldPublish && !key.isEmpty());
     const auto draft = QString::fromUtf8("真实升级草稿 中文 😀\nlast synchronous edit \"quoted\" \\ tail");
@@ -148,7 +148,7 @@ std::optional<std::pair<InstanceSnapshot, ModuleRuntimeOrigin>> candidate(const 
         if (instance == core.instances.end())
             continue;
         const auto origin = take(scene.state->manager->runtimeOrigin(instance->runtime));
-        if (!origin || origin->generation == previous || origin->moduleId != "org.cordis.example.notebook" ||
+        if (!origin || origin->generation == previous || origin->moduleId != "org.eve.example.notebook" ||
             origin->pluginId != "example.notebook")
             continue;
         const auto node = std::find_if(graph.instances.begin(), graph.instances.end(),
