@@ -99,6 +99,8 @@ public:
     const std::map<std::string, std::vector<InjectSpec>>& effectiveInject() const noexcept { return inject_; }
     /** @brief 只比较校验来源，不授予 Runtime、schema 或目录修改能力。 */
     bool hasDefinitionIdentity() const noexcept { return static_cast<bool>(definitions_); }
+    /** @brief 此次校验时缺少该模块。原始工作区仍保留实例、配置和启用意图。 */
+    bool pluginUnavailable(const std::string& plugin) const;
 
 private:
     friend class ConfigurationDefinitions;

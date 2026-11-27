@@ -7,7 +7,9 @@
 #include <map>
 
 namespace eve::loader::detail {
-struct DefinitionIdentity {};
+struct DefinitionIdentity {
+    std::map<std::string, PluginModule> unavailable;
+};
 struct DefinitionsData {
     std::map<std::string, std::shared_ptr<const ConfiguredPlugin>> entries;
     std::map<std::string, PluginModule> modules;

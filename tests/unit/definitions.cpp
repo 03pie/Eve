@@ -220,6 +220,40 @@ void session()
     CHECK(done.tryResult()->hasValue() && s.writer->calls == 1);
     s.close();
 }
+void installedAvailability()
+{
+    Scene s;
+    auto driver = KernelReconcileDriver::configured(s.scheduler, s.kernel, s.table());
+    ConfigurationSession session(s.scheduler, driver, s.writer, s.writer->disk);
+    const PluginModule origin{"fixture.extension", "module.json"};
+    const auto source = "formatVersion: 1\nmodules: {fixture.extension: {manifest: module.json}}\nplugins:\n"
+                        "  - {id: existing, plugin: p, config: old}\n"
+                        "  - {id: added, plugin: q, module: fixture.extension, config: {keep: 7}}\n";
+    CHECK(driver->setPluginAvailability("q", origin, {}).hasValue());
+    auto apply = [&] {
+        auto accepted = session.apply(session.preview(source).value()).value();
+        s.run();
+        CHECK(accepted.settled.tryResult()->value().outcome == PlanOutcome::Applied);
+        return session.snapshot().value().coordinator.running.size();
+    };
+    CHECK(apply() == 1);
+    auto stale = session.preview(source).value();
+    auto runtime = s.kernel->registerPlugin("q", [](Context) { return completedTask(); }).value();
+    ConfiguredPlugin restored{{"q", {}, [](const std::string&) { return Result<void>::success(); }, origin}, runtime};
+    CHECK(driver->setPluginAvailability("q", origin, restored).hasValue());
+    CHECK(!session.apply(stale).hasValue());
+    CHECK(apply() == 2);
+    CHECK(driver->setPluginAvailability("q", origin, {}).hasValue());
+    CHECK(apply() == 1);
+    const auto& wanted = session.snapshot().value().coordinator.desired->source().structure().entries().at("added");
+    CHECK(!wanted.disabled && wanted.config == "{\"keep\":7}");
+    CHECK(driver->setPluginAvailability("q", origin, restored).hasValue());
+    CHECK(apply() == 2 && s.activations == 1);
+    auto closed = session.close();
+    s.run();
+    CHECK(closed.tryResult()->hasValue());
+    s.close();
+}
 void constructors()
 {
     Scene s;
@@ -396,6 +430,8 @@ int main(int argc, char** argv)
             session();
         else if (name == "constructors")
             constructors();
+        else if (name == "installed_availability")
+            installedAvailability();
         else if (name == "foreign")
             coordinator(false);
         else if (name == "reentry")

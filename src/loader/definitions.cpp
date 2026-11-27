@@ -111,7 +111,7 @@ ConfigurationDefinitions::replacing(std::vector<ConfiguredPlugin> plugins) const
     auto next = std::make_shared<detail::DefinitionsData>();
     next->entries = base->entries;
     next->modules = base->modules;
-    next->identity = updates.value()->identity;
+    next->identity = std::make_shared<const detail::DefinitionIdentity>(*base->identity);
     for (const auto& entry : updates.value()->entries) {
         next->entries.insert_or_assign(entry.first, entry.second);
         next->modules.insert_or_assign(entry.first, entry.second->configuration.module);
@@ -144,6 +144,10 @@ Result<ValidatedCandidate> ConfigurationDefinitions::validate(ParsedConfiguratio
     std::vector<PluginDefinition> definitions;
     for (const auto& entry : data->entries)
         definitions.push_back(entry.second->configuration);
+    for (const auto& missing : data->identity->unavailable)
+        if (!data->entries.count(missing.first))
+            definitions.push_back({missing.first, {}, [](const std::string&) { return Result<void>::success(); },
+                                   missing.second});
     auto result = validateCandidate(std::move(source), std::move(definitions));
     if (result.hasValue())
         result.value().definitions_ = data->identity;
@@ -153,17 +157,23 @@ bool ConfigurationDefinitions::owns(const ValidatedCandidate& candidate) const n
 {
     return data_->identity == candidate.definitions_;
 }
+bool ValidatedCandidate::pluginUnavailable(const std::string& plugin) const
+{
+    return definitions_ && definitions_->unavailable.count(plugin);
+}
 std::vector<std::string> ConfigurationDefinitions::plugins() const
 {
     std::vector<std::string> result;
     for (const auto& entry : data_->entries)
-        result.push_back(entry.first);
+        if (!data_->identity || !data_->identity->unavailable.count(entry.first))
+            result.push_back(entry.first);
     return result;
 }
 Result<PluginModule> ConfigurationDefinitions::module(const std::string& plugin) const
 {
     const auto at = data_->entries.find(plugin);
-    return at == data_->entries.end() ? Result<PluginModule>::failure(error("unknown plugin definition"))
+    return at == data_->entries.end() || (data_->identity && data_->identity->unavailable.count(plugin))
+               ? Result<PluginModule>::failure(error("unavailable plugin definition"))
                                       : Result<PluginModule>::success(at->second->configuration.module);
 }
 } // namespace eve::loader

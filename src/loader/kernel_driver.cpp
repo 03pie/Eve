@@ -104,6 +104,8 @@ std::map<std::string, EntryValue> runtimeValues(const ValidatedCandidate& target
     auto result = target.source().structure().entries();
     for (auto& entry : result) {
         auto parent = parentPath(entry.first);
+        entry.second.effectiveDisabled = entry.second.effectiveDisabled || target.pluginUnavailable(entry.second.plugin) ||
+                                         (!parent.empty() && result.at(parent).effectiveDisabled);
         if (parent.empty())
             continue;
         auto local = std::move(entry.second.realms);
@@ -448,6 +450,8 @@ struct KernelDriverControl : std::enable_shared_from_this<KernelDriverControl> {
         std::map<std::string, EntryValue> enabled;
         std::map<std::string, std::vector<ServiceRequirement>> contracts;
         for (const auto& entry : runtimeValues(target)) {
+            if (target.pluginUnavailable(entry.second.plugin))
+                continue;
             auto plugin = plugins().find(entry.second.plugin);
             if (plugin == plugins().end())
                 return Result<void>::failure(
@@ -1513,6 +1517,51 @@ KernelReconcileDriver::~KernelReconcileDriver() = default;
 std::shared_ptr<const ConfigurationDefinitions> KernelReconcileDriver::configurationDefinitions() const
 {
     return control_->definitions->data_->identity ? control_->definitions : nullptr;
+}
+
+Result<void> KernelReconcileDriver::setPluginAvailability(const std::string& id, PluginModule module,
+                                                          std::optional<ConfiguredPlugin> definition)
+{
+    const auto& state = control_;
+    auto admitted = state->check();
+    if (!admitted.hasValue()) return admitted;
+    const auto& base = state->definitions->data_;
+    if (!base->identity || state->accesses || state->active || state->pendingStops)
+        return Result<void>::failure(driverError(ErrorCode::ConfigConflict, "driver is busy changing instances"));
+    auto claim = state->replacementClaims.access({}, {module.alias});
+    if (!claim.hasValue()) return claim;
+    auto known = base->modules.find(id);
+    if (known != base->modules.end() &&
+        (module.alias != known->second.alias || module.manifest != known->second.manifest))
+        return Result<void>::failure(driverError(ErrorCode::ConfigConflict, "plugin has a different module owner"));
+
+    auto next = std::make_shared<detail::DefinitionsData>(*base);
+    auto identity = std::make_shared<detail::DefinitionIdentity>(*base->identity);
+    if (definition) {
+        if (definition->configuration.id != id || definition->configuration.module.alias != module.alias ||
+            definition->configuration.module.manifest != module.manifest)
+            return Result<void>::failure(driverError(ErrorCode::ConfigInvalid, "plugin identity mismatch"));
+        auto previous = base->entries.find(id);
+        if (previous != base->entries.end() && previous->second->runtime.id() != definition->runtime.id())
+            return Result<void>::failure(driverError(ErrorCode::ConfigConflict, "resident runtime requires restart"));
+        auto kernelState = state->kernel->snapshot();
+        if (!kernelState.hasValue()) return Result<void>::failure(kernelState.error());
+        const auto& names = kernelState.value().names;
+        if (std::none_of(names.begin(), names.end(), [&](const auto& name) { return name.id == definition->runtime.id(); }))
+            return Result<void>::failure(driverError(ErrorCode::ConfigInvalid, "foreign plugin runtime"));
+        auto validated = ConfigurationDefinitions::create({std::move(*definition)});
+        if (!validated.hasValue()) return Result<void>::failure(validated.error());
+        next->entries.insert_or_assign(id, validated.value()->data_->entries.at(id));
+        identity->unavailable.erase(id);
+    } else {
+        identity->unavailable.insert_or_assign(id, module);
+    }
+    next->modules.insert_or_assign(id, std::move(module));
+    auto checked = detail::checkModuleCatalog(next->modules);
+    if (!checked.hasValue()) return checked;
+    next->identity = std::move(identity);
+    state->definitions = std::shared_ptr<const ConfigurationDefinitions>(new ConfigurationDefinitions(std::move(next)));
+    return Result<void>::success();
 }
 
 Result<void> KernelReconcileDriver::preflight(const ValidatedCandidate& target)

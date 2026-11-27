@@ -26,6 +26,9 @@ public:
     configured(std::shared_ptr<IScheduler> scheduler, std::shared_ptr<Kernel> kernel,
                std::shared_ptr<const ConfigurationDefinitions> definitions, std::map<std::string, RealmId> realms = {});
     std::shared_ptr<const ConfigurationDefinitions> configurationDefinitions() const override;
+    /** @brief 发布单个扩展的可用性快照。已有工厂只允许恢复同一运行代；更新驻留 DLL 由重启处理。 */
+    Result<void> setPluginAvailability(const std::string& id, PluginModule module,
+                                       std::optional<ConfiguredPlugin> definition);
     /** @brief 析构不替代 close；有资源或投递阻断时控制块保守自保留。 */
     ~KernelReconcileDriver() override;
     /** @brief 禁止复制驱动执行账目。 */
