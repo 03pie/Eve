@@ -174,7 +174,8 @@ void extensionDetails()
     expect("activate workbench", [&] { return window->isActiveWindow(); });
     child<QAction>(window, "EveOpenSettings")->trigger();
     expect("left home before shortcut", [&] { return !home->isVisible(); });
-    QTest::keyClick(window, Qt::Key_X, Qt::ControlModifier | Qt::ShiftModifier);
+    // Deliver window shortcuts through Qt's platform input path, including on Windows.
+    QTest::keyClick(window->windowHandle(), Qt::Key_X, Qt::ControlModifier | Qt::ShiftModifier);
     expect("shortcut returns to home cards", [&] { return card(home, desktop.id) != nullptr; });
     require(!window->findChild<QWidget*>("EveExtensionsPage") && !visibleDetails(), "no extensions navigation node");
     const auto homeTabs = tabs->count();
