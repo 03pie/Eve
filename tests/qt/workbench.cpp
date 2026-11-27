@@ -4,6 +4,7 @@
 #include <eve/kernel.hpp>
 #include <eve/ui/ela_shell.hpp>
 
+#include <ElaFlowLayout.h>
 #include <ElaMenu.h>
 #include <ElaMenuBar.h>
 #include <ElaPopularCard.h>
@@ -456,7 +457,7 @@ void directActivation()
     scene.close();
 }
 
-/** @brief 状态卡片不跳转或弹出打开按钮，插件撤销仍及时清理；保留原生卡片生命周期回归。 */
+/** @brief 未绑定扩展清单的页面贡献卡片保持只读，撤销时及时清理。 */
 void homeCards()
 {
     Scene scene;
@@ -493,6 +494,27 @@ void homeCards()
     QObject::connect(reentrant, &ElaPopularCard::popularCardClicked, parent.get(), [&] { delete reentrant.data(); });
     QCoreApplication::sendEvent(reentrantFloater, &release);
     CHECK(!reentrant && !reentrantFloater);
+
+    // A second card stays at the same position when its status grows or shrinks.
+    QWidget grid;
+    ElaFlowLayout flow(&grid, 0, 12, 12);
+    flow.setIsAnimation(false);
+    QLabel first("First", &grid), second("Ready", &grid);
+    flow.addWidget(&first);
+    flow.addWidget(&second);
+    grid.resize(400, 200);
+    grid.show();
+    flow.setGeometry(grid.rect());
+    const auto original = second.geometry();
+    CHECK(original.x() > 0 && original.height() > 0);
+    second.setText("First line\nSecond line");
+    flow.invalidate();
+    flow.setGeometry(grid.rect());
+    CHECK(second.pos() == original.topLeft() && second.height() > original.height());
+    second.setText("Ready");
+    flow.invalidate();
+    flow.setGeometry(grid.rect());
+    CHECK(second.geometry() == original);
 }
 
 /** @brief 卡片迁移到新容器后，旧悬浮区域销毁不能留下悬空引用，且可重新设置区域。 */
@@ -763,7 +785,7 @@ void pageLayout()
     scene.close();
 }
 
-void extensionsCenter();
+void extensionDetails();
 /** @brief 按场景隔离进程，测试真实 Qt/Ela 而非模拟布局。 */
 int main(int argc, char** argv)
 {
@@ -780,7 +802,7 @@ int main(int argc, char** argv)
         if (name == "history")
             history();
         else if (name == "extensions")
-            extensionsCenter();
+            extensionDetails();
         else if (name == "tabs")
             tabs();
         else if (name == "search")

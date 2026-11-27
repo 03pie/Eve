@@ -50,7 +50,8 @@ int ElaFlowLayoutPrivate::_doLayout(const QRect& rect, bool testOnly) const
         }
         if (!testOnly)
         {
-            if ((item->geometry().x() == 0 && item->geometry().y() == 0))
+            if ((item->geometry().x() == 0 && item->geometry().y() == 0)
+                || (!_isAnimation && item->geometry().size() != item->sizeHint()))
             {
                 item->setGeometry(QRect(QPoint(x, y), item->sizeHint()));
             }

@@ -121,6 +121,14 @@ void verifyInstalledConsumer(const QString& manifest, const QString& workspace, 
             }, "The installed SDK template did not contribute its page.");
             const auto session = host.session->snapshot().value();
             const auto& source = session.coordinator.desired->source();
+            const auto inventory = host.extensionControls()->list().value();
+            const auto plugin = QString::fromStdString(source.structure().entries().at("main").plugin);
+            const auto dev = std::find_if(inventory.begin(), inventory.end(), [&](const auto& item) {
+                return item.pluginId == plugin;
+            });
+            if (dev == inventory.end() || dev->id.isEmpty() || dev->instances != 1 ||
+                std::find(dev->actions.begin(), dev->actions.end(), eve::ui::ExtensionAction::Configure) == dev->actions.end())
+                throw std::runtime_error("Home details do not expose the configured development module.");
             if (source.structure().entries().at("main").config != (reopen ? savedConfig : "{}"))
                 throw std::runtime_error("Unexpected configuration of the active external module.");
             if (!reopen)

@@ -81,8 +81,19 @@ void exercise(const QString& package, const QString& workspace, const QString& m
                 auto bar = window->findChild<QToolBar*>();
                 check(bar != nullptr, "The desktop's own navigation was not built.");
                 for (auto action : bar->actions()) {
+                    if (action->text() == "Extensions") {
+                        auto settings = window->findChild<QAction*>("EveOpenSettings");
+                        check(settings != nullptr, "Settings route missing.");
+                        settings->trigger();
+                        QApplication::processEvents();
+                    }
                     action->trigger();
                     QApplication::processEvents();
+                    if (action->text() == "Extensions") {
+                        auto home = window->findChild<QWidget*>("EveWelcomePage");
+                        check(home && home->isVisible() && home->findChild<QWidget*>("EvePluginCard"),
+                              "Desktop SDK extension action did not navigate to home cards.");
+                    }
                     if (action->text() == "Commands") {
                         auto panel = window->findChild<QWidget*>("EveCommandPanel");
                         check(panel && panel->isVisible(), "Platform command navigation failed.");

@@ -1,5 +1,5 @@
 /** @file extensions.hpp
- * @brief Host data and operations consumed by the desktop extension center.
+ * @brief Host catalog, package review and extension actions available to the desktop.
  */
 #pragma once
 #include <eve/task.hpp>

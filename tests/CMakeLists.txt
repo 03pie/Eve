@@ -355,7 +355,7 @@ if(EVE_BUILD_ELA_UI)
     endforeach()
     set_tests_properties(p3.panel_throughput PROPERTIES TIMEOUT 120)
     target_link_libraries(eve_workbench_tests PRIVATE eve_desktop_impl Qt5::Test Ela::WidgetTools)
-    target_sources(eve_workbench_tests PRIVATE qt/extensions_center.cpp)
+    target_sources(eve_workbench_tests PRIVATE qt/extension_details.cpp)
     set_target_properties(eve_workbench_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     eve_target_defaults(eve_workbench_tests)
     foreach(case IN ITEMS

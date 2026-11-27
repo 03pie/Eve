@@ -31,5 +31,6 @@
 - Window/NavigationBar 原 addExpanderNode/addPageNode 签名保留为薄转发，新 predicate 重载的末参数必填，保持既有共享库导出。CentralStackedWidget 的延迟切换以稳定目标和修订号取消，状态由私有 QObject 子对象拥有，不增公开类字段；受控页面使用同步切换，旧动画不能晚到覆盖受控/已删除目标。
 - SuggestBox 增加可选通用建议过滤，查询和缓存选择都重查；呈现刷新不重复注册建议元数据。
 - ElaListView、ElaScrollArea、ElaPlainTextEdit 和 ElaDialog 的透明样式按控件类型匹配，宿主设置对象名后仍能使用相同材质。ElaComboBoxStyle 在 Windows 上也由自身绘制完整下拉背景、圆角和阴影，避免系统菜单底板遮盖透明边缘。
+- ElaFlowLayout 关闭动画时也会更新原位控件的尺寸，首页卡片的状态文本换行或缩短后，按钮对齐及下一行高度会随之更新。
 
 升级时须明确比较上游提交、合并本地修正，并重跑动态节点删除、导航重入、主题及 ASan 测试。构建直接使用本目录，不下载/自动更新上游，不修改 sources/research 参考资料。

@@ -225,6 +225,29 @@ std::vector<ExtensionItem> WorkspaceExtensions::inventory() const
         if (!item.current) item.actions.push_back(A::Uninstall);
         items.push_back(std::move(item));
     }
+    // A manifest supplied through --module has no catalog record. Its instance cards still have real
+    // module identity and runtime actions, while package installation and removal belong to the user catalog.
+    for (const auto& record : resident_) {
+        const auto& package = record.second.package;
+        const auto plugin = package.pluginId.toStdString();
+        if (!package.packageHash.isEmpty() || described.count(plugin)) continue;
+        auto item = describe(package);
+        item.state = QStringLiteral("开发模式");
+        item.description = QStringLiteral("通过启动参数加载的本地开发模块。");
+        if (desired) {
+            const auto& entries = desired->source().structure().entries();
+            item.instances = static_cast<int>(std::count_if(entries.begin(), entries.end(), [&](const auto& row) {
+                return row.second.plugin == plugin;
+            }));
+        }
+        item.actions = {A::AddInstance};
+        if (item.instances) {
+            item.actions.push_back(A::Configure);
+            item.actions.push_back(A::ShowLogs);
+        }
+        described.insert(plugin);
+        items.push_back(std::move(item));
+    }
     if (desired) {
         std::map<std::string, ExtensionItem> missing;
         for (const auto& row : desired->source().structure().entries()) {

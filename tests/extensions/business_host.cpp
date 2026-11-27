@@ -2,11 +2,13 @@
 #include "workbench.hpp"
 #include "../support/module_artifacts.hpp"
 #include <QApplication>
+#include <QComboBox>
 #include <QDirIterator>
 #include <QElapsedTimer>
 #include <QProcess>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QTabWidget>
 #include <QTest>
 #include <QUuid>
 #include <algorithm>
@@ -148,6 +150,45 @@ void installAndUpdate(Scene& s, const QDir& base)
     CHECK(s.item(notesId).pending && mapped(notesId, "1.0.0") && !mapped(notesId, "1.1.0"));
     CHECK(s.snapshot().running.size() == 2 && s.running(logPlugin).instance == other.instance);
 }
+// The catalog identifies the package, while the clicked card must retain its own instance path.
+void checkInstanceCards(Scene& scene)
+{
+    const auto accepted = value(scene.host.session->addInstance("second-logger", logPlugin, "{}",
+                                                               scene.snapshot().desiredRevision));
+    CHECK(wait(accepted.settled)->value().outcome == loader::PlanOutcome::Applied);
+    value(scene.host.desktop()->show());
+    QElapsedTimer deadline;
+    deadline.start();
+    QWidget* second = nullptr;
+    while (!second && deadline.elapsed() < 5000) {
+        QTest::qWait(10);
+        for (auto top : QApplication::topLevelWidgets()) {
+            auto home = top->findChild<QWidget*>("EveWelcomePage");
+            if (!home || !home->isVisible()) continue;
+            int logCards = 0;
+            QWidget* selected = nullptr;
+            for (auto candidate : home->findChildren<QWidget*>("EvePluginCard")) {
+                if (!candidate->isVisible() || candidate->property("EveExtensionId").toString() != logId) continue;
+                ++logCards;
+                if (candidate->property("EvePluginId").toString() == "configuration:second-logger")
+                    selected = candidate;
+            }
+            if (logCards == 2) second = selected;
+        }
+    }
+    CHECK(second);
+    QTest::mouseClick(second, Qt::LeftButton);
+    QWidget* dialog = nullptr;
+    for (auto top : QApplication::topLevelWidgets())
+        if (top->isVisible() && top->objectName() == "EveExtensionDialog") dialog = top;
+    CHECK(dialog);
+    auto tabs = dialog->findChild<QTabWidget*>("EveExtensionTabs");
+    auto instances = dialog->findChild<QComboBox*>("EveExtensionInstance");
+    CHECK(tabs && instances);
+    tabs->setCurrentIndex(1);
+    CHECK(instances->isVisible() && instances->count() == 2 && instances->currentText() == "second-logger");
+    dialog->close();
+}
 void phase(const QString& stage, const QDir& base)
 {
     const auto workspace = base.filePath(stage == "independent" ? "workspace B" : "workspace A");
@@ -160,6 +201,7 @@ void phase(const QString& stage, const QDir& base)
         CHECK(scene.running(logPlugin).instance.valid());
         scene.apply(ExtensionAction::Disable, logId);
         CHECK(scene.snapshot().running.empty() && scene.item(logId).instances == 1);
+        checkInstanceCards(scene);
     } else {
         CHECK(stage == "reopen" && scene.snapshot().running.size() == 2);
         CHECK(mapped(notesId, "1.1.0") && !mapped(notesId, "1.0.0"));

@@ -8,7 +8,7 @@
 #include "home_p.hpp"
 #include "preferences_p.hpp"
 #include "settings_page_p.hpp"
-#include "extensions_page_p.hpp"
+#include "extension_dialog_p.hpp"
 #include <ElaPushButton.h>
 #include <eve/build_info.hpp>
 #include <ElaComboBox.h>
@@ -349,6 +349,7 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
             HomePlugin value{entry.plugin, entry.title, QString::fromUtf8("界面已就绪")};
             value.enabled = true;
             // A contributed page alone does not provide a lifecycle snapshot.
+            value.canInspect = false;
             plugins.push_back(std::move(value));
         }
         page->setPlugins(plugins, callbacks.power, callbacks.withWindowAccess, callbacks.managePlugin);
@@ -833,29 +834,58 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     return self;
 }
 
-std::vector<QAction*> bindWorkbenchExtensions(const std::shared_ptr<WorkbenchControl>& control, ExtensionsPage* page)
+std::vector<QAction*> bindWorkbenchExtensions(const std::shared_ptr<WorkbenchControl>& control, ExtensionDialog* dialog,
+    const std::shared_ptr<ExtensionControls>& extensions, const std::function<void()>& refresh)
 {
-    const auto key = page->property("ElaPageKey").toString();
-    const QPointer<ExtensionsPage> guarded(page);
-    auto open = control->action(control->viewMenu, QObject::tr("扩展"), "EveOpenExtensions", QKeySequence("Ctrl+Shift+X"),
-        [key](WorkbenchControl& state) { state.navigate(key); });
+    const QPointer<ExtensionDialog> guarded(dialog);
+    auto open = control->action(control->viewMenu, QObject::tr("首页插件卡片"), "EveOpenExtensions", QKeySequence("Ctrl+Shift+X"),
+        [refresh](WorkbenchControl& state) {
+            state.navigate(state.homeKey);
+            refresh();
+            if (state.open && state.window) {
+                if (auto home = dynamic_cast<HomePage*>(state.window->findChild<QWidget*>("EveWelcomePage")))
+                    home->focusExtensions();
+            }
+        });
     auto install = control->action(control->fileMenu, QObject::tr("从扩展安装包安装…"), "EveInstallExtension", {},
-        [key, guarded](WorkbenchControl& state) {
-            state.navigate(key);
+        [guarded](WorkbenchControl& state) {
             if (state.open && guarded) guarded->choosePackage();
         });
+    if (auto button = control->window->findChild<QAbstractButton*>("EveHomeInstallExtension")) {
+        button->show();
+        QObject::connect(button, &QAbstractButton::clicked, install, &QAction::trigger);
+    }
+    if (auto refreshAction = control->window->findChild<QAction*>("EveRefreshPlugins"))
+        QObject::connect(refreshAction, &QAction::triggered, control->window, refresh);
     auto settings = static_cast<SettingsPage*>(control->settings.data());
     settings->addGroup("EveSettingsDesktopSection", QObject::tr("桌面"), QStringLiteral("desktop shell"));
     auto desktop = new ElaPushButton(QObject::tr("选择桌面…"), settings);
     desktop->setObjectName("EveSettingsChooseDesktop");
     settings->addRow(QObject::tr("启动时使用的桌面外壳"), desktop, QObject::tr("扩展 外壳 默认 切换 桌面"));
-    std::weak_ptr<WorkbenchControl> weak = control;
-    QObject::connect(desktop, &QPushButton::clicked, settings, [weak, key, guarded] {
-        if (auto state = weak.lock(); state && state->open)
-            state->withWindowAccess([&] {
-                state->navigate(key);
-                if (state->open && guarded) guarded->showDesktops();
+    auto menu = new ElaMenu(desktop);
+    menu->setObjectName("EveSettingsDesktopMenu");
+    desktop->setMenu(menu);
+    QObject::connect(menu, &QMenu::aboutToShow, desktop, [menu = QPointer<ElaMenu>(menu), extensions, guarded] {
+        const auto host = extensions;
+        const auto picker = menu;
+        const auto details = guarded;
+        const auto items = host->list();
+        if (!picker || !details) return;
+        picker->clear();
+        if (!items.hasValue()) {
+            picker->addAction(QString::fromStdString(items.error().message))->setEnabled(false);
+            return;
+        }
+        for (const auto& item : items.value()) {
+            if (item.kind != ExtensionKind::Desktop) continue;
+            auto action = picker->addAction(item.name);
+            action->setData(item.id);
+            action->setCheckable(true);
+            action->setChecked(item.current);
+            QObject::connect(action, &QAction::triggered, picker.data(), [details, id = item.id] {
+                if (details) details->openItem(id);
             });
+        }
     });
     settings->finish();
     return {open, install};
@@ -906,6 +936,18 @@ void refreshWorkbenchPresentation(const std::shared_ptr<WorkbenchControl>& contr
         control->refreshHomeWithinAccess();
         if (control->open)
             control->updateHistory();
+    });
+}
+
+void setWorkbenchHomeExtensions(const std::shared_ptr<WorkbenchControl>& control, std::vector<ExtensionItem> inventory,
+                                std::function<void(const QString&, const QString&)> showDetails)
+{
+    if (!control || !control->open) return;
+    control->withWindowAccess([&] {
+        if (auto page = dynamic_cast<HomePage*>(control->window->findChild<QWidget*>("EveWelcomePage"))) {
+            page->setExtensions(std::move(inventory), std::move(showDetails));
+            control->refreshHome();
+        }
     });
 }
 

@@ -146,6 +146,11 @@ void openEmpty(const QString& workspace, const QString& marker, bool exerciseWin
         scene.host.desktop()->show().value();
         until([] { return visibleWidget<QWidget>("EveWelcomePage") != nullptr; });
         auto* welcome = visibleWidget<QWidget>("EveWelcomePage");
+        until([&] {
+            const auto cards = welcome->findChildren<QWidget*>("EvePluginCard");
+            return cards.size() == 1 && cards.first()->isVisible() &&
+                   cards.first()->property("EveExtensionId").toString() == "org.eve.desktop";
+        });
         auto* window = welcome->window();
         auto* add = window->findChild<QAction*>("EveAddPlugin");
         auto* configuration = window->findChild<QAction*>("EveConfigurationFile");

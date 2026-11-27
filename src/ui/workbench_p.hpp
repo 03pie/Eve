@@ -7,6 +7,7 @@
 #include <QSet>
 #include <QString>
 #include <eve/result.hpp>
+#include <eve/ui/extensions.hpp>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -20,8 +21,9 @@ class QToolButton;
 class QPlainTextEdit;
 namespace eve::ui::detail {
 struct WorkbenchControl;
-class ExtensionsPage;
-std::vector<QAction*> bindWorkbenchExtensions(const std::shared_ptr<WorkbenchControl>& control, ExtensionsPage* page);
+class ExtensionDialog;
+std::vector<QAction*> bindWorkbenchExtensions(const std::shared_ptr<WorkbenchControl>& control, ExtensionDialog* dialog,
+    const std::shared_ptr<ExtensionControls>& extensions, const std::function<void()>& refresh);
 /** @brief 首页只展示插件值状态，电源操作由宿主按实例身份重新校验。 */
 struct HomePlugin {
     QString id, title, subtitle;
@@ -32,7 +34,12 @@ struct HomePlugin {
     bool configuration = false;
     StatusPresentation status{};
     bool running = false, needsAttention = false;
+    QString pluginId{};
+    bool canInspect = true;
 };
+/** @brief 扩展目录按变更更新；实例状态轮询只重用此快照。 */
+void setWorkbenchHomeExtensions(const std::shared_ptr<WorkbenchControl>& control, std::vector<ExtensionItem> inventory,
+                                std::function<void(const QString&, const QString&)> showDetails);
 /** @brief 一次刷新使用的宿主值目录，遍历页面时不再执行权限回调。 */
 struct HomeCatalogue {
     std::vector<HomePlugin> plugins;

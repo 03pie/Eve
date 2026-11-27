@@ -8,7 +8,7 @@
 #include "output_p.hpp"
 #include "appearance_p.hpp"
 #include "home_p.hpp"
-#include "extensions_page_p.hpp"
+#include "extension_dialog_p.hpp"
 #include "panel_p.hpp"
 #include "preferences_p.hpp"
 #include "runtime_log_archive_p.hpp"
@@ -45,6 +45,7 @@
 #include <QSignalBlocker>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <QTimer>
 #include <QTreeView>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -192,7 +193,10 @@ struct ShellControl : PagesEndpoint, std::enable_shared_from_this<ShellControl> 
     QPointer<QWidget> managementPage;
     std::shared_ptr<WorkbenchControl> workbench;
     QString safeKey;
-    QString extensionsKey;
+    std::shared_ptr<ExtensionControls> extensions;
+    QPointer<ExtensionDialog> extensionDialog;
+    std::optional<std::uint64_t> extensionRevision;
+    bool readingExtensions = false;
     QString managementKey;
     QString commandsKey;
     QString settingsKey;
@@ -223,6 +227,24 @@ struct ShellControl : PagesEndpoint, std::enable_shared_from_this<ShellControl> 
         /** @brief 最后一个导航栈返回后重新检查窗口关闭条件。 */
         ~NavigationAccess() { --owner.navigationAccesses; owner.checkClosed(); }
     };
+    /** Read the user catalog on explicit refresh or workspace revision change, outside the card polling loop. */
+    void refreshExtensions()
+    {
+        if (!open || !extensions || !extensionDialog || readingExtensions)
+            return;
+        NavigationAccess access(*this);
+        QScopedValueRollback<bool> reading(readingExtensions, true);
+        const auto items = extensions->list();
+        if (!open || !extensionDialog) return;
+        if (!items.hasValue()) {
+            (void)appendOutput(output, {}, "platform", items.error().message, OutputLevel::Error);
+            return;
+        }
+        setWorkbenchHomeExtensions(workbench, items.value(),
+            [dialog = extensionDialog](const QString& id, const QString& instance) {
+                if (dialog) dialog->openItem(id, instance);
+            });
+    }
     /** @brief 原生导航和页签共享稳定 key，反向同步选择不再次派发导航。 */
     void syncSelection(const QString& key)
     {
@@ -262,7 +284,7 @@ struct ShellControl : PagesEndpoint, std::enable_shared_from_this<ShellControl> 
         }
         if (key == managementKey)
             return selectManagement();
-        if (key.isEmpty() || (key != safeKey && key != settingsKey && key != aboutKey && key != extensionsKey))
+        if (key.isEmpty() || (key != safeKey && key != settingsKey && key != aboutKey))
             return Result<void>::failure(makeError(ErrorCode::StaleContext, "page is no longer registered"));
         NavigationAccess access(*this);
         navigation->navigation(key, false);
@@ -908,6 +930,13 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
              if (!home.diagnostics)
                  return catalogue;
              const auto& snapshot = *home.diagnostics;
+             if (state->extensions && snapshot.configuration &&
+                 state->extensionRevision != snapshot.configuration->revision) {
+                 state->extensionRevision = snapshot.configuration->revision;
+                 QTimer::singleShot(0, state->window, [weak] {
+                     if (auto shell = weak.lock()) shell->refreshExtensions();
+                 });
+             }
              catalogue.canAddPlugin = !snapshot.kernel.closing && snapshot.configuration &&
                                       snapshot.configuration->open && snapshot.configuration->canEdit &&
                                       !snapshot.configuration->availablePlugins.empty();
@@ -995,6 +1024,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
                      if (name.isEmpty())
                          name = path.section('/', -1);
                      detail::HomePlugin item{"configuration:" + path, name, status};
+                     item.pluginId = QString::fromStdString(row.plugin);
                      item.running = row.hasActual && row.state == InstanceState::Active;
                      item.needsAttention = row.error.has_value() || (row.hasActual && row.state == InstanceState::Failed);
                      item.status = detail::instanceStatus(row.state, static_cast<bool>(row.error));
@@ -1193,10 +1223,10 @@ ElaShell::~ElaShell() = default;
 Result<void> ElaShell::bindExtensions(std::shared_ptr<ExtensionControls> controls) const
 {
     if (!control_->scheduler->isCurrentThread())
-        return Result<void>::failure(makeError(ErrorCode::WrongThread, "extension navigation requires owner thread"));
+        return Result<void>::failure(makeError(ErrorCode::WrongThread, "extension controls require owner thread"));
     if (!control_->open || !control_->window)
         return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closing"));
-    if (!controls || !controls->list || !controls->preview || !controls->apply || !control_->extensionsKey.isEmpty())
+    if (!controls || !controls->list || !controls->preview || !controls->apply || control_->extensions)
         return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "invalid or duplicate extension binding"));
     std::weak_ptr<detail::ShellControl> weak = control_;
     const auto instances = [weak](const QString& plugin) {
@@ -1224,14 +1254,13 @@ Result<void> ElaShell::bindExtensions(std::shared_ptr<ExtensionControls> control
         return Result<void>::failure(makeError(ErrorCode::StaleContext, "工作区实例不可用，请刷新后重试。"));
     };
     detail::ShellControl::NavigationAccess access(*control_);
-    auto page = std::make_unique<detail::ExtensionsPage>(control_->scheduler, std::move(controls), instances, present);
-    const auto title = QStringLiteral("扩展");
-    if (control_->window->addPageNode(title, page.get(), ElaIconType::PuzzlePiece) != ElaNavigationType::Success)
-        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "extension page registration failed"));
-    auto owned = page.release();
-    control_->extensionsKey = owned->property("ElaPageKey").toString();
-    detail::registerWorkbenchPage(control_->workbench, control_->extensionsKey, title);
-    detail::registerPlatformCommands(control_->services, detail::bindWorkbenchExtensions(control_->workbench, owned));
+    const auto refresh = [weak] { if (auto state = weak.lock()) state->refreshExtensions(); };
+    control_->extensions = controls;
+    control_->extensionDialog = new detail::ExtensionDialog(control_->scheduler, controls, instances, present,
+                                                           refresh, control_->window);
+    detail::registerPlatformCommands(control_->services,
+        detail::bindWorkbenchExtensions(control_->workbench, control_->extensionDialog, controls, refresh));
+    refresh();
     return Result<void>::success();
 }
 /** @brief 共享服务 facade 不暴露 Ela 对象，也不形成服务/窗口所有权环。 */

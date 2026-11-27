@@ -20,6 +20,9 @@ public:
     /** @brief 复用 Ela 背景卡、流布局和区域组件创建首页。 */
     HomePage();
     void focusInstance(const QString& key);
+    void focusExtensions();
+    void setExtensions(std::vector<ExtensionItem> inventory,
+                       std::function<void(const QString&, const QString&)> showDetails);
     /** @brief 增量更新卡片，未变化的实例保持悬停、布局和焦点。 */
     void setPlugins(const std::vector<HomePlugin>& plugins,
                     std::function<Result<void>(const QString&, bool, std::uint64_t)> power,
@@ -32,6 +35,7 @@ private:
     QPointer<ElaText> count_;
     QPointer<QWidget> empty_;
     ElaPushButton* add_ = nullptr;
+    ElaPushButton* install_ = nullptr;
     QBoxLayout* bannerRow_ = nullptr;
     QBoxLayout* emptyRow_ = nullptr;
     QPointer<ElaText> error_;
@@ -40,5 +44,7 @@ private:
     std::function<Result<void>(const QString&, bool, std::uint64_t)> power_;
     std::function<void(const std::function<void()>&)> access_;
     std::function<Result<void>(const QString&, bool)> manage_;
+    std::vector<ExtensionItem> extensions_;
+    std::function<void(const QString&, const QString&)> showDetails_;
 };
 } // namespace eve::ui::detail
