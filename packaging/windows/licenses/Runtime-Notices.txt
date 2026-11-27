@@ -1,0 +1,20 @@
+Cordis 桌面运行包
+
+Qt 5.15.2
+本程序动态链接 Qt Core、GUI 和 Widgets，使用 QtBase 的 Windows 平台、
+样式、GIF、ICO、JPEG、ANGLE 和 Qt Image Formats 的 WebP 插件。
+许可全文、上游版权声明及第三方许可见 Qt-5.15.2.txt。可从 Qt 官方归档取得相应版本源码。
+
+https://download.qt.io/archive/qt/5.15/5.15.2/submodules/qtbase-everywhere-src-5.15.2.tar.xz
+SHA-256 909fad2591ee367993a75d7e2ea50ad4db332f05e1c38dd7a5a274e156a4e0f8
+https://download.qt.io/archive/qt/5.15/5.15.2/submodules/qtimageformats-everywhere-src-5.15.2.tar.xz
+SHA-256 bf8285c7ce04284527ab823ddc7cf48a1bb79131db3a7127342167f4814253d7
+
+ElaWidgetTools 和 LibYAML
+许可文本分别位于 ela/LICENSE 和 libyaml/LICENSE。Ela 内嵌字体和图片的来源与
+授权核查状态见 ela/RESOURCE-PROVENANCE.txt。
+
+Microsoft Visual C++ Runtime
+本包附带与 Windows x64 发行版匹配的 Microsoft Visual C++ 动态运行库。
+发行文件清单和适用条款由 Microsoft 随相应版本的 Visual Studio 提供。
+https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution
