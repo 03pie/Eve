@@ -5,6 +5,8 @@
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QFileInfo>
+#include <QPlainTextEdit>
+#include <QPushButton>
 #include <QStandardPaths>
 #include <QTest>
 #include <algorithm>
@@ -71,8 +73,35 @@ void savePluginConfiguration(eve::workbench::Workbench& host, const eve::loader:
         throw std::runtime_error("The workbench did not write the plugin configuration.");
 }
 
-/** @brief 新建时检查空配置，冷启动时核对从磁盘恢复的历史字段和数值原文。 */
-void verifyInstalledConsumer(const QString& manifest, const QString& workspace, bool reopen)
+/** @brief 经冻结的旧 SDK 插件页面触发命令，检查实际实例产生的输出。 */
+void verifyFrozenNotebook(eve::workbench::Workbench& host)
+{
+    QPlainTextEdit* editor = nullptr;
+    QPushButton* publish = nullptr;
+    until([&] {
+        for (auto* window : QApplication::topLevelWidgets()) {
+            if (auto* page = window->findChild<QWidget*>("EveNotebookPage")) {
+                editor = page->findChild<QPlainTextEdit*>("EveNotebookEditor");
+                publish = page->findChild<QPushButton*>("EveNotebookPublish");
+                if (editor && publish)
+                    return true;
+            }
+        }
+        return false;
+    }, "The frozen plugin did not create its page.");
+    const std::string marker = "SDK_020_FROZEN_COMMAND";
+    editor->setPlainText(QString::fromStdString(marker));
+    publish->click();
+    until([&] {
+        const auto rows = host.shell.output()->snapshot().value();
+        return std::any_of(rows.begin(), rows.end(), [&](const auto& row) {
+            return row.owner && row.text == marker;
+        });
+    }, "The frozen plugin command did not produce instance-owned output.");
+}
+
+/** @brief 在真实宿主中验证外部模块及新建或重开的工作区。 */
+void verifyInstalledConsumer(const QString& manifest, const QString& workspace, const QString& mode)
 {
     eve::workbench::Workbench host;
     try {
@@ -81,18 +110,23 @@ void verifyInstalledConsumer(const QString& manifest, const QString& workspace, 
         const auto applied = await(host.applyInitial().settled);
         if (applied->value().outcome != eve::loader::PlanOutcome::Applied || !applied->value().errors.empty())
             throw std::runtime_error("The workbench could not activate the template module.");
-        until([&] {
-            const auto pages = host.shell.pages()->snapshot().value();
-            return std::any_of(pages.begin(), pages.end(), [](const auto& page) {
-                return page.id == "external-page" && page.widgetAlive && page.navigationPresent;
-            });
-        }, "The installed SDK template did not contribute its page.");
-        const auto session = host.session->snapshot().value();
-        const auto& source = session.coordinator.desired->source();
-        if (source.structure().entries().at("main").config != (reopen ? savedConfig : "{}"))
-            throw std::runtime_error("Unexpected configuration of the active external module.");
-        if (!reopen)
-            savePluginConfiguration(host, source);
+        if (mode == "frozen") {
+            verifyFrozenNotebook(host);
+        } else {
+            const bool reopen = mode == "reopen";
+            until([&] {
+                const auto pages = host.shell.pages()->snapshot().value();
+                return std::any_of(pages.begin(), pages.end(), [](const auto& page) {
+                    return page.id == "external-page" && page.widgetAlive && page.navigationPresent;
+                });
+            }, "The installed SDK template did not contribute its page.");
+            const auto session = host.session->snapshot().value();
+            const auto& source = session.coordinator.desired->source();
+            if (source.structure().entries().at("main").config != (reopen ? savedConfig : "{}"))
+                throw std::runtime_error("Unexpected configuration of the active external module.");
+            if (!reopen)
+                savePluginConfiguration(host, source);
+        }
     } catch (...) {
         try {
             close(host);
@@ -111,14 +145,14 @@ int main(int argc, char** argv)
     QApplication application(argc, argv);
     const auto args = application.arguments();
     if (args.size() < 3 || args.size() > 4 ||
-        (args.size() == 4 && args[3] != "create" && args[3] != "reopen")) {
-        std::cerr << "Usage: eve_sdk_consumer_tests module.json workspace [create|reopen]\n";
+        (args.size() == 4 && args[3] != "create" && args[3] != "reopen" && args[3] != "frozen")) {
+        std::cerr << "Usage: eve_sdk_consumer_tests module.json workspace [create|reopen|frozen]\n";
         return 1;
     }
     QStandardPaths::setTestModeEnabled(true);
     application.setApplicationName("EveSdkConsumer-" + QFileInfo(QFileInfo(args[2]).absolutePath()).fileName());
     try {
-        verifyInstalledConsumer(args[1], args[2], args.value(3) == "reopen");
+        verifyInstalledConsumer(args[1], args[2], args.value(3));
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
