@@ -25,13 +25,13 @@ include(CMakePackageConfigHelpers)
 set(eve_sdk_cmake_dir "${CMAKE_INSTALL_LIBDIR}/cmake/Eve")
 target_include_directories(eve_core PUBLIC "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
 foreach(pair IN ITEMS "eve_core,Core" "eve_qt,Qt" "eve_ui,Ui"
-                      "eve_qt_plugin_sdk,QtPluginSdk" "eve_qt_ui_plugin_sdk,QtUiPluginSdk")
+                      "eve_qt_plugin_sdk,QtPluginSdk" "eve_qt_ui_plugin_sdk,QtUiPluginSdk" "eve_desktop_sdk,DesktopSdk")
     string(REPLACE "," ";" fields "${pair}")
     list(GET fields 0 target)
     list(GET fields 1 exported_name)
     set_target_properties(${target} PROPERTIES EXPORT_NAME "${exported_name}")
 endforeach()
-install(TARGETS eve_core eve_qt eve_ui eve_qt_plugin_sdk eve_qt_ui_plugin_sdk
+install(TARGETS eve_core eve_qt eve_ui eve_qt_plugin_sdk eve_qt_ui_plugin_sdk eve_desktop_sdk
     EXPORT EveTargets RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}" ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
 install(EXPORT EveTargets FILE EveTargets.cmake NAMESPACE Eve:: DESTINATION "${eve_sdk_cmake_dir}")
@@ -42,13 +42,17 @@ write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/EveConfigVersion.c
     VERSION "${EVE_SDK_VERSION}" COMPATIBILITY ExactVersion)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/EveConfig.cmake" "${CMAKE_CURRENT_BINARY_DIR}/EveConfigVersion.cmake"
     "${CMAKE_CURRENT_LIST_DIR}/EvePlugin.cmake" "${CMAKE_CURRENT_LIST_DIR}/QtPluginContract.cmake"
-    "${CMAKE_CURRENT_LIST_DIR}/ModuleIdentity.cmake"
+    "${CMAKE_CURRENT_LIST_DIR}/ModuleIdentity.cmake" "${CMAKE_CURRENT_LIST_DIR}/WriteExtensionPackage.cmake"
     "${CMAKE_CURRENT_LIST_DIR}/WriteModuleManifest.cmake" DESTINATION "${eve_sdk_cmake_dir}")
 set(eve_sdk_share "${CMAKE_INSTALL_DATADIR}/Eve")
 set(eve_template "${PROJECT_SOURCE_DIR}/sdk/templates/qt-ui-plugin")
 configure_file("${eve_template}/CMakeLists.txt.in" "sdk-template/CMakeLists.txt" @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/sdk-template/CMakeLists.txt" "${eve_template}/plugin.cpp"
-    "${eve_template}/README.md" DESTINATION "${eve_sdk_share}/templates/qt-ui-plugin")
+    "${eve_template}/README.md" "${eve_template}/package.json" DESTINATION "${eve_sdk_share}/templates/qt-ui-plugin")
+set(desktop_template "${PROJECT_SOURCE_DIR}/sdk/templates/desktop")
+configure_file("${desktop_template}/CMakeLists.txt.in" "desktop-template/CMakeLists.txt" @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/desktop-template/CMakeLists.txt" "${desktop_template}/plugin.cpp"
+    "${desktop_template}/package.json" "${desktop_template}/README.md" DESTINATION "${eve_sdk_share}/templates/desktop")
 
 # 延续原有指南入口，同时让指南与声明中的相对链接在安装前缀内可以离线阅读。
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/sdk-consumer.md" CONTENT
@@ -56,7 +60,7 @@ file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/sdk-consumer.md" CONTENT
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/sdk-consumer.md" "${PROJECT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
     DESTINATION "${eve_sdk_share}")
 install(FILES "${PROJECT_SOURCE_DIR}/docs/sdk-consumer.md" DESTINATION "${eve_sdk_share}/docs")
-foreach(component IN ITEMS ela libyaml)
+foreach(component IN ITEMS ela libyaml miniz)
     install(FILES "${PROJECT_SOURCE_DIR}/third_party/${component}/LICENSE" "${PROJECT_SOURCE_DIR}/third_party/${component}/UPSTREAM.md"
         DESTINATION "${eve_sdk_share}/third_party/${component}")
 endforeach()

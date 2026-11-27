@@ -8,6 +8,7 @@
 #include "output_p.hpp"
 #include "appearance_p.hpp"
 #include "home_p.hpp"
+#include "extensions_page_p.hpp"
 #include "panel_p.hpp"
 #include "preferences_p.hpp"
 #include "runtime_log_archive_p.hpp"
@@ -181,6 +182,7 @@ struct ShellControl : PagesEndpoint, std::enable_shared_from_this<ShellControl> 
     bool ownsArchive = false;
     std::shared_ptr<ManagementControl> management;
     QPointer<HostWindow> window;
+    QPointer<QWidget> layoutWindow;
     std::optional<qt::QObjectResource> windowResource;
     QPointer<ElaNavigationBar> navigation;
     QPointer<QTreeView> navigationView;
@@ -190,6 +192,7 @@ struct ShellControl : PagesEndpoint, std::enable_shared_from_this<ShellControl> 
     QPointer<QWidget> managementPage;
     std::shared_ptr<WorkbenchControl> workbench;
     QString safeKey;
+    QString extensionsKey;
     QString managementKey;
     QString commandsKey;
     QString settingsKey;
@@ -259,7 +262,7 @@ struct ShellControl : PagesEndpoint, std::enable_shared_from_this<ShellControl> 
         }
         if (key == managementKey)
             return selectManagement();
-        if (key != safeKey && key != settingsKey && key != aboutKey)
+        if (key.isEmpty() || (key != safeKey && key != settingsKey && key != aboutKey && key != extensionsKey))
             return Result<void>::failure(makeError(ErrorCode::StaleContext, "page is no longer registered"));
         NavigationAccess access(*this);
         navigation->navigation(key, false);
@@ -391,6 +394,30 @@ struct ShellControl : PagesEndpoint, std::enable_shared_from_this<ShellControl> 
         checkClosed();
         return closed.task();
     }
+};
+/** Qt's deletion barrier owns this stable object, even while the workbench is embedded in another window. */
+class WindowOwner final : public QObject {
+public:
+    explicit WindowOwner(HostWindow* window) : window_(window) {}
+    ~WindowOwner() override { delete window_.data(); }
+private:
+    QPointer<HostWindow> window_;
+};
+
+class DesktopCloseFilter final : public QObject {
+public:
+    DesktopCloseFilter(QWidget* root, std::weak_ptr<ShellControl> shell) : QObject(root), shell_(std::move(shell))
+    { root->installEventFilter(this); }
+protected:
+    bool eventFilter(QObject*, QEvent* event) override
+    {
+        if (event->type() != QEvent::Close) return false;
+        event->ignore();
+        if (auto shell = shell_.lock()) shell->requestClose();
+        return true;
+    }
+private:
+    std::weak_ptr<ShellControl> shell_;
 };
 /** @brief 输入事件在到达插件 QWidget 前重查 epoch；程序信号仍须由插件遵循 Context 契约。 */
 class InputGate final : public QObject {
@@ -1158,11 +1185,55 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     auto gate = new detail::InputGate(window.get(), weak);
     QCoreApplication::instance()->installEventFilter(gate);
     QObject::connect(window.get(), &ElaWindow::closeButtonClicked, window.get(), [weak] { if (auto state = weak.lock()) state->requestClose(); });
-    std::unique_ptr<QObject> owned(window.release());
+    std::unique_ptr<QObject> owned = std::make_unique<detail::WindowOwner>(window.release());
     control_->windowResource.emplace(owned, control_->scheduler);
 }
 /** @brief 只释放宿主句柄，Qt 对象继续由应用线程的守卫管理。 */
 ElaShell::~ElaShell() = default;
+Result<void> ElaShell::bindExtensions(std::shared_ptr<ExtensionControls> controls) const
+{
+    if (!control_->scheduler->isCurrentThread())
+        return Result<void>::failure(makeError(ErrorCode::WrongThread, "extension navigation requires owner thread"));
+    if (!control_->open || !control_->window)
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closing"));
+    if (!controls || !controls->list || !controls->preview || !controls->apply || !control_->extensionsKey.isEmpty())
+        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "invalid or duplicate extension binding"));
+    std::weak_ptr<detail::ShellControl> weak = control_;
+    const auto instances = [weak](const QString& plugin) {
+        QStringList paths;
+        if (auto state = weak.lock(); state && state->open) {
+            auto snapshot = detail::managementHomeSnapshot(state->management);
+            if (snapshot.diagnostics && snapshot.diagnostics->configuration)
+                for (const auto& entry : snapshot.diagnostics->configuration->entries)
+                    if (QString::fromStdString(entry.plugin) == plugin) paths << QString::fromStdString(entry.path);
+        }
+        return paths;
+    };
+    auto present = [weak, instances](ExtensionAction action, const QString& plugin, const QString& path) {
+        auto state = weak.lock();
+        if (!state || !state->open) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closing"));
+        detail::ShellControl::NavigationAccess access(*state);
+        if (action == ExtensionAction::ShowLogs) {
+            const auto source = plugin.isEmpty() ? QStringLiteral("platform") : QStringLiteral("plugin/") + plugin;
+            detail::showOutput(state->output, {}, {}, QApplication::focusWidget(), {}, {}, 0, source);
+            return Result<void>::success();
+        }
+        if (action == ExtensionAction::AddInstance) return detail::showAddPluginDialog(state->management, plugin);
+        if (action == ExtensionAction::Configure && !path.isEmpty() && instances(plugin).contains(path))
+            return detail::showManagementDialog(state->management, "configuration:" + path, true);
+        return Result<void>::failure(makeError(ErrorCode::StaleContext, "工作区实例不可用，请刷新后重试。"));
+    };
+    detail::ShellControl::NavigationAccess access(*control_);
+    auto page = std::make_unique<detail::ExtensionsPage>(control_->scheduler, std::move(controls), instances, present);
+    const auto title = QStringLiteral("扩展");
+    if (control_->window->addPageNode(title, page.get(), ElaIconType::PuzzlePiece) != ElaNavigationType::Success)
+        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "extension page registration failed"));
+    auto owned = page.release();
+    control_->extensionsKey = owned->property("ElaPageKey").toString();
+    detail::registerWorkbenchPage(control_->workbench, control_->extensionsKey, title);
+    detail::registerPlatformCommands(control_->services, detail::bindWorkbenchExtensions(control_->workbench, owned));
+    return Result<void>::success();
+}
 /** @brief 共享服务 facade 不暴露 Ela 对象，也不形成服务/窗口所有权环。 */
 std::shared_ptr<UiPagesService> ElaShell::pages() const { return pages_; }
 /** @brief 命令服务只借用宿主后端，不把第三方控件传给插件。 */
@@ -1246,7 +1317,77 @@ Result<void> ElaShell::show() const
 {
     if (!control_->scheduler->isCurrentThread()) return Result<void>::failure(makeError(ErrorCode::WrongThread, "shell show requires owner thread"));
     if (!control_->open || !control_->window) return Result<void>::failure(makeError(ErrorCode::ContextClosing, "shell closing"));
-    control_->window->show();
+    if (control_->layoutWindow) control_->layoutWindow->show();
+    else control_->window->show();
+    return Result<void>::success();
+}
+
+Result<void> ElaShell::attachLayout(const Context& owner, desktop::Window selected) const
+{
+    auto state = control_;
+    if (!state->scheduler->isCurrentThread())
+        return Result<void>::failure(makeError(ErrorCode::WrongThread, "Desktop layout requires application thread."));
+    auto root = selected.root.get();
+    auto slot = selected.workspace;
+    if (!state->open || !state->window || state->layoutWindow || !root || root->parent() ||
+        root->thread() != qApp->thread() || !root->isWindow() || root->isVisible() ||
+        root->testAttribute(Qt::WA_DeleteOnClose) || !slot || !root->isAncestorOf(slot) ||
+        !slot->layout() || slot->layout()->count())
+        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "Desktop requires an unused root and empty workspace layout."));
+    auto resource = std::make_shared<std::optional<qt::QObjectResource>>();
+    auto window = state->window;
+    const auto flags = window->windowFlags();
+    const auto barHeight = window->getAppBarHeight();
+    const auto cleanup = owner.afterCleanup([state, resource, window, flags, barHeight] {
+        if (!*resource) return completedTask();
+        if (state->layoutWindow) state->layoutWindow->hide();
+        if (window) {
+            window->hide();
+            window->setParent(nullptr, flags);
+            window->setAppBarHeight(barHeight);
+        }
+        state->layoutWindow.clear();
+        return (*resource)->close();
+    }, "desktop.layout.release");
+    if (!cleanup.hasValue()) return cleanup;
+    std::unique_ptr<QObject> adopted(std::move(selected.root));
+    resource->emplace(adopted, state->scheduler);
+    state->layoutWindow = root;
+    new detail::DesktopCloseFilter(root, state);
+    window->setAppBarHeight(0);
+    window->setParent(slot, Qt::Widget);
+    slot->layout()->addWidget(window);
+    window->show();
+    return Result<void>::success();
+}
+
+bool ElaShell::hasExternalLayout() const
+{
+    return control_->layoutWindow && control_->window && control_->layoutWindow->isAncestorOf(control_->window);
+}
+
+bool ElaShell::externalLayoutVisible() const
+{
+    return hasExternalLayout() && control_->layoutWindow->isVisible() && control_->window->isVisible();
+}
+
+Result<void> ElaShell::invokeLayoutAction(desktop::Action action) const
+{
+    if (!control_->scheduler->isCurrentThread() || !control_->open || !hasExternalLayout())
+        return Result<void>::failure(makeError(ErrorCode::ContextClosing, "Desktop layout unavailable."));
+    const char* name = nullptr;
+    switch (action) {
+    case desktop::Action::Home: name = "EveOpenHome"; break;
+    case desktop::Action::Extensions: name = "EveOpenExtensions"; break;
+    case desktop::Action::Settings: name = "EveOpenSettings"; break;
+    case desktop::Action::Commands: name = "EveOpenCommands"; break;
+    case desktop::Action::Output: name = "EveOpenOutput"; break;
+    case desktop::Action::Notifications: name = "EveOpenNotifications"; break;
+    }
+    auto command = name ? control_->window->findChild<QAction*>(QString::fromLatin1(name)) : nullptr;
+    if (!command || !command->isEnabled())
+        return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "Desktop action unavailable."));
+    command->trigger();
     return Result<void>::success();
 }
 /** @brief 该回调只属于宿主，不作为普通插件的任意命令执行入口。 */

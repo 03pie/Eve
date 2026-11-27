@@ -20,7 +20,7 @@ target_link_libraries(eve_ui PUBLIC Eve::Qt Qt5::Widgets)
 eve_target_defaults(eve_ui)
 
 target_sources(${desktop_target} PRIVATE pages.cpp services.cpp notifications.cpp management.cpp workbench.cpp
-    home.cpp preferences.cpp brand.cpp output.cpp panel.cpp settings_page.cpp settings_controls.cpp
+    home.cpp preferences.cpp brand.cpp output.cpp panel.cpp settings_page.cpp settings_controls.cpp extensions_page.cpp
     accessible_toggle.cpp output_view.cpp "${PROJECT_SOURCE_DIR}/app/shell/resources/eve_brand.qrc")
 set_target_properties(${desktop_target} PROPERTIES AUTORCC ON)
 target_link_libraries(${desktop_target} PRIVATE Ela::WidgetTools)
@@ -30,6 +30,9 @@ if(TARGET eve_qt_plugin_sdk)
     add_library(eve_qt_ui_plugin_sdk INTERFACE)
     add_library(Eve::QtUiPluginSdk ALIAS eve_qt_ui_plugin_sdk)
     target_link_libraries(eve_qt_ui_plugin_sdk INTERFACE Eve::QtPluginSdk Eve::Ui Ela::WidgetTools)
+    add_library(eve_desktop_sdk INTERFACE)
+    add_library(Eve::DesktopSdk ALIAS eve_desktop_sdk)
+    target_link_libraries(eve_desktop_sdk INTERFACE Eve::QtUiPluginSdk)
 endif()
 
 add_library(eve_config_ui STATIC configuration.cpp configuration_management.cpp)

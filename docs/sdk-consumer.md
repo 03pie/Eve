@@ -1,6 +1,6 @@
 # Eve 仓库外插件 SDK
 
-Eve 0.2.1 工作台继续接受正式 0.2.0 SDK 构建的同工具链业务 DLL。桌面作为系统模块提供页面、命令、通知和输出服务，业务项目仍链接 `Eve::QtUiPluginSdk`，使用原有服务标识。安装包的产品版本与 `find_package` 所用 SDK 版本分别维护。
+Eve 0.3.0 工作台接受正式 0.2.0 SDK 构建的同工具链业务 DLL。桌面作为系统模块提供页面、命令、通知和输出服务，业务项目链接 `Eve::QtUiPluginSdk`，使用原有服务标识。0.3.0 随附的 SDK 新增桌面模板、`Eve::DesktopSdk` 和扩展包构建助手。安装包的产品版本与 `find_package` 所用 SDK 版本分别维护。
 
 ## 从 Cordis 0.1.x 迁移
 
@@ -27,7 +27,7 @@ cmake --install build/ela-msvc-release --prefix $sdkPrefix
 
 复制安装前缀中的 `share/Eve/templates/qt-ui-plugin` 到仓库外目录。模板用 `find_package` 的 `EXACT` 模式加载生产者版本并调用 `eve_add_qt_ui_plugin`。安装包导出 `Eve::Core`、`Eve::Qt`、`Eve::Ui`、`Eve::QtPluginSdk` 和 `Eve::QtUiPluginSdk`，常规 UI 插件链接最后一个目标。安装树保留完整的 SDK 头目录以兼容已有消费者。可见的 Loader、ModuleHost 和 Replacement 宿主声明由宿主装配使用，插件的受支持链接接口以导出目标为准。
 
-构建模板后，在新工作区加载生成的 `module.json`。将 `$moduleManifest` 设置为生成文件的绝对路径，再从平台仓库运行。
+日常开发可以直接加载模板生成的 `module.json`。将 `$moduleManifest` 设置为生成文件的绝对路径，再从平台仓库运行。
 
 ```powershell
 .\tools\desktop.ps1 -Action run -Preset ela-msvc-release -Workspace (Join-Path $PWD 'build/sdk-workspace') -ModuleManifest $moduleManifest
@@ -48,9 +48,42 @@ eve_add_qt_ui_plugin(my_plugin
 
 ## 契约与资源
 
+### 制作离线扩展包
+
+在调用 `eve_add_qt_ui_plugin` 后加入以下构建声明。可选的 `ICON` 参数指定包内展示的 PNG 图标。
+
+```cmake
+eve_add_extension_package(my_plugin PACKAGE_JSON package.json)
+```
+
+下面是业务扩展的 `package.json`。模块 ID、插件 ID、模块版本和 DLL 的 SHA-256 都取自生成的 `module.json`。展示名称与发布者由作者填写，`description` 和默认实例配置 `defaultConfig` 可以省略。
+
+```json
+{
+  "formatVersion": 1,
+  "kind": "business",
+  "name": "项目面板",
+  "publisher": "示例团队",
+  "description": "为当前工作区提供项目面板。",
+  "defaultConfig": {}
+}
+```
+
+执行 `cmake --build build --target my_plugin_package`。将 `build/my_plugin.evepkg` 交给用户，在扩展页选择、检查并确认安装。业务实例由工作区配置保存。更新时递增 CMake 的 `MODULE_VERSION`。平台会检查映像摘要和本机工具链兼容性。
+
+### 开发独立桌面
+
+复制安装前缀中的 `share/Eve/templates/desktop`。模板使用 `find_package(Eve ... COMPONENTS DesktopSdk)`，链接 `Eve::DesktopSdk`，并在 `package.json` 中指定 `"kind": "desktop"`。模板中的 `QMainWindow`、工具栏和顶级布局由扩展创建。工作区为其中一个拥有空布局的子控件。
+
+桌面通过真实实例的 `Context` 取得 `eve::desktop::LayoutServiceV1`，在应用线程调用 `attach` 将顶层窗口交给平台。窗口交付时须保持隐藏、没有父对象并关闭 `WA_DeleteOnClose`。平台将当前工作区嵌入指定位置，复用业务页面、持久输出、命令、设置、扩展和通知服务。自定义导航可用 `invoke` 调用平台动作。实例退役时，平台先分离工作区并销毁已接管的窗口，再释放插件实例。
+
+构建 `external_desktop_package`，在扩展页安装、选择桌面并重启。正常重启会先保存工作区。平台在事件循环中确认新的顶层窗口和工作区都可见后记录启动成功。启动失败或缺少回执时恢复随包 Ela。开发中可用 `eve_plugin_workbench --safe-desktop` 单次进入随包桌面，再在扩展页切换或卸载相关版本。
+
+### 业务插件
+
 ModuleManager 是唯一动态模块入口。loader root 只做 factory，交给 QPluginLoader 管理；每次 `create` 返回新建、无 parent、处于应用线程的业务 QObject。业务对象的页面、服务、连接、任务与线程必须登记到本代 context，并在 cleanup 屏障内完成释放。不得手动删除 root、绕过失活代身份、保存服务借用中的裸引用或用未托管回调继续访问插件。页面通过 `ui.pages` 服务贡献，宿主内部窗口不成为 SDK 接口。
 
-独立工作台接受一个声明单个插件的驻留 Qt UI 模块。宿主提供 `ui.pages`、`ui.commands`、`ui.output` 和 `qt.scheduler`，包括页面注册、命令、持久化输出和受管调度入口。
+每份业务包声明一个驻留 Qt UI 插件，同一工作区可以启用多个包的实例。宿主提供 `ui.pages`、`ui.commands`、`ui.output` 和 `qt.scheduler`，包括页面注册、命令、持久化输出和受管调度入口。
 
 旧版业务插件可以原样使用这些服务。自行构造 `ElaShell` 或调用 `ManagementController` 的程序属于嵌入式宿主。此类程序需要从源码构建并链接桌面实现，静态嵌入使用 `EVE_SHARED_CORE=OFF` 和 `Eve::Ui`。安装 SDK 中保留的宿主头文件可供源码引用，安装版 `eve_ui.dll` 提供业务插件服务接口。
 
@@ -64,4 +97,4 @@ ModuleManager 是唯一动态模块入口。loader root 只做 factory，交给 
 - metadata/manifest 或 Core 身份被拒：检查 plugin ID、模块版本、实际工具链以及宿主/插件是否使用同一共享库；不要修改宿主预检或填假摘要。
 - 依赖等待、实例失败、清理保留或业务保存错误：检查宿主 Module/Session 原诊断与插件业务数据契约。不要将配置成功等同于装载成功，或把业务错误改为新的 SDK 批准来源。
 
-启用 `EVE_INSTALL_SDK` 后，`ctest --preset ela-msvc-release -L sdk` 从阶段安装目录复制模板，在独立目录构建，并通过工作台验证实际装载、页面贡献与退出。
+启用 `EVE_INSTALL_SDK` 后，`ctest --preset ela-msvc-release -L sdk` 从阶段安装目录取得模板，在独立目录构建。回归用例 `sdk.installed_qt_consumer` 覆盖业务页面、桌面打包、真实外部窗口的启动与退出、恢复 Ela 和不兼容桌面的拒绝。

@@ -8,6 +8,8 @@
 #include "home_p.hpp"
 #include "preferences_p.hpp"
 #include "settings_page_p.hpp"
+#include "extensions_page_p.hpp"
+#include <ElaPushButton.h>
 #include <eve/build_info.hpp>
 #include <ElaComboBox.h>
 #include <ElaLineEdit.h>
@@ -173,6 +175,7 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
     QPointer<QAction> backAction, forwardAction;
     QPointer<QAction> addPluginAction, configurationFileAction, modulesAction;
     QPointer<ElaMenuBar> menuBar;
+    QPointer<ElaMenu> fileMenu, viewMenu;
     QPointer<QWidget> settings, about;
     QPointer<ElaText> location;
     QPointer<QTimer> homeTimer;
@@ -538,6 +541,8 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     auto view = bar->addMenu(QString::fromUtf8("视图(&V)"));
     auto go = bar->addMenu(QString::fromUtf8("转到(&G)"));
     auto help = bar->addMenu(QString::fromUtf8("帮助(&H)"));
+    self->fileMenu = file;
+    self->viewMenu = view;
     bar->setFixedWidth(bar->sizeHint().width());
     window->setCustomWidget(ElaAppBarType::LeftArea, bar);
     auto center = new CommandCenter(window);
@@ -826,6 +831,34 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     });
     self->updateHistory();
     return self;
+}
+
+std::vector<QAction*> bindWorkbenchExtensions(const std::shared_ptr<WorkbenchControl>& control, ExtensionsPage* page)
+{
+    const auto key = page->property("ElaPageKey").toString();
+    const QPointer<ExtensionsPage> guarded(page);
+    auto open = control->action(control->viewMenu, QObject::tr("扩展"), "EveOpenExtensions", QKeySequence("Ctrl+Shift+X"),
+        [key](WorkbenchControl& state) { state.navigate(key); });
+    auto install = control->action(control->fileMenu, QObject::tr("从扩展安装包安装…"), "EveInstallExtension", {},
+        [key, guarded](WorkbenchControl& state) {
+            state.navigate(key);
+            if (state.open && guarded) guarded->choosePackage();
+        });
+    auto settings = static_cast<SettingsPage*>(control->settings.data());
+    settings->addGroup("EveSettingsDesktopSection", QObject::tr("桌面"), QStringLiteral("desktop shell"));
+    auto desktop = new ElaPushButton(QObject::tr("选择桌面…"), settings);
+    desktop->setObjectName("EveSettingsChooseDesktop");
+    settings->addRow(QObject::tr("启动时使用的桌面外壳"), desktop, QObject::tr("扩展 外壳 默认 切换 桌面"));
+    std::weak_ptr<WorkbenchControl> weak = control;
+    QObject::connect(desktop, &QPushButton::clicked, settings, [weak, key, guarded] {
+        if (auto state = weak.lock(); state && state->open)
+            state->withWindowAccess([&] {
+                state->navigate(key);
+                if (state->open && guarded) guarded->showDesktops();
+            });
+    });
+    settings->finish();
+    return {open, install};
 }
 
 QWidget* workbenchSettings(const std::shared_ptr<WorkbenchControl>& control)

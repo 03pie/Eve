@@ -2,6 +2,7 @@
  * @brief 声明宿主侧 Ela 外壳操作，插件通过页面、命令和通知服务协作。
  */
 #pragma once
+#include <eve/desktop/layout.hpp>
 #include <eve/qt/scheduler.hpp>
 #include <eve/ui/commands.hpp>
 #include <eve/ui/management.hpp>
@@ -15,6 +16,7 @@
 namespace eve::module { struct NativeLogEvent; }
 namespace eve::ui {
 class ElaShell;
+struct ExtensionControls;
 namespace detail {
 class RuntimeLogArchive;
 Result<void> attachDesktopArchive(ElaShell& shell, const std::shared_ptr<RuntimeLogArchive>& archive);
@@ -52,12 +54,17 @@ public:
     Result<void> showOutputEvent(std::uint64_t sequence, QWidget* origin) const;
     /** @brief 获取仅宿主持有的管理入口；绑定 Kernel 后可刷新、停止和重试实例。 */
     std::shared_ptr<ManagementController> management() const;
+    Result<void> bindExtensions(std::shared_ptr<ExtensionControls> controls) const;
     /** @brief 获取可注册为 diagnostics/v1 的只读值快照服务。 */
     std::shared_ptr<DiagnosticsService> diagnostics() const;
     /** @brief owner 打开宿主诊断窗口，不占中央页签；部分插件缺依赖仍可进入。 */
     Result<void> showManagement() const;
     /** @brief owner 显示实际 Ela 窗口。 */
     Result<void> show() const;
+    Result<void> attachLayout(const Context& owner, desktop::Window window) const;
+    Result<void> invokeLayoutAction(desktop::Action action) const;
+    bool hasExternalLayout() const;
+    bool externalLayoutVisible() const;
     /** @brief owner 设置异步退出入口；窗口关闭请求先交宿主，不直接 quit。 */
     Result<void> onCloseRequested(std::function<void()> callback) const;
     /** @brief 宿主绑定平台配置文件窗口入口；普通插件仍通过页面服务贡献内容。 */

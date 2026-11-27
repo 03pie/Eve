@@ -2,9 +2,11 @@
  * @brief 官方桌面的进程内装配契约，仅由工作台和随包桌面共同编译。
  */
 #pragma once
+#include <eve/desktop/layout.hpp>
 #include <eve/module/qt_module.hpp>
 #include <eve/qt/scheduler.hpp>
 #include <eve/ui/configuration.hpp>
+#include <eve/ui/extensions.hpp>
 
 namespace eve::ui::detail { class RuntimeLogArchive; }
 namespace eve::workbench {
@@ -22,6 +24,8 @@ class DesktopView {
 public:
     virtual ~DesktopView() = default;
     virtual Result<void> show() = 0;
+    virtual bool hasExternalLayout() const = 0;
+    virtual bool externalLayoutVisible() const = 0;
     virtual Result<void> cancelCloseRequest() = 0;
     virtual Result<void> onCloseRequested(std::function<void()> callback) = 0;
     virtual Result<void> refresh() = 0;
@@ -38,6 +42,8 @@ public:
 };
 
 struct DesktopBootstrap {
+    RuntimeId layoutRuntime;
+    std::shared_ptr<ui::ExtensionControls> extensions;
     std::string preferencesFile;
     std::shared_ptr<ui::detail::RuntimeLogArchive> archive;
     std::weak_ptr<DesktopView> window;
@@ -50,7 +56,8 @@ inline module::QtPlugin desktopContract()
         {ServiceOutput::of<ui::UiPagesService>({pagesService}),
          ServiceOutput::of<ui::CommandService>({commandsService}),
          ServiceOutput::of<ui::OutputService>({outputService}),
-         ServiceOutput::of<ui::NotificationService>({notificationsService})}};
+         ServiceOutput::of<ui::NotificationService>({notificationsService}),
+         ServiceOutput::of<desktop::LayoutServiceV1>({desktop::layoutService})}};
 }
 
 Task<void> activateDesktop(Context context);

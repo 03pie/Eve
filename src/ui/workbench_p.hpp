@@ -12,6 +12,7 @@
 #include <memory>
 #include <vector>
 class ElaWindow;
+class QAction;
 class QWidget;
 class QTabBar;
 class QTabWidget;
@@ -19,6 +20,8 @@ class QToolButton;
 class QPlainTextEdit;
 namespace eve::ui::detail {
 struct WorkbenchControl;
+class ExtensionsPage;
+std::vector<QAction*> bindWorkbenchExtensions(const std::shared_ptr<WorkbenchControl>& control, ExtensionsPage* page);
 /** @brief 首页只展示插件值状态，电源操作由宿主按实例身份重新校验。 */
 struct HomePlugin {
     QString id, title, subtitle;

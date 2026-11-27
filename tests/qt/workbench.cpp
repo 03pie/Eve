@@ -763,6 +763,7 @@ void pageLayout()
     scene.close();
 }
 
+void extensionsCenter();
 /** @brief 按场景隔离进程，测试真实 Qt/Ela 而非模拟布局。 */
 int main(int argc, char** argv)
 {
@@ -778,6 +779,8 @@ int main(int argc, char** argv)
 #endif
         if (name == "history")
             history();
+        else if (name == "extensions")
+            extensionsCenter();
         else if (name == "tabs")
             tabs();
         else if (name == "search")

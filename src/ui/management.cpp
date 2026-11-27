@@ -158,10 +158,14 @@ struct ManagementAuthority {
     std::optional<ConfigurationManagementSnapshot> configuration;
     std::optional<ErrorInfo> configurationError;
     bool manualOpen = false;
-    bool protects(RuntimeId id) const { return protectedRuntimes.count(id) != 0; }
+    std::set<InstanceId> configuredInstances{};
+    bool protects(const InstanceSnapshot& instance) const
+    {
+        return protectedRuntimes.count(instance.runtime) != 0 || configuredInstances.count(instance.instance) != 0;
+    }
     bool allows(const InstanceSnapshot& instance) const
     {
-        return manualOpen && !protects(instance.runtime) && !held.count(instance.instance);
+        return manualOpen && !protects(instance) && !held.count(instance.instance);
     }
 };
 /** @brief 后端弱持 Kernel；Qt 控件由外壳拥有，诊断服务和控制器只借用本控制块。 */
@@ -648,9 +652,11 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
             if (row.publicationHeld)
                 authority.held.insert(row.instance);
         if (source) {
-            if (source->hasValue())
+            if (source->hasValue()) {
                 authority.configuration.emplace(std::move(*source).value());
-            else
+                for (const auto& entry : authority.configuration->entries)
+                    if (entry.instance.valid()) authority.configuredInstances.insert(entry.instance);
+            } else
                 authority.configurationError.emplace(source->error());
         }
         authority.manualOpen = open && scheduler->isOpen() && !authority.core.closing && !bindingConfiguration &&
@@ -682,7 +688,7 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
         DiagnosticsSnapshot output{
             open, core, {}, access.bindings, pageRows.value(), commandRows.value(), history.value(), {}};
         for (const auto& snapshot : core.instances) {
-            if (access.protects(snapshot.runtime))
+            if (access.protects(snapshot))
                 continue;
             auto instance = target->findInstance(snapshot.instance);
             if (!instance.hasValue()) return Result<DiagnosticsSnapshot>::failure(instance.error());
@@ -720,7 +726,7 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
             auto snapshot = entry.second.snapshot();
             if (!snapshot.hasValue() || snapshot.value().state != InstanceState::Disposed)
                 continue;
-            if (access.protects(snapshot.value().runtime))
+            if (access.protects(snapshot.value()))
                 continue;
             std::string name;
             for (const auto& runtime : core.names)
@@ -1690,7 +1696,7 @@ Result<void> showManagementDialog(const std::shared_ptr<ManagementControl>& cont
                : Result<void>::failure(makeError(ErrorCode::ContextClosing, "management closed while showing window"));
 }
 /** @brief 表单由宿主窗口持有，关闭后保留输入；提交再次检查 schema 和目标修订。 */
-Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& control)
+Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& control, const QString& plugin)
 {
     auto checked = control->thread();
     if (!checked.hasValue())
@@ -1708,6 +1714,10 @@ Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& contr
     if (control->formPending)
         return Result<void>::failure(makeError(ErrorCode::ConfigConflict, "配置操作仍在处理中"));
     control->addRevision = data.value().configuration->revision;
+    QStringList types;
+    for (const auto& name : data.value().configuration->availablePlugins) types << QString::fromStdString(name);
+    if (!plugin.isEmpty() && !types.contains(plugin))
+        return Result<void>::failure(makeError(ErrorCode::StaleContext, "所选扩展的实例类型当前不可用。"));
     if (!control->addDialog) {
         auto dialog = createWorkbenchDialog(control->widget->parentWidget());
         control->addDialog = dialog;
@@ -1727,8 +1737,6 @@ Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& contr
         control->addType = new ElaComboBox(dialog);
         control->addType->setObjectName("EveAddPluginType");
         control->addType->setAccessibleName(QString::fromUtf8("已注册插件类型"));
-        for (const auto& name : data.value().configuration->availablePlugins)
-            control->addType->addItem(QString::fromStdString(name));
         layout->addWidget(control->addType);
         layout->addWidget(new ElaText(QString::fromUtf8("实例标识（当前配置中唯一）"), 14, dialog));
         control->addId = new ElaLineEdit(dialog);
@@ -1784,6 +1792,10 @@ Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& contr
             }
         });
     }
+    const auto preferred = plugin.isEmpty() ? control->addType->currentText() : plugin;
+    control->addType->clear();
+    control->addType->addItems(types);
+    if (types.contains(preferred)) control->addType->setCurrentText(preferred);
     control->addStatus->setText(QString::fromUtf8("基于配置目标修订 %1").arg(control->addRevision));
     if (!control->open)
         return Result<void>::failure(makeError(ErrorCode::ContextClosing, "management closed during form creation"));
@@ -1857,15 +1869,12 @@ HomeSnapshot managementHomeSnapshot(const std::shared_ptr<ManagementControl>& co
     output.allowContributions = access.manualOpen;
     output.hidden = access.held;
     for (const auto& row : access.core.instances)
-        if (access.protects(row.runtime))
+        if (access.protects(row))
             output.hidden.insert(row.instance);
-    if (access.configuration)
-        for (const auto& row : access.configuration->entries)
-            if (row.instance.valid())
-                output.hidden.insert(row.instance);
+    output.hidden.insert(access.configuredInstances.begin(), access.configuredInstances.end());
     for (const auto& entry : control->stopped) {
         const auto snapshot = entry.second.snapshot();
-        if (!snapshot.hasValue() || access.protects(snapshot.value().runtime))
+        if (!snapshot.hasValue() || access.protects(snapshot.value()))
             output.hidden.insert(entry.first);
     }
     return output;

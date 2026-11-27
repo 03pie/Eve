@@ -646,7 +646,7 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
     });
 }
 void showOutput(const std::shared_ptr<OutputControl>& s, std::optional<std::uint64_t> sequence, InstanceId instance,
-                QWidget* returnFocus, const QString& runId, const QString& configurationPath, quint64 eventId)
+                QWidget* returnFocus, const QString& runId, const QString& configurationPath, quint64 eventId, const QString& sourceId)
 {
     if (!s || !s->open || !s->panel)
         return;
@@ -658,9 +658,9 @@ void showOutput(const std::shared_ptr<OutputControl>& s, std::optional<std::uint
         s->origin.capture(returnFocus, mainWindow);
     }
     const bool locating = sequence || eventId;
-    if (locating || instance.valid() || !runId.isEmpty() || !configurationPath.isEmpty()) {
+    if (locating || instance.valid() || !runId.isEmpty() || !configurationPath.isEmpty() || !sourceId.isEmpty()) {
         s->run = runId.isEmpty() && s->archive ? s->archive->currentRun() : runId;
-        if (locating || instance.valid() || !configurationPath.isEmpty())
+        if (locating || instance.valid() || !configurationPath.isEmpty() || !sourceId.isEmpty())
             clearFilterControls(*s);
         std::optional<LogRecord> target;
         std::optional<LogLookup> exact;
@@ -684,6 +684,8 @@ void showOutput(const std::shared_ptr<OutputControl>& s, std::optional<std::uint
         }
         if (target)
             s->filter.sourceId = target->sourceId;
+        else if (!sourceId.isEmpty())
+            s->filter.sourceId = sourceId;
         if (instance.valid())
             s->filter.instance = instance;
         else if (!configurationPath.isEmpty() && !target)

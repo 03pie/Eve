@@ -400,12 +400,8 @@ void setNotificationMuted(const std::shared_ptr<ServicesControl>& state, bool mu
 {
     muteNotifications(state->notifications, muted);
 }
-void configureCommandPanel(const std::shared_ptr<ServicesControl>& state, QWidget* page,
-    const std::vector<QAction*>& actions, std::shared_ptr<OutputControl> output, WindowAccess access)
+void registerPlatformCommands(const std::shared_ptr<ServicesControl>& state, const std::vector<QAction*>& actions)
 {
-    state->logs = std::move(output); state->windowAccess = std::move(access);
-    configureNotifications(state->notifications, state->logs, state->windowAccess);
-    state->commandResult = page->findChild<QLabel*>("EveCommandResult");
     std::weak_ptr<ServicesControl> weak = state;
     for (auto action : actions) {
         if (!action || action->isSeparator() || !action->isVisible()) continue;
@@ -420,8 +416,17 @@ void configureCommandPanel(const std::shared_ptr<ServicesControl>& state, QWidge
             }
         };
         state->model->appendRow(row); sync();
-        QObject::connect(action, &QAction::changed, page, sync);
+        QObject::connect(action, &QAction::changed, state->commands, sync);
     }
+}
+void configureCommandPanel(const std::shared_ptr<ServicesControl>& state, QWidget* page,
+    const std::vector<QAction*>& actions, std::shared_ptr<OutputControl> output, WindowAccess access)
+{
+    state->logs = std::move(output); state->windowAccess = std::move(access);
+    configureNotifications(state->notifications, state->logs, state->windowAccess);
+    state->commandResult = page->findChild<QLabel*>("EveCommandResult");
+    registerPlatformCommands(state, actions);
+    std::weak_ptr<ServicesControl> weak = state;
     auto search = page->findChild<QLineEdit*>("EveCommandFilter");
     const auto select = [weak] {
         if (auto host = weak.lock(); host && host->open && host->commands && host->filter) {

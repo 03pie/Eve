@@ -27,7 +27,7 @@ Result<void> registerQtOutputRuntime(const std::shared_ptr<OutputControl>& contr
                                      const std::string& moduleVersion, const std::string& pluginId);
 void showOutput(const std::shared_ptr<OutputControl>& control, std::optional<std::uint64_t> sequence = {},
                 InstanceId instance = {}, QWidget* returnFocus = nullptr, const QString& runId = {},
-                const QString& configurationPath = {}, quint64 eventId = 0);
+                const QString& configurationPath = {}, quint64 eventId = 0, const QString& sourceId = {});
 void showPreviousOutput(const std::shared_ptr<OutputControl>& control, QWidget* returnFocus);
 void showNotificationOutput(const std::shared_ptr<OutputControl>& control, std::uint64_t sequence,
                             const QString& runId, WorkbenchReturnPoint origin, quint64 eventId);

@@ -9,11 +9,23 @@
 
 namespace eve::workbench {
 namespace {
-class ElaDesktop final : public DesktopView {
+class ElaDesktop final : public DesktopView, public desktop::LayoutServiceV1 {
 public:
-    ElaDesktop(const std::shared_ptr<qt::QtScheduler>& scheduler, const std::string& preferences)
-        : shell(scheduler, preferences), scheduler_(scheduler) {}
+    ElaDesktop(const std::shared_ptr<qt::QtScheduler>& scheduler, DesktopBootstrap& host)
+        : shell(scheduler, host.preferencesFile), scheduler_(scheduler), host_(host) {}
     Result<void> show() override { return shell.show(); }
+    bool hasExternalLayout() const override { return shell.hasExternalLayout(); }
+    bool externalLayoutVisible() const override { return shell.externalLayoutVisible(); }
+    Result<void> attach(const Context& owner, desktop::Window window) override
+    {
+        auto allowed = authorizeLayout(owner);
+        return allowed.hasValue() ? shell.attachLayout(owner, std::move(window)) : allowed;
+    }
+    Result<void> invoke(const Context& owner, desktop::Action action) override
+    {
+        auto allowed = authorizeLayout(owner);
+        return allowed.hasValue() ? shell.invokeLayoutAction(action) : allowed;
+    }
     Result<void> cancelCloseRequest() override { return shell.cancelCloseRequest(); }
     Result<void> onCloseRequested(std::function<void()> callback) override
     { return shell.onCloseRequested(std::move(callback)); }
@@ -65,6 +77,15 @@ public:
     ui::ElaShell shell;
 private:
     std::shared_ptr<qt::QtScheduler> scheduler_;
+    DesktopBootstrap& host_;
+    Result<void> authorizeLayout(const Context& owner) const
+    {
+        auto caller = owner.source();
+        if (!caller.hasValue()) return Result<void>::failure(caller.error());
+        if (!host_.layoutRuntime.valid() || caller.value().runtime != host_.layoutRuntime)
+            return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "Unselected desktop runtime."));
+        return Result<void>::success();
+    }
     std::shared_ptr<loader::ConfigurationSession> session_;
     std::string initial_;
     std::shared_ptr<ui::IConfigurationManagement> management_;
@@ -83,7 +104,7 @@ Task<void> activateDesktop(Context context)
     if (!bootstrap.hasValue()) return failedTask(bootstrap.error());
     Task<void> result = completedTask();
     auto activated = bootstrap.value().withService([&](DesktopBootstrap& host) {
-        auto desktop = std::make_shared<ElaDesktop>(scheduler, host.preferencesFile);
+        auto desktop = std::make_shared<ElaDesktop>(scheduler, host);
         auto cleanup = context.onCleanup([desktop, scheduler](CleanupContext) {
             auto closed = desktop->shell.close();
             // Keep the owner alive through the last deferred QWidget deletion.
@@ -101,6 +122,10 @@ Task<void> activateDesktop(Context context)
         }
         auto attached = ui::detail::attachDesktopArchive(desktop->shell, host.archive);
         if (!attached.hasValue()) { result = failedTask(attached.error()); return; }
+        if (host.extensions) {
+            auto bound = desktop->shell.bindExtensions(host.extensions);
+            if (!bound.hasValue()) { result = failedTask(bound.error()); return; }
+        }
         // The core commits the declared output set only after successful activation.
         const auto publish = [&](const char* key, const auto& service) {
             auto provided = context.provide({key}, service);
@@ -110,7 +135,8 @@ Task<void> activateDesktop(Context context)
         if (publish(pagesService, desktop->shell.pages()) &&
             publish(commandsService, desktop->shell.commands()) &&
             publish(outputService, desktop->shell.output()) &&
-            publish(notificationsService, desktop->shell.notifications()))
+            publish(notificationsService, desktop->shell.notifications()) &&
+            publish(eve::desktop::layoutService, std::static_pointer_cast<eve::desktop::LayoutServiceV1>(desktop)))
             host.window = desktop;
     });
     return activated.hasValue() ? result : failedTask(activated.error());

@@ -32,6 +32,7 @@ void settleUiValues(const std::shared_ptr<ServicesControl>& control);
 /** @brief 同步关门，再等待全部命令 effect 完整排空；通知只有值数据，无插件清理回调。 */
 Task<void> closeUiServices(const std::shared_ptr<ServicesControl>& control);
 /** @brief 命令视图共享真实注册记录及平台 QAction，过滤只操作宿主值。 */
+void registerPlatformCommands(const std::shared_ptr<ServicesControl>& control, const std::vector<QAction*>& actions);
 void configureCommandPanel(const std::shared_ptr<ServicesControl>& control, QWidget* page,
     const std::vector<QAction*>& actions, std::shared_ptr<OutputControl> output, WindowAccess access);
 } // namespace eve::ui::detail
