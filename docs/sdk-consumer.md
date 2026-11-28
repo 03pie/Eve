@@ -86,6 +86,18 @@ eve_add_extension_package(my_plugin PACKAGE_JSON package.json README README.md C
 
 构建 `external_desktop_package`，从首页安装生成的扩展包。点击该桌面的卡片，在详情窗口中选择使用该桌面并重启。正常重启会先保存工作区。平台在事件循环中确认新的顶层窗口和工作区都可见后记录启动成功。启动失败或缺少回执时恢复随包 Ela。开发中可用 `eve_plugin_workbench --safe-desktop` 单次进入随包桌面，再从首页卡片切换或卸载相关版本。
 
+### 单独构建随包 Ela 工作台
+
+`plugins/builtin/desktop-ela` 是官方完整桌面的插件工程，负责工作台窗口、页面服务和配置界面。将该目录复制到仓库外，使用上文安装的开发前缀和匹配的 Qt、MSVC 工具链即可构建。工程通过 `find_package(EveWorkbench … EXACT)` 取得与产品版本匹配的装配契约、配置库和品牌资源。下面在复制后的插件根目录执行，`$sdkPrefix` 指向开发前缀。
+
+```powershell
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$sdkPrefix;$env:EVE_QT5152_ROOT"
+cmake --build build --target eve_desktop --parallel 4
+cmake --install build --prefix .\stage
+```
+
+`stage/system/desktop` 包含 `eve_desktop.dll` 和对应的 `module.json`。部署时将二者一起放入相同产品版本的运行包 `system/desktop`，下次启动即会校验并挂载。官方身份由随包部署保留，普通安装入口接收使用独立标识的 `.evepkg`。现有 `DesktopSdk` 模板用于通过 `LayoutServiceV1` 提供顶层窗口与导航的桌面扩展。
+
 ### 业务插件
 
 ModuleManager 是唯一动态模块入口。loader root 只做 factory，交给 QPluginLoader 管理；每次 `create` 返回新建、无 parent、处于应用线程的业务 QObject。业务对象的页面、服务、连接、任务与线程必须登记到本代 context，并在 cleanup 屏障内完成释放。不得手动删除 root、绕过失活代身份、保存服务借用中的裸引用或用未托管回调继续访问插件。页面通过 `ui.pages` 服务贡献，宿主内部窗口不成为 SDK 接口。

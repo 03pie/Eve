@@ -10,8 +10,7 @@ set_target_properties(eve_logging_fixture PROPERTIES AUTOMOC ON PREFIX "")
 eve_target_defaults(eve_logging_fixture)
 
 add_executable(eve_logging_acceptance runtime_logging.cpp)
-target_include_directories(eve_logging_acceptance PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
-target_link_libraries(eve_logging_acceptance PRIVATE eve_external_workbench Qt5::Test)
+target_link_libraries(eve_logging_acceptance PRIVATE eve_external_workbench Qt5::Test eve_desktop_logging)
 eve_target_defaults(eve_logging_acceptance)
 add_dependencies(eve_logging_acceptance eve_plugin_workbench eve_logging_fixture)
 
@@ -25,15 +24,13 @@ set_tests_properties(logging.l3_close_retry PROPERTIES LABELS "logging;qt;ui" TI
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 add_executable(eve_log_retention_tests log_retention.cpp)
-target_include_directories(eve_log_retention_tests PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
-target_link_libraries(eve_log_retention_tests PRIVATE Eve::Ui)
+target_link_libraries(eve_log_retention_tests PRIVATE eve_desktop_logging)
 eve_target_defaults(eve_log_retention_tests)
 add_test(NAME logging.l5_retention COMMAND eve_log_retention_tests "${CMAKE_CURRENT_BINARY_DIR}/artifacts")
 set_tests_properties(logging.l5_retention PROPERTIES LABELS "logging;qt;ui" TIMEOUT 45)
 
 add_executable(eve_logging_durability archive_durability.cpp)
-target_include_directories(eve_logging_durability PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
-target_link_libraries(eve_logging_durability PRIVATE Eve::Ui)
+target_link_libraries(eve_logging_durability PRIVATE eve_desktop_logging)
 eve_target_defaults(eve_logging_durability)
 foreach(case IN ITEMS short first_short pressure unconfirmed concurrent_close windowless_run)
     add_test(NAME logging.l3_${case} COMMAND eve_logging_durability "${case}")
@@ -41,8 +38,7 @@ foreach(case IN ITEMS short first_short pressure unconfirmed concurrent_close wi
 endforeach()
 
 add_executable(eve_desktop_archive_test desktop_archive.cpp)
-target_include_directories(eve_desktop_archive_test PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
-target_link_libraries(eve_desktop_archive_test PRIVATE eve_desktop_impl Qt5::Test)
+target_link_libraries(eve_desktop_archive_test PRIVATE eve_desktop_impl Qt5::Test eve_desktop_logging)
 eve_target_defaults(eve_desktop_archive_test)
 add_test(NAME logging.desktop_archive_lifetime COMMAND eve_desktop_archive_test)
 set_tests_properties(logging.desktop_archive_lifetime PROPERTIES LABELS "logging;qt;ui" TIMEOUT 20
@@ -65,9 +61,8 @@ foreach(case IN ITEMS boundary publication)
 endforeach()
 
 add_executable(eve_native_logging_archive_tests native_logging_archive.cpp)
-target_include_directories(eve_native_logging_archive_tests PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
 target_link_libraries(eve_native_logging_archive_tests PRIVATE
-    Eve::ModuleHost Eve::ModuleNative eve_desktop_impl Qt5::Test)
+    Eve::ModuleHost Eve::ModuleNative eve_desktop_impl Qt5::Test eve_desktop_logging)
 eve_target_defaults(eve_native_logging_archive_tests)
 add_dependencies(eve_native_logging_archive_tests eve_native_logging_fixture)
 add_test(NAME logging.l4_native_archive COMMAND eve_native_logging_archive_tests
@@ -81,8 +76,7 @@ if(WIN32)
 endif()
 
 add_executable(eve_logging_query log_query.cpp)
-target_include_directories(eve_logging_query PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
-target_link_libraries(eve_logging_query PRIVATE Eve::Ui)
+target_link_libraries(eve_logging_query PRIVATE eve_desktop_logging)
 eve_target_defaults(eve_logging_query)
 add_dependencies(eve_logging_query eve_log_query)
 add_test(NAME logging.l6_query COMMAND eve_logging_query "${CMAKE_CURRENT_BINARY_DIR}/artifacts"
@@ -90,8 +84,7 @@ add_test(NAME logging.l6_query COMMAND eve_logging_query "${CMAKE_CURRENT_BINARY
 set_tests_properties(logging.l6_query PROPERTIES LABELS "logging;qt" TIMEOUT 30)
 
 add_executable(eve_platform_startup_tests platform_startup.cpp)
-target_include_directories(eve_platform_startup_tests PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
-target_link_libraries(eve_platform_startup_tests PRIVATE eve_external_workbench Qt5::Test)
+target_link_libraries(eve_platform_startup_tests PRIVATE eve_external_workbench Qt5::Test eve_desktop_logging)
 eve_target_defaults(eve_platform_startup_tests)
 add_test(NAME platform.empty_workbench COMMAND eve_platform_startup_tests)
 set_tests_properties(platform.empty_workbench PROPERTIES LABELS "platform;qt;ui" TIMEOUT 35
@@ -99,8 +92,7 @@ set_tests_properties(platform.empty_workbench PROPERTIES LABELS "platform;qt;ui"
 
 if(WIN32)
     add_executable(eve_desktop_module_failure_tests desktop_module_failure.cpp)
-    target_include_directories(eve_desktop_module_failure_tests PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
-    target_link_libraries(eve_desktop_module_failure_tests PRIVATE Eve::Ui user32)
+    target_link_libraries(eve_desktop_module_failure_tests PRIVATE user32 eve_desktop_logging)
     eve_target_defaults(eve_desktop_module_failure_tests)
     add_dependencies(eve_desktop_module_failure_tests eve_plugin_workbench)
     add_test(NAME platform.desktop_module_failure COMMAND eve_desktop_module_failure_tests

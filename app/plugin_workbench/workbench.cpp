@@ -4,12 +4,13 @@
 #include "workbench.hpp"
 #include "workspace_extensions.hpp"
 #include "startup_result.hpp"
-#include "qt_system_p.hpp"
-#include "runtime_log_archive_p.hpp"
+#include "qt_artifact_load_p.hpp"
+#include "desktop_logs.hpp"
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QStandardPaths>
+#include <QTimer>
 #include <algorithm>
 #include <stdexcept>
 #include <eve/loader/kernel_driver.hpp>
@@ -20,6 +21,9 @@
 
 namespace eve::workbench {
 namespace {
+const module::detail::BundledQtModule officialDesktop{
+    "system/desktop/module.json", "eve_desktop.dll", desktopModuleId, desktopId, EVE_PRODUCT_VERSION};
+
 /** @brief 首次选择外部模块时创建主实例，插件自行解释配置对象中的字段。 */
 std::string initialConfiguration(const std::string& plugin)
 {
@@ -45,12 +49,12 @@ ErrorInfo preflightDiagnostic(ErrorInfo error)
 /** @brief 仅系统清单装配使用此分类。保留底层错误用于 stderr，持久日志使用固定说明。 */
 ErrorInfo desktopDiagnostic(ErrorInfo error)
 {
-    const QDir bundled(QDir(QCoreApplication::applicationDirPath()).filePath("system/desktop"));
-    if (!QFileInfo::exists(bundled.filePath("module.json")))
+    const QFileInfo manifest(QDir(QCoreApplication::applicationDirPath()), QString::fromStdString(officialDesktop.manifestPath));
+    if (!manifest.exists())
         error.phase = "WORKBENCH_DESKTOP_MANIFEST_MISSING";
-    else if (error.phase == "workbench.desktop.identity")
+    else if (error.phase == "module.bundle.identity")
         error.phase = "WORKBENCH_DESKTOP_IDENTITY_INVALID";
-    else if (error.phase == "module.hash" && !QFileInfo::exists(bundled.filePath("eve_desktop.dll")))
+    else if (error.phase == "module.hash" && !manifest.dir().exists(QString::fromStdString(officialDesktop.libraryName)))
         error.phase = "WORKBENCH_DESKTOP_LIBRARY_MISSING";
     else if (error.phase == "module.hash")
         error.phase = "WORKBENCH_DESKTOP_HASH_INVALID";
@@ -75,8 +79,8 @@ extensions::Package inspectConfiguredModule(const QString& path)
     if (manifest.plugins.size() != 1 || manifest.loader != module::ModuleLoader::QtUi ||
         manifest.unloadPolicy != module::ModuleUnloadPolicy::Resident)
         throw std::runtime_error("This workbench accepts a resident Qt UI module declaring one plugin.");
-    if (manifest.moduleId == desktopModuleId || manifest.plugins.front() == desktopId ||
-        manifest.plugins.front() == "host.configuration")
+    if (extensions::isReservedIdentity(QString::fromStdString(manifest.moduleId), QString::fromStdString(manifest.plugins.front()),
+                                       extensions::ExtensionSource::DevelopmentManifest))
         throw std::runtime_error("The selected business module uses a reserved system identity.");
     extensions::Package package;
     package.moduleId = QString::fromStdString(manifest.moduleId);
@@ -106,42 +110,88 @@ Workbench::~Workbench() = default;
 Workbench::Workbench(bool safeDesktop)
     : scheduler(std::make_shared<qt::QtScheduler>()), kernel(std::make_shared<Kernel>(scheduler)),
       bootstrap_(std::make_shared<DesktopBootstrap>()), selection_(extensions::Catalog::defaultRoot()),
-      safeDesktop_(safeDesktop), extensions_(std::make_unique<WorkspaceExtensions>(*this))
+      safeDesktop_(safeDesktop)
 {
-    bootstrap_->extensions = extensions_->controls();
     bootstrap_->preferencesFile = workbenchDataFile(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation),
         QStringLiteral("preferences/workbench.json")).toUtf8().toStdString();
+}
+
+std::shared_ptr<ui::ExtensionControls> Workbench::extensionControls() const
+{
+    auto extensions = extensions_.lock();
+    return extensions ? extensions->controls() : nullptr;
 }
 
 Result<std::uint64_t> Workbench::writeOutput(std::string text, ui::OutputLevel level,
                                              ui::OutputDiagnostic diagnostic) const
 {
-    if (!bootstrap_->archive)
+    if (!runLog_)
         return Result<std::uint64_t>::failure(makeError(ErrorCode::ContextClosing, "No open run archive."));
-    return bootstrap_->archive->writePlatform(std::move(text), level, std::move(diagnostic));
+    return runLog_->write(std::move(text), level, std::move(diagnostic));
 }
 
 Task<void> Workbench::open(const std::optional<QString>& manifestPath, const QString& workspaceDir)
 {
-    if (bootstrap_->archive || closing_)
+    if (logRuntime_.valid() || closing_)
         return failedTask(makeError(ErrorCode::InvalidArgument, "This workbench cannot open another workspace."));
     Promise<void> ready;
     try {
-        bootstrap_->archive = std::make_shared<ui::detail::RuntimeLogArchive>(workspaceDir, EVE_PRODUCT_VERSION);
+        const auto workbenchRealm = checked(kernel->services().createRealm());
+        for (const auto* key : {desktopBootstrapKey, desktopLogServiceKey, desktopRunLogSinkKey, extensionsService}) {
+            workbenchServices_ = checked(workbenchServices_.isolate(key, workbenchRealm));
+        }
+        auto logs = checked(registerDesktopLogs(*kernel, workspaceDir, EVE_PRODUCT_VERSION,
+            [this](std::shared_ptr<DesktopRunLogOwner> sink) { runLog_ = std::move(sink); }));
+        logRuntime_ = logs.id();
+        checked(kernel->mount(logs, {}, workbenchServices_)).ready().thenOn(scheduler, [this, ready, manifestPath, workspaceDir](const Result<void>& active) {
+            if (!active.hasValue()) ready.reject(active.error());
+            else if (closing_) ready.reject(makeError(ErrorCode::ContextClosing, "Workbench closed during startup."));
+            else mountWorkspaceExtensions().thenOn(scheduler, [this, ready, manifestPath, workspaceDir](const Result<void>& mounted) {
+                if (!mounted.hasValue()) ready.reject(mounted.error());
+                else if (closing_) ready.reject(makeError(ErrorCode::ContextClosing, "Workbench closed during startup."));
+                else openDesktop(manifestPath, workspaceDir, ready);
+            });
+        });
+    } catch (const StartupError& error) { ready.reject(error.detail); }
+      catch (const std::exception& error) { ready.reject(makeError(ErrorCode::ModuleLoad, error.what())); }
+    return ready.task();
+}
+
+Task<void> Workbench::mountWorkspaceExtensions()
+{
+    WorkspaceInputs inputs{kernel, scheduler, [this] { return desktop(); }, [this] { return closing_; },
+        [this] { return selection_.selected(); }, [this] { return selection_.requested(); },
+        [this](QString id) { return selection_.request(std::move(id)); },
+        [this] {
+            if (!restartRequested) return Result<void>::failure(makeError(ErrorCode::ConfigConflict, "Restart unavailable."));
+            QTimer::singleShot(0, restartRequested);
+            return Result<void>::success();
+        }};
+    auto runtime = registerWorkspaceExtensions(*kernel, std::move(inputs),
+        [this](std::weak_ptr<WorkspaceExtensions> service) { extensions_ = std::move(service); });
+    if (!runtime.hasValue()) return failedTask(runtime.error());
+    extensionsRuntime_ = runtime.value().id();
+    auto instance = kernel->mount(runtime.value(), {}, workbenchServices_);
+    return instance.hasValue() ? instance.value().ready() : failedTask(instance.error());
+}
+
+void Workbench::openDesktop(const std::optional<QString>& manifestPath, const QString& workspaceDir, Promise<void> ready)
+{
+    try {
         const auto publish = [this](const char* key, const auto& service) {
-            providers_.push_back(checked(kernel->services().stage({key}, service)));
+            providers_.push_back(checked(kernel->services().stage(workbenchServices_.resolve({key}), service)));
             checked(providers_.back().publish());
         };
         publish(schedulerService, std::make_shared<std::shared_ptr<qt::QtScheduler>>(scheduler));
         publish(desktopBootstrapKey, bootstrap_);
-        const auto loaded = module::detail::loadSystemDesktopModule();
+        const auto loaded = module::detail::loadBundledQtModule(officialDesktop);
         if (!loaded.hasValue()) throw StartupError(desktopDiagnostic(loaded.error()));
         auto negotiated = module::qtRuntime(loaded.value().generation, desktopContract(), scheduler);
         if (!negotiated.hasValue()) throw StartupError(desktopDiagnostic(negotiated.error()));
         auto runtime = checked(kernel->registerRuntime(desktopId, negotiated.value()));
         desktopRuntime_ = runtime.id();
-        const auto instance = checked(kernel->mount(runtime));
-        instance.ready().thenOn(scheduler, [this, ready, manifestPath, workspaceDir,
+        desktopInstance_ = checked(kernel->mount(runtime, {}, workbenchServices_));
+        desktopInstance_->ready().thenOn(scheduler, [this, ready, manifestPath, workspaceDir,
                 generation = loaded.value().generation](const Result<void>& active) {
             if (!active.hasValue()) {
                 auto error = active.error();
@@ -172,7 +222,6 @@ Task<void> Workbench::open(const std::optional<QString>& manifestPath, const QSt
         });
     } catch (const StartupError& error) { ready.reject(error.detail); }
       catch (const std::exception& error) { ready.reject(makeError(ErrorCode::ModuleLoad, error.what())); }
-    return ready.task();
 }
 
 Task<void> Workbench::mountSelectedDesktop()
@@ -182,15 +231,21 @@ Task<void> Workbench::mountSelectedDesktop()
     if (chosen.value() == desktopModuleId) return completedTask();
     Promise<void> ready;
     try {
-        const auto installed = checked(extensions_->catalog().installed());
+        const auto extensions = extensions_.lock();
+        if (!extensions) throw StartupError(makeError(ErrorCode::ContextClosing, "Workspace extensions unavailable."));
+        const auto installed = checked(extensions->catalog().installed());
         const auto found = std::find_if(installed.begin(), installed.end(), [&](const auto& item) {
             return item.moduleId == chosen.value() && item.kind == "desktop";
         });
         if (found == installed.end()) throw StartupError(makeError(ErrorCode::DependencyMissing, "Selected desktop is missing."));
+        if (extensions::isLegacyPluginConflict(found->pluginId)) {
+            checked(selection_.recover());
+            return completedTask();
+        }
         auto runtime = checked(registerDesktopLayout(*kernel, scheduler, found->manifestPath, found->moduleId,
                                                      found->pluginId, found->sha256));
         bootstrap_->layoutRuntime = runtime.id();
-        extensions_->activeDesktopHash_ = found->sha256;
+        extensions->setActiveDesktopHash(found->sha256);
         layout_ = checked(kernel->mount(runtime));
         layout_->ready().thenOn(scheduler, [this, ready](const Result<void>& result) {
             if (!result.hasValue()) ready.reject(selectedDesktopFailure(result.error()));
@@ -206,6 +261,9 @@ Task<void> Workbench::mountSelectedDesktop()
 Task<void> Workbench::openWorkspace(const std::optional<QString>& manifestPath, const QString& workspaceDir)
 {
     using namespace loader;
+    const auto view = desktop();
+    if (closing_ || !view)
+        return failedTask(makeError(ErrorCode::ContextClosing, "Workbench closed during startup."));
     const auto selected = manifestPath ? std::optional{inspectConfiguredModule(*manifestPath)} : std::nullopt;
     const QDir directory(workspaceDir);
     if (!directory.mkpath("."))
@@ -221,30 +279,29 @@ Task<void> Workbench::openWorkspace(const std::optional<QString>& manifestPath, 
 
     const auto target = checked(parseConfiguration(initial_));
     for (const auto& entry : target.structure().entries()) {
-        if (entry.second.plugin == desktopId || entry.second.plugin == "host.configuration") {
+        const auto plugin = QString::fromStdString(entry.second.plugin);
+        if (extensions::isReservedIdentity({}, plugin) &&
+            (entry.second.module == "builtin" || !extensions::isLegacyPluginConflict(plugin))) {
             auto error = makeError(ErrorCode::ConfigInvalid, "System plugins cannot be managed through session.yaml.");
             error.phase = "WORKBENCH_RESERVED_PLUGIN";
             throw StartupError(std::move(error));
         }
     }
-    auto protectedRuntimes = extensions_->prepare(target, selected);
+    const auto extensions = extensions_.lock();
+    if (!extensions) return failedTask(makeError(ErrorCode::ContextClosing, "Workspace extensions unavailable."));
+    auto protectedRuntimes = extensions->prepare(target, selected);
     protectedRuntimes.push_back(desktopRuntime_);
+    protectedRuntimes.push_back(logRuntime_);
+    protectedRuntimes.push_back(extensionsRuntime_);
     if (layout_) protectedRuntimes.push_back(bootstrap_->layoutRuntime);
-    auto driver = extensions_->driver();
+    auto driver = extensions->driver();
     checked(driver->configurationDefinitions()->validate(target));
     session = std::make_shared<ConfigurationSession>(scheduler, driver, std::make_shared<QtConfigurationWriter>(file),
                                                      std::move(disk));
-    auto configuration = checked(kernel->registerPlugin("host.configuration", [this](Context ctx) {
-        auto pages = ctx.consume<ui::UiPagesService>({pagesService});
-        if (!pages.hasValue()) return failedTask(pages.error());
-        auto view = desktop();
-        if (!view) return failedTask(makeError(ErrorCode::ContextClosing, "Desktop unavailable."));
-        return pages.value().invoke([view, ctx](ui::UiPagesService& service) {
-            return view->addConfigurationPage(ctx, service);
-        });
-    }, {ServiceRequirement::of<ui::UiPagesService>({pagesService})}));
+    extensions->bindSession(session);
+    auto configuration = checked(view->registerConfiguration(*kernel));
     protectedRuntimes.push_back(configuration.id());
-    checked(desktop()->bindWorkspace(kernel, session, initial_, std::move(protectedRuntimes)));
+    checked(view->bindWorkspace(kernel, session, initial_, std::move(protectedRuntimes)));
     return checked(kernel->mount(configuration)).ready();
 }
 
@@ -301,11 +358,11 @@ void Workbench::closeSession()
 
 void Workbench::failCleanup(ErrorInfo error, const char* phase)
 {
-    if (bootstrap_->archive) {
+    if (runLog_) {
         ui::OutputDiagnostic diagnostic{{}, phase};
         if (error.operation.valid()) diagnostic.operation = error.operation;
         (void)writeOutput(std::string(phase) + " · 清理未完成", ui::OutputLevel::Error, std::move(diagnostic));
-        bootstrap_->archive->finish(false);
+        runLog_->finish(false);
     }
     closed_.reject(std::move(error));
 }
@@ -318,7 +375,8 @@ void Workbench::closeConsumers()
     if (!snapshot.hasValue()) { failCleanup(snapshot.error(), "WORKBENCH_CONSUMER_CLEANUP_FAILED"); return; }
     std::vector<Instance> consumers;
     for (const auto& row : snapshot.value().instances) {
-        if (row.runtime == desktopRuntime_ || (layout_ && row.runtime == bootstrap_->layoutRuntime)) continue;
+        if (row.runtime == logRuntime_ || row.runtime == extensionsRuntime_ || row.runtime == desktopRuntime_ ||
+            (layout_ && row.runtime == bootstrap_->layoutRuntime)) continue;
         auto found = kernel->findInstance(row.instance);
         if (!found.hasValue()) { failCleanup(found.error(), "WORKBENCH_CONSUMER_CLEANUP_FAILED"); return; }
         consumers.push_back(std::move(found).value());
@@ -341,7 +399,7 @@ void Workbench::closeConsumers()
 
 void Workbench::closeLayout()
 {
-    if (!layout_) { closeKernel(); return; }
+    if (!layout_) { closeDesktop(); return; }
     layout_->stop().thenOn(scheduler, [this](const Result<CleanupReport>& result) {
         if (!result.hasValue() || !result.value().quiescent) {
             failCleanup(result.hasValue() ? makeError(ErrorCode::CleanupFailed, "Desktop layout did not close.")
@@ -349,6 +407,20 @@ void Workbench::closeLayout()
             return;
         }
         layout_.reset();
+        closeDesktop();
+    });
+}
+
+void Workbench::closeDesktop()
+{
+    if (!desktopInstance_) { closeKernel(); return; }
+    desktopInstance_->stop().thenOn(scheduler, [this](const Result<CleanupReport>& result) {
+        if (!result.hasValue() || !result.value().quiescent) {
+            failCleanup(result.hasValue() ? makeError(ErrorCode::CleanupFailed, "Desktop did not close.") : result.error(),
+                        "WORKBENCH_KERNEL_CLEANUP_FAILED");
+            return;
+        }
+        desktopInstance_.reset();
         closeKernel();
     });
 }
@@ -371,10 +443,10 @@ void Workbench::closeKernel()
         providers_.clear();
         session.reset();
         kernel.reset();
-        if (bootstrap_->archive) {
+        if (runLog_) {
             auto marker = writeOutput("WORKBENCH_CLEANUP_COMPLETE: 插件与内核资源已清理。", ui::OutputLevel::Info,
                 {{}, "WORKBENCH_CLEANUP_COMPLETE"});
-            bootstrap_->archive->finish(marker.hasValue());
+            runLog_->finish(marker.hasValue());
             if (!marker.hasValue()) { closed_.reject(marker.error()); return; }
         }
         closed_.resolve();

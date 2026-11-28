@@ -1,4 +1,4 @@
-# 所有桌面入口共用正式 Eve ICO；Qt 窗口图标仍由共享 Ui 资源提供。
+# 桌面入口共用 Eve ICO，桌面插件通过同一组品牌资源设置 Qt 窗口图标。
 function(eve_attach_icon target)
     if(NOT WIN32)
         return()

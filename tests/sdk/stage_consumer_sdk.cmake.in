@@ -1,0 +1,11 @@
+function(stage_consumer_sdk prefix)
+    foreach(directory IN ITEMS "@CMAKE_INSTALL_BINDIR@" "@CMAKE_INSTALL_LIBDIR@" "@CMAKE_INSTALL_INCLUDEDIR@" "@CMAKE_INSTALL_DATADIR@")
+        cmake_path(APPEND prefix "${directory}" OUTPUT_VARIABLE destination)
+        cmake_path(IS_PREFIX prefix "${destination}" NORMALIZE private_install)
+        if(IS_ABSOLUTE "${directory}" OR NOT private_install)
+            message(FATAL_ERROR "SDK consumer tests require install paths inside their private SDK prefix.")
+        endif()
+    endforeach()
+    execute_process(COMMAND "${CMAKE_COMMAND}" --install "${HOST_BUILD}" --config "${HOST_CONFIG}" --prefix "${prefix}"
+        COMMAND_ERROR_IS_FATAL ANY)
+endfunction()

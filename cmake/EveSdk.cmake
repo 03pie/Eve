@@ -68,3 +68,27 @@ install(FILES "${PROJECT_SOURCE_DIR}/third_party/ela/RESOURCE-PROVENANCE.txt" "$
     DESTINATION "${eve_sdk_share}/third_party/ela")
 install(FILES "${PROJECT_SOURCE_DIR}/app/shell/resources/README.md" "${PROJECT_SOURCE_DIR}/app/shell/resources/provenance.json"
     DESTINATION "${eve_sdk_share}/app/shell/resources")
+
+# The full shell shares the exact product's bootstrap and configuration types.
+# Keep these build dependencies outside the business SDK's target export.
+set(eve_workbench_cmake_dir "${CMAKE_INSTALL_LIBDIR}/cmake/EveWorkbench")
+set(eve_workbench_private_includes "${eve_sdk_share}/workbench/include")
+set(eve_workbench_brand "${eve_sdk_share}/app/shell/resources")
+install(DIRECTORY "${PROJECT_SOURCE_DIR}/contracts/workbench/" DESTINATION "${eve_workbench_private_includes}"
+    FILES_MATCHING PATTERN "*.hpp")
+install(FILES "${PROJECT_SOURCE_DIR}/src/ui/contribution_backend_p.hpp" DESTINATION "${eve_workbench_private_includes}")
+install(DIRECTORY "${PROJECT_SOURCE_DIR}/app/shell/resources/" DESTINATION "${eve_workbench_brand}"
+    FILES_MATCHING PATTERN "eve_brand.qrc" PATTERN "eve-*.png")
+set_target_properties(eve_config_session PROPERTIES EXPORT_NAME ConfigSession)
+set_target_properties(eve_config_io_qt PROPERTIES EXPORT_NAME ConfigIoQt)
+install(TARGETS eve_config_session eve_config_io_qt eve_config_coordinator eve_config_definitions
+    eve_config_store eve_config_file_qt eve_config_yaml eve_loader eve_libyaml
+    EXPORT EveWorkbenchTargets ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}/EveWorkbench")
+install(EXPORT EveWorkbenchTargets NAMESPACE EveWorkbench:: DESTINATION "${eve_workbench_cmake_dir}")
+configure_package_config_file("${CMAKE_CURRENT_LIST_DIR}/EveWorkbenchConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/EveWorkbenchConfig.cmake" INSTALL_DESTINATION "${eve_workbench_cmake_dir}"
+    PATH_VARS eve_workbench_private_includes eve_workbench_brand eve_sdk_cmake_dir CMAKE_INSTALL_BINDIR)
+write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/EveWorkbenchConfigVersion.cmake"
+    VERSION "${PROJECT_VERSION}" COMPATIBILITY ExactVersion)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/EveWorkbenchConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/EveWorkbenchConfigVersion.cmake" DESTINATION "${eve_workbench_cmake_dir}")

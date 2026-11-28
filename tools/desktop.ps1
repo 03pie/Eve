@@ -2,7 +2,7 @@
 .SYNOPSIS
 在普通 PowerShell 中加载本地 MSVC/Qt 环境并运行桌面构建或工作台。
 .DESCRIPTION
-自动发现 VS2022 x64 工具链，使用显式指定的 Qt 5.15.2。
+运行已有工作台只需要指定 Qt 5.15.2 kit。开发操作还会发现 VS2022 x64 工具链。
 环境变量只在本次调用中生效，退出时恢复；依赖安装独立进行。
 .PARAMETER Action
 doctor、configure、build、test、verify、run 或 package。package 生成 Windows x64 安装程序及其校验文件。
@@ -75,26 +75,50 @@ try {
     if ($LASTEXITCODE -ne 0 -or $taskQtVersion.Trim() -ne '5.15.2') { throw 'Desktop requires exactly Qt 5.15.2.' }
     if (-not (Test-Path -LiteralPath (Join-Path $QtRoot 'lib/Qt5Core.lib'))) { throw 'Desktop requires an MSVC Qt kit.' }
 
-    if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
-        $taskVswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
-        if (-not (Test-Path -LiteralPath $taskVswhere)) { throw 'Install Visual Studio C++ x64 tools first.' }
-        $taskVsRoot = & $taskVswhere -latest -products '*' -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-        if ($LASTEXITCODE -ne 0 -or -not $taskVsRoot) { throw 'Visual Studio 2022 C++ tools were not found.' }
-        & (Join-Path $taskVsRoot 'Common7/Tools/Launch-VsDevShell.ps1') -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
-    }
-    if ($env:VSCMD_ARG_TGT_ARCH -ne 'x64') { throw 'Desktop requires an x64 MSVC developer environment.' }
-    $taskTemp = New-Item -ItemType Directory -Force -Path (Join-Path $taskRoot 'build/msvc-tmp')
-    $env:TEMP = $taskTemp.FullName
-    $env:TMP = $taskTemp.FullName
-    # 只选择实际安装的语言资源；中文字符串由码点构造，兼容 Windows PowerShell 的脚本编码。
-    $taskCompilerDirectory = Split-Path -Parent (Get-Command cl).Source
-    if (Test-Path -LiteralPath (Join-Path $taskCompilerDirectory '1033/clui.dll')) {
-        $env:VSLANG = '1033'
-        $env:EVE_MSVC_SHOWINCLUDES_PREFIX = 'Note: including file:'
-    }
-    elseif (Test-Path -LiteralPath (Join-Path $taskCompilerDirectory '2052/clui.dll')) {
-        $env:VSLANG = '2052'
-        $env:EVE_MSVC_SHOWINCLUDES_PREFIX = -join [char[]]@(0x6ce8, 0x610f, 0x3a, 0x20, 0x5305, 0x542b, 0x6587, 0x4ef6, 0x3a)
+    if ($Action -ne 'run') {
+        if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
+            $taskVswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+            if (-not (Test-Path -LiteralPath $taskVswhere)) { throw 'Install Visual Studio C++ x64 tools first.' }
+            $taskVsQuery = @('-products', '*', '-version', '[17.0,18.0)', '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-property', 'installationPath')
+            $taskVsRoot = & $taskVswhere -latest @taskVsQuery
+            if ($LASTEXITCODE -eq 0 -and -not $taskVsRoot) {
+                # 部分已注册的 VS 实例仍挂着未完成状态，按实际的 x64 编译器与开发环境脚本确认。
+                $taskVsRoot = & $taskVswhere -all @taskVsQuery | Where-Object {
+                    (Test-Path -LiteralPath (Join-Path $_ 'Common7/Tools/Launch-VsDevShell.ps1') -PathType Leaf) -and
+                    (Test-Path -Path (Join-Path ([WildcardPattern]::Escape($_)) 'VC/Tools/MSVC/*/bin/Hostx64/x64/cl.exe') -PathType Leaf)
+                } | Select-Object -First 1
+            }
+            if ($LASTEXITCODE -ne 0 -or -not $taskVsRoot) { throw 'Visual Studio 2022 C++ tools were not found.' }
+            # VsDevShell 的代码页转换也会影响工具搜索路径，保留调用方提供的 Unicode 目录。
+            $taskCallerPath = $env:PATH
+            $taskCallerDirectories = Get-Item Env:APPDATA, Env:LOCALAPPDATA, Env:USERPROFILE, Env:HOMEPATH, Env:EVE_CMAKE_BIN -ErrorAction SilentlyContinue | Select-Object Name, Value
+            & (Join-Path $taskVsRoot 'Common7/Tools/Launch-VsDevShell.ps1') -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+            foreach ($taskPath in $taskCallerDirectories) {
+                [Environment]::SetEnvironmentVariable($taskPath.Name, $taskPath.Value, 'Process')
+            }
+            if ($taskCallerPath -and -not $env:PATH.Contains($taskCallerPath)) {
+                # VS 将继承的 PATH 记录在 __VSCMD_PREINIT_PATH，前后都可能追加工具目录。
+                if ($env:__VSCMD_PREINIT_PATH -and $env:PATH.Contains($env:__VSCMD_PREINIT_PATH)) {
+                    $env:PATH = $env:PATH.Replace($env:__VSCMD_PREINIT_PATH, $taskCallerPath)
+                } else {
+                    $env:PATH += [IO.Path]::PathSeparator + $taskCallerPath
+                }
+            }
+        }
+        if ($env:VSCMD_ARG_TGT_ARCH -ne 'x64') { throw 'Desktop requires an x64 MSVC developer environment.' }
+        $taskTemp = New-Item -ItemType Directory -Force -Path (Join-Path $taskRoot 'build/msvc-tmp')
+        $env:TEMP = $taskTemp.FullName
+        $env:TMP = $taskTemp.FullName
+        # 只选择实际安装的语言资源；中文字符串由码点构造，兼容 Windows PowerShell 的脚本编码。
+        $taskCompilerDirectory = Split-Path -Parent (Get-Command cl).Source
+        if (Test-Path -LiteralPath (Join-Path $taskCompilerDirectory '1033/clui.dll')) {
+            $env:VSLANG = '1033'
+            $env:EVE_MSVC_SHOWINCLUDES_PREFIX = 'Note: including file:'
+        }
+        elseif (Test-Path -LiteralPath (Join-Path $taskCompilerDirectory '2052/clui.dll')) {
+            $env:VSLANG = '2052'
+            $env:EVE_MSVC_SHOWINCLUDES_PREFIX = -join [char[]]@(0x6ce8, 0x610f, 0x3a, 0x20, 0x5305, 0x542b, 0x6587, 0x4ef6, 0x3a)
+        }
     }
     $env:EVE_QT5152_ROOT = $QtRoot
     $env:PATH = (Join-Path $QtRoot 'bin') + [System.IO.Path]::PathSeparator + $env:PATH

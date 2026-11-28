@@ -1,5 +1,7 @@
 /** Real Ela host, independent launches, installed native Qt modules and persistent workspace output. */
 #include "workbench.hpp"
+#include <eve/extensions/catalog.hpp>
+#include <eve/extensions/qt_module.hpp>
 #include "../support/module_artifacts.hpp"
 #include <QApplication>
 #include <QComboBox>
@@ -12,6 +14,7 @@
 #include <QTest>
 #include <QUuid>
 #include <algorithm>
+#include <future>
 #include <iostream>
 
 namespace {
@@ -57,6 +60,8 @@ struct Scene {
         CHECK(wait(host.applyInitial().settled)->value().outcome == loader::PlanOutcome::Applied);
         controls = host.extensionControls();
         CHECK(controls && controls->apply && controls->preview && controls->list);
+        const auto foreign = std::async(std::launch::async, [actions = controls] { return actions->list(); }).get();
+        CHECK(!foreign.hasValue() && foreign.error().code == ErrorCode::WrongThread);
     }
     void install(const QString& path)
     {
@@ -91,6 +96,9 @@ struct Scene {
     void close()
     {
         wait(host.close());
+        CHECK(!controls->list().hasValue());
+        const auto stale = controls->apply(ExtensionAction::Restart, {}, {}, {}).tryResult();
+        CHECK(stale && !stale->hasValue());
         value(host.scheduler->close());
     }
     ~Scene()
@@ -199,8 +207,84 @@ void checkInstanceCards(Scene& scene)
     CHECK(instances->isVisible() && instances->count() == 2 && instances->currentText() == "second-logger");
     dialog->close();
 }
+void writeLegacyCatalog(const QString& workspace)
+{
+    const QDir catalog(extensions::Catalog::defaultRoot());
+    const auto file = catalog.filePath("extensions.json");
+    auto index = QJsonDocument::fromJson(files::read(file)).object();
+    auto records = index.value("extensions").toArray();
+    auto releases = index.value("releases").toObject();
+    for (const auto& plugin : {QStringLiteral("EVE.DESKTOP.LOGS"), QStringLiteral("eve.workspace.extensions")}) {
+        const auto kind = plugin.startsWith("eve.desktop", Qt::CaseInsensitive) ? QStringLiteral("desktop") : QStringLiteral("business");
+        const auto module = QStringLiteral("legacy.") + kind;
+        const auto digest = QString::fromLatin1(QCryptographicHash::hash(plugin.toUtf8(), QCryptographicHash::Sha256).toHex());
+        QJsonObject record{{"formatVersion", 1}, {"kind", kind}, {"name", module}, {"publisher", "v1"},
+            {"description", ""}, {"defaultConfig", QJsonObject{}}, {"moduleId", module}, {"pluginId", plugin},
+            {"version", "1.0.0"}, {"sha256", digest}, {"icon", ""}};
+        const auto fingerprint = QCryptographicHash::hash(QJsonDocument(record).toJson(QJsonDocument::Compact), QCryptographicHash::Sha256);
+        releases.insert(module + "/1.0.0", QString::fromLatin1(fingerprint.toHex()));
+        record.insert("packageHash", digest);
+        records.append(record);
+    }
+    index.insert("extensions", records);
+    index.insert("releases", releases);
+    files::write(file, QJsonDocument(index).toJson());
+    CHECK(QDir().mkpath(workspace));
+    files::write(QDir(workspace).filePath("session.yaml"),
+        "formatVersion: 1\nmodules: {legacy.business: {manifest: module.json}}\n"
+        "plugins: [{id: previous, plugin: eve.workspace.extensions, module: legacy.business, config: {}}]\n");
+    workbench::DesktopSelection selection(catalog.path());
+    value(selection.request("legacy.desktop"));
+}
+
+void checkLegacyWorkspace(const QString& stage, const QDir& base)
+{
+    const auto workspace = base.filePath("legacy workspace");
+    const bool first = stage == "legacy";
+    if (first) writeLegacyCatalog(workspace);
+    workbench::Workbench host;
+    wait(host.open(std::nullopt, workspace));
+    wait(host.applyInitial().settled);
+    const auto state = value(host.session->snapshot()).coordinator;
+    CHECK(state.desired && state.desired->pluginUnavailable(workbench::workspaceExtensionsId) && state.running.empty());
+    CHECK(host.selection().selected() == workbench::desktopModuleId && !host.desktop()->hasExternalLayout());
+    const auto actions = host.extensionControls();
+    const auto rows = value(actions->list());
+    CHECK(std::any_of(rows.begin(), rows.end(), [](const auto& row) { return row.id == notesId && !row.packageHash.isEmpty(); }));
+    for (const auto& row : rows) {
+        if (!row.id.startsWith("legacy.")) continue;
+        if (!first) {
+            CHECK(row.id == "legacy.business" && row.missing && row.actions.empty());
+            continue;
+        }
+        CHECK(row.actions == std::vector<ExtensionAction>{ExtensionAction::Uninstall});
+        const auto enable = actions->apply(ExtensionAction::Enable, row.id, {}, {}).tryResult();
+        CHECK(enable && !enable->hasValue());
+        wait(actions->apply(ExtensionAction::Uninstall, row.id, {}, row.packageHash));
+    }
+    const auto remaining = value(extensions::Catalog().installed());
+    CHECK(std::none_of(remaining.begin(), remaining.end(), [](const auto& item) { return item.moduleId.startsWith("legacy."); }));
+    CHECK(value(actions->list()).size() >= 2 && host.writeOutput("legacy catalog verified").hasValue());
+    wait(host.close());
+    value(host.scheduler->close());
+}
+
 void phase(const QString& stage, const QDir& base)
 {
+    if (stage == "developer") {
+        workbench::Workbench host;
+        wait(host.open(base.filePath("alias/module.json"), base.filePath("developer workspace")));
+        wait(host.applyInitial().settled);
+        const auto running = value(host.session->snapshot()).coordinator.running;
+        CHECK(running.size() == 1 && running.front().configuration.plugin == logPlugin && mapped("extension", "1.0.0"));
+        wait(host.close());
+        value(host.scheduler->close());
+        return;
+    }
+    if (stage == "legacy" || stage == "legacy-reopen") {
+        checkLegacyWorkspace(stage, base);
+        return;
+    }
     const auto workspace = base.filePath(stage == "independent" ? "workspace B" : "workspace A");
     Scene scene(workspace);
     if (stage == "install") installAndUpdate(scene, base);
@@ -234,7 +318,7 @@ void run(const QString& program, const QStringList& args)
 
 void orchestrate(const QStringList& args)
 {
-    CHECK(args.size() == 6);
+    CHECK(args.size() == 7);
     QTemporaryDir temp;
     CHECK(temp.isValid());
     const QDir base(temp.path());
@@ -252,11 +336,29 @@ void orchestrate(const QStringList& args)
     pack(logger, "Logging fixture", "logging.evepkg");
     pack(args[4], "Notebook fixture", "notes.evepkg", readme);
     pack(args[5], "Notebook fixture", "update.evepkg");
+    files::install(args[6], base.filePath("alias"), "extension", {logPlugin}, "qt-ui");
+    pack(base.filePath("alias/module.dll"), "Development alias", "alias.evepkg");
+    CHECK(!extensions::Catalog::preview(base.filePath("alias.evepkg")).hasValue());
+    for (const auto id : {"builtin", "extension"}) {
+        CHECK(extensions::isReservedIdentity(id, logPlugin));
+        CHECK(!extensions::isReservedIdentity(id, logPlugin, extensions::ExtensionSource::DevelopmentManifest));
+    }
+    const auto conflict = files::install(args[3], base.filePath("conflict"), "legacy.business",
+                                        {workbench::workspaceExtensionsId}, "qt-ui");
+    pack(QFileInfo(conflict).dir().filePath("module.dll"), "Retired identity", "conflict.evepkg");
+    const auto forbidden = base.filePath("conflict.evepkg");
+    const auto reviewed = extensions::Catalog::preview(forbidden);
+    CHECK(!reviewed.hasValue() && reviewed.error().message == "This identity belongs to the platform.");
+    CHECK(!extensions::Catalog(base.filePath("isolated")).install(forbidden, {}).hasValue());
+    const auto admission = extensions::loadQtExtension(conflict, "legacy.business", workbench::workspaceExtensionsId, {});
+    CHECK(!admission.hasValue() && admission.error().message == "Workspace extension uses a reserved identity.");
+    CHECK(!extensions::loadQtExtension(conflict, "legacy.business", workbench::workspaceExtensionsId, {},
+                                       extensions::ExtensionSource::DevelopmentManifest).hasValue());
     const auto name = "Eve-Extensions-Test-" + QUuid::createUuid().toString(QUuid::WithoutBraces);
     QCoreApplication::setApplicationName(name);
     QDir profile(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation));
     CHECK(profile.isAbsolute() && profile.dirName() == name && !profile.exists());
-    for (const QString& stage : {"install", "independent", "reopen"})
+    for (const QString& stage : {"developer", "install", "independent", "reopen", "legacy", "legacy-reopen"})
         run(QCoreApplication::applicationFilePath(), {"--phase", stage, base.path(), name});
     CHECK(profile.removeRecursively());
 }

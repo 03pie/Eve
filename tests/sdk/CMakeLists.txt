@@ -21,4 +21,19 @@ add_test(NAME sdk.installed_qt_consumer COMMAND "${CMAKE_COMMAND}"
     -P "${CMAKE_CURRENT_BINARY_DIR}/installed_consumer.cmake")
 set_tests_properties(sdk.installed_qt_consumer PROPERTIES LABELS "sdk;module;qt;ui" TIMEOUT 180
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+configure_file(stage_consumer_sdk.cmake.in stage_consumer_sdk.cmake @ONLY)
 configure_file(installed_consumer.cmake.in installed_consumer.cmake @ONLY)
+
+add_test(NAME sdk.standalone_ela_desktop COMMAND "${CMAKE_COMMAND}"
+    "-DHOST_BUILD=${CMAKE_BINARY_DIR}" "-DHOST_GENERATOR=${CMAKE_GENERATOR}"
+    "-DHOST_CONFIG=$<CONFIG>" "-DHOST_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+    "-DHOST_CXX_COMPILER=${CMAKE_CXX_COMPILER}" "-DHOST_QT_DIR=${Qt5_DIR}"
+    "-DHOST_INCLUDE_PREFIX=${EVE_MSVC_SHOWINCLUDES_PREFIX}"
+    "-DHOST_LIBRARIES=$<TARGET_FILE:Eve::Core>;$<TARGET_FILE:Eve::Qt>;$<TARGET_FILE:Eve::Ui>;$<TARGET_FILE:Ela::WidgetTools>"
+    "-DDESKTOP_TEST_EXE=$<TARGET_FILE:eve_sdk_desktop_tests>"
+    "-DDESKTOP_SOURCE=${PROJECT_SOURCE_DIR}/plugins/builtin/desktop-ela"
+    "-DEVE_CMAKE_SUBDIR=${CMAKE_INSTALL_LIBDIR}/cmake/Eve"
+    "-DSTAGE_SDK_SCRIPT=${CMAKE_CURRENT_BINARY_DIR}/stage_consumer_sdk.cmake"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/standalone_ela_desktop.cmake")
+set_tests_properties(sdk.standalone_ela_desktop PROPERTIES LABELS "sdk;module;qt;ui" TIMEOUT 600
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

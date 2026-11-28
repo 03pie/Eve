@@ -1,6 +1,6 @@
 #include "desktop_selection.hpp"
 #include "desktop_contract.hpp"
-#include "qt_system_p.hpp"
+#include <eve/extensions/qt_module.hpp>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -115,7 +115,12 @@ Result<void> DesktopSelection::finish(bool succeeded)
     return saved;
 }
 Result<void> DesktopSelection::confirm() { return finish(true); }
-Result<void> DesktopSelection::recover() { return finish(false); }
+Result<void> DesktopSelection::recover()
+{
+    auto reset = finish(false);
+    if (reset.hasValue()) selected_ = QString::fromLatin1(desktopModuleId);
+    return reset;
+}
 Result<void> DesktopSelection::defer() { return finish(true); }
 
 ErrorInfo selectedDesktopFailure(ErrorInfo error)
@@ -128,11 +133,7 @@ Result<Runtime> registerDesktopLayout(Kernel& kernel, std::shared_ptr<qt::QtSche
     QString manifestPath, QString moduleId, QString pluginId, QString digest)
 {
     const auto reject = [](ErrorInfo error) { return Result<Runtime>::failure(selectedDesktopFailure(std::move(error))); };
-    QFileInfo path(manifestPath);
-    if (path.fileName() != QStringLiteral("module.json"))
-        return reject(makeError(ErrorCode::ConfigInvalid, "Invalid desktop module manifest path."));
-    auto root = path.absolutePath().toUtf8().toStdString();
-    auto loaded = module::detail::loadInstalledQtModule(root, moduleId.toStdString(), pluginId.toStdString(), digest.toStdString());
+    auto loaded = extensions::loadQtExtension(manifestPath, moduleId, pluginId, digest);
     if (!loaded.hasValue()) return reject(loaded.error());
     auto negotiated = module::qtRuntime(loaded.value().generation,
         {pluginId.toStdString(), {ServiceRequirement::of<desktop::LayoutServiceV1>({desktop::layoutService})}, {}}, scheduler);

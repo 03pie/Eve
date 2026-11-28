@@ -80,9 +80,9 @@ void run(const QString& dll, const QDir& evidence)
     const QStringList ids{"test.logs.alpha", "test.logs.bravo"};
     const auto manifest = files::install(dll, evidence.filePath("module"), "org.eve.test.logs",
                                          QJsonArray::fromStringList(ids), "qt-ui");
-    const auto loaded = take(module::loadQtModule(evidence.path().toStdString(), manifest.toStdString()));
     Host host;
     wait(host.app.open(std::nullopt, evidence.filePath("workspace")));
+    const auto loaded = take(module::loadQtModule(evidence.path().toStdString(), manifest.toStdString()));
     QJsonObject identities;
     for (const auto& id : ids) {
         const module::QtPlugin contract{id.toStdString(),
@@ -115,13 +115,12 @@ void run(const QString& dll, const QDir& evidence)
     check(selector->findData("plugin/test.logs.alpha") < 0 && selector->findData("plugin/test.logs.bravo") < 0, "silent source visible");
     for (const auto& marker : markers) {
         const auto title = "Write sample log " + marker.left(1);
+        openCommands->trigger();
+        check(commandFilter->isVisible() && runCommand->isVisible(), "command palette did not open");
         commandFilter->setText(title);
-        // Let the command publication reach the list model before opening the palette.
         until([&] { return list->model()->rowCount() == 1; }, "command filter did not produce a unique row");
         const auto match = list->model()->index(0, 0);
         check(match.data().toString().startsWith(title + " "), "command filter returned the wrong plugin");
-        openCommands->trigger();
-        check(commandFilter->isVisible() && runCommand->isVisible(), "command palette did not open");
         list->setCurrentIndex(match);
         runCommand->click();
         until([&] { return eventLines(editor).join('\n').contains("Interleaved log " + marker); }, "plugin command did not publish");

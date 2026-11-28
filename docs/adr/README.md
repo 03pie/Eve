@@ -89,6 +89,7 @@
 - [ADR-0072 首页插件卡片与扩展详情窗口](0072-home-extension-details.md)
 - [ADR-0073 工作台顶栏与快速打开](0073-workbench-titlebar-and-quick-access.md)
 - [ADR-0074 工作台材质与主题](0074-workbench-surface-appearance.md)
+- [ADR-0075 内置桌面的源码边界](0075-builtin-desktop-source-boundary.md)
 
 0068 及以前的记录沿用决策时的 Cordis 项目名和接口名；当前模块名称与开发入口见[平台架构](../architecture.md)。
 

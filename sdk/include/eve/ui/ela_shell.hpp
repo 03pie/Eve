@@ -18,8 +18,8 @@ namespace eve::ui {
 class ElaShell;
 struct ExtensionControls;
 namespace detail {
-class RuntimeLogArchive;
-Result<void> attachDesktopArchive(ElaShell& shell, const std::shared_ptr<RuntimeLogArchive>& archive);
+class DesktopArchive;
+Result<void> attachDesktopArchive(ElaShell& shell, const std::shared_ptr<DesktopArchive>& archive);
 }
 /** @brief 外壳在应用线程操作，清理完成前保持调度器与 Qt 事件循环运行。 */
 class ElaShell {
@@ -76,7 +76,7 @@ public:
     /** @brief owner 关门，等待页面/命令 effects 与窗口完整销毁，清理失败保留资源。 */
     Task<void> close() const;
 private:
-    friend Result<void> detail::attachDesktopArchive(ElaShell&, const std::shared_ptr<detail::RuntimeLogArchive>&);
+    friend Result<void> detail::attachDesktopArchive(ElaShell&, const std::shared_ptr<detail::DesktopArchive>&);
     std::shared_ptr<detail::ShellControl> control_;
     std::shared_ptr<UiPagesService> pages_;
     std::shared_ptr<CommandService> commands_;

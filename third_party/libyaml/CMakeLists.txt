@@ -3,7 +3,7 @@ add_library(eve_libyaml STATIC
     src/api.c src/dumper.c src/emitter.c src/loader.c
     src/parser.c src/reader.c src/scanner.c src/writer.c
 )
-target_include_directories(eve_libyaml PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_include_directories(eve_libyaml PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
 target_compile_definitions(eve_libyaml PUBLIC YAML_DECLARE_STATIC PRIVATE
     YAML_VERSION_MAJOR=0 YAML_VERSION_MINOR=2 YAML_VERSION_PATCH=5 YAML_VERSION_STRING="0.2.5"
 )

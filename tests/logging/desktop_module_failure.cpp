@@ -116,6 +116,12 @@ void verify(const QFileInfo& executable)
     modified["moduleId"] = "org.eve.test.substitute";
     files::write(manifest, QJsonDocument(modified).toJson());
     exercise(program, runtime.filePath("wrong-identity"), "WORKBENCH_DESKTOP_IDENTITY_INVALID");
+    const auto alternate = QStringLiteral("alternate.dll");
+    CHECK(QFile::copy(image, runtime.filePath(system + alternate)));
+    modified = identity;
+    modified["library"] = alternate;
+    files::write(manifest, QJsonDocument(modified).toJson());
+    exercise(program, runtime.filePath("wrong-library"), "WORKBENCH_DESKTOP_IDENTITY_INVALID");
     modified = identity;
     modified["abi"] = QJsonObject{{"major", 2}, {"minor", 0}};
     files::write(manifest, QJsonDocument(modified).toJson());

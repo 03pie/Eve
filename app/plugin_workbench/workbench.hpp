@@ -1,5 +1,5 @@
 /** @file workbench.hpp
- * @brief 应用宿主只持有调度器、内核、工作区和日志。桌面由其内核实例托管。
+ * @brief 组装初始插件与工作区。启动器持有运行结束回执所需的日志写入句柄。
  */
 #pragma once
 #include "desktop_contract.hpp"
@@ -15,7 +15,7 @@ public:
     explicit Workbench(bool safeDesktop = false);
     ~Workbench();
     DesktopSelection& selection() { return selection_; }
-    std::shared_ptr<ui::ExtensionControls> extensionControls() const { return bootstrap_->extensions; }
+    std::shared_ptr<ui::ExtensionControls> extensionControls() const;
     std::function<void()> restartRequested;
     /** @brief 应用线程启动日志和系统桌面。就绪回执包含桌面及配置页的激活结果。 */
     Task<void> open(const std::optional<QString>& manifestPath, const QString& workspaceDir);
@@ -30,20 +30,27 @@ public:
     std::shared_ptr<Kernel> kernel;
     std::shared_ptr<loader::ConfigurationSession> session;
 private:
-    friend class WorkspaceExtensions;
+    Task<void> mountWorkspaceExtensions();
+    void openDesktop(const std::optional<QString>& manifest, const QString& workspace, Promise<void> ready);
     Task<void> mountSelectedDesktop();
     Task<void> openWorkspace(const std::optional<QString>& manifest, const QString& workspace);
     void closeSession();
     void closeConsumers();
     void closeLayout();
+    void closeDesktop();
     void closeKernel();
     void failCleanup(ErrorInfo error, const char* phase);
     std::shared_ptr<DesktopBootstrap> bootstrap_;
+    RealmMap workbenchServices_;
+    RuntimeId logRuntime_;
+    std::shared_ptr<DesktopRunLogOwner> runLog_;
     RuntimeId desktopRuntime_;
+    std::optional<Instance> desktopInstance_;
     std::optional<Instance> layout_;
     DesktopSelection selection_;
     bool safeDesktop_;
-    std::unique_ptr<WorkspaceExtensions> extensions_;
+    RuntimeId extensionsRuntime_;
+    std::weak_ptr<WorkspaceExtensions> extensions_;
     std::vector<ProviderHandle> providers_;
     std::string initial_;
     Promise<void> closed_;

@@ -565,7 +565,7 @@ Result<void> mapGenerationImage(const std::shared_ptr<Generation>& generation, I
         return Result<void>::failure(error(ErrorCode::ModulePinned, "module.existing",
                                            "untracked native image is already mapped; adoption refused"));
     DWORD search = LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32;
-    // The nested official module shares the installer's Qt/Ela dependencies beside the EXE.
+    // Bundled modules may share dependencies distributed beside the application executable.
     if (dependencies == ImageDependencies::ApplicationBundle)
         search |= LOAD_LIBRARY_SEARCH_APPLICATION_DIR;
     const auto image = LoadLibraryExW(nativePath.c_str(), nullptr, search);

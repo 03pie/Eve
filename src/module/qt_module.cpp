@@ -3,15 +3,17 @@
  */
 #include "qt_manifest_p.hpp"
 #include "qt_module_p.hpp"
-#include "qt_system_p.hpp"
+#include "qt_artifact_load_p.hpp"
 #include <QCoreApplication>
 #include <QDir>
+#include <QFileInfo>
 #include <QPluginLoader>
 #include <QPointer>
 #include <QThread>
 #include <eve/build_info.hpp>
 #include <eve/module/qt_manifest.hpp>
 #include <eve/module/qt_module.hpp>
+#include <functional>
 
 namespace eve::module {
 namespace {
@@ -23,31 +25,11 @@ ErrorInfo error(ErrorCode code, std::string message)
 }
 using detail::QtResidency;
 using detail::ImageDependencies;
-constexpr char desktopManifest[] = "system/desktop/module.json";
-constexpr char desktopLibrary[] = "system/desktop/eve_desktop.dll";
-
-bool isSystemDesktop(const PreflightArtifact& artifact, const std::string& root)
-{
-    const QDir application(QString::fromUtf8(root.c_str()));
-    const auto matches = [&](const std::string& pinned, const char* relative) {
-        return QString::compare(QString::fromUtf8(pinned.c_str()), application.filePath(QString::fromLatin1(relative)),
-                                Qt::CaseInsensitive) == 0;
-    };
-    const auto& manifest = artifact.manifest();
-    return manifest.moduleId == detail::systemDesktopModuleId && manifest.plugins.size() == 1 &&
-           manifest.plugins.front() == detail::systemDesktopPluginId && manifest.library == "eve_desktop.dll" &&
-           matches(artifact.manifestPath(), desktopManifest) && matches(artifact.libraryPath(), desktopLibrary);
-}
-
-struct InstalledIdentity {
-    const std::string& module;
-    const std::string& plugin;
-    const std::string& digest;
-};
+using ArtifactCheck = std::function<Result<void>(const PreflightArtifact&)>;
 
 Result<ModuleLoadReport> loadGeneration(const std::string& root, const std::string& path, PreflightLimits limits,
                                         GenerationId predecessor, ImageDependencies dependencies,
-                                        const InstalledIdentity* selected = nullptr)
+                                        const ArtifactCheck& check = {})
 {
     using Output = Result<ModuleLoadReport>;
     auto app = QCoreApplication::instance();
@@ -63,20 +45,11 @@ Result<ModuleLoadReport> loadGeneration(const std::string& root, const std::stri
     if (!source.hasValue())
         return Output::failure(source.error());
     const auto& artifact = source.value()->artifact;
-    const auto& identity = artifact.manifest();
-    if (selected && (identity.moduleId != selected->module || identity.plugins.size() != 1 ||
-        identity.plugins.front() != selected->plugin || identity.moduleId == detail::systemDesktopModuleId ||
-        identity.plugins.front() == detail::systemDesktopPluginId || identity.plugins.front() == "host.configuration" ||
-        identity.sha256 != selected->digest))
-        return Output::failure(error(ErrorCode::AbiMismatch, "Installed module differs from the verified catalogue artifact."));
-    if (dependencies == ImageDependencies::ApplicationBundle && !isSystemDesktop(artifact, root)) {
-        auto failure = error(ErrorCode::AbiMismatch, "The installed desktop module has an unexpected identity or path.");
-        failure.phase = "workbench.desktop.identity";
-        return Output::failure(std::move(failure));
+    if (check) {
+        auto accepted = check(artifact);
+        if (!accepted.hasValue())
+            return Output::failure(accepted.error());
     }
-    // The private host/desktop C++ contract ships together even while the public SDK stays binary compatible.
-    if (dependencies == ImageDependencies::ApplicationBundle && artifact.manifest().moduleVersion != EVE_DESKTOP_VERSION)
-        return Output::failure(error(ErrorCode::AbiMismatch, "The installed desktop version differs from the launcher."));
     if (artifact.manifest().loader != ModuleLoader::QtUi ||
         artifact.manifest().unloadPolicy != ModuleUnloadPolicy::Resident)
         return Output::failure(error(ErrorCode::AbiMismatch, "Qt backend requires resident qt-ui loader"));
@@ -137,13 +110,30 @@ Result<ModuleLoadReport> loadGeneration(const std::string& root, const std::stri
     return Output::success({generation->data.generation, false});
 }
 } // namespace
-Result<ModuleLoadReport> detail::loadSystemDesktopModule()
+Result<ModuleLoadReport> detail::loadBundledQtModule(const BundledQtModule& expected)
 {
     if (!QCoreApplication::instance())
-        return Result<ModuleLoadReport>::failure(error(ErrorCode::WrongThread, "Desktop requires an application owner."));
+        return Result<ModuleLoadReport>::failure(error(ErrorCode::WrongThread, "Bundled Qt module requires an application owner."));
     const OpenedPath installation(QCoreApplication::applicationDirPath(), true);
-    return loadGeneration(installation.finalPath().toUtf8().toStdString(), desktopManifest, {}, {},
-                          ImageDependencies::ApplicationBundle);
+    const auto applicationPath = installation.finalPath();
+    const auto check = [&](const PreflightArtifact& artifact) {
+        const QFileInfo manifestFile(QDir(applicationPath), QString::fromStdString(expected.manifestPath));
+        const auto libraryFile = manifestFile.dir().filePath(QString::fromStdString(expected.libraryName));
+        const auto& manifest = artifact.manifest();
+        if (manifest.moduleId != expected.moduleId || manifest.plugins.size() != 1 ||
+            manifest.plugins.front() != expected.pluginId || manifest.library != expected.libraryName ||
+            manifestFile.filePath().compare(QString::fromStdString(artifact.manifestPath()), Qt::CaseInsensitive) != 0 ||
+            libraryFile.compare(QString::fromStdString(artifact.libraryPath()), Qt::CaseInsensitive) != 0) {
+            auto failure = error(ErrorCode::AbiMismatch, "Bundled module has an unexpected identity or path.");
+            failure.phase = "module.bundle.identity";
+            return Result<void>::failure(std::move(failure));
+        }
+        if (manifest.moduleVersion != expected.version)
+            return Result<void>::failure(error(ErrorCode::AbiMismatch, "Bundled module version differs from the selected version."));
+        return Result<void>::success();
+    };
+    return loadGeneration(applicationPath.toStdString(), expected.manifestPath, {}, {},
+                          ImageDependencies::ApplicationBundle, check);
 }
 Result<ModuleLoadReport> loadQtModule(const std::string& root, const std::string& path, PreflightLimits limits)
 {
@@ -152,8 +142,13 @@ Result<ModuleLoadReport> loadQtModule(const std::string& root, const std::string
 Result<ModuleLoadReport> detail::loadInstalledQtModule(const std::string& root, const std::string& moduleId,
     const std::string& pluginId, const std::string& digest)
 {
-    const InstalledIdentity selected{moduleId, pluginId, digest};
-    return loadGeneration(root, "module.json", {}, {}, ImageDependencies::ModuleDirectory, &selected);
+    return loadGeneration(root, "module.json", {}, {}, ImageDependencies::ModuleDirectory, [&](const PreflightArtifact& artifact) {
+        const auto& identity = artifact.manifest();
+        if (identity.moduleId != moduleId || identity.plugins.size() != 1 ||
+            identity.plugins.front() != pluginId || identity.sha256 != digest)
+            return Result<void>::failure(error(ErrorCode::AbiMismatch, "Module differs from the selected artifact."));
+        return Result<void>::success();
+    });
 }
 Result<ModuleLoadReport> stageQtModule(const std::string& root, const std::string& path, GenerationId predecessor,
                                        PreflightLimits limits)

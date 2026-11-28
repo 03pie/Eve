@@ -5,7 +5,7 @@
 #include <ElaText.h>
 #include <ElaTheme.h>
 #include <ElaWindow.h>
-#include "../../src/ui/preferences_p.hpp"
+#include "preferences_p.hpp"
 #include <QComboBox>
 #include <QCryptographicHash>
 #include <QDateTime>

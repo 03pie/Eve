@@ -91,6 +91,30 @@ QByteArray readFile(const QString& path)
     return bytes;
 }
 
+void verifyWorkspaceServiceAccess(eve::Kernel& kernel)
+{
+    using namespace eve;
+    using namespace eve::workbench;
+    auto probe = kernel.registerPlugin("test.workspace.services", [](Context ctx) {
+        REQUIRE(ctx.consume<ui::UiPagesService>({pagesService}).hasValue());
+        REQUIRE(ctx.consume<ui::CommandService>({commandsService}).hasValue());
+        REQUIRE(ctx.consume<ui::OutputService>({outputService}).hasValue());
+        REQUIRE(ctx.consume<ui::NotificationService>({notificationsService}).hasValue());
+        REQUIRE(ctx.consume<std::shared_ptr<qt::QtScheduler>>({schedulerService}).hasValue());
+        const auto missing = [](const auto& result) {
+            return !result.hasValue() && result.error().code == ErrorCode::DependencyMissing;
+        };
+        REQUIRE(missing(ctx.consume<DesktopBootstrap>({desktopBootstrapKey})));
+        REQUIRE(missing(ctx.consume<ui::detail::DesktopArchiveHandle>({desktopLogServiceKey})));
+        REQUIRE(missing(ctx.consume<DesktopRunLogSink>({desktopRunLogSinkKey})));
+        REQUIRE(missing(ctx.consume<ExtensionControlsHandle>({extensionsService})));
+        return completedTask();
+    }).value();
+    const auto instance = kernel.mount(probe).value();
+    await(instance.ready());
+    REQUIRE(await(instance.stop())->value().quiescent);
+}
+
 void openEmpty(const QString& workspace, const QString& marker, bool exerciseWindow)
 {
     Scene scene;
@@ -107,8 +131,8 @@ void openEmpty(const QString& workspace, const QString& marker, bool exerciseWin
     const auto diagnostics = scene.host.desktop()->diagnostics()->snapshot().value();
     REQUIRE(diagnostics.managementOpen && diagnostics.configuration && diagnostics.configuration->open);
     REQUIRE(diagnostics.configuration->entries.empty() && diagnostics.configuration->availablePlugins.empty());
-    REQUIRE(diagnostics.kernel.names.size() == 2);
-    for (const char* runtime : {"eve.desktop", "host.configuration"})
+    REQUIRE(diagnostics.kernel.names.size() == 4);
+    for (const char* runtime : {"eve.desktop", "eve.desktop.logs", "eve.workspace.extensions", "host.configuration"})
         REQUIRE(std::any_of(diagnostics.kernel.names.begin(), diagnostics.kernel.names.end(),
                             [runtime](const auto& name) { return name.name == runtime; }));
     const auto& names = diagnostics.kernel.names;
@@ -134,6 +158,30 @@ void openEmpty(const QString& workspace, const QString& marker, bool exerciseWin
     REQUIRE(QFileInfo(QString::fromStdString(loaded->libraryPath)).canonicalFilePath() ==
             QFileInfo(officialFile).canonicalFilePath());
     const auto graph = scene.host.kernel->services().dependencyGraph().value();
+    const auto logRuntime = std::find_if(names.begin(), names.end(), [](const auto& name) { return name.name == "eve.desktop.logs"; });
+    const auto logs = std::find_if(instances.begin(), instances.end(), [&](const auto& row) { return row.runtime == logRuntime->id; });
+    REQUIRE(logs != instances.end() && logs->state == eve::InstanceState::Active);
+    const auto archive = std::find_if(graph.bindings.begin(), graph.bindings.end(), [](const auto& row) {
+        return row.binding.key.name == "eve.desktop.runLog";
+    });
+    REQUIRE(archive != graph.bindings.end() && archive->managedProvider && archive->provider == logs->instance);
+    REQUIRE(std::any_of(archive->consumers.begin(), archive->consumers.end(), [&](const auto& row) {
+        return row.managed && row.instance == owner->instance;
+    }));
+    const auto extensionsRuntime = std::find_if(names.begin(), names.end(), [](const auto& row) {
+        return row.name == "eve.workspace.extensions";
+    });
+    const auto extensions = std::find_if(instances.begin(), instances.end(), [&](const auto& row) {
+        return row.runtime == extensionsRuntime->id;
+    });
+    REQUIRE(extensions != instances.end() && extensions->state == eve::InstanceState::Active);
+    const auto sink = std::find_if(graph.bindings.begin(), graph.bindings.end(), [](const auto& row) {
+        return row.binding.key.name == "eve.desktop.runLogSink";
+    });
+    REQUIRE(sink != graph.bindings.end() && sink->managedProvider && sink->provider == logs->instance);
+    REQUIRE(std::any_of(sink->consumers.begin(), sink->consumers.end(), [&](const auto& row) {
+        return row.managed && row.instance == extensions->instance;
+    }));
     for (const char* service : {"ui.pages", "ui.commands", "ui.output", "ui.notifications"}) {
         REQUIRE(std::count_if(graph.bindings.begin(), graph.bindings.end(), [&](const auto& binding) {
             return binding.binding.key.name == service && binding.provider == owner->instance &&
@@ -164,6 +212,7 @@ void openEmpty(const QString& workspace, const QString& marker, bool exerciseWin
             auto* editor = visibleWidget<QPlainTextEdit>("EveWorkbenchOutput");
             return editor && editor->toPlainText().contains(marker);
         });
+        verifyWorkspaceServiceAccess(*scene.host.kernel);
     }
     scene.close();
 }
