@@ -1,3 +1,4 @@
+#include "desktop_text.hpp"
 #include "extension_readme_p.hpp"
 #include "extension_links_p.hpp"
 #include "theme_palette_p.hpp"
@@ -30,7 +31,7 @@ protected:
 ExtensionReadmeView::ExtensionReadmeView(QWidget* parent) : QTextBrowser(parent)
 {
     setDocument(new ReadmeDocument(this));
-    setAccessibleName(tr("扩展说明文档"));
+    setAccessibleName(eve::desktopText("extensions.extensionREADME"));
     setFrameShape(QFrame::NoFrame);
     setOpenLinks(false);
     setOpenExternalLinks(false);

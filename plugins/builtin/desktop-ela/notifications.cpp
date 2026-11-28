@@ -1,6 +1,7 @@
 /** @file notifications.cpp
  * @brief 有界通知候选值、纯历史与状态栏呈现，不持有插件对象。
  */
+#include "desktop_text.hpp"
 #include "notifications_p.hpp"
 #include "desktop_archive.hpp"
 #include "appearance_p.hpp"
@@ -57,10 +58,10 @@ struct AcceptedNotice {
 QString levelName(NotificationLevel level)
 {
     if (level == NotificationLevel::Error)
-        return QStringLiteral("错误");
+        return eve::desktopText("notifications.error");
     if (level == NotificationLevel::Warning)
-        return QStringLiteral("警告");
-    return QStringLiteral("消息");
+        return eve::desktopText("notifications.warning");
+    return eve::desktopText("notifications.message");
 }
 // This is a child of the workbench, so opening it never creates another top-level window.
 class NoticePanel final : public QWidget
@@ -69,15 +70,15 @@ public:
     explicit NoticePanel(QWidget* window) : QWidget(window)
     {
         setObjectName("EveNotificationCenter");
-        setAccessibleName(QStringLiteral("通知中心"));
+        setAccessibleName(eve::desktopText("management.notificationCenter"));
         bindWorkbenchPalette(this, ElaThemeType::PopupBase);
         auto layout = new QVBoxLayout(this);
         layout->setContentsMargins(12, 10, 12, 10);
         auto header = new QHBoxLayout;
-        header->addWidget(new ElaText(QStringLiteral("通知中心"), 18, this), 1);
-        closeButton = new ActionButton(QStringLiteral("关闭"), this);
+        header->addWidget(new ElaText(eve::desktopText("management.notificationCenter"), 18, this), 1);
+        closeButton = new ActionButton(eve::desktopText("notifications.close"), this);
         closeButton->setObjectName("EveNotificationClose");
-        closeButton->setAccessibleName(QStringLiteral("关闭通知中心"));
+        closeButton->setAccessibleName(eve::desktopText("notifications.closeNotificationCenter"));
         header->addWidget(closeButton);
         layout->addLayout(header);
         status = new ElaText(this);
@@ -88,7 +89,7 @@ public:
         layout->addWidget(status);
         list = new ElaListView(this);
         list->setObjectName("EveNotificationList");
-        list->setAccessibleName(QStringLiteral("通知列表"));
+        list->setAccessibleName(eve::desktopText("notifications.notificationList"));
         list->setEditTriggers(QAbstractItemView::NoEditTriggers);
         list->setWordWrap(true);
         list->setItemHeight(60);
@@ -96,15 +97,15 @@ public:
         model = new QStandardItemModel(list);
         list->setModel(model);
         layout->addWidget(list, 1);
-        empty = new ElaText(QStringLiteral("暂无通知"), 14, this);
+        empty = new ElaText(eve::desktopText("notifications.noNotifications"), 14, this);
         empty->setObjectName("EveNotificationEmpty");
         empty->setAlignment(Qt::AlignCenter);
         secondaryText(empty);
         layout->addWidget(empty, 1);
         auto tools = new QHBoxLayout;
-        markRead = new ActionButton(QStringLiteral("全部标为已读"), this);
+        markRead = new ActionButton(eve::desktopText("notifications.markAllAsRead"), this);
         markRead->setObjectName("EveNotificationMarkRead");
-        openLog = new ActionButton(QStringLiteral("查看相关日志"), this);
+        openLog = new ActionButton(eve::desktopText("configuration.viewRelatedLogs"), this);
         openLog->setObjectName("EveNotificationOpenLog");
         tools->addWidget(markRead);
         tools->addStretch();
@@ -260,7 +261,7 @@ struct NotificationControl : std::enable_shared_from_this<NotificationControl> {
             const auto directory = archive->directoryFor(it.key());
             const auto folder = QDir(directory).filePath(it.key());
             if (directory.isEmpty() || !QFileInfo(folder).isDir() || QFileInfo(folder).isSymLink()) {
-                readWarning = QStringLiteral("通知归档已不可用，无法保存已读状态。");
+                readWarning = eve::desktopText("notifications.theNotificationArchiveIsUnavailableReadStatus");
                 continue;
             }
             QSettings receipts(QDir(folder).filePath("notice-read.ini"), QSettings::IniFormat);
@@ -273,7 +274,7 @@ struct NotificationControl : std::enable_shared_from_this<NotificationControl> {
                 receipts.remove(ids[i]);
             receipts.sync();
             if (receipts.status() != QSettings::NoError)
-                readWarning = QStringLiteral("未能保存通知已读状态。");
+                readWarning = eve::desktopText("notifications.couldNotSaveNotificationReadStatus");
         }
         if (!selected)
             faultUnread = false;
@@ -288,7 +289,7 @@ struct NotificationControl : std::enable_shared_from_this<NotificationControl> {
         const auto unread =
             std::count_if(rows.begin(), rows.end(), [](const auto* entry) { return !entry->read; }) + faultUnread;
         if (bell) {
-            const auto label = QStringLiteral("通知中心，%1 条未读").arg(unread);
+            const auto label = eve::desktopText("notifications.notificationCenterUnread").arg(unread);
             bell->setText(unread ? QString::number(unread) : QString());
             bell->setToolButtonStyle(unread ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonIconOnly);
             const int iconWidth = bell->iconSize().width() + 12;
@@ -315,16 +316,16 @@ struct NotificationControl : std::enable_shared_from_this<NotificationControl> {
             auto window = panel->parentWidget();
             const bool showBar = !muted && window->isVisible() && !window->property("EveReducedMotion").toBool();
             if (showFault && showBar)
-                ElaMessageBar::warning(ElaMessageBarType::BottomRight, QStringLiteral("日志归档"),
-                                       QStringLiteral("日志归档受阻，请在通知中心查看。"), 3600, window);
+                ElaMessageBar::warning(ElaMessageBarType::BottomRight, eve::desktopText("notifications.logArchive"),
+                                       eve::desktopText("notifications.logArchivingIsBlockedCheckTheNotification"), 3600, window);
             if (toast && showBar) {
                 const auto text = QString::fromStdString(toast->text).simplified();
                 const auto summary = panel->fontMetrics().elidedText(
                     text, Qt::ElideRight, std::max(80, std::min(320, window->width() - 140)));
                 if (toast->level == NotificationLevel::Error)
-                    ElaMessageBar::error(ElaMessageBarType::BottomRight, QStringLiteral("错误"), summary, 3600, window);
+                    ElaMessageBar::error(ElaMessageBarType::BottomRight, eve::desktopText("notifications.error"), summary, 3600, window);
                 else
-                    ElaMessageBar::warning(ElaMessageBarType::BottomRight, QStringLiteral("警告"), summary, 3600,
+                    ElaMessageBar::warning(ElaMessageBarType::BottomRight, eve::desktopText("notifications.warning"), summary, 3600,
                                            window);
             }
             return;
@@ -354,16 +355,16 @@ struct NotificationControl : std::enable_shared_from_this<NotificationControl> {
         int row = 0;
         for (const auto& group : groups) {
             const auto& note = group.latest;
-            const auto source = note.value.owner.instance.valid() ? QStringLiteral("实例 #%1 · 代 %2")
+            const auto source = note.value.owner.instance.valid() ? eve::desktopText("notifications.instanceGeneration")
                                                                         .arg(note.value.owner.instance.value())
                                                                         .arg(note.value.owner.epoch)
-                                                                  : QStringLiteral("平台");
+                                                                  : eve::desktopText("logs.platform");
             const bool prior = archive && note.run != archive->currentRun();
             QString text = note.received.toString(prior ? "yyyy-MM-dd HH:mm:ss" : "HH:mm:ss") + "  " +
                            (note.source.isEmpty() ? source : note.source + " · " + source) + " · " +
                            levelName(note.value.notification.level);
             if (group.unread)
-                text += QStringLiteral(" · 未读");
+                text += eve::desktopText("notifications.unread");
             if (group.count > 1)
                 text += QStringLiteral(" ×%1").arg(group.count);
             text += "\n" + QString::fromStdString(note.value.notification.text);
@@ -400,9 +401,9 @@ struct NotificationControl : std::enable_shared_from_this<NotificationControl> {
                 continue;
             }
             const auto latest = history.back().value.notification;
-            const auto prefix = latest.level == NotificationLevel::Error     ? QString::fromUtf8("错误：")
-                                : latest.level == NotificationLevel::Warning ? QString::fromUtf8("提示：")
-                                                                             : QString::fromUtf8("消息：");
+            const auto prefix = latest.level == NotificationLevel::Error     ? eve::desktopText("management.error")
+                                : latest.level == NotificationLevel::Warning ? eve::desktopText("notifications.warning2")
+                                                                             : eve::desktopText("notifications.message2");
             const auto text = prefix + QString::fromStdString(latest.text);
             auto held = shared_from_this();
             auto guard = access;
@@ -548,7 +549,7 @@ void watchNotificationArchive(const std::shared_ptr<NotificationControl>& self,
             try {
                 host->historical = host->loading.get();
             } catch (const std::exception&) {
-                host->readWarning = QStringLiteral("无法读取历史通知。");
+                host->readWarning = eve::desktopText("notifications.couldNotReadPastNotifications");
             }
             host->dirty = true;
         }

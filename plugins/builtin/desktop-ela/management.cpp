@@ -1,6 +1,7 @@
 /** @file management.cpp
  * @brief 以宿主值快照驱动管理页，排队校验停止/重试，不把管理能力交给普通插件。
  */
+#include "desktop_text.hpp"
 #include "contribution_backend_p.hpp"
 #include "appearance_p.hpp"
 #include "fixed_tabs_p.hpp"
@@ -50,21 +51,21 @@ namespace eve::ui::detail {
 QString stateName(InstanceState state)
 {
     switch (state) {
-    case InstanceState::Pending: return QString::fromUtf8("等待依赖");
-    case InstanceState::Loading: return QString::fromUtf8("启动中");
-    case InstanceState::Active: return QString::fromUtf8("运行中");
-    case InstanceState::Unloading: return QString::fromUtf8("清理中");
-    case InstanceState::Failed: return QString::fromUtf8("失败");
-    case InstanceState::Disposed: return QString::fromUtf8("已终结");
+    case InstanceState::Pending: return eve::desktopText("configuration.waitingForDependencies");
+    case InstanceState::Loading: return eve::desktopText("configuration.starting");
+    case InstanceState::Active: return eve::desktopText("configuration.running");
+    case InstanceState::Unloading: return eve::desktopText("configuration.cleaningUp");
+    case InstanceState::Failed: return eve::desktopText("configuration.failed");
+    case InstanceState::Disposed: return eve::desktopText("management.disposed");
     }
-    return QString::fromUtf8("未知");
+    return eve::desktopText("management.unknown");
 }
 /** @brief 错误及有限深度原因链按纯文本呈现，不解释插件输入为富文本。 */
 QString errorText(const ErrorInfo& error, unsigned depth = 0)
 {
-    QString text = QString::fromStdString(error.message.empty() ? "未提供错误说明" : error.message);
+    QString text = QString::fromStdString(error.message.empty() ? eve::desktopText("management.noErrorDescriptionWasProvided").toStdString() : error.message);
     if (!error.phase.empty()) text += " [" + QString::fromStdString(error.phase) + "]";
-    if (error.operation.valid()) text += QString::fromUtf8(" 操作 %1").arg(error.operation.value());
+    if (error.operation.valid()) text += eve::desktopText("management.operation").arg(error.operation.value());
     if (depth < 4) for (std::size_t i = 0; i < error.causes.size() && i < 8; ++i)
         text += "\n" + QString(static_cast<int>(depth + 1) * 2, QLatin1Char(' ')) + errorText(error.causes[i], depth + 1);
     return text;
@@ -78,70 +79,70 @@ QString keyText(const ServiceKey& key)
 QString bindingName(BindingState state)
 {
     switch (state) {
-    case BindingState::Staged: return QString::fromUtf8("待发布");
-    case BindingState::Published: return QString::fromUtf8("已发布");
+    case BindingState::Staged: return eve::desktopText("management.staged");
+    case BindingState::Published: return eve::desktopText("management.published");
     case BindingState::Held:
-        return QString::fromUtf8("等待组发布");
-    case BindingState::Retiring: return QString::fromUtf8("退役中");
-    case BindingState::Released: return QString::fromUtf8("已释放");
+        return eve::desktopText("management.waitingForGroupPublication");
+    case BindingState::Retiring: return eve::desktopText("management.retiring");
+    case BindingState::Released: return eve::desktopText("management.released");
     }
-    return QString::fromUtf8("未知");
+    return eve::desktopText("management.unknown");
 }
 /** @brief 操作完成不等于激活成功，显示真实稳定结果供用户判断。 */
 QString outcomeName(StableOutcome outcome)
 {
     switch (outcome) {
-    case StableOutcome::Active: return QString::fromUtf8("已启动");
-    case StableOutcome::PendingMissingDependency: return QString::fromUtf8("等待依赖");
-    case StableOutcome::Disabled: return QString::fromUtf8("已停用");
-    case StableOutcome::Failed: return QString::fromUtf8("失败");
-    case StableOutcome::Disposed: return QString::fromUtf8("已终结");
-    case StableOutcome::Superseded: return QString::fromUtf8("已被新操作替代");
+    case StableOutcome::Active: return eve::desktopText("management.started");
+    case StableOutcome::PendingMissingDependency: return eve::desktopText("configuration.waitingForDependencies");
+    case StableOutcome::Disabled: return eve::desktopText("management.disabled");
+    case StableOutcome::Failed: return eve::desktopText("configuration.failed");
+    case StableOutcome::Disposed: return eve::desktopText("management.disposed");
+    case StableOutcome::Superseded: return eve::desktopText("management.supersededByANewerOperation");
     }
-    return QString::fromUtf8("未知");
+    return eve::desktopText("management.unknown");
 }
 /** @brief 操作记录使用纯文本；未派发前不把无效零值编号显示成内核操作。 */
 QString operationText(const ManagementOperation& operation)
 {
     QString text = QString("#%1 ").arg(operation.request) +
-                   (operation.action == ManagementAction::Stop         ? QString::fromUtf8("停止")
-                    : operation.action == ManagementAction::Load       ? QString::fromUtf8("加载")
-                    : operation.action == ManagementAction::SetEnabled ? QString::fromUtf8("配置启停")
-                    : operation.action == ManagementAction::Reconcile  ? QString::fromUtf8("重新协调")
-                                                                       : QString::fromUtf8("重试"));
+                   (operation.action == ManagementAction::Stop         ? eve::desktopText("management.stop")
+                    : operation.action == ManagementAction::Load       ? eve::desktopText("management.load")
+                    : operation.action == ManagementAction::SetEnabled ? eve::desktopText("management.changeEnabledState")
+                    : operation.action == ManagementAction::Reconcile  ? eve::desktopText("management.reconcile")
+                                                                       : eve::desktopText("extensions.retry"));
     if (!operation.configurationPath.empty()) {
         text += QString::fromStdString(operation.configurationPath) +
-                QString::fromUtf8(" 基准修订=%1 ").arg(operation.expectedDesiredRevision);
+                eve::desktopText("management.baseRevision").arg(operation.expectedDesiredRevision);
         if (operation.pending)
-            text += QString::fromUtf8("等待完成");
+            text += eve::desktopText("management.pendingCompletion");
         else if (operation.error)
             text += errorText(*operation.error);
         else if (operation.configurationResult) {
-            text += QString::fromUtf8("目标修订=%1 ").arg(operation.configurationResult->revision);
+            text += eve::desktopText("management.targetRevision").arg(operation.configurationResult->revision);
             switch (operation.configurationResult->outcome) {
             case ConfigurationOutcome::Applied:
-                text += QString::fromUtf8("已应用");
+                text += eve::desktopText("configuration.applied");
                 break;
             case ConfigurationOutcome::Pending:
-                text += QString::fromUtf8("等待依赖/父项");
+                text += eve::desktopText("configuration.waitingForDependenciesOrParent");
                 break;
             case ConfigurationOutcome::Failed:
-                text += QString::fromUtf8("失败");
+                text += eve::desktopText("configuration.failed");
                 break;
             case ConfigurationOutcome::Superseded:
-                text += QString::fromUtf8("已被新目标替代");
+                text += eve::desktopText("management.supersededByANewerTarget");
                 break;
             case ConfigurationOutcome::Cancelled:
-                text += QString::fromUtf8("已取消");
+                text += eve::desktopText("configuration.canceled");
                 break;
             }
         }
         return text + "\n";
     }
-    text += QString::fromUtf8(" 实例=%1 ").arg(operation.instance.value());
-    text += operation.pending ? QString::fromUtf8("等待完成") : operation.stable ? outcomeName(operation.stable->outcome) : operation.error ? QString::fromUtf8("失败") : QString::fromUtf8("已完成");
-    if (operation.deliveryBlocked) text += QString::fromUtf8("（投递受阻）");
-    text += operation.operation.valid() ? QString::fromUtf8(" 操作号=%1\n").arg(operation.operation.value()) : QString::fromUtf8(" 尚未进入内核\n");
+    text += eve::desktopText("management.instance").arg(operation.instance.value());
+    text += operation.pending ? eve::desktopText("management.pendingCompletion") : operation.stable ? outcomeName(operation.stable->outcome) : operation.error ? eve::desktopText("configuration.failed") : eve::desktopText("management.completed");
+    if (operation.deliveryBlocked) text += eve::desktopText("management.deliveryBlocked");
+    text += operation.operation.valid() ? eve::desktopText("management.operationID").arg(operation.operation.value()) : eve::desktopText("management.awaitingKernelDispatch");
     if (operation.error) text += errorText(*operation.error) + "\n";
     return text;
 }
@@ -255,9 +256,9 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
         bindWorkbenchContentPalette(configTable);
         configurationModel = new QStandardItemModel(0, 5, configTable);
         configTable->setModel(configurationModel);
-        configurationModel->setHorizontalHeaderLabels({QString::fromUtf8("配置路径"), QString::fromUtf8("插件"),
-                                                       QString::fromUtf8("期望"), QString::fromUtf8("实际状态"),
-                                                       QString::fromUtf8("实例")});
+        configurationModel->setHorizontalHeaderLabels({eve::desktopText("management.configurationPath"), eve::desktopText("management.plugin"),
+                                                       eve::desktopText("configuration.desired"), eve::desktopText("management.runtimeState"),
+                                                       eve::desktopText("configuration.instance")});
         configTable->setSelectionBehavior(QAbstractItemView::SelectRows);
         configTable->setSelectionMode(QAbstractItemView::SingleSelection);
         configTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -272,13 +273,13 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
         configTable->setColumnWidth(3, 130);
         layout->addWidget(configTable, 1);
         auto actions = new QHBoxLayout;
-        auto enable = new ActionButton(QString::fromUtf8("启用条目"), panel);
+        auto enable = new ActionButton(eve::desktopText("management.enableEntry"), panel);
         configurationEnable = enable;
         enable->setObjectName("EveManagementConfigurationEnable");
-        auto disable = new ActionButton(QString::fromUtf8("停用条目"), panel);
+        auto disable = new ActionButton(eve::desktopText("management.disableEntry"), panel);
         configurationDisable = disable;
         disable->setObjectName("EveManagementConfigurationDisable");
-        auto retry = new ActionButton(QString::fromUtf8("重新协调目标"), panel);
+        auto retry = new ActionButton(eve::desktopText("management.reconcileTarget"), panel);
         configurationReconcile = retry;
         retry->setObjectName("EveManagementConfigurationReconcile");
         for (auto button : {enable, disable, retry}) {
@@ -291,14 +292,14 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
         configurationEditor = editor;
         editor->setObjectName("EvePluginConfigurationEditor");
         bindWorkbenchContentPalette(editor);
-        editor->setPlaceholderText(QString::fromUtf8("当前插件的 YAML / JSON 配置；应用后仍需显式保存。"));
+        editor->setPlaceholderText(eve::desktopText("management.editThePluginSYAMLOrJSON"));
         editor->setMinimumHeight(120);
         editor->setLineWrapMode(QPlainTextEdit::NoWrap);
         layout->addWidget(editor, 1);
         auto editActions = new QHBoxLayout;
-        configurationApply = new ActionButton(QString::fromUtf8("应用配置"), panel);
-        configurationSave = new ActionButton(QString::fromUtf8("保存目标到磁盘"), panel);
-        configurationReload = new ActionButton(QString::fromUtf8("重新载入当前配置"), panel);
+        configurationApply = new ActionButton(eve::desktopText("management.applyConfiguration"), panel);
+        configurationSave = new ActionButton(eve::desktopText("management.saveTargetToDisk"), panel);
+        configurationReload = new ActionButton(eve::desktopText("management.reloadCurrentConfiguration"), panel);
         configurationApply->setObjectName("EvePluginConfigurationApply");
         configurationSave->setObjectName("EvePluginConfigurationSave");
         configurationReload->setObjectName("EvePluginConfigurationReload");
@@ -356,7 +357,7 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
         QObject::connect(enable, &QPushButton::clicked, panel, [request] { request(true); });
         QObject::connect(disable, &QPushButton::clicked, panel, [request] { request(false); });
         QObject::connect(retry, &QPushButton::clicked, panel, [request] { request({}); });
-        tabs->addTab(panel, QString::fromUtf8("配置条目"));
+        tabs->addTab(panel, eve::desktopText("management.configurationEntries"));
         if (open)
             tabs->setCurrentWidget(panel);
     }
@@ -382,10 +383,10 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
     {
         if (!editorDirty && !formPending)
             return Result<void>::success();
-        const auto message = formPending ? QStringLiteral("当前配置正在提交，请稍后切换管理对象。")
+        const auto message = formPending ? eve::desktopText("management.waitForTheConfigurationToFinishApplying")
                              : configurationSelected.empty()
-                                 ? QStringLiteral("原对象已移除。请复制需要保留的内容或放弃草稿，再切换对象。")
-                                 : QStringLiteral("当前对象有草稿。请继续编辑，应用或重新载入后再切换。");
+                                 ? eve::desktopText("management.theOriginalEntryWasRemovedCopyAny")
+                                 : eve::desktopText("management.applyTheDraftOrReloadTheCurrent");
         status->setText(message);
         if (open && configurationEditor && configurationEditor->isVisible())
             configurationEditor->setFocus();
@@ -419,12 +420,12 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
         configurationEditor->setReadOnly(!usable);
         configurationApply->setEnabled(usable && editorDirty && editorPath == configurationSelected);
         configurationSave->setEnabled(usable && source->dirty && !source->writing && !editorDirty);
-        configurationReload->setText(!entry && editorDirty ? QStringLiteral("放弃已移除对象的草稿")
-                                                           : QStringLiteral("重新载入当前配置"));
+        configurationReload->setText(!entry && editorDirty ? eve::desktopText("management.discardDraftForRemovedEntry")
+                                                           : eve::desktopText("management.reloadCurrentConfiguration"));
         configurationReload->setEnabled((entry || editorDirty) && !formPending);
         configurationApply->setToolTip(
-            QString::fromUtf8("校验并应用此条目的配置；其他条目和子树保持。修订变化时请重新载入。"));
-        configurationSave->setToolTip(QString::fromUtf8("保存整个当前配置目标；尚未应用的编辑不会写入磁盘。"));
+            eve::desktopText("management.validateAndApplyConfigurationForThisEntry"));
+        configurationSave->setToolTip(eve::desktopText("management.saveTheCurrentConfigurationTargetToDisk"));
     }
     /** @brief 回执只在 owner 写入 UI，投递失败通过原子标志留在下一次刷新诊断。 */
     template <class T, class Handler> void observeForm(const Task<T>& task, Handler handler)
@@ -463,13 +464,13 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
         const auto id = addId->text().toStdString();
         QString idError, payloadError;
         if (id.empty())
-            idError = QStringLiteral("请输入实例标识。");
+            idError = eve::desktopText("management.enterAnInstanceID");
         else if (lastConfiguration && std::any_of(lastConfiguration->entries.begin(), lastConfiguration->entries.end(),
                                                   [&](const auto& row) { return row.path == id; }))
-            idError = QStringLiteral("此实例标识已存在。");
+            idError = eve::desktopText("management.thisInstanceIDIsAlreadyInUse");
         static const QRegularExpression token(QStringLiteral("^[a-zA-Z0-9_.-]{1,256}$"));
         if (idError.isEmpty() && (id == "." || id == ".." || !token.match(addId->text()).hasMatch()))
-            idError = QStringLiteral("标识可使用字母、数字、短横线、下划线和点，最长 256 字节。");
+            idError = eve::desktopText("management.useUpTo256BytesAnID");
         if (auto validator = std::dynamic_pointer_cast<ConfigurationPayloadValidator>(configuration.lock())) {
             auto result = validator->validatePayload(addConfiguration->toPlainText().toStdString());
             if (!result.hasValue())
@@ -538,14 +539,14 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
             const bool accepted = result.hasValue();
             auto label = adding ? self.addStatus : QPointer<ElaText>(qobject_cast<ElaText*>(self.status.data()));
             QString message = !accepted ? errorText(result.error())
-                                        : QString::fromUtf8("配置目标已接受，运行状态见插件卡片；尚未保存。");
+                                        : eve::desktopText("management.targetAcceptedCheckThePluginCardFor");
             if (accepted) {
                 if (result.value().outcome == ConfigurationOutcome::Failed)
-                    message = QString::fromUtf8("目标已接受，但运行失败；请从卡片查看原因或重试。");
+                    message = eve::desktopText("management.targetAcceptedAnInstanceFailedToRun");
                 else if (result.value().outcome == ConfigurationOutcome::Superseded)
-                    message = QString::fromUtf8("本次协调已被更新的配置目标替代，请查看当前卡片状态。");
+                    message = eve::desktopText("management.aNewerConfigurationTargetSupersededThisOperation");
                 else if (result.value().outcome == ConfigurationOutcome::Cancelled)
-                    message = QString::fromUtf8("当前协调已取消，请查看最新配置目标和运行状态。");
+                    message = eve::desktopText("management.reconciliationCanceledCheckTheCurrentConfigurationTarget");
                 if (result.value().error)
                     message += "\n" + errorText(*result.value().error);
             }
@@ -599,7 +600,7 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
         formPending = true;
         renderEditor();
         observeForm(saving.value(), [](ManagementControl& self, const Result<void>& result) {
-            self.status->setText(result.hasValue() ? QString::fromUtf8("当前配置目标已保存。")
+            self.status->setText(result.hasValue() ? eve::desktopText("management.theCurrentConfigurationTargetHasBeenSaved")
                                                    : errorText(result.error()));
         });
     }
@@ -699,7 +700,7 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
             auto operation = instance.value().operation();
             if (!dependencies.hasValue()) return Result<DiagnosticsSnapshot>::failure(dependencies.error());
             if (!operation.hasValue()) return Result<DiagnosticsSnapshot>::failure(operation.error());
-            std::string name = "未命名插件";
+            std::string name = eve::desktopText("management.unnamedPlugin").toStdString();
             for (const auto& runtime : core.names)
                 if (runtime.id == snapshot.runtime) {
                     name = runtime.name;
@@ -797,17 +798,17 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
         configurationDisable->setEnabled(false);
         configurationReconcile->setEnabled(false);
         for (auto button : {configurationEnable, configurationDisable, configurationReconcile})
-            button->setToolTip(QString::fromUtf8("请选择可管理的配置条目；状态不可用或会话关闭时不能操作。"));
+            button->setToolTip(eve::desktopText("management.selectAManageableConfigurationEntryInA"));
         if (!data.configuration)
             return;
         const auto& source = *data.configuration;
         auto text =
-            QString::fromUtf8("配置目标修订 %1 · 已保存 %2 · %3")
+            eve::desktopText("management.targetRevisionSaved")
                 .arg(source.revision)
-                .arg(source.persistedRevision ? QString::number(*source.persistedRevision) : QString::fromUtf8("无"))
-                .arg(source.dirty ? QString::fromUtf8("未保存") : QString::fromUtf8("已同步"));
+                .arg(source.persistedRevision ? QString::number(*source.persistedRevision) : eve::desktopText("management.none"))
+                .arg(source.dirty ? eve::desktopText("configuration.unsaved") : eve::desktopText("management.inSync"));
         if (source.writing)
-            text += QString::fromUtf8(" · 保存中");
+            text += eve::desktopText("management.saving");
         if (data.configurationError)
             text += "\n" + errorText(*data.configurationError);
         else if (source.error)
@@ -822,14 +823,14 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
             const auto& row = source.entries[i];
             if (row.path == configurationSelected)
                 selected = static_cast<int>(i);
-            QString actual = data.configurationError || (!row.hasActual && row.error) ? QString::fromUtf8("状态不可用")
-                             : row.waitingForParent                                   ? QString::fromUtf8("等待父项")
+            QString actual = data.configurationError || (!row.hasActual && row.error) ? eve::desktopText("configuration.stateUnavailable")
+                             : row.waitingForParent                                   ? eve::desktopText("configuration.waitingForParent")
                              : row.hasActual                                          ? stateName(row.state)
-                                                                                      : QString::fromUtf8("未运行");
+                                                                                      : eve::desktopText("configuration.stopped");
             QStringList columns{QString::fromStdString(row.path), QString::fromStdString(row.plugin),
-                                !row.enabled            ? QString::fromUtf8("停用")
-                                : !row.effectiveEnabled ? QString::fromUtf8("父项停用")
-                                                        : QString::fromUtf8("启用"),
+                                !row.enabled            ? eve::desktopText("configuration.disable")
+                                : !row.effectiveEnabled ? eve::desktopText("management.parentDisabled")
+                                                        : eve::desktopText("configuration.enable"),
                                 actual, row.instance.valid() ? QString::number(row.instance.value()) : QString("—")};
             for (int j = 0; j < columns.size(); ++j) {
                 auto item = configurationModel->item(static_cast<int>(i), j);
@@ -876,19 +877,19 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
             configurationDisable->setEnabled(row.canSetEnabled && row.enabled);
             configurationReconcile->setEnabled(row.canReconcile);
             const auto unavailable =
-                row.busy ? QString::fromUtf8("配置操作正在进行，请等待当前目标稳定。")
-                         : QString::fromUtf8("当前条目不允许修改，请检查会话、运行和清理状态。初始化后可再次刷新。");
-            configurationEnable->setToolTip(row.enabled ? QString::fromUtf8("此条目已经启用。")
+                row.busy ? eve::desktopText("management.waitForTheCurrentConfigurationOperationTo")
+                         : eve::desktopText("management.thisEntryIsUnavailableForEditingCheck");
+            configurationEnable->setToolTip(row.enabled ? eve::desktopText("management.thisEntryIsAlreadyEnabled")
                                             : row.canSetEnabled
-                                                ? QString::fromUtf8("启用所选条目，保存到磁盘需另行操作。")
+                                                ? eve::desktopText("management.enableTheSelectedEntryUseSaveTo")
                                                 : unavailable);
-            configurationDisable->setToolTip(!row.enabled ? QString::fromUtf8("此条目已经停用。")
+            configurationDisable->setToolTip(!row.enabled ? eve::desktopText("management.thisEntryIsAlreadyDisabled")
                                              : row.canSetEnabled
-                                                 ? QString::fromUtf8("停用所选条目，保存到磁盘需另行操作。")
+                                                 ? eve::desktopText("management.disableTheSelectedEntryUseSaveTo")
                                                  : unavailable);
             configurationReconcile->setToolTip(
-                row.canReconcile ? QString::fromUtf8("重新协调当前完整配置目标，重试失败条目。")
-                                 : QString::fromUtf8("仅对当前可重试的失败条目开放，不绕过配置目标操作实例。"));
+                row.canReconcile ? eve::desktopText("management.reconcileTheCurrentConfigurationTargetAndRetry")
+                                 : eve::desktopText("management.chooseAnEntryThatFailedAndCan"));
         } else {
             configurationSelected.clear();
             configurationTable->clearSelection();
@@ -933,8 +934,8 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
         logButton->setEnabled(openLog && (log.first.valid() || !log.second.empty()));
         stopButton->setEnabled(false);
         retryButton->setEnabled(false);
-        stopButton->setToolTip(QString::fromUtf8("请选择可停止的实例；操作中或清理受阻时不能重复提交。"));
-        retryButton->setToolTip(QString::fromUtf8("请选择已失败且可重试的实例；配置条目请通过配置目标管理。"));
+        stopButton->setToolTip(eve::desktopText("management.selectAnInstanceThatCanBeStopped"));
+        retryButton->setToolTip(eve::desktopText("management.selectAFailedInstanceThatCanBe"));
         if (!local) return;
         const auto id = selected();
         const auto& rows = local->instances;
@@ -945,17 +946,16 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
                 for (const auto& row : lastConfiguration->entries)
                     if (row.path == configurationSelected) {
                         text = QString::fromStdString(row.plugin) +
-                               QString::fromUtf8("\n配置路径：%1\n实际状态：%2\n实例：%3  "
-                                                 "代次：%4\n由配置目标管理，使用配置页操作启停和重试。")
+                               eve::desktopText("management.configurationPathRuntimeStateInstanceGenerationUse")
                                    .arg(QString::fromStdString(row.path))
-                                   .arg(row.hasActual ? stateName(row.state) : QString::fromUtf8("尚无实例"))
+                                   .arg(row.hasActual ? stateName(row.state) : eve::desktopText("management.noInstance"))
                                    .arg(row.instance.value())
                                    .arg(row.epoch);
                         if (row.error)
                             text += "\n" + errorText(*row.error);
                     }
             if (text.isEmpty())
-                text = QStringLiteral("此实例已离开当前运行目录，请从概览打开最新卡片。");
+                text = eve::desktopText("management.thisInstanceIsNoLongerInThe");
             if (details->toPlainText() != text)
                 details->setPlainText(text);
             return;
@@ -963,26 +963,26 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
         stopButton->setEnabled(found->canStop);
         retryButton->setEnabled(found->canRetry);
         if (found->canStop)
-            stopButton->setToolTip(QString::fromUtf8("停止所选实例 %1，并等待其资源完整清理。").arg(id.value()));
+            stopButton->setToolTip(eve::desktopText("management.stopInstanceAndWaitForItsResources").arg(id.value()));
         if (found->canRetry)
-            retryButton->setToolTip(QString::fromUtf8("重试所选失败实例 %1。").arg(id.value()));
+            retryButton->setToolTip(eve::desktopText("management.retryFailedInstance").arg(id.value()));
         const auto& snapshot = found->instance;
-        QString text = QString::fromStdString(found->name) + QString::fromUtf8("\n状态：%1  实例：%2  操作：%3\n配置修订：%4  代次：%5\n")
+        QString text = QString::fromStdString(found->name) + eve::desktopText("management.stateInstanceOperationConfigRevisionGeneration")
             .arg(stateName(snapshot.state)).arg(id.value()).arg(found->operation.value()).arg(snapshot.revision).arg(snapshot.epoch);
-        if (snapshot.deliveryBlocked || snapshot.resources.deliveryBlocked) text += QString::fromUtf8("调度投递受阻，资源尚未静止。\n");
-        if (snapshot.failure) text += QString::fromUtf8("错误：") + errorText(*snapshot.failure) + "\n";
-        text += QString::fromUtf8("\n依赖\n");
-        if (found->dependencies.empty()) text += QString::fromUtf8("无声明强依赖\n");
+        if (snapshot.deliveryBlocked || snapshot.resources.deliveryBlocked) text += eve::desktopText("management.schedulerDeliveryIsBlockedResourcesAreStill");
+        if (snapshot.failure) text += eve::desktopText("management.error") + errorText(*snapshot.failure) + "\n";
+        text += eve::desktopText("management.dependencies");
+        if (found->dependencies.empty()) text += eve::desktopText("management.noRequiredDependenciesDeclared");
         for (const auto& dependency : found->dependencies) {
             text += keyText(dependency.key) + QString(" minor >= %1").arg(dependency.minimumMinor);
             for (const auto& capability : dependency.capabilities) text += " [" + QString::fromStdString(capability) + "]";
-            text += dependency.error ? " : " + errorText(*dependency.error) + "\n" : QString::fromUtf8(" : 可用\n");
+            text += dependency.error ? " : " + errorText(*dependency.error) + "\n" : eve::desktopText("management.available");
         }
-        text += QString::fromUtf8("\n资源：%1  已提交租约：%2  子实例：%3\n").arg(snapshot.resources.effects.size()).arg(snapshot.committedLeases).arg(snapshot.children);
+        text += eve::desktopText("management.resourcesCommittedLeasesChildInstances").arg(snapshot.resources.effects.size()).arg(snapshot.committedLeases).arg(snapshot.children);
         auto appendResources = [&](const ScopeSnapshot& resources) {
             for (const auto& effect : resources.effects) {
                 text += QString::fromStdString(effect.label) +
-                        QString::fromUtf8("  初始化等待=%1 清理等待=%2 保留清理=%3\n")
+                        eve::desktopText("management.waitingForSetupWaitingForCleanupCleanup")
                             .arg(effect.setupPending)
                             .arg(effect.cleanupPending)
                             .arg(effect.retainedCleanups);
@@ -994,12 +994,12 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
         };
         appendResources(snapshot.resources);
         if (snapshot.finalizers) {
-            text += QString::fromUtf8("\n末尾清理资源：%1  %2\n")
+            text += eve::desktopText("management.finalCleanupResources")
                         .arg(snapshot.finalizers->effects.size())
-                        .arg(snapshot.finalizing ? QString::fromUtf8("执行中") : QString::fromUtf8("等待本代资源静止"));
+                        .arg(snapshot.finalizing ? eve::desktopText("configuration.inProgress") : eve::desktopText("management.waitingForThisGenerationSResourcesTo"));
             appendResources(*snapshot.finalizers);
         }
-        text += QString::fromUtf8("\n管理操作\n");
+        text += eve::desktopText("management.managementOperations");
         for (const auto& operation : local->operations) if (operation.instance == id) text += operationText(operation);
         if (details->toPlainText() != text)
             details->setPlainText(text);
@@ -1023,7 +1023,7 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
             details->clear();
             services->clear();
             operationsView->clear();
-            summary->setText(QString::fromUtf8("管理页未连接可用内核"));
+            summary->setText(eve::desktopText("management.managementHasNoAvailableKernelConnection"));
             status->setText(errorText(data.error()));
             if (configurationTab) {
                 configurationEnable->setEnabled(false);
@@ -1071,23 +1071,23 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
         retryButton->setVisible(manualActions);
         if (!open)
             return Result<void>::failure(makeError(ErrorCode::ContextClosing, "management closed during layout"));
-        summary->setText((configurationAttached ? QString::fromUtf8("手动实例 %1  服务绑定 %2  页面 %3  命令 %4%5")
-                                                : QString::fromUtf8("顶层实例 %1  服务绑定 %2  页面 %3  命令 %4%5"))
+        summary->setText((configurationAttached ? eve::desktopText("management.manualInstancesServiceBindingsPagesCommands")
+                                                : eve::desktopText("management.topLevelInstancesServiceBindingsPagesCommands"))
                              .arg(view.instances.size())
                              .arg(view.bindings.size())
                              .arg(view.pages.size())
                              .arg(view.commands.size())
-                             .arg(view.kernel.deliveryBlocked ? QString::fromUtf8("  内核投递受阻")
-                                  : view.kernel.closing       ? QString::fromUtf8("  内核正在关闭")
+                             .arg(view.kernel.deliveryBlocked ? eve::desktopText("management.kernelDeliveryBlocked")
+                                  : view.kernel.closing       ? eve::desktopText("management.kernelClosing")
                                                               : QString{}));
         QString serviceText;
-        for (const auto& binding : view.bindings) serviceText += keyText(binding.key) + QString::fromUtf8("  状态=%1 调用=%2 租约=%3 投递受阻=%4\n")
+        for (const auto& binding : view.bindings) serviceText += keyText(binding.key) + eve::desktopText("management.stateCallsLeasesDeliveryBlocked")
             .arg(bindingName(binding.state)).arg(binding.activeCalls).arg(binding.committedLeases).arg(binding.deliveryBlocked);
-        serviceText += QString::fromUtf8("\n页面贡献\n");
-        for (const auto& page : view.pages) serviceText += QString::fromStdString(page.id) + QString::fromUtf8("  实例=%1 代次=%2 撤销=%3 对象存活=%4\n")
+        serviceText += eve::desktopText("management.pageContributions");
+        for (const auto& page : view.pages) serviceText += QString::fromStdString(page.id) + eve::desktopText("management.instanceGenerationRevokedObjectAlive")
             .arg(page.owner.instance.value()).arg(page.owner.epoch).arg(page.retiring).arg(page.widgetAlive);
-        serviceText += QString::fromUtf8("\n命令贡献\n");
-        for (const auto& command : view.commands) serviceText += QString::fromStdString(command.id) + QString::fromUtf8("  实例=%1 代次=%2 调用保留=%3 撤销=%4 投递受阻=%5\n")
+        serviceText += eve::desktopText("management.commandContributions");
+        for (const auto& command : view.commands) serviceText += QString::fromStdString(command.id) + eve::desktopText("management.instanceGenerationCallsRetainedRevokedDeliveryBlocked")
             .arg(command.owner.instance.value()).arg(command.owner.epoch).arg(command.activeCalls).arg(command.retiring).arg(command.deliveryBlocked);
         if (services->toPlainText() != serviceText)
             services->setPlainText(serviceText);
@@ -1106,25 +1106,25 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
         if (open && configurationTable)
             configurationTable->setVisible(focusedCard.isEmpty());
         if (open && heading) {
-            QString title = QString::fromUtf8("插件管理");
+            QString title = eve::desktopText("management.pluginManagement");
             QString description;
             if (!focusedCard.isEmpty()) {
-                title = QString::fromUtf8("插件对象已失效");
-                description = QString::fromUtf8("此身份已离开当前目录，请从 Home 打开最新卡片。");
+                title = eve::desktopText("management.pluginInstanceUnavailable");
+                description = eve::desktopText("management.thisIdentityIsNoLongerInThe");
                 if (focusedCard.startsWith("configuration:") && view.configuration) {
                     for (const auto& entry : view.configuration->entries)
                         if (QString::fromStdString(entry.path) == focusedCard.mid(14)) {
                             title = QString::fromStdString(entry.plugin);
                             description =
-                                QString::fromUtf8("配置实例 · %1 · %2")
+                                eve::desktopText("management.configuredInstance")
                                     .arg(QString::fromStdString(entry.path),
-                                         entry.hasActual ? stateName(entry.state) : QString::fromUtf8("尚无运行实例"));
+                                         entry.hasActual ? stateName(entry.state) : eve::desktopText("management.noRunningInstance"));
                         }
                 } else
                     for (const auto& entry : view.instances)
                         if (entry.instance.instance == focusedInstance) {
                             title = QString::fromStdString(entry.name);
-                            description = QString::fromUtf8("手动实例 #%1 · %2")
+                            description = eve::desktopText("management.manualInstance")
                                               .arg(focusedInstance.value())
                                               .arg(stateName(entry.instance.state));
                         }
@@ -1134,15 +1134,15 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
                 summary->setText(description);
         }
         if (open && formDeliveryBlocked.load())
-            status->setText(QString::fromUtf8("配置回执投递受阻，请完成退出或恢复调度器后重试。"));
+            status->setText(eve::desktopText("management.configurationResultDeliveryIsBlockedCloseThe"));
         return Result<void>::success();
     }
     /** @brief 原生信号边界隔离刷新异常；错误不得穿越 Qt 事件循环。 */
     void refreshFromSignal()
     {
         try { (void)refresh(); }
-        catch (const std::exception&) { if (open && status) status->setText(QString::fromUtf8("无法刷新管理快照")); }
-        catch (...) { if (open && status) status->setText(QString::fromUtf8("管理快照刷新异常")); }
+        catch (const std::exception&) { if (open && status) status->setText(eve::desktopText("management.couldNotRefreshManagementInformation")); }
+        catch (...) { if (open && status) status->setText(eve::desktopText("management.anErrorOccurredWhileRefreshingManagementInformation")); }
     }
     /** @brief 推进失败只写原子诊断，不从 worker 改 busy、历史或 Qt 控件。 */
     void watch(const Task<void>& receipt, const std::shared_ptr<ManagementRecord>& record)
@@ -1178,7 +1178,7 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
                 busy.erase(found);
         }
         if (open && status) {
-            status->setText(record->data.error ? errorText(*record->data.error) : QString::fromUtf8("管理操作已完成"));
+            status->setText(record->data.error ? errorText(*record->data.error) : eve::desktopText("management.managementOperationCompleted"));
             refreshFromSignal();
         }
     }
@@ -1487,24 +1487,24 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
     state->scheduler = std::move(scheduler); state->pages = std::move(pages); state->commands = std::move(commands); state->notifications = std::move(notifications);
     auto root = createWorkbenchDialog(parent);
     root->setIsStayTop(false);
-    root->setWindowTitle(QString::fromUtf8("插件管理"));
+    root->setWindowTitle(eve::desktopText("management.pluginManagement"));
     root->resize(1000, 740);
     root->setObjectName("EveManagement");
     state->widget = root;
     auto layout = new QVBoxLayout(root);
     layout->setContentsMargins(24, 48, 24, 16);
     layout->setSpacing(12);
-    auto title = new ElaText(QString::fromUtf8("插件管理"), root);
+    auto title = new ElaText(eve::desktopText("management.pluginManagement"), root);
     title->setTextPixelSize(22);
     title->setIsBold(true);
     layout->addWidget(title);
     state->heading = title;
-    auto summary = new ElaText(QString::fromUtf8("管理页未连接内核"), root); summary->setTextPixelSize(14); summary->setObjectName("EveManagementSummary"); summary->setTextFormat(Qt::PlainText); layout->addWidget(summary); state->summary = summary;
+    auto summary = new ElaText(eve::desktopText("management.managementIsDisconnectedFromTheKernel"), root); summary->setTextPixelSize(14); summary->setObjectName("EveManagementSummary"); summary->setTextFormat(Qt::PlainText); layout->addWidget(summary); state->summary = summary;
     auto table = new ElaTableView(root);
     state->model = new QStandardItemModel(0, 5, table);
     table->setModel(state->model); table->setObjectName("EveInstanceTable");
     bindWorkbenchContentPalette(table);
-    state->model->setHorizontalHeaderLabels({QString::fromUtf8("实例"), QString::fromUtf8("插件"), QString::fromUtf8("状态"), QString::fromUtf8("配置修订"), QString::fromUtf8("代次")});
+    state->model->setHorizontalHeaderLabels({eve::desktopText("configuration.instance"), eve::desktopText("management.plugin"), eve::desktopText("extensions.status"), eve::desktopText("management.configRevision"), eve::desktopText("management.generation")});
     table->setSelectionBehavior(QAbstractItemView::SelectRows); table->setSelectionMode(QAbstractItemView::SingleSelection);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table->verticalHeader()->hide();
@@ -1517,26 +1517,26 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
     table->setColumnWidth(2, 110); table->setColumnWidth(3, 110);
     table->horizontalHeader()->setStretchLastSection(true); layout->addWidget(table, 2); state->table = table;
     auto actions = new QHBoxLayout;
-    auto refresh = new ActionButton(QString::fromUtf8("刷新"), root);
+    auto refresh = new ActionButton(eve::desktopText("management.refresh"), root);
     refresh->setObjectName("EveManagementRefresh");
     actions->addWidget(refresh);
     state->refreshButton = refresh;
-    auto stop = new ActionButton(QString::fromUtf8("停止实例"), root);
+    auto stop = new ActionButton(eve::desktopText("management.stopInstance"), root);
     stop->setObjectName("EveManagementStop");
     stop->setEnabled(false);
     actions->addWidget(stop);
     state->stopButton = stop;
-    auto retry = new ActionButton(QString::fromUtf8("重试失败实例"), root);
+    auto retry = new ActionButton(eve::desktopText("management.retryFailedInstance2"), root);
     retry->setObjectName("EveManagementRetry");
     retry->setEnabled(false);
     actions->addWidget(retry);
     state->retryButton = retry;
-    auto logButton = new ActionButton(QStringLiteral("查看日志"), root);
+    auto logButton = new ActionButton(eve::desktopText("extensions.viewLogs"), root);
     logButton->setObjectName("EveManagementOpenLog");
     logButton->setEnabled(false);
     actions->addWidget(logButton);
     state->logButton = logButton;
-    auto centerButton = new ActionButton(QStringLiteral("通知中心"), root);
+    auto centerButton = new ActionButton(eve::desktopText("management.notificationCenter"), root);
     centerButton->setObjectName("EveManagementOpenNotifications");
     state->notificationButton = centerButton;
     actions->addWidget(centerButton);
@@ -1547,9 +1547,9 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
     state->tabs = tabs;
     tabs->setObjectName("EveManagementTabs");
     layout->addWidget(tabs, 3);
-    auto details = new ElaPlainTextEdit(tabs); details->setObjectName("EveManagementDetails"); details->setReadOnly(true); tabs->addTab(details, QString::fromUtf8("实例详情")); state->details = details;
-    auto services = new ElaPlainTextEdit(tabs); services->setObjectName("EveManagementServices"); services->setReadOnly(true); tabs->addTab(services, QString::fromUtf8("服务与界面")); state->services = services;
-    auto operations = new ElaPlainTextEdit(tabs); operations->setObjectName("EveManagementOperations"); operations->setReadOnly(true); tabs->addTab(operations, QString::fromUtf8("操作记录")); state->operationsView = operations;
+    auto details = new ElaPlainTextEdit(tabs); details->setObjectName("EveManagementDetails"); details->setReadOnly(true); tabs->addTab(details, eve::desktopText("management.instanceDetails")); state->details = details;
+    auto services = new ElaPlainTextEdit(tabs); services->setObjectName("EveManagementServices"); services->setReadOnly(true); tabs->addTab(services, eve::desktopText("management.servicesAndUI")); state->services = services;
+    auto operations = new ElaPlainTextEdit(tabs); operations->setObjectName("EveManagementOperations"); operations->setReadOnly(true); tabs->addTab(operations, eve::desktopText("management.operationHistory")); state->operationsView = operations;
     for (auto editor : {details, services, operations}) bindWorkbenchContentPalette(editor);
     auto status = new ElaText(root); status->setTextPixelSize(14); status->setObjectName("EveManagementStatus"); status->setTextFormat(Qt::PlainText); status->setWordWrap(true); layout->addWidget(status); state->status = status;
     auto timer = new QTimer(root); timer->setInterval(250); state->timer = timer;
@@ -1649,18 +1649,18 @@ Result<void> showManagementDialog(const std::shared_ptr<ManagementControl>& cont
     auto data = control->capture();
     if (!data.hasValue() && !id.isEmpty())
         return Result<void>::failure(data.error());
-    QString title = QString::fromUtf8("插件管理");
+    QString title = eve::desktopText("management.pluginManagement");
     InstanceId instance;
     std::string path;
     if (id.startsWith("configuration:")) {
         path = id.mid(14).toStdString();
         if (!data.value().configuration)
-            return Result<void>::failure(makeError(ErrorCode::StaleContext, "配置条目已不可用"));
+            return Result<void>::failure(makeError(ErrorCode::StaleContext, eve::desktopText("management.theConfigurationEntryIsNoLongerAvailable").toStdString()));
         const auto& entries = data.value().configuration->entries;
         const auto row =
             std::find_if(entries.begin(), entries.end(), [&](const auto& row) { return row.path == path; });
         if (row == entries.end())
-            return Result<void>::failure(makeError(ErrorCode::StaleContext, "配置条目已移除，请从最新卡片打开"));
+            return Result<void>::failure(makeError(ErrorCode::StaleContext, eve::desktopText("management.theConfigurationEntryWasRemovedOpenIt").toStdString()));
         instance = row->instance;
         title = QString::fromStdString(row->plugin) + " · " + QString::fromStdString(path);
     } else if (!id.isEmpty()) {
@@ -1670,8 +1670,8 @@ Result<void> showManagementDialog(const std::shared_ptr<ManagementControl>& cont
         const auto row = std::find_if(entries.begin(), entries.end(),
                                       [&](const auto& row) { return row.instance.instance == instance; });
         if (!valid || row == entries.end())
-            return Result<void>::failure(makeError(ErrorCode::StaleContext, "插件实例已变化，请从最新卡片打开"));
-        title = QString::fromStdString(row->name) + QString::fromUtf8(" · 实例 #%1").arg(instance.value());
+            return Result<void>::failure(makeError(ErrorCode::StaleContext, eve::desktopText("management.thePluginInstanceChangedOpenItFrom").toStdString()));
+        title = QString::fromStdString(row->name) + eve::desktopText("management.instance2").arg(instance.value());
     }
     control->focusedCard = id;
     control->focusedInstance = instance;
@@ -1715,39 +1715,39 @@ Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& contr
     if (!data.value().configuration || !data.value().configuration->open || !data.value().configuration->canEdit ||
         data.value().configuration->availablePlugins.empty())
         return Result<void>::failure(
-            makeError(ErrorCode::InvalidArgument, "当前入口未接入可编辑配置会话；请使用配置工作台添加已注册插件。"));
+            makeError(ErrorCode::InvalidArgument, eve::desktopText("management.useTheConfigurationWorkbenchToAddA").toStdString()));
     if (control->formPending)
-        return Result<void>::failure(makeError(ErrorCode::ConfigConflict, "配置操作仍在处理中"));
+        return Result<void>::failure(makeError(ErrorCode::ConfigConflict, eve::desktopText("management.aConfigurationOperationIsAlreadyInProgress").toStdString()));
     control->addRevision = data.value().configuration->revision;
     QStringList types;
     for (const auto& name : data.value().configuration->availablePlugins) types << QString::fromStdString(name);
     if (!plugin.isEmpty() && !types.contains(plugin))
-        return Result<void>::failure(makeError(ErrorCode::StaleContext, "所选扩展的实例类型当前不可用。"));
+        return Result<void>::failure(makeError(ErrorCode::StaleContext, eve::desktopText("management.theSelectedExtensionSInstanceTypeIs").toStdString()));
     if (!control->addDialog) {
         auto dialog = createWorkbenchDialog(control->widget->parentWidget());
         control->addDialog = dialog;
         dialog->setObjectName("EveAddPluginDialog");
-        dialog->setWindowTitle(QStringLiteral("添加插件实例"));
+        dialog->setWindowTitle(eve::desktopText("management.addPluginInstance"));
         dialog->setIsStayTop(false);
         dialog->resize(620, 550);
         auto layout = new QVBoxLayout(dialog);
         layout->setContentsMargins(24, 48, 24, 20);
         auto hint = new ElaText(
-            QString::fromUtf8("选择已注册插件并创建独立配置实例。添加后应用到运行目标；保存到磁盘需另行操作。"), 14,
+            eve::desktopText("management.chooseARegisteredPluginToCreateA"), 14,
             dialog);
         hint->setWordWrap(true);
         hint->setTextFormat(Qt::PlainText);
         layout->addWidget(hint);
-        layout->addWidget(new ElaText(QString::fromUtf8("插件类型"), 14, dialog));
+        layout->addWidget(new ElaText(eve::desktopText("management.pluginType"), 14, dialog));
         control->addType = new ElaComboBox(dialog);
         control->addType->setProperty("ElaTranslucentFill", true);
         control->addType->setObjectName("EveAddPluginType");
-        control->addType->setAccessibleName(QString::fromUtf8("已注册插件类型"));
+        control->addType->setAccessibleName(eve::desktopText("management.registeredPluginType"));
         layout->addWidget(control->addType);
-        layout->addWidget(new ElaText(QString::fromUtf8("实例标识（当前配置中唯一）"), 14, dialog));
+        layout->addWidget(new ElaText(eve::desktopText("management.instanceIDUniqueInThisConfiguration"), 14, dialog));
         control->addId = new ElaLineEdit(dialog);
         control->addId->setObjectName("EveAddPluginId");
-        control->addId->setAccessibleName(QString::fromUtf8("插件配置实例标识"));
+        control->addId->setAccessibleName(eve::desktopText("management.configuredPluginInstanceID"));
         layout->addWidget(control->addId);
         auto fieldError = [dialog, layout](const char* name) {
             auto label = new ElaText(dialog);
@@ -1759,11 +1759,11 @@ Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& contr
             return label;
         };
         control->addIdError = fieldError("EveAddPluginIdError");
-        layout->addWidget(new ElaText(QString::fromUtf8("插件配置 · YAML / JSON"), 14, dialog));
+        layout->addWidget(new ElaText(eve::desktopText("management.pluginConfigurationYAMLJSON"), 14, dialog));
         control->addConfiguration = new ElaPlainTextEdit(dialog);
         control->addConfiguration->setObjectName("EveAddPluginConfiguration");
         bindWorkbenchContentPalette(control->addConfiguration);
-        control->addConfiguration->setAccessibleName(QStringLiteral("插件配置 YAML 或 JSON"));
+        control->addConfiguration->setAccessibleName(eve::desktopText("management.pluginConfigurationInYAMLOrJSON"));
         control->addConfiguration->setPlainText("{}");
         layout->addWidget(control->addConfiguration, 1);
         control->addPayloadError = fieldError("EveAddPluginConfigurationError");
@@ -1772,10 +1772,10 @@ Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& contr
         control->addStatus->setTextFormat(Qt::PlainText);
         control->addStatus->setWordWrap(true);
         layout->addWidget(control->addStatus);
-        auto reload = new ActionButton(QString::fromUtf8("更新目标修订后重试"), dialog);
+        auto reload = new ActionButton(eve::desktopText("management.reloadTargetRevision"), dialog);
         reload->setObjectName("EveAddPluginReload");
         layout->addWidget(reload);
-        auto submit = new ActionButton(QString::fromUtf8("添加并应用"), dialog);
+        auto submit = new ActionButton(eve::desktopText("management.addAndApply"), dialog);
         primaryButton(submit);
         control->addSubmit = submit;
         control->addSubmit->setObjectName("EveAddPluginSubmit");
@@ -1803,7 +1803,7 @@ Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& contr
     control->addType->clear();
     control->addType->addItems(types);
     if (types.contains(preferred)) control->addType->setCurrentText(preferred);
-    control->addStatus->setText(QString::fromUtf8("基于配置目标修订 %1").arg(control->addRevision));
+    control->addStatus->setText(eve::desktopText("management.basedOnConfigurationTargetRevision").arg(control->addRevision));
     if (!control->open)
         return Result<void>::failure(makeError(ErrorCode::ContextClosing, "management closed during form creation"));
     control->addDialog->show();

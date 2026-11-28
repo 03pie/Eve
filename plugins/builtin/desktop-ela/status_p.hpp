@@ -2,6 +2,7 @@
  * @brief 由真实生命周期值生成 Ela 状态图标与文字，不从显示文案反推状态。
  */
 #pragma once
+#include "desktop_text.hpp"
 #include <ElaIcon.h>
 #include <ElaTheme.h>
 #include <QIcon>
@@ -20,20 +21,20 @@ inline StatusPresentation instanceStatus(InstanceState state, bool cleanupBlocke
 {
     switch (state) {
     case InstanceState::Active:
-        return {QString::fromUtf8("运行中"), ElaIconType::CircleCheck};
+        return {eve::desktopText("configuration.running"), ElaIconType::CircleCheck};
     case InstanceState::Pending:
-        return {QString::fromUtf8("等待依赖"), ElaIconType::Hourglass};
+        return {eve::desktopText("configuration.waitingForDependencies"), ElaIconType::Hourglass};
     case InstanceState::Loading:
-        return {QString::fromUtf8("启动中"), ElaIconType::ArrowsRotate};
+        return {eve::desktopText("configuration.starting"), ElaIconType::ArrowsRotate};
     case InstanceState::Unloading:
-        return cleanupBlocked ? StatusPresentation{QString::fromUtf8("清理受阻"), ElaIconType::TriangleExclamation}
-                              : StatusPresentation{QString::fromUtf8("清理中"), ElaIconType::ArrowsRotate};
+        return cleanupBlocked ? StatusPresentation{eve::desktopText("workbench.cleanupBlocked"), ElaIconType::TriangleExclamation}
+                              : StatusPresentation{eve::desktopText("configuration.cleaningUp"), ElaIconType::ArrowsRotate};
     case InstanceState::Failed:
-        return {QString::fromUtf8("失败"), ElaIconType::CircleXmark};
+        return {eve::desktopText("configuration.failed"), ElaIconType::CircleXmark};
     case InstanceState::Disposed:
-        return {QString::fromUtf8("已停止"), ElaIconType::CircleStop};
+        return {eve::desktopText("configuration.stopped"), ElaIconType::CircleStop};
     }
-    return {QString::fromUtf8("状态不可用"), ElaIconType::CircleQuestion};
+    return {eve::desktopText("workbench.statusUnavailable"), ElaIconType::CircleQuestion};
 }
 /** @brief 图标从 ElaAwesome 获取，使用当前主题正文色保证明暗可读。 */
 inline QIcon statusIcon(const StatusPresentation& value)

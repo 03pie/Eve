@@ -1,6 +1,7 @@
 /** @file workspace_extensions.cpp
  * @brief Maps user-installed artifacts to workspace instances without rewriting saved installation paths.
  */
+#include "desktop_text.hpp"
 #include "workspace_extensions.hpp"
 #include "startup_result.hpp"
 #include <eve/extensions/qt_module.hpp>
@@ -45,7 +46,7 @@ std::string moduleAlias(const loader::ParsedConfiguration& target, const Package
             return entry.second.module;
     return package.moduleId.toStdString();
 }
-ErrorInfo unavailable(const char* message) { return makeError(ErrorCode::ConfigConflict, message); }
+ErrorInfo unavailable(const QString& message) { return makeError(ErrorCode::ConfigConflict, message.toStdString()); }
 }
 
 Result<Runtime> registerWorkspaceExtensions(Kernel& kernel, WorkspaceInputs inputs,
@@ -73,7 +74,7 @@ WorkspaceExtensions::WorkspaceExtensions(Context owner, WorkspaceInputs inputs, 
         using Output = Result<std::vector<ExtensionItem>>;
         auto active = owner.identity();
         if (!active.hasValue()) return Output::failure(active.error());
-        if (inputs_.closing()) return Output::failure(unavailable("Workspace closed."));
+        if (inputs_.closing()) return Output::failure(unavailable(desktopText("extensions.workspaceClosed")));
         try { return Output::success(shared_from_this()->inventory()); }
         catch (const StartupError& error) { return Output::failure(error.detail); }
     };
@@ -82,7 +83,7 @@ WorkspaceExtensions::WorkspaceExtensions(Context owner, WorkspaceInputs inputs, 
         auto active = owner.identity();
         if (!active.hasValue()) { reply.reject(active.error()); return reply.task(); }
         if (inputs_.closing()) {
-            reply.reject(unavailable("Workspace closed."));
+            reply.reject(unavailable(desktopText("extensions.workspaceClosed")));
             return reply.task();
         }
         const auto preview = extensions::Catalog::preview(path);
@@ -102,7 +103,8 @@ WorkspaceExtensions::WorkspaceExtensions(Context owner, WorkspaceInputs inputs, 
             }
             reply.resolve(std::move(review));
         } else {
-            writeLog("扩展安装包未通过预检。", ui::OutputLevel::Error, {{}, "EXTENSION_PREVIEW_FAILED"});
+            writeLog(eve::desktopText("extensions.extensionPackagePreflightFailed").toStdString(), ui::OutputLevel::Error,
+                     {{}, "EXTENSION_PREVIEW_FAILED"});
             reply.reject(preview.error());
         }
         return reply.task();
@@ -117,14 +119,16 @@ WorkspaceExtensions::WorkspaceExtensions(Context owner, WorkspaceInputs inputs, 
             task.thenOn(inputs_.scheduler, [this, id, owner](const Result<void>& result) {
                 if (!owner.identity().hasValue() || inputs_.closing()) return;
                 const auto current = shared_from_this();
-                const auto text = result.hasValue() ? QStringLiteral("扩展操作已完成 · ") : QStringLiteral("扩展操作失败 · ");
-                current->writeLog((text + id).toStdString(), result.hasValue() ? ui::OutputLevel::Info : ui::OutputLevel::Error,
+                const auto text = result.hasValue() ? eve::desktopText("extensions.extensionActionCompleted")
+                                                    : eve::desktopText("extensions.extensionActionFailed");
+                current->writeLog(text.arg(id).toStdString(), result.hasValue() ? ui::OutputLevel::Info : ui::OutputLevel::Error,
                                   {{}, result.hasValue() ? "EXTENSION_ACTION_COMPLETED" : "EXTENSION_ACTION_FAILED"});
                 if (auto view = current->inputs_.desktop()) (void)view->refresh();
             });
             return task;
         } catch (const StartupError& error) {
-            instance->writeLog("扩展操作未完成。", ui::OutputLevel::Error, {{}, "EXTENSION_ACTION_FAILED"});
+            instance->writeLog(eve::desktopText("extensions.theExtensionActionDidNotComplete").toStdString(),
+                               ui::OutputLevel::Error, {{}, "EXTENSION_ACTION_FAILED"});
             return failedTask(error.detail);
         }
     };
@@ -148,7 +152,7 @@ loader::ConfiguredPlugin WorkspaceExtensions::attach(const Package& package, con
 {
     const auto kernel = inputs_.kernel.lock();
     const auto desktop = inputs_.desktop();
-    if (!kernel || !desktop) throw StartupError(unavailable("Workspace is unavailable."));
+    if (!kernel || !desktop) throw StartupError(unavailable(desktopText("extensions.workspaceIsUnavailable")));
     const auto plugin = package.pluginId.toStdString();
     const auto loaded = extensions::loadQtExtension(package.manifestPath, package.moduleId, package.pluginId, package.sha256, source);
     const auto generation = checked(loaded).generation;
@@ -161,7 +165,7 @@ loader::ConfiguredPlugin WorkspaceExtensions::attach(const Package& package, con
     const module::ModuleManager modules;
     auto origin = checked(modules.runtimeOrigin(registered.id()));
     if (!origin || origin->generation != generation)
-        throw StartupError(unavailable("Registered runtime does not match its module generation."));
+        throw StartupError(unavailable(desktopText("extensions.registeredRuntimeDoesNotMatchItsModule")));
     checked(desktop->registerQtOutputRuntime(registered.id(), generation, origin->moduleId,
                                              package.version.toStdString(), origin->pluginId));
     auto object = [](const std::string& config) {
@@ -186,7 +190,8 @@ std::vector<RuntimeId> WorkspaceExtensions::prepare(const loader::ParsedConfigur
     }
     const auto installed = catalog_.installed();
     if (!installed.hasValue()) {
-        writeLog("无法读取用户扩展目录。", ui::OutputLevel::Error, {{}, "EXTENSION_CATALOG_UNAVAILABLE"});
+        writeLog(eve::desktopText("extensions.couldNotReadTheUserExtensionCatalog").toStdString(), ui::OutputLevel::Error,
+                 {{}, "EXTENSION_CATALOG_UNAVAILABLE"});
     } else {
         for (const auto& package : installed.value()) {
             const auto id = package.pluginId.toStdString();
@@ -199,7 +204,8 @@ std::vector<RuntimeId> WorkspaceExtensions::prepare(const loader::ParsedConfigur
                 present.push_back(attach(package, alias));
                 known.insert(id);
             } catch (const StartupError&) {
-                writeLog("工作区扩展加载失败 · " + id, ui::OutputLevel::Error, {{}, "EXTENSION_LOAD_FAILED"});
+                writeLog(eve::desktopText("extensions.couldNotLoadWorkspaceExtension").arg(package.pluginId).toStdString(),
+                         ui::OutputLevel::Error, {{}, "EXTENSION_LOAD_FAILED"});
             }
         }
     }
@@ -213,7 +219,8 @@ std::vector<RuntimeId> WorkspaceExtensions::prepare(const loader::ParsedConfigur
             throw StartupError(makeError(ErrorCode::ConfigInvalid, "Workspace extension manifest must be module.json."));
         checked(driver_->setPluginAvailability(entry.plugin, {entry.module, "module.json"}, {}));
         known.insert(entry.plugin);
-        writeLog("工作区扩展缺失 · " + entry.plugin, ui::OutputLevel::Warning, {{}, "EXTENSION_MISSING"});
+        writeLog(eve::desktopText("extensions.missingWorkspaceExtension").arg(QString::fromStdString(entry.plugin)).toStdString(),
+                 ui::OutputLevel::Warning, {{}, "EXTENSION_MISSING"});
     }
     return protectedIds;
 }
@@ -225,13 +232,14 @@ std::vector<ExtensionItem> WorkspaceExtensions::inventory() const
     const auto preference = inputs_.requested();
     const auto next = preference.hasValue() ? preference.value() : QString{};
     auto view = inputs_.desktop();
-    if (!view) throw StartupError(unavailable("Desktop unavailable."));
+    if (!view) throw StartupError(unavailable(desktopText("extensions.desktopUnavailable")));
     auto ela = view->description();
     const auto desktopStatus = [&](ExtensionItem& item) {
         item.current = item.id == current;
         item.pending = (item.id == next && current != next) || (item.current && !item.builtin &&
                        !activeDesktopHash_.isEmpty() && item.pending);
-        item.state = item.pending ? QStringLiteral("重启后生效") : item.current ? QStringLiteral("当前桌面") : QStringLiteral("可切换");
+        item.state = item.pending ? eve::desktopText("extensions.takesEffectAfterRestart")
+                                  : item.current ? eve::desktopText("extensions.currentDesktop") : eve::desktopText("extensions.available");
         if (item.pending) item.actions.push_back(A::Restart);
         if (item.id != next) item.actions.push_back(A::UseDesktop);
     };
@@ -247,7 +255,7 @@ std::vector<ExtensionItem> WorkspaceExtensions::inventory() const
         const auto plugin = package.pluginId.toStdString();
         if (extensions::isLegacyPluginConflict(package.pluginId)) {
             described.insert(plugin);
-            item.state = QStringLiteral("插件标识已由内置服务使用，可卸载旧扩展");
+            item.state = eve::desktopText("extensions.aBuiltInServiceNowUsesThis");
             item.missing = true;
             item.actions = {A::Uninstall};
             items.push_back(std::move(item));
@@ -272,14 +280,14 @@ std::vector<ExtensionItem> WorkspaceExtensions::inventory() const
                            (desired && desired->pluginUnavailable(plugin));
             item.pending = live != resident_.end() && live->second.package.sha256 != package.sha256;
             if (item.pending) {
-                item.state = QStringLiteral("已安装 %1，重启后替换 %2").arg(package.version, live->second.package.version);
+                item.state = eve::desktopText("extensions.installedRestartToReplace").arg(package.version, live->second.package.version);
                 item.actions.push_back(A::Restart);
             } else if (item.missing) {
-                item.state = QStringLiteral("需要修复");
+                item.state = eve::desktopText("extensions.repairRequired");
             } else {
-                if (enabled && disabled) item.state = QStringLiteral("部分实例已启用");
-                else if (enabled) item.state = QStringLiteral("当前工作区已启用");
-                else item.state = item.instances ? QStringLiteral("当前工作区已禁用") : QStringLiteral("已安装");
+                if (enabled && disabled) item.state = eve::desktopText("extensions.someInstancesEnabled");
+                else if (enabled) item.state = eve::desktopText("extensions.enabledInThisWorkspace");
+                else item.state = item.instances ? eve::desktopText("extensions.disabledInThisWorkspace") : eve::desktopText("extensions.installed");
                 if (!item.instances || disabled) item.actions.push_back(A::Enable);
                 if (live != resident_.end()) item.actions.push_back(A::AddInstance);
                 if (item.instances) item.actions.push_back(A::Configure);
@@ -298,8 +306,8 @@ std::vector<ExtensionItem> WorkspaceExtensions::inventory() const
         const auto plugin = package.pluginId.toStdString();
         if (!package.packageHash.isEmpty() || described.count(plugin)) continue;
         auto item = describe(package);
-        item.state = QStringLiteral("开发模式");
-        item.description = QStringLiteral("通过启动参数加载的本地开发模块。");
+        item.state = eve::desktopText("extensions.developmentMode");
+        item.description = eve::desktopText("extensions.localDevelopmentModuleLoadedFromALaunch");
         if (desired) {
             const auto& entries = desired->source().structure().entries();
             item.instances = static_cast<int>(std::count_if(entries.begin(), entries.end(), [&](const auto& row) {
@@ -331,16 +339,16 @@ std::vector<ExtensionItem> WorkspaceExtensions::inventory() const
                 item.id = "extension/" + item.pluginId;
                 item.name = item.pluginId;
             }
-            item.state = QStringLiteral("工作区引用缺失，重新安装可恢复");
+            item.state = eve::desktopText("extensions.workspaceReferenceIsMissingReinstallToRestore");
             item.missing = true;
             item.actions = {A::Install, A::ShowLogs};
             if (extensions::isLegacyPluginConflict(item.pluginId)) {
-                item.state = QStringLiteral("旧扩展标识已由内置服务使用，工作区引用已停用");
+                item.state = eve::desktopText("extensions.aBuiltInServiceNowUsesThe");
                 item.actions.clear();
             }
             if (!desired->pluginUnavailable(entry.plugin)) {
                 item.pending = true;
-                item.state = QStringLiteral("已从用户目录卸载，本窗口重启后生效");
+                item.state = eve::desktopText("extensions.removedFromTheUserCatalogTakesEffect");
                 item.actions.insert(item.actions.begin(), A::Restart);
             }
             ++item.instances;
@@ -360,7 +368,7 @@ Task<void> WorkspaceExtensions::reconcile(const loader::ParsedConfiguration& des
         if (!active.hasValue()) { reply.reject(active.error()); return; }
         if (!plan.hasValue()) { reply.reject(plan.error()); return; }
         if (plan.value().outcome != loader::PlanOutcome::Applied && plan.value().outcome != loader::PlanOutcome::Pending) {
-            reply.reject(plan.value().errors.empty() ? unavailable("Workspace change did not finish.") : plan.value().errors.front());
+            reply.reject(plan.value().errors.empty() ? unavailable(desktopText("extensions.workspaceChangeDidNotFinish")) : plan.value().errors.front());
             return;
         }
         auto save = session->save(revision);
@@ -369,7 +377,7 @@ Task<void> WorkspaceExtensions::reconcile(const loader::ParsedConfiguration& des
             if (!result.hasValue()) reply.reject(result.error());
             else if (result.value().outcome == loader::SaveOutcome::Written || result.value().outcome == loader::SaveOutcome::Unchanged)
                 reply.resolve();
-            else reply.reject(result.value().error.value_or(unavailable("Workspace changes could not be saved.")));
+            else reply.reject(result.value().error.value_or(unavailable(desktopText("extensions.workspaceChangesCouldNotBeSaved"))));
         });
     });
     return reply.task();
@@ -387,7 +395,7 @@ Task<void> WorkspaceExtensions::updateInstances(const Package& package, Activati
     if (resident == resident_.end()) {
         auto alias = moduleAlias(source, package);
         if (alias != package.moduleId.toStdString() && alias != "extension")
-            throw StartupError(unavailable("Workspace reference belongs to a different module."));
+            throw StartupError(unavailable(desktopText("extensions.workspaceReferenceBelongsToADifferentModule")));
         auto definition = attach(package, alias);
         checked(driver_->setPluginAvailability(plugin, definition.configuration.module, definition));
     } else if (target->pluginUnavailable(plugin) || !driver_->configurationDefinitions()->module(plugin).hasValue()) {
@@ -418,10 +426,10 @@ Task<void> WorkspaceExtensions::apply(ExtensionAction action, const QString& id,
                                       std::optional<QString> expectedInstalledHash)
 {
     using A = ExtensionAction;
-    if (inputs_.closing() || !session_ || !driver_) return failedTask(unavailable("Workspace is unavailable."));
+    if (inputs_.closing() || !session_ || !driver_) return failedTask(unavailable(desktopText("extensions.workspaceIsUnavailable")));
     const auto state = checked(session_->snapshot());
     if (!state.coordinator.desired || state.coordinator.activeRevision)
-        return failedTask(unavailable("Workspace changes are in progress. Retry when they finish."));
+        return failedTask(unavailable(desktopText("extensions.workspaceChangesAreInProgressRetryWhen")));
     if (action == A::Restart) {
         auto result = inputs_.restart();
         return result.hasValue() ? completedTask() : failedTask(result.error());
@@ -430,17 +438,17 @@ Task<void> WorkspaceExtensions::apply(ExtensionAction action, const QString& id,
         checked(inputs_.select(id));
         return completedTask();
     }
-    if (id == desktopModuleId || id.isEmpty()) return failedTask(unavailable("Protected or missing extension identity."));
+    if (id == desktopModuleId || id.isEmpty()) return failedTask(unavailable(desktopText("extensions.protectedOrMissingExtensionIdentity")));
     if (action == A::Install) {
         const auto installed = checked(catalog_.install(path, digest, id, std::move(expectedInstalledHash)));
         return installed.kind == "business" ? updateInstances(installed, Activation::AfterInstall) : completedTask();
     }
     const auto inventory = checked(catalog_.installed());
     const auto it = std::find_if(inventory.begin(), inventory.end(), [&](const auto& item) { return item.moduleId == id; });
-    if (it == inventory.end()) return failedTask(unavailable("Extension is no longer installed."));
+    if (it == inventory.end()) return failedTask(unavailable(desktopText("extensions.extensionIsNoLongerInstalled")));
     if (extensions::isLegacyPluginConflict(it->pluginId)) {
         if (action != A::Uninstall)
-            return failedTask(unavailable("This extension conflicts with a built-in plugin and can only be removed."));
+            return failedTask(unavailable(desktopText("extensions.thisExtensionConflictsWithABuiltIn")));
         checked(catalog_.remove(id, digest));
         if (it->kind == "desktop" && checked(inputs_.requested()) == id) checked(inputs_.select(desktopModuleId));
         return completedTask();
@@ -450,7 +458,7 @@ Task<void> WorkspaceExtensions::apply(ExtensionAction action, const QString& id,
         return completedTask();
     }
     if (action == A::Uninstall) {
-        if (id == inputs_.selected()) return failedTask(unavailable("Switch away from the active desktop before uninstalling it."));
+        if (id == inputs_.selected()) return failedTask(unavailable(desktopText("extensions.switchAwayFromTheActiveDesktopBefore")));
         checked(catalog_.remove(id, digest));
         if (it->kind == "desktop") {
             if (checked(inputs_.requested()) == id) checked(inputs_.select(desktopModuleId));
@@ -464,6 +472,6 @@ Task<void> WorkspaceExtensions::apply(ExtensionAction action, const QString& id,
     }
     if (it->kind == "business" && (action == A::Enable || action == A::Disable))
         return updateInstances(*it, action == A::Enable ? Activation::Enable : Activation::Disable);
-    return failedTask(unavailable("This action is unavailable for the selected extension."));
+    return failedTask(unavailable(desktopText("extensions.thisActionIsUnavailableForTheSelected")));
 }
 }

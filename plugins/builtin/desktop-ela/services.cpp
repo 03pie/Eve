@@ -1,6 +1,7 @@
 /** @file services.cpp
  * @brief 管理命令调用保留及 effect 屏障；通知展示只持宿主值数据。
  */
+#include "desktop_text.hpp"
 #include "contribution_backend_p.hpp"
 #include "notifications_p.hpp"
 #include "services_p.hpp"
@@ -302,7 +303,7 @@ void ServicesControl::activate(const QModelIndex& index)
     if (platform != platformCommands.end()) {
         QPointer<QAction> action = platform->second;
         if (!action || !action->isEnabled() || !action->isVisible()) {
-            commandStatus(QString::fromUtf8("当前命令不可用。")); return;
+            commandStatus(eve::desktopText("commands.commandUnavailable")); return;
         }
         const auto title = action->text();
         const auto execution = ++commandSequence;
@@ -311,8 +312,8 @@ void ServicesControl::activate(const QModelIndex& index)
             return;
         action->trigger();
         if (!open) return;
-        if (logs) (void)appendOutput(logs, {}, "platform", (QString::fromUtf8("已调用平台命令：") + title).toStdString());
-        if (commandSequence == execution) commandStatus(QString::fromUtf8("已调用：") + title);
+        if (logs) (void)appendOutput(logs, {}, "platform", eve::desktopText("commands.invokedWorkbenchCommand").arg(title).toStdString());
+        if (commandSequence == execution) commandStatus(eve::desktopText("commands.invoked").arg(title));
         return;
     }
     auto found = rows.find(item);
@@ -327,14 +328,18 @@ void ServicesControl::activate(const QModelIndex& index)
     dismissCommandPanel(commands);
     if (!open)
         return;
-    commandStatus(QString::fromUtf8("运行中：") + QString::fromStdString(title));
-    if (logs) (void)appendOutput(logs, identity, "命令", "开始执行：" + title);
+    const auto commandTitle = QString::fromStdString(title);
+    commandStatus(eve::desktopText("commands.running").arg(commandTitle));
+    if (logs) (void)appendOutput(logs, identity, "命令", eve::desktopText("commands.started").arg(commandTitle).toStdString());
     std::weak_ptr<ServicesControl> weak = shared_from_this();
-    record->execute().thenOn(scheduler, [weak, identity, title, execution](const Result<void>& result) {
+    record->execute().thenOn(scheduler, [weak, identity, commandTitle, execution](const Result<void>& result) {
         auto host = weak.lock(); if (!host || !host->open) return;
-        const auto text = result.hasValue() ? "执行完成：" + title : "执行失败：" + title + " · " + (result.error().message.empty() ? "未提供错误说明" : result.error().message);
-        if (host->commandSequence == execution) host->commandStatus(QString::fromStdString(text));
-        if (host->logs) (void)appendOutput(host->logs, identity, "命令", text, result.hasValue() ? OutputLevel::Info : OutputLevel::Error);
+        const auto text = result.hasValue() ? eve::desktopText("commands.completed").arg(commandTitle) :
+            eve::desktopText("commands.failed").arg(commandTitle, result.error().message.empty()
+                ? eve::desktopText("management.noErrorDescriptionWasProvided") : QString::fromStdString(result.error().message));
+        if (host->commandSequence == execution) host->commandStatus(text);
+        if (host->logs) (void)appendOutput(host->logs, identity, "命令", text.toStdString(),
+                                          result.hasValue() ? OutputLevel::Info : OutputLevel::Error);
         if (!result.hasValue()) {
             auto message = result.error().message;
             if (message.size() > NotificationService::textLimit) {
@@ -343,7 +348,7 @@ void ServicesControl::activate(const QModelIndex& index)
                     --end;
                 message.resize(end);
             }
-            if (message.empty()) message = "命令执行失败";
+            if (message.empty()) message = eve::desktopText("commands.commandFailed").toStdString();
             (void)appendNotification(host->notifications, identity,
                                      {NotificationLevel::Error, std::move(message), result.error().operation});
         }
@@ -407,7 +412,7 @@ void registerPlatformCommands(const std::shared_ptr<ServicesControl>& state, con
         row->setEditable(false); state->platformCommands.emplace(row, action);
         const auto sync = [weak, row, action] {
             if (auto host = weak.lock(); host && host->open) {
-                row->setText(action->text() + QString::fromUtf8("  · 平台"));
+                row->setText(action->text() + eve::desktopText("commands.platform"));
                 row->setData(action->text() + " " + action->objectName() + " platform 平台", Qt::UserRole + 1);
                 row->setToolTip(action->objectName() + "\n" + action->toolTip());
                 row->setEnabled(action->isEnabled() && action->isVisible());
@@ -437,7 +442,9 @@ void configureCommandPanel(const std::shared_ptr<ServicesControl>& state, QWidge
             if (query.startsWith(QLatin1Char('>'))) query.remove(0, 1);
             host->filter->setFilterFixedString(query.trimmed());
             select();
-            host->commandStatus(host->filter->rowCount() ? QString::fromUtf8("%1 个匹配命令；按回车执行。").arg(host->filter->rowCount()) : QString::fromUtf8("没有匹配的命令。"));
+            const auto count = host->filter->rowCount();
+            host->commandStatus(count ? eve::desktopText("commands.matchingCommandsPressEnterToRun").arg(count)
+                                      : eve::desktopText("commands.noMatchingCommands"));
         }
     });
     select();
@@ -524,9 +531,9 @@ Result<CommandHandle> detail::ServicesControl::addCommand(const Context& owner, 
         if (!result.hasValue()) return failedTask(result.error());
         record->row = new QStandardItem(QString::fromStdString(record->spec.title));
         record->row->setEditable(false);
-        record->row->setText(QString::fromStdString(record->spec.title) + QString::fromUtf8("  · 插件 #%1 / 代 %2").arg(record->owner.instance.value()).arg(record->owner.epoch));
+        record->row->setText(QString::fromStdString(record->spec.title) + eve::desktopText("commands.pluginGeneration").arg(record->owner.instance.value()).arg(record->owner.epoch));
         record->row->setData(QString::fromStdString(record->spec.title + " " + record->spec.id) + QString(" %1 %2").arg(record->owner.instance.value()).arg(record->owner.epoch), Qt::UserRole + 1);
-        record->row->setToolTip(QString::fromUtf8("双击或按回车执行"));
+        record->row->setToolTip(eve::desktopText("commands.doubleClickOrPressEnterToRun"));
         host->rows.emplace(record->row, record);
         host->model->appendRow(record->row);
         return completedTask();

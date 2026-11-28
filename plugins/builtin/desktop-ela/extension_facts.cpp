@@ -1,3 +1,4 @@
+#include "desktop_text.hpp"
 #include "extension_facts_p.hpp"
 #include "extension_links_p.hpp"
 #include "appearance_p.hpp"
@@ -91,7 +92,7 @@ ExtensionFacts::ExtensionFacts(QWidget* parent, CategorySelected categorySelecte
     : ElaScrollArea(parent), categorySelected_(std::move(categorySelected))
 {
     setObjectName("EveExtensionInstallInfo");
-    setAccessibleName(tr("扩展信息"));
+    setAccessibleName(eve::desktopText("extensions.extensionInformation"));
     setWidgetResizable(true);
     setFrameShape(QFrame::NoFrame);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -100,34 +101,34 @@ ExtensionFacts::ExtensionFacts(QWidget* parent, CategorySelected categorySelecte
     body->setContentsMargins(10, 3, 12, 10);
     body->setSpacing(12);
 
-    auto installGrid = factsGrid(section(body, tr("安装信息"), "EveExtensionInstallation"));
-    identity_ = {installGrid, tr("模块标识"), "EveExtensionIdentity"};
-    plugin_ = {installGrid, tr("插件标识"), "EveExtensionPluginId"};
-    version_ = {installGrid, tr("版本"), "EveExtensionVersion"};
-    source_ = {installGrid, tr("来源"), "EveExtensionSource"};
-    state_ = {installGrid, tr("状态"), "EveExtensionState"};
-    installedAt_ = {installGrid, tr("安装时间"), "EveExtensionInstalledAt"};
-    packageBytes_ = {installGrid, tr("安装包大小"), "EveExtensionPackageBytes"};
+    auto installGrid = factsGrid(section(body, eve::desktopText("extensions.installation"), "EveExtensionInstallation"));
+    identity_ = {installGrid, eve::desktopText("extensions.moduleID"), "EveExtensionIdentity"};
+    plugin_ = {installGrid, eve::desktopText("extensions.pluginID"), "EveExtensionPluginId"};
+    version_ = {installGrid, eve::desktopText("extensions.version2"), "EveExtensionVersion"};
+    source_ = {installGrid, eve::desktopText("extensions.source"), "EveExtensionSource"};
+    state_ = {installGrid, eve::desktopText("extensions.status"), "EveExtensionState"};
+    installedAt_ = {installGrid, eve::desktopText("extensions.installedOn"), "EveExtensionInstalledAt"};
+    packageBytes_ = {installGrid, eve::desktopText("extensions.packageSize"), "EveExtensionPackageBytes"};
 
-    auto workspaceLayout = section(body, tr("当前工作区"), "EveExtensionWorkspaceInfo");
+    auto workspaceLayout = section(body, eve::desktopText("extensions.currentWorkspace"), "EveExtensionWorkspaceInfo");
     workspace_ = workspaceLayout->parentWidget();
     auto workspaceGrid = factsGrid(workspaceLayout);
     workspaceGrid->setColumnMinimumWidth(0, installGrid->columnMinimumWidth(0));
-    instances_ = {workspaceGrid, tr("实例数"), "EveExtensionInstanceCount"};
+    instances_ = {workspaceGrid, eve::desktopText("extensions.instances"), "EveExtensionInstanceCount"};
 
-    auto categoryLayout = section(body, tr("分类"), "EveExtensionCategories");
+    auto categoryLayout = section(body, eve::desktopText("extensions.categories"), "EveExtensionCategories");
     categories_ = categoryLayout->parentWidget();
     tags_ = new ElaFlowLayout(0, 6, 5);
     tags_->setIsAnimation(false);
     categoryLayout->addLayout(tags_);
 
-    auto resourceLayout = section(body, tr("资源"), "EveExtensionResources");
+    auto resourceLayout = section(body, eve::desktopText("extensions.resources"), "EveExtensionResources");
     resources_ = resourceLayout->parentWidget();
     const std::pair<QString, const char*> resources[] = {
-        {tr("主页"), "EveExtensionHomepage"},
-        {tr("源代码"), "EveExtensionRepository"},
-        {tr("问题反馈"), "EveExtensionIssues"},
-        {tr("许可证"), "EveExtensionLicenseLink"},
+        {eve::desktopText("extensions.homepage"), "EveExtensionHomepage"},
+        {eve::desktopText("extensions.sourceCode"), "EveExtensionRepository"},
+        {eve::desktopText("extensions.reportAnIssue"), "EveExtensionIssues"},
+        {eve::desktopText("extensions.license"), "EveExtensionLicenseLink"},
     };
     for (std::size_t index = 0; index < links_.size(); ++index) {
         const auto& [caption, id] = resources[index];
@@ -196,7 +197,7 @@ void ExtensionFacts::setResources(const ExtensionItem& item)
     }
     const bool plainLicense = !item.license.isEmpty() && links_.back().target.isEmpty();
     license_->setVisible(plainLicense);
-    license_->setText(plainLicense ? tr("许可证：%1").arg(item.license) : QString{});
+    license_->setText(plainLicense ? eve::desktopText("extensions.license2").arg(item.license) : QString{});
     resources_->setVisible(hasLinks || plainLicense);
 }
 
@@ -207,9 +208,9 @@ void ExtensionFacts::setItem(const ExtensionItem* item, bool preview, bool categ
     plugin_.setValue(item->pluginId);
     version_.setValue(item->version);
     state_.setValue(item->state);
-    source_.setValue(item->builtin ? tr("内置") :
-                     preview || !item->packageHash.isEmpty() ? tr("本地安装包") :
-                     item->missing ? tr("工作区引用") : tr("开发模块"));
+    source_.setValue(item->builtin ? eve::desktopText("extensions.builtIn") :
+                     preview || !item->packageHash.isEmpty() ? eve::desktopText("extensions.localPackage") :
+                     item->missing ? eve::desktopText("extensions.workspaceReference") : eve::desktopText("extensions.developmentModule"));
     const QLocale locale;
     installedAt_.setValue(!preview && item->installedAt.isValid()
         ? locale.toString(item->installedAt.toLocalTime(), QLocale::ShortFormat) : QString{});

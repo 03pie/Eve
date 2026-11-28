@@ -2,6 +2,7 @@
  * @brief 在 Ela 原生导航外壳中托管动态页面，按撤销贡献、完整删除和闭包释放的顺序清理。
  */
 #include "contribution_backend_p.hpp"
+#include "desktop_text.hpp"
 #include "brand_p.hpp"
 #include "fixed_tabs_p.hpp"
 #include "management_p.hpp"
@@ -12,6 +13,7 @@
 #include "extension_features_p.hpp"
 #include "panel_p.hpp"
 #include "preferences_p.hpp"
+#include "desktop_language_p.hpp"
 #include "runtime_log_archive_p.hpp"
 #include "services_p.hpp"
 #include "workbench_p.hpp"
@@ -193,6 +195,8 @@ struct ShellControl : PagesEndpoint, std::enable_shared_from_this<ShellControl> 
     std::shared_ptr<WorkbenchControl> workbench;
     QString safeKey;
     std::shared_ptr<ExtensionControls> extensions;
+    QString desktopSettingsFile;
+    DesktopLanguageState desktopLanguage;
     QPointer<ExtensionDialog> extensionDialog;
     std::optional<std::uint64_t> extensionRevision;
     bool readingExtensions = false;
@@ -421,10 +425,12 @@ struct ShellControl : PagesEndpoint, std::enable_shared_from_this<ShellControl> 
 /** Qt's deletion barrier owns this stable object, even while the workbench is embedded in another window. */
 class WindowOwner final : public QObject {
 public:
-    explicit WindowOwner(HostWindow* window) : window_(window) {}
+    WindowOwner(HostWindow* window, std::shared_ptr<QTranslator> translator)
+        : window_(window), translator_(std::move(translator)) {}
     ~WindowOwner() override { delete window_.data(); }
 private:
     QPointer<HostWindow> window_;
+    std::shared_ptr<QTranslator> translator_;
 };
 
 class DesktopCloseFilter final : public QObject {
@@ -629,7 +635,7 @@ ExtensionWorkspace extensionWorkspace(const ShellControl& shell, const Diagnosti
     if (runtime != kernel.names.end())
         for (const auto& row : kernel.instances)
             if (row.runtime == runtime->id && row.state == InstanceState::Active)
-                owners.emplace(std::make_pair(row.instance, row.epoch), QObject::tr("实例 #%1").arg(row.instance.value()));
+                owners.emplace(std::make_pair(row.instance, row.epoch), eve::desktopText("home.instance").arg(row.instance.value()));
 
     if (snapshot.configuration)
         for (const auto& entry : snapshot.configuration->entries) {
@@ -832,15 +838,20 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
 {
     if (!qobject_cast<QApplication*>(QCoreApplication::instance()) || !scheduler || !scheduler->isCurrentThread() || !scheduler->isOpen())
         throw std::invalid_argument("ElaShell requires QApplication and open owner scheduler");
+    const auto settingsFile = QString::fromStdString(preferencesFile);
+    detail::DesktopLanguageState language;
+    auto translator = detail::acquireDesktopTranslator(settingsFile, language);
     eApp->init();
     const auto icon = detail::eveApplicationIcon();
     if (QApplication::windowIcon().isNull())
         QApplication::setWindowIcon(icon);
     control_ = std::make_shared<detail::ShellControl>();
+    control_->desktopSettingsFile = settingsFile;
+    control_->desktopLanguage = std::move(language);
     control_->scheduler = std::move(scheduler);
     auto window = std::make_unique<detail::HostWindow>(control_);
     control_->window = window.get();
-    window->setWindowTitle(QString::fromUtf8("Eve 插件平台"));
+    window->setWindowTitle(eve::desktopText("workbench.title"));
     window->setWindowIcon(QApplication::windowIcon());
     detail::bindWorkbenchWindowPalette(window.get());
     window->resize(1200, 800);
@@ -852,8 +863,8 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     window->setWindowButtonFlag(ElaAppBarType::RouteForwardButtonHint, false);
     window->setIsNavigationBarEnable(true);
     window->setNavigationBarWidth(detail::navigationWidthPixels.initial);
-    window->setUserInfoCardTitle(QString::fromUtf8("未登录"));
-    window->setUserInfoCardSubTitle(QString::fromUtf8("用户账户"));
+    window->setUserInfoCardTitle(eve::desktopText("workbench.notSignedIn"));
+    window->setUserInfoCardSubTitle(eve::desktopText("workbench.userAccount"));
     const auto refreshAvatar = [root = window.get()](ElaThemeType::ThemeMode mode) {
         const auto color = eTheme->getThemeColor(mode, ElaThemeType::BasicText);
         root->setUserInfoCardPixmap(ElaIcon::getInstance()->getElaIcon(ElaIconType::CircleUser, 54, color).pixmap(64, 64));
@@ -865,7 +876,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     if (!control_->navigation || !control_->navigationView) throw std::runtime_error("pinned Ela navigation unavailable");
     control_->navigation->setIsRouteHistoryEnabled(false);
     auto safe = new detail::HomePage;
-    window->addPageNode(QString::fromUtf8("概览"), safe, ElaIconType::House);
+    window->addPageNode(eve::desktopText("workbench.overview"), safe, ElaIconType::House);
     control_->safePage = safe;
     control_->safeKey = safe->property("ElaPageKey").toString();
     control_->stack = qobject_cast<QStackedWidget*>(safe->parentWidget());
@@ -880,7 +891,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     output->setReadOnly(true);
     output->setFrameShape(QFrame::NoFrame);
     output->setStyleSheet("ElaPlainTextEdit{background-color:transparent;border:0;}");
-    panel->addTab(output, QString::fromUtf8("输出"));
+    panel->addTab(output, eve::desktopText("workbench.output"));
     auto header = new QWidget;
     auto headerLayout = new QHBoxLayout(header); headerLayout->setContentsMargins(0, 0, 0, 0);
     control_->tabs = new detail::HostPageTabs(header); control_->tabs->setObjectName("EvePageTabs");
@@ -902,7 +913,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     };
     updateStatusPalette(eTheme->getThemeMode());
     QObject::connect(eTheme, &ElaTheme::themeModeChanged, statusBar, updateStatusPalette);
-    auto notification = new detail::StatusBarText(QStringLiteral("就绪"), statusBar);
+    auto notification = new detail::StatusBarText(eve::desktopText("workbench.ready"), statusBar);
     notification->setObjectName("EveNotification");
     statusBar->addWidget(notification, 1);
     window->setStatusBar(statusBar);
@@ -935,7 +946,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     });
     control_->managementPage = detail::managementWidget(control_->management);
     control_->managementKey = "eve:management";
-    window->addFooterNode(QString::fromUtf8("输出与问题"), control_->commandsKey, 0, ElaIconType::RectangleList);
+    window->addFooterNode(eve::desktopText("workbench.outputAndProblems"), control_->commandsKey, 0, ElaIconType::RectangleList);
     management_ = std::shared_ptr<ManagementController>(new ManagementController(control_->management));
     diagnostics_ = std::shared_ptr<DiagnosticsService>(new DiagnosticsService(detail::diagnosticsEndpoint(control_->management)));
     ElaActionCommander::getInstance()->setIsMessageDisplayEnable(false);
@@ -994,26 +1005,26 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
                  QString status;
                  switch (row.instance.state) {
                  case InstanceState::Active:
-                     status = QString::fromUtf8("运行中");
+                     status = eve::desktopText("configuration.running");
                      break;
                  case InstanceState::Pending:
-                     status = QString::fromUtf8("等待依赖");
+                     status = eve::desktopText("configuration.waitingForDependencies");
                      break;
                  case InstanceState::Loading:
-                     status = QString::fromUtf8("启动中");
+                     status = eve::desktopText("configuration.starting");
                      break;
                  case InstanceState::Unloading:
-                     status = QString::fromUtf8("清理中");
+                     status = eve::desktopText("configuration.cleaningUp");
                      break;
                  case InstanceState::Failed:
-                     status = QString::fromUtf8("失败");
+                     status = eve::desktopText("configuration.failed");
                      break;
                  case InstanceState::Disposed:
-                     status = QString::fromUtf8("已停止");
+                     status = eve::desktopText("configuration.stopped");
                      break;
                  }
                  if (row.instance.state == InstanceState::Unloading && row.instance.failure)
-                     status = QString::fromUtf8("清理受阻");
+                     status = eve::desktopText("workbench.cleanupBlocked");
                  detail::HomePlugin item{QString::number(row.instance.instance.value()),
                                          QString::fromStdString(row.name), status};
                  item.status = detail::instanceStatus(row.instance.state, static_cast<bool>(row.instance.failure));
@@ -1033,36 +1044,36 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
                  for (const auto& row : source.entries) {
                      QString status;
                      if (snapshot.configurationError)
-                         status = QString::fromUtf8("配置状态不可用");
+                         status = eve::desktopText("workbench.configurationStatusUnavailable");
                      else if (!row.hasActual && row.error)
-                         status = QString::fromUtf8("状态不可用");
+                         status = eve::desktopText("workbench.statusUnavailable");
                      else if (!row.hasActual && !row.enabled)
-                         status = QString::fromUtf8("已停用");
+                         status = eve::desktopText("management.disabled");
                      else if (!row.hasActual && !row.effectiveEnabled)
-                         status = QString::fromUtf8("父项停用");
+                         status = eve::desktopText("management.parentDisabled");
                      else if (!row.hasActual && row.waitingForParent)
-                         status = QString::fromUtf8("等待父项");
+                         status = eve::desktopText("workbench.waitingForParent");
                      else if (!row.hasActual)
-                         status = QString::fromUtf8("等待执行");
+                         status = eve::desktopText("workbench.pending");
                      else
                          switch (row.state) {
                          case InstanceState::Active:
-                             status = QString::fromUtf8("运行中");
+                             status = eve::desktopText("configuration.running");
                              break;
                          case InstanceState::Pending:
-                             status = QString::fromUtf8("等待依赖");
+                             status = eve::desktopText("configuration.waitingForDependencies");
                              break;
                          case InstanceState::Loading:
-                             status = QString::fromUtf8("启动中");
+                             status = eve::desktopText("configuration.starting");
                              break;
                          case InstanceState::Unloading:
-                             status = row.error ? QString::fromUtf8("清理受阻") : QString::fromUtf8("清理中");
+                             status = row.error ? eve::desktopText("workbench.cleanupBlocked") : eve::desktopText("configuration.cleaningUp");
                              break;
                          case InstanceState::Failed:
-                             status = QString::fromUtf8("失败");
+                             status = eve::desktopText("configuration.failed");
                              break;
                          case InstanceState::Disposed:
-                             status = QString::fromUtf8("已停止");
+                             status = eve::desktopText("configuration.stopped");
                              break;
                          }
                      const auto path = QString::fromStdString(row.path);
@@ -1089,8 +1100,8 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
                      item.identity =
                          QString::fromUtf8("%1 · %2 · %3")
                              .arg(QString::fromStdString(row.plugin), path)
-                             .arg(row.instance.valid() ? QString::fromUtf8("实例 #%1").arg(row.instance.value())
-                                                       : QString::fromUtf8("无实例"));
+                             .arg(row.instance.valid() ? eve::desktopText("home.instance").arg(row.instance.value())
+                                                       : eve::desktopText("workbench.noInstances"));
                      plugins.push_back(std::move(item));
                  }
              }
@@ -1175,12 +1186,12 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
              const auto state = weak.lock();
              return state && state->open && static_cast<bool>(state->modulesHandler);
          }},
-        QString::fromStdString(preferencesFile), control_->output);
-    window->addFooterNode(QString::fromUtf8("设置"), detail::workbenchSettings(control_->workbench), control_->settingsKey, 0, ElaIconType::GearComplex);
-    window->addFooterNode(QString::fromUtf8("关于"), detail::workbenchAbout(control_->workbench), control_->aboutKey, 0, ElaIconType::CircleInfo);
-    for (const auto& entry : {std::make_pair(control_->safeKey, QString::fromUtf8("概览")),
-                             std::make_pair(control_->settingsKey, QString::fromUtf8("设置")),
-                             std::make_pair(control_->aboutKey, QString::fromUtf8("关于 Eve"))})
+        settingsFile, control_->output);
+    window->addFooterNode(eve::desktopText("settings.title"), detail::workbenchSettings(control_->workbench), control_->settingsKey, 0, ElaIconType::GearComplex);
+    window->addFooterNode(eve::desktopText("workbench.about2"), detail::workbenchAbout(control_->workbench), control_->aboutKey, 0, ElaIconType::CircleInfo);
+    for (const auto& entry : {std::make_pair(control_->safeKey, eve::desktopText("workbench.overview")),
+                             std::make_pair(control_->settingsKey, eve::desktopText("settings.title")),
+                             std::make_pair(control_->aboutKey, eve::desktopText("workbench.about"))})
         detail::registerWorkbenchPage(control_->workbench, entry.first, entry.second);
     detail::selectWorkbenchPage(control_->workbench, control_->safeKey);
     detail::configureNotificationCenter(control_->services,window.get(),[weak](InstanceId id){
@@ -1202,7 +1213,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
                 home->focusInstance("configuration:" + path);
             if (state->open && state->window)
                 state->window->statusBar()->showMessage(
-                    QStringLiteral("已将「%1」加入运行目标。可在卡片的「配置」中保存到磁盘。").arg(path), 7000);
+                    eve::desktopText("workbench.addedToTheWorkspaceTargetUseConfigure").arg(path), 7000);
         }
     });
     detail::setManagementLogAction(control_->management,[weak](InstanceId instance,const std::string& path,QWidget* origin){
@@ -1222,7 +1233,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
         if (!id.valid()) return state->configurationHandler ? state->configurationHandler() : Result<void>::failure(makeError(ErrorCode::InvalidArgument, "configuration editor unavailable"));
         return detail::showManagementDialog(state->management, QString::number(id.value()));
     });
-    (void)detail::appendOutput(control_->output, {}, "platform", "工作台已初始化。");
+    (void)detail::appendOutput(control_->output, {}, "platform", eve::desktopText("workbench.workbenchInitialized").toStdString());
     // ElaWindow 转发信号发生在堆栈切换之前；直接监听其后注册的原生信号，记录实际已切换页面。
     QObject::connect(control_->navigation.data(), &ElaNavigationBar::navigationNodeClicked, window.get(), [weak, panel](ElaNavigationType::NavigationNodeType, const QString& key, bool) {
         if (auto state = weak.lock()) {
@@ -1259,7 +1270,8 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     auto gate = new detail::InputGate(window.get(), weak);
     QCoreApplication::instance()->installEventFilter(gate);
     QObject::connect(window.get(), &ElaWindow::closeButtonClicked, window.get(), [weak] { if (auto state = weak.lock()) state->requestClose(); });
-    std::unique_ptr<QObject> owned = std::make_unique<detail::WindowOwner>(window.release());
+    std::unique_ptr<QObject> owned = std::make_unique<detail::WindowOwner>(window.get(), std::move(translator));
+    window.release();
     control_->windowResource.emplace(owned, control_->scheduler);
 }
 /** @brief 只释放宿主句柄，Qt 对象继续由应用线程的守卫管理。 */
@@ -1273,6 +1285,10 @@ Result<void> ElaShell::bindExtensions(std::shared_ptr<ExtensionControls> control
     if (!controls || !controls->list || !controls->preview || !controls->apply || control_->extensions)
         return Result<void>::failure(makeError(ErrorCode::InvalidArgument, "invalid or duplicate extension binding"));
     std::weak_ptr<detail::ShellControl> weak = control_;
+    controls = detail::withLanguageExtensions(std::move(controls), control_->desktopSettingsFile, control_->desktopLanguage, [weak] {
+        const auto state = weak.lock();
+        return state && state->scheduler->isCurrentThread() && state->open;
+    });
     const auto readWorkspace = [weak](const QString& plugin) {
         if (auto state = weak.lock(); state && state->open) {
             detail::ShellControl::NavigationAccess access(*state);
@@ -1294,7 +1310,8 @@ Result<void> ElaShell::bindExtensions(std::shared_ptr<ExtensionControls> control
         if (action == ExtensionAction::AddInstance) return detail::showAddPluginDialog(state->management, plugin);
         if (action == ExtensionAction::Configure && !path.isEmpty() && readWorkspace(plugin).paths.contains(path))
             return detail::showManagementDialog(state->management, "configuration:" + path, true);
-        return Result<void>::failure(makeError(ErrorCode::StaleContext, "工作区实例不可用，请刷新后重试。"));
+        return Result<void>::failure(makeError(ErrorCode::StaleContext,
+            eve::desktopText("workbench.thisWorkspaceInstanceIsUnavailableRefreshAnd").toStdString()));
     };
     detail::ShellControl::NavigationAccess access(*control_);
     const auto refresh = [weak] { if (auto state = weak.lock()) state->refreshExtensions(); };

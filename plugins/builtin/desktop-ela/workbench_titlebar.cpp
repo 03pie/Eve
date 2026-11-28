@@ -1,4 +1,5 @@
 #include "workbench_titlebar_p.hpp"
+#include "desktop_text.hpp"
 
 #include <ElaAppBar.h>
 #include <ElaMenu.h>
@@ -59,8 +60,8 @@ public:
         overflow_ = new ElaToolButton(window);
         overflow_->setObjectName("EveMenuOverflow");
         overflow_->setElaIcon(ElaIconType::Ellipsis);
-        overflow_->setAccessibleName(tr("应用菜单"));
-        overflow_->setToolTip(tr("应用菜单"));
+        overflow_->setAccessibleName(eve::desktopText("workbench.applicationMenu"));
+        overflow_->setToolTip(eve::desktopText("workbench.applicationMenu"));
         overflow_->setFixedSize(42, controlHeight);
         auto overflowMenu = new ElaMenu(overflow_);
         overflowMenu->setObjectName("EveMenuOverflowPopup");

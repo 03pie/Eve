@@ -1,3 +1,4 @@
+#include "desktop_text.hpp"
 #include "extension_dialog_p.hpp"
 #include "appearance_p.hpp"
 #include "brand_p.hpp"
@@ -32,21 +33,23 @@ using Action = ExtensionAction;
 QString actionTitle(Action action)
 {
     switch (action) {
-    case Action::Install: return QObject::tr("从文件安装其他版本或重装…");
-    case Action::Uninstall: return QObject::tr("卸载…");
-    case Action::UseDesktop: return QObject::tr("设为下次启动的桌面");
-    case Action::Enable: return QObject::tr("启用");
-    case Action::Disable: return QObject::tr("停用");
-    case Action::Restart: return QObject::tr("重启工作台");
-    case Action::AddInstance: return QObject::tr("添加实例");
-    case Action::Configure: return QObject::tr("配置实例");
-    case Action::ShowLogs: return QObject::tr("查看日志");
+    case Action::Install: return eve::desktopText("extensions.installAnotherVersionOrReinstall");
+    case Action::Uninstall: return eve::desktopText("extensions.uninstall");
+    case Action::UseDesktop: return eve::desktopText("extensions.useDesktopOnNextLaunch");
+    case Action::Enable: return eve::desktopText("configuration.enable");
+    case Action::Disable: return eve::desktopText("configuration.disable");
+    case Action::Restart: return eve::desktopText("extensions.restartWorkbench");
+    case Action::AddInstance: return eve::desktopText("extensions.addInstance");
+    case Action::Configure: return eve::desktopText("extensions.configureInstance");
+    case Action::ShowLogs: return eve::desktopText("extensions.viewLogs");
     }
     return {};
 }
 QString installCaption(const ExtensionPreview& preview)
 {
-    if (preview.installedVersion.isEmpty()) return QObject::tr("确认安装");
+    if (preview.item.kind == ExtensionKind::Language && !preview.installedHash.isEmpty())
+        return eve::desktopText("extensions.confirmReinstall");
+    if (preview.installedVersion.isEmpty()) return eve::desktopText("extensions.confirmInstallation");
     // The manifest uses decimal components that can exceed a native integer.
     const auto current = preview.installedVersion.split('.');
     const auto next = preview.item.version.split('.');
@@ -55,9 +58,9 @@ QString installCaption(const ExtensionPreview& preview)
         const auto right = next.value(i, QStringLiteral("0"));
         if (left == right) continue;
         const bool newer = right.size() == left.size() ? right > left : right.size() > left.size();
-        return newer ? QObject::tr("确认更新") : QObject::tr("确认安装旧版");
+        return newer ? eve::desktopText("extensions.confirmUpdate") : eve::desktopText("extensions.confirmDowngrade");
     }
-    return QObject::tr("确认重装");
+    return eve::desktopText("extensions.confirmReinstall");
 }
 QPixmap packageIcon(const ExtensionItem& item, const QSize& size, qreal scale)
 {
@@ -69,7 +72,8 @@ QPixmap packageIcon(const ExtensionItem& item, const QSize& size, qreal scale)
         image = eveApplicationIcon().pixmap(pixels);
     } else {
         const auto tint = eTheme->getThemeColor(eTheme->getThemeMode(), ElaThemeType::PrimaryNormal);
-        image = ElaIcon::getInstance()->getElaIcon(ElaIconType::PuzzlePiece, pixels.width(), tint).pixmap(pixels);
+        const auto icon = item.kind == ExtensionKind::Language ? ElaIconType::Language : ElaIconType::PuzzlePiece;
+        image = ElaIcon::getInstance()->getElaIcon(icon, pixels.width(), tint).pixmap(pixels);
     }
     image.setDevicePixelRatio(scale);
     return image;
@@ -178,7 +182,7 @@ ExtensionDialog::ExtensionDialog(std::shared_ptr<qt::QtScheduler> scheduler, std
       window_(static_cast<ElaDialog*>(parent()))
 {
     window_->setObjectName("EveExtensionDialog");
-    window_->setWindowTitle(tr("插件详情"));
+    window_->setWindowTitle(eve::desktopText("extensions.extensionDetails"));
     window_->setIsStayTop(false);
     auto layout = new QVBoxLayout(window_);
     // ElaAppBar already reserves its height in the window's contents margins.
@@ -208,22 +212,22 @@ ExtensionDialog::ExtensionDialog(std::shared_ptr<qt::QtScheduler> scheduler, std
     actions->setIsAnimation(false);
     primary_ = button(window_, {}, "EveExtensionPrimary");
     primaryButton(primary_);
-    workspaceOptions_ = menuButton(window_, tr("其他工作区操作"), "EveExtensionWorkspaceOptions");
+    workspaceOptions_ = menuButton(window_, eve::desktopText("extensions.moreWorkspaceActions"), "EveExtensionWorkspaceOptions");
     primaryButton(workspaceOptions_);
     workspaceMenu_ = new ElaMenu(workspaceOptions_);
     workspaceOptions_->setMenu(workspaceMenu_);
     primaryGroup_ = actionGroup(window_, primary_, workspaceOptions_);
 
     uninstall_ = button(window_, actionTitle(Action::Uninstall), "EveExtensionUninstall");
-    packageOptions_ = menuButton(window_, tr("其他安装包操作"), "EveExtensionPackageOptions");
+    packageOptions_ = menuButton(window_, eve::desktopText("extensions.morePackageActions"), "EveExtensionPackageOptions");
     packageMenu_ = new ElaMenu(packageOptions_);
     packageOptions_->setMenu(packageMenu_);
     packageGroup_ = actionGroup(window_, uninstall_, packageOptions_);
 
     more_ = new ElaToolButton(window_);
     more_->setObjectName("EveExtensionMore");
-    more_->setAccessibleName(tr("管理扩展"));
-    more_->setToolTip(tr("管理扩展"));
+    more_->setAccessibleName(eve::desktopText("extensions.manageExtension"));
+    more_->setToolTip(eve::desktopText("extensions.manageExtension"));
     more_->setFocusPolicy(Qt::StrongFocus);
     more_->setFixedSize(40, 30);
     more_->setIsTransparent(true);
@@ -231,7 +235,7 @@ ExtensionDialog::ExtensionDialog(std::shared_ptr<qt::QtScheduler> scheduler, std
     menu_ = new ElaMenu(more_);
     more_->setMenu(menu_);
 
-    cancel_ = button(window_, tr("取消"), "EveExtensionCancel");
+    cancel_ = button(window_, eve::desktopText("extensions.cancel"), "EveExtensionCancel");
     actions->addWidget(primaryGroup_);
     actions->addWidget(packageGroup_);
     actions->addWidget(more_);
@@ -250,7 +254,7 @@ ExtensionDialog::ExtensionDialog(std::shared_ptr<qt::QtScheduler> scheduler, std
     intro->addWidget(review_);
     body_ = new ExtensionReadmeView(introduction);
     body_->setObjectName("EveExtensionDescription");
-    body_->setAccessibleName(tr("扩展文档"));
+    body_->setAccessibleName(eve::desktopText("extensions.extensionDocumentation"));
     intro->addWidget(body_, 1);
     facts_ = new ExtensionFacts(tabs_, [self = QPointer<ExtensionDialog>(this)](const QString& category) {
         if (!self || !self->categorySelected || !self->item_ || self->preview_ || self->removalHash_ ||
@@ -259,11 +263,11 @@ ExtensionDialog::ExtensionDialog(std::shared_ptr<qt::QtScheduler> scheduler, std
         self->window_->reject();
         if (self) selected(category);
     });
-    tabs_->addTab(new DetailColumns(introduction, facts_, tabs_), tr("详情"));
+    tabs_->addTab(new DetailColumns(introduction, facts_, tabs_), eve::desktopText("extensions.details"));
 
     features_ = new ExtensionFeaturesView(tabs_);
-    featuresTab_ = tabs_->addTab(features_, tr("功能"));
-    auto manage = addTab(tabs_, tr("工作区实例"), managementTab_);
+    featuresTab_ = tabs_->addTab(features_, eve::desktopText("extensions.features"));
+    auto manage = addTab(tabs_, eve::desktopText("extensions.workspaceInstances"), managementTab_);
     auto pane = manage->parentWidget();
     scope_ = label(pane, 16, "EveExtensionWorkspace");
     scope_->setIsBold(true);
@@ -271,7 +275,7 @@ ExtensionDialog::ExtensionDialog(std::shared_ptr<qt::QtScheduler> scheduler, std
     instance_ = new ElaComboBox(pane);
     instance_->setProperty("ElaTranslucentFill", true);
     instance_->setObjectName("EveExtensionInstance");
-    instance_->setAccessibleName(tr("工作区实例"));
+    instance_->setAccessibleName(eve::desktopText("extensions.workspaceInstances"));
     instance_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     manage->addWidget(instance_);
     auto operations = new ElaFlowLayout(0, 8, 5);
@@ -286,15 +290,15 @@ ExtensionDialog::ExtensionDialog(std::shared_ptr<qt::QtScheduler> scheduler, std
     manage->addStretch();
     changelog_ = new ExtensionReadmeView(tabs_);
     changelog_->setObjectName("EveExtensionChangelog");
-    changelog_->setAccessibleName(tr("变更记录"));
-    tabs_->addTab(changelog_, tr("变更记录"));
+    changelog_->setAccessibleName(eve::desktopText("extensions.changelog"));
+    tabs_->addTab(changelog_, eve::desktopText("extensions.changelog"));
     layout->addWidget(tabs_, 1);
 
     status_ = label(window_, 14, "EveExtensionStatus");
     layout->addWidget(status_);
     auto errors = new QHBoxLayout;
-    retryButton_ = button(window_, tr("重试"), "EveExtensionRetry");
-    logButton_ = button(window_, tr("查看日志"), "EveExtensionErrorLogs");
+    retryButton_ = button(window_, eve::desktopText("extensions.retry"), "EveExtensionRetry");
+    logButton_ = button(window_, eve::desktopText("extensions.viewLogs"), "EveExtensionErrorLogs");
     errors->addWidget(retryButton_);
     errors->addWidget(logButton_);
     errors->addStretch();
@@ -418,7 +422,7 @@ void ExtensionDialog::applyInventory(const QString& id, const std::vector<Extens
     const auto found = std::find_if(inventory.begin(), inventory.end(), [&](const auto& entry) { return entry.id == id; });
     if (found == inventory.end()) {
         item_.reset();
-        if (message_.isEmpty()) message_ = tr("该扩展已从当前目录移除。");
+        if (message_.isEmpty()) message_ = eve::desktopText("extensions.thisExtensionHasBeenRemovedFromThe");
     } else {
         item_ = *found;
     }
@@ -462,15 +466,17 @@ void ExtensionDialog::render()
 {
     const auto* row = preview_ ? &preview_->item : item_ ? &*item_ : nullptr;
     const bool actionable = !reading_ && !applying_;
-    title_->setText(row ? row->name : reading_ ? tr("安装扩展") : tr("插件详情"));
+    title_->setText(row ? row->name : reading_ ? eve::desktopText("extensions.installExtension") : eve::desktopText("extensions.extensionDetails"));
     icon_->setVisible(row != nullptr);
     updateIcon();
     QStringList metadata;
     if (row) {
         if (!row->publisher.isEmpty()) metadata << row->publisher;
-        if (!row->version.isEmpty()) metadata << tr("版本 %1").arg(row->version);
-        metadata << (row->kind == ExtensionKind::Desktop ? tr("桌面外壳") : tr("业务扩展"));
-        if (row->builtin) metadata << tr("内置");
+        if (!row->version.isEmpty()) metadata << eve::desktopText("extensions.version").arg(row->version);
+        metadata << (row->kind == ExtensionKind::Desktop ? eve::desktopText("extensions.desktopShell") :
+                     row->kind == ExtensionKind::Language ? eve::desktopText("extensions.languageExtension") :
+                     eve::desktopText("extensions.businessExtension"));
+        if (row->builtin) metadata << eve::desktopText("extensions.builtIn");
     }
     metadata_->setText(metadata.join(QStringLiteral("   ·   ")));
     metadata_->setVisible(!metadata.isEmpty());
@@ -479,7 +485,7 @@ void ExtensionDialog::render()
     summary_->setVisible(!summary.isEmpty());
     summary_->setToolTip(QStringLiteral("<span>%1</span>").arg(summary.toHtmlEscaped()));
     body_->setContent(row ? row->readme : QString{},
-        row && !row->description.isEmpty() ? row->description : tr("暂无扩展介绍。"));
+        row && !row->description.isEmpty() ? row->description : eve::desktopText("extensions.noExtensionDescriptionProvided"));
     const bool hasChangelog = row && !row->changelog.isEmpty();
     tabs_->setTabVisible(tabs_->indexOf(changelog_), hasChangelog);
     changelog_->setContent(hasChangelog ? row->changelog : QString{}, {});
@@ -487,9 +493,13 @@ void ExtensionDialog::render()
     review_->setVisible(preview_.has_value());
     if (preview_) {
         const auto versions = preview_->installedVersion.isEmpty() ? QString{} :
-            tr("已安装版本   %1    →    所选版本   %2\n").arg(preview_->installedVersion, preview_->item.version);
-        review_->setText(versions + tr("文件   %1\nSHA-256   %2\n\n此安装包将运行本机代码。请确认你信任它的来源。")
-                         .arg(QFileInfo(preview_->path).fileName(), preview_->sha256));
+            eve::desktopText("extensions.installedVersionSelectedVersion").arg(preview_->installedVersion, preview_->item.version);
+        const auto file = eve::desktopText("extensions.fileSHA256")
+            .arg(QFileInfo(preview_->path).fileName(), preview_->sha256);
+        const auto note = row->kind == ExtensionKind::Language
+            ? eve::desktopText("extensions.thisPackageContainsWorkbenchTranslationData")
+            : eve::desktopText("extensions.thisPackageRunsNativeCodeConfirmThat");
+        review_->setText(versions + file + note);
     }
 
     const bool management = item_ && !preview_ &&
@@ -514,7 +524,7 @@ void ExtensionDialog::render()
     renderFeatures(featureItem, plugin.isEmpty() ? ExtensionWorkspace{} : workspace);
     if (management) {
         const auto paths = offers(Action::Configure) ? workspace.paths : QStringList{};
-        scope_->setText(tr("当前工作区实例（%1）").arg(item_->instances));
+        scope_->setText(eve::desktopText("extensions.currentWorkspaceInstances").arg(item_->instances));
         QSignalBlocker blocked(instance_);
         bool pathsChanged = paths.size() != instance_->count();
         for (int i = 0; !pathsChanged && i < paths.size(); ++i)
@@ -536,12 +546,15 @@ void ExtensionDialog::render()
         logs_->setEnabled(actionable);
     }
     renderActions();
-    const auto message = removalHash_ && message_.isEmpty() && item_
-        ? tr("确认卸载 %1？当前工作区的 %2 个实例配置将保留。").arg(item_->name).arg(item_->instances)
-        : message_;
+    auto message = message_;
+    if (removalHash_ && message.isEmpty() && item_) {
+        message = item_->kind == ExtensionKind::Language ? eve::desktopText("extensions.uninstall2").arg(item_->name)
+            : eve::desktopText("extensions.uninstallTheConfigurationForTheInstancesIn")
+                  .arg(item_->name).arg(item_->instances);
+    }
     status_->setText(message);
     status_->setVisible(!message.isEmpty());
-    const auto retryCaption = preview_ ? tr("重新预览") : tr("重试");
+    const auto retryCaption = preview_ ? eve::desktopText("extensions.previewAgain") : eve::desktopText("extensions.retry");
     retryButton_->setText(retryCaption);
     retryButton_->setAccessibleName(retryCaption);
     retryButton_->setVisible(actionable && bool(retry_));
@@ -559,14 +572,22 @@ void ExtensionDialog::renderActions()
         title = installCaption(*preview_);
         primaryAction_ = [this] { submit(Action::Install, preview_->item.id, preview_->path, preview_->sha256); };
     } else if (removalHash_ && item_) {
-        title = tr("确认卸载");
+        title = eve::desktopText("extensions.confirmUninstall");
         primaryAction_ = [this] { submit(Action::Uninstall, item_->id, {}, *removalHash_); };
     } else if (item_) {
         canUninstall = offers(Action::Uninstall);
+        const bool language = item_->kind == ExtensionKind::Language;
+        const auto moreActions = language ? eve::desktopText("extensions.moreLanguageActions") : eve::desktopText("extensions.moreWorkspaceActions");
+        workspaceOptions_->setAccessibleName(moreActions);
+        workspaceOptions_->setToolTip(moreActions);
         const auto caption = [this](Action action) {
-            if (action == Action::Install && item_->missing) return tr("重新安装…");
-            if (action == Action::Enable) return tr("启用工作区实例");
-            if (action == Action::Disable) return tr("停用工作区实例");
+            if (action == Action::Install && item_->missing) return eve::desktopText("extensions.reinstall");
+            if (item_->kind == ExtensionKind::Language) {
+                if (action == Action::Enable) return eve::desktopText("extensions.useDisplayLanguage");
+                if (action == Action::Disable) return eve::desktopText("extensions.switchToEnglish");
+            }
+            if (action == Action::Enable) return eve::desktopText("extensions.enableWorkspaceInstances");
+            if (action == Action::Disable) return eve::desktopText("extensions.disableWorkspaceInstances");
             return actionTitle(action);
         };
         const auto addAction = [this, &caption](ElaMenu* menu, Action action) {
@@ -587,8 +608,7 @@ void ExtensionDialog::renderActions()
         if (offers(Action::Install) && (repair || (!leading && !canUninstall)))
             leading = Action::Install;
         if (leading) {
-            title = actionTitle(*leading);
-            if (*leading == Action::Install) title = caption(*leading);
+            title = language || *leading == Action::Install ? caption(*leading) : actionTitle(*leading);
             primaryAction_ = [this, action = *leading] { dispatch(action); };
             for (const auto action : workspaceActions)
                 if (action != *leading) addAction(workspaceMenu_, action);
@@ -602,7 +622,7 @@ void ExtensionDialog::renderActions()
         const auto copyId = item_->legacyReference ? item_->pluginId : item_->id;
         if (!copyId.isEmpty()) {
             if (!menu_->isEmpty()) menu_->addSeparator();
-            auto copy = menu_->addAction(item_->legacyReference ? tr("复制插件标识") : tr("复制模块标识"));
+            auto copy = menu_->addAction(item_->legacyReference ? eve::desktopText("extensions.copyPluginID") : eve::desktopText("extensions.copyModuleID"));
             connect(copy, &QAction::triggered, this, [copyId] { QApplication::clipboard()->setText(copyId); });
         }
     }
@@ -627,7 +647,8 @@ void ExtensionDialog::choosePackage(const QString& expectedId)
     const auto ticket = presentation_;
     QPointer<ExtensionDialog> self(this);
     const auto path = QFileDialog::getOpenFileName(window_->isVisible() ? window_ : window_->parentWidget(),
-        tr("选择 Eve 扩展安装包"), {}, tr("Eve 扩展安装包 (*.evepkg)"));
+        eve::desktopText("extensions.selectAnEveExtensionPackage"), {},
+        eve::desktopText("extensions.eveExtensionPackages").arg(QStringLiteral("*.evepkg *.evelang")));
     if (self && ticket == presentation_ && !path.isEmpty()) previewFile(path, target, legacyPlugin);
 }
 void ExtensionDialog::previewFile(const QString& path, const QString& expectedId, const QString& legacyPlugin)
@@ -643,7 +664,7 @@ void ExtensionDialog::previewFile(const QString& path, const QString& expectedId
     features_->verticalScrollBar()->setValue(0);
     changelog_->verticalScrollBar()->setValue(0);
     reading_ = true;
-    message_ = tr("正在读取安装包…");
+    message_ = eve::desktopText("extensions.readingPackage");
     QPointer<ExtensionDialog> self(this);
     const auto host = controls_;
     const auto scheduler = scheduler_;
@@ -664,7 +685,7 @@ void ExtensionDialog::previewFile(const QString& path, const QString& expectedId
         const bool legacyMatch = !legacyPlugin.isEmpty() && preview.item.kind == ExtensionKind::Business &&
                                  preview.item.pluginId == legacyPlugin;
         if (!expectedId.isEmpty() && preview.item.id != expectedId && !legacyMatch) {
-            self->showFailure(makeError(ErrorCode::InvalidArgument, "所选安装包与要更新的扩展标识不同。"),
+            self->showFailure(makeError(ErrorCode::InvalidArgument, eve::desktopText("extensions.theSelectedPackageHasADifferentExtension").toStdString()),
                               [self, expectedId] { if (self) self->choosePackage(expectedId); });
             return;
         }
@@ -714,6 +735,10 @@ void ExtensionDialog::dispatch(Action action)
     case Action::ShowLogs:
         presentWorkspaceAction(action, item_->pluginId, instance_->currentText());
         return;
+    case Action::Enable:
+    case Action::Disable:
+        submit(action, item_->id, {}, item_->kind == ExtensionKind::Language ? item_->packageHash : QString{});
+        return;
     default: submit(action, item_->id, {}, {}); return;
     }
 }
@@ -722,10 +747,12 @@ void ExtensionDialog::submit(Action action, const QString& id, const QString& pa
     if (applying_ || reading_) return;
     const auto target = id, archive = path, reviewed = digest;
     const auto install = action == Action::Install ? preview_ : std::nullopt;
+    const bool removingActiveLanguage = action == Action::Uninstall && item_ &&
+        item_->kind == ExtensionKind::Language && item_->current;
     const auto ticket = presentation_;
     retry_ = {};
     applying_ = true;
-    message_ = tr("正在应用更改…");
+    message_ = eve::desktopText("extensions.applyingChanges");
     QPointer<ExtensionDialog> self(this);
     const auto host = controls_;
     const auto scheduler = scheduler_;
@@ -734,7 +761,7 @@ void ExtensionDialog::submit(Action action, const QString& id, const QString& pa
     const auto task = install && host->installReviewed ? host->installReviewed(*install) :
                                                         host->apply(action, target, archive, reviewed);
     task.thenOn(scheduler,
-        [self, ticket, action, target, archive, reviewed](const Result<void>& result) {
+        [self, ticket, action, target, archive, reviewed, removingActiveLanguage](const Result<void>& result) {
             if (!self) return;
             // Even a failed activation may have installed the package. Always reload the home inventory.
             const auto changed = self->changed_;
@@ -749,7 +776,8 @@ void ExtensionDialog::submit(Action action, const QString& id, const QString& pa
                 return;
             }
             if (!result.hasValue()) {
-                if (action == Action::Uninstall && result.error().code == ErrorCode::ConfigConflict) {
+                const bool languageSelection = !reviewed.isEmpty() && (action == Action::Enable || action == Action::Disable);
+                if ((action == Action::Uninstall || languageSelection) && result.error().code == ErrorCode::ConfigConflict) {
                     self->removalHash_.reset();
                     self->message_ = QString::fromStdString(result.error().message);
                     self->reloadItem(target);
@@ -768,7 +796,9 @@ void ExtensionDialog::submit(Action action, const QString& id, const QString& pa
             }
             self->preview_.reset();
             self->removalHash_.reset();
-            self->message_ = action == Action::Uninstall ? tr("已卸载扩展。") : tr("更改已应用。");
+            self->message_ = removingActiveLanguage ? eve::desktopText("extensions.languageRemovedRestart")
+                : action == Action::Uninstall ? eve::desktopText("extensions.extensionUninstalled")
+                                              : eve::desktopText("extensions.changesApplied");
             self->reloadItem(target);
         });
 }

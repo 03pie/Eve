@@ -1,8 +1,10 @@
 /** @file panel.cpp
  * @brief 可检索命令与当前运行问题；错误有来源、详情及稳定身份定位。
  */
+#include "desktop_text.hpp"
 #include "panel_p.hpp"
 #include "appearance_p.hpp"
+#include "fixed_tabs_p.hpp"
 #include "theme_palette_p.hpp"
 #include <ElaLineEdit.h>
 #include <ElaListView.h>
@@ -87,7 +89,7 @@ class QuickAccess final : public QWidget
         search_->setObjectName("EveCommandFilter");
         search_->setClearButtonEnabled(true);
         toolbar->addWidget(search_, 1);
-        run_ = new ActionButton(tr("执行"), this);
+        run_ = new ActionButton(eve::desktopText("panel.run"), this);
         run_->setObjectName("EveRunCommand");
         run_->setFixedWidth(72);
         toolbar->addWidget(run_);
@@ -105,14 +107,14 @@ class QuickAccess final : public QWidget
         };
         commands_ = makeList("EveCommandList");
         commandList = commands_;
-        commands_->setAccessibleName(tr("命令结果"));
+        commands_->setAccessibleName(eve::desktopText("panel.commandResults"));
         pages_ = makeList("EveQuickPageList");
-        pages_->setAccessibleName(tr("页面结果"));
+        pages_->setAccessibleName(eve::desktopText("panel.pageResults"));
         model_ = new QuickPageModel(pages_);
         pages_->setModel(model_);
-        commandResult_ = new ElaText(tr("选择命令后按回车执行。"), 12, this);
+        commandResult_ = new ElaText(eve::desktopText("panel.selectACommandAndPressEnterTo"), 12, this);
         commandResult_->setObjectName("EveCommandResult");
-        pageResult_ = new ElaText(tr("没有匹配的页面。"), 12, this);
+        pageResult_ = new ElaText(eve::desktopText("panel.noMatchingPages"), 12, this);
         for (auto result : {commandResult_, pageResult_}) {
             result->setTextFormat(Qt::PlainText);
             result->setWordWrap(true);
@@ -284,13 +286,13 @@ class QuickAccess final : public QWidget
     {
         const bool commands = commandEntry_ || search_->text().startsWith(QLatin1Char('>'));
         mode_ = commands ? QuickAccessMode::Commands : QuickAccessMode::Pages;
-        search_->setPlaceholderText(commands ? tr("搜索平台和插件命令（名称或 ID）") : tr("搜索页面，输入 > 运行命令"));
-        search_->setAccessibleName(commands ? tr("搜索命令") : tr("搜索页面"));
+        search_->setPlaceholderText(commands ? eve::desktopText("panel.searchWorkbenchAndPluginCommandsByName") : eve::desktopText("panel.searchPagesOrTypeToRunA"));
+        search_->setAccessibleName(commands ? eve::desktopText("panel.searchCommands") : eve::desktopText("panel.searchPages"));
         commands_->setVisible(commands);
         pages_->setVisible(!commands);
         commandResult_->setVisible(commands);
         pageResult_->setVisible(!commands && model_->rowCount() == 0);
-        run_->setText(commands ? tr("执行") : tr("打开"));
+        run_->setText(commands ? eve::desktopText("panel.run") : eve::desktopText("panel.open"));
         run_->setEnabled(commands || model_->rowCount() != 0);
     }
     QListView* activeList() const { return mode_ == QuickAccessMode::Commands ? commands_ : pages_; }
@@ -397,7 +399,7 @@ QString details(const ErrorInfo& error, unsigned depth = 0)
     return text;
 }
 } // namespace
-void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService> diagnostics,
+void installProblemsPanel(FixedDiagnosticsTabs* panel, std::shared_ptr<DiagnosticsService> diagnostics,
                           std::shared_ptr<OutputControl> output, WindowAccess access,
                           std::function<Result<void>(InstanceId, const QString&)> locate)
 {
@@ -408,19 +410,21 @@ void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService>
     layout->setSpacing(4);
     auto filter = new ElaLineEdit(page);
     filter->setObjectName("EveProblemsFilter");
-    filter->setPlaceholderText(QString::fromUtf8("筛选问题：插件、路径或错误信息"));
+    filter->setPlaceholderText(eve::desktopText("panel.filterProblemsByPluginPathOrError"));
     filter->setClearButtonEnabled(true);
     auto actions = new QHBoxLayout;
     actions->addWidget(filter, 1);
-    auto related = new ActionButton(QString::fromUtf8("查看相关日志"), page);
+    auto related = new ActionButton(eve::desktopText("configuration.viewRelatedLogs"), page);
     related->setObjectName("EveProblemLog");
+    // Ela's disabled fill keeps the subdued label readable over the window material.
+    related->setProperty("ElaTranslucentFill", false);
     related->setEnabled(false);
     actions->addWidget(related);
     layout->addLayout(actions);
     auto split = new QSplitter(Qt::Horizontal, page);
     auto tree = new QTreeWidget(split);
     tree->setObjectName("EveProblemsTree");
-    tree->setHeaderLabels({QString::fromUtf8("来源 / 问题"), QString::fromUtf8("说明")});
+    tree->setHeaderLabels({eve::desktopText("panel.sourceProblem"), eve::desktopText("panel.description")});
     tree->setRootIsDecorated(true);
     tree->setUniformRowHeights(true);
     tree->setFrameShape(QFrame::NoFrame);
@@ -454,17 +458,17 @@ void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService>
     theme(eTheme->getThemeMode());
     QObject::connect(eTheme, &ElaTheme::themeModeChanged, page, theme);
     detail->setObjectName("EveProblemDetails");
-    detail->setPlaceholderText(QString::fromUtf8("选择问题查看原因；双击定位到插件管理。"));
+    detail->setPlaceholderText(eve::desktopText("panel.selectAProblemForDetailsDoubleClick"));
     split->addWidget(tree);
     split->addWidget(detail);
     split->setStretchFactor(0, 2);
     split->setStretchFactor(1, 1);
     layout->addWidget(split, 1);
-    auto status = new ElaText(QString::fromUtf8("正在读取运行诊断…"), 12, page);
+    auto status = new ElaText(eve::desktopText("panel.readingRuntimeDiagnostics"), 12, page);
     status->setTextFormat(Qt::PlainText);
     status->setObjectName("EveProblemsStatus");
     layout->addWidget(status);
-    panel->addTab(page, QString::fromUtf8("问题"));
+    panel->addTab(page, eve::desktopText("panel.problems"));
     auto previous = std::make_shared<QString>();
     using ProblemEvent = std::pair<std::uint64_t, QString>;
     auto seen = std::make_shared<std::map<QString, ProblemEvent>>();
@@ -472,7 +476,7 @@ void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService>
         auto result = diagnostics->snapshot();
         if (!result.hasValue()) {
             access([&] {
-                status->setText(QString::fromUtf8("运行诊断暂不可用，保留上次结果：") +
+                status->setText(eve::desktopText("panel.runtimeDiagnosticsUnavailableShowingPreviousResults") +
                                 QString::fromStdString(result.error().message));
             });
             return;
@@ -507,10 +511,10 @@ void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService>
                                 *dependency.error, row.instance.instance, true);
             }
             if (snapshot.configurationError)
-                add("configuration/source", QString::fromUtf8("配置"), *snapshot.configurationError);
+                add("configuration/source", eve::desktopText("configuration.configuration"), *snapshot.configurationError);
             if (snapshot.configuration) {
                 if (snapshot.configuration->error)
-                    add("configuration/error", QString::fromUtf8("配置"), *snapshot.configuration->error);
+                    add("configuration/error", eve::desktopText("configuration.configuration"), *snapshot.configuration->error);
                 for (const auto& row : snapshot.configuration->entries)
                     if (row.error)
                         add("configuration/" + QString::fromStdString(row.path), QString::fromStdString(row.path),
@@ -542,7 +546,7 @@ void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService>
         for (const auto& old : *seen)
             if (!active.count(old.first))
                 (void)appendOutput(output, {}, "platform",
-                                   QString::fromUtf8("%1：先前的问题已解除（记录 #%2）。")
+                                   eve::desktopText("panel.thePreviousProblemWasResolvedRecord")
                                        .arg(old.second.second)
                                        .arg(old.second.first)
                                        .toStdString());
@@ -552,14 +556,14 @@ void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService>
         access([&] {
             status->setText(
                 !result.hasValue()
-                    ? QString::fromUtf8("运行诊断暂不可用：") + QString::fromStdString(result.error().message)
+                    ? eve::desktopText("panel.runtimeDiagnosticsUnavailable") + QString::fromStdString(result.error().message)
                 : problems.empty()
-                    ? QString::fromUtf8("当前没有问题")
-                    : QString::fromUtf8("%1 个运行问题；双击可定位，恢复后自动移除。").arg(problems.size()));
+                    ? eve::desktopText("panel.noCurrentProblems")
+                    : eve::desktopText("panel.runtimeProblemsDoubleClickToLocateAn").arg(problems.size()));
             const auto tab = panel->indexOf(page);
             if (tab >= 0)
-                panel->setTabText(tab, problems.empty() ? QString::fromUtf8("问题")
-                                                        : QString::fromUtf8("问题 %1").arg(problems.size()));
+                panel->setTabText(tab, problems.empty() ? eve::desktopText("panel.problems")
+                                                        : eve::desktopText("panel.problems2").arg(problems.size()));
             if (fingerprint == *previous)
                 return;
             *previous = fingerprint;
@@ -578,7 +582,7 @@ void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService>
                     group->setExpanded(true);
                 }
                 auto item = new QTreeWidgetItem(
-                    group, {problem.warning ? QString::fromUtf8("警告") : QString::fromUtf8("错误"), problem.message});
+                    group, {problem.warning ? eve::desktopText("notifications.warning") : eve::desktopText("notifications.error"), problem.message});
                 item->setData(0, Qt::UserRole, problem.id);
                 item->setData(0, Qt::UserRole + 1, QVariant::fromValue<qulonglong>(problem.instance.value()));
                 item->setData(0, Qt::UserRole + 2, problem.detail);

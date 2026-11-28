@@ -89,11 +89,11 @@ void ElaPlainTextEdit::contextMenuEvent(QContextMenuEvent* event)
     QAction* action = nullptr;
     if (!isReadOnly())
     {
-        action = menu->addElaIconAction(ElaIconType::ArrowRotateLeft, "撤销", QKeySequence::Undo);
+        action = menu->addElaIconAction(ElaIconType::ArrowRotateLeft, tr("撤销"), QKeySequence::Undo);
         action->setEnabled(isUndoRedoEnabled() ? document()->isUndoAvailable() : false);
         connect(action, &QAction::triggered, this, &ElaPlainTextEdit::undo);
 
-        action = menu->addElaIconAction(ElaIconType::ArrowRotateRight, "恢复", QKeySequence::Redo);
+        action = menu->addElaIconAction(ElaIconType::ArrowRotateRight, tr("恢复"), QKeySequence::Redo);
         action->setEnabled(isUndoRedoEnabled() ? document()->isRedoAvailable() : false);
         connect(action, &QAction::triggered, this, &ElaPlainTextEdit::redo);
         menu->addSeparator();
@@ -101,25 +101,25 @@ void ElaPlainTextEdit::contextMenuEvent(QContextMenuEvent* event)
 #ifndef QT_NO_CLIPBOARD
     if (!isReadOnly())
     {
-        action = menu->addElaIconAction(ElaIconType::KnifeKitchen, "剪切", QKeySequence::Cut);
+        action = menu->addElaIconAction(ElaIconType::KnifeKitchen, tr("剪切"), QKeySequence::Cut);
         action->setEnabled(!isReadOnly() && !textCursor().selectedText().isEmpty());
         connect(action, &QAction::triggered, this, &ElaPlainTextEdit::cut);
     }
 
-    action = menu->addElaIconAction(ElaIconType::Copy, "复制", QKeySequence::Copy);
+    action = menu->addElaIconAction(ElaIconType::Copy, tr("复制"), QKeySequence::Copy);
     action->setEnabled(!textCursor().selectedText().isEmpty());
     connect(action, &QAction::triggered, this, &ElaPlainTextEdit::copy);
 
     if (!isReadOnly())
     {
-        action = menu->addElaIconAction(ElaIconType::Paste, "粘贴", QKeySequence::Paste);
+        action = menu->addElaIconAction(ElaIconType::Paste, tr("粘贴"), QKeySequence::Paste);
         action->setEnabled(!isReadOnly() && !QGuiApplication::clipboard()->text().isEmpty());
         connect(action, &QAction::triggered, this, &ElaPlainTextEdit::paste);
     }
 #endif
     if (!isReadOnly())
     {
-        action = menu->addElaIconAction(ElaIconType::DeleteLeft, "删除");
+        action = menu->addElaIconAction(ElaIconType::DeleteLeft, tr("删除"));
         action->setEnabled(!isReadOnly() && !toPlainText().isEmpty() && !textCursor().selectedText().isEmpty());
         connect(action, &QAction::triggered, this, [=](bool checked) {
             if (!textCursor().selectedText().isEmpty())
@@ -132,7 +132,7 @@ void ElaPlainTextEdit::contextMenuEvent(QContextMenuEvent* event)
     {
         menu->addSeparator();
     }
-    action = menu->addAction("全选");
+    action = menu->addAction(tr("全选"));
     action->setShortcut(QKeySequence::SelectAll);
     action->setEnabled(!toPlainText().isEmpty() && !(textCursor().selectedText() == toPlainText()));
     connect(action, &QAction::triggered, this, &ElaPlainTextEdit::selectAll);

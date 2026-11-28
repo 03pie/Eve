@@ -32,5 +32,6 @@
 - SuggestBox 增加可选通用建议过滤，查询和缓存选择都重查；呈现刷新不重复注册建议元数据。
 - ElaListView、ElaScrollArea、ElaPlainTextEdit 和 ElaDialog 的透明样式按控件类型匹配，宿主设置对象名后仍能使用相同材质。ElaComboBoxStyle 在 Windows 上也由自身绘制完整下拉背景、圆角和阴影，避免系统菜单底板遮盖透明边缘。
 - ElaFlowLayout 关闭动画时也会更新原位控件的尺寸，首页卡片的状态文本换行或缩短后，按钮对齐及下一行高度会随之更新。
+- ElaPlainTextEdit 的右键菜单文案走 Qt 翻译入口，允许宿主提供显示语言。
 
 升级时须明确比较上游提交、合并本地修正，并重跑动态节点删除、导航重入、主题及 ASan 测试。构建直接使用本目录，不下载/自动更新上游，不修改 sources/research 参考资料。

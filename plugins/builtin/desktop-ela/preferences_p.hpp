@@ -2,6 +2,9 @@
  * @brief 宿主界面偏好独立保存，不接触插件配置、实例身份或页面工厂。
  */
 #pragma once
+#include <QByteArray>
+#include <QFileSystemWatcher>
+#include <QJsonObject>
 #include <QObject>
 #include <QPixmap>
 #include <QPointer>
@@ -9,6 +12,7 @@
 #include <QTimer>
 #include <functional>
 class ElaWindow;
+class QImage;
 class QTabWidget;
 class QSplitter;
 namespace eve::ui::detail
@@ -28,7 +32,7 @@ struct SystemSurfaceSettings {
 class WorkbenchPreferences final : public QObject
 {
   public:
-    /** @brief 载入有界版本化偏好；无效数据保留默认布局并提供错误说明。 */
+    /** Load and monitor the user file owned by this window. */
     WorkbenchPreferences(ElaWindow *window, QTabWidget *panel, QString file);
     /** @brief 绑定设置页提示，立即回放当前状态，不保存插件回调。 */
     void setReporter(std::function<void(const QString &)> reporter);
@@ -38,25 +42,35 @@ class WorkbenchPreferences final : public QObject
     int panelHeight() const { return panelHeight_; }
     int material() const { return material_; }
     int transition() const { return transition_; }
+    bool darkTheme() const { return darkTheme_; }
     bool userCardVisible() const { return userCard_; }
     const QString &backgroundPath() const { return backgroundPath_; }
     const QPixmap &background() const { return background_; }
     const QString &appearanceHint() const { return appearanceHint_; }
+    const QString &filePath() const { return file_; }
     void observeAppearance(std::function<void()> observer);
+    void setFileGuard(std::function<void(const std::function<void()> &)> guard);
+    void setDarkTheme(bool dark);
     void setMaterial(int mode);
     void setTransition(int mode);
     void setUserCardVisible(bool visible);
     bool setBackground(const QString &path);
     /** Apply an observed system value to this workbench's current material and wallpaper. */
     void applySystemSurfaceSettings(SystemSurfaceSettings system);
-    /** @brief 原子写入已改变的偏好，失败保留旧文件且工作台继续可用。 */
-    bool flush();
+    /** Stop incoming file events and save pending edits before the window closes. */
+    bool close();
+    void openFile();
     /** @brief 恢复默认主题/布局，不应用业务配置或打开底部。 */
     void reset();
 
   private:
-    /** @brief 初始恢复不触发保存，未知版本也不在无用户操作时覆盖。 */
     void load();
+    bool flush(bool updateView = true);
+    void watchFiles();
+    void apply(const QJsonObject &value);
+    void applyBackground(const QString &path, const QImage &image);
+    QJsonObject snapshot() const;
+    void notifyControls();
     /** @brief 合并快速设置变化，写入窗口属于宿主定时器。 */
     void changed();
     /** @brief 面板显示时应用高度；隐藏时保留值，窗口缩小时重新限幅。 */
@@ -74,9 +88,15 @@ class WorkbenchPreferences final : public QObject
     QPixmap background_;
     QString backgroundPath_, appearanceHint_;
     int material_ = 0, transition_ = 0;
-    bool userCard_ = true;
+    bool darkTheme_ = false, userCard_ = true;
     QString file_, message_;
-    QTimer timer_;
+    QJsonObject baseline_;
+    QByteArray observed_;
+    bool observedWithFile_ = false;
+    bool hasObservation_ = false;
+    QFileSystemWatcher watcher_;
+    QTimer timer_, reloadTimer_;
+    std::function<void(const std::function<void()> &)> fileGuard_;
     std::function<void(const QString &)> reporter_;
     std::function<void()> appearanceObserver_;
     int panelHeight_ = panelHeightPixels.initial;

@@ -1,5 +1,6 @@
 /** @brief Shared value validation for desktop and windowless platform logging. */
 #pragma once
+#include "desktop_text.hpp"
 #include <eve/ui/output.hpp>
 #include <QString>
 #include <algorithm>
@@ -31,11 +32,11 @@ inline Result<OutputEntry> prepareOutput(std::optional<ContextIdentity> owner, s
     auto id =
         owner ? "plugin/" + std::to_string(owner->instance.value()) + "/" + std::to_string(owner->epoch) + "/" + channel
               : "platform";
-    const auto title = owner ? QString::fromUtf8("%1 · 实例 #%2 / 代 %3")
+    const auto title = owner ? eve::desktopText("logs.instanceEpoch")
                                    .arg(QString::fromStdString(channel))
                                    .arg(owner->instance.value())
                                    .arg(owner->epoch)
-                             : QString::fromUtf8("平台");
+                             : QStringLiteral("Platform");
     return Output::success({0, owner, std::move(id), title.toStdString(), std::move(text), level});
 }
 } // namespace eve::ui::detail

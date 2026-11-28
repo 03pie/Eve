@@ -2,6 +2,7 @@
  * @brief 对外输出服务、发布接纳与有界实时记录。
  */
 #include "output_state_p.hpp"
+#include "desktop_text.hpp"
 #include "output_record_p.hpp"
 #include <ElaComboBox.h>
 #include <ElaToolButton.h>
@@ -42,7 +43,7 @@ void OutputControl::admit(LogRecord row)
 {
     if (!row.entry.owner) {
         row.sourceId = QStringLiteral("platform");
-        row.sourceName = QString::fromUtf8("平台");
+        row.sourceName = QStringLiteral("Platform");
     } else {
         const auto owner = *row.entry.owner;
         if (row.sourceId.isEmpty()) {
@@ -135,7 +136,7 @@ std::shared_ptr<OutputControl> createOutput(std::shared_ptr<qt::QtScheduler> sch
     result->scheduler = std::move(scheduler);
     result->editor = editor;
     result->access = std::move(access);
-    editor->setPlaceholderText(QString::fromUtf8("当前目标暂无输出。运行命令或插件操作后会在这里显示真实记录。"));
+    editor->setPlaceholderText(eve::desktopText("output.noOutputForThisTargetYetRun"));
     return result;
 }
 void refreshOutput(const std::shared_ptr<OutputControl>& self)
@@ -240,7 +241,7 @@ Result<std::uint64_t> appendNativeOutput(const std::shared_ptr<OutputControl>& s
     row.utcMs = event.utcMs;
     row.severity = static_cast<LogSeverity>(severity);
     const auto channel = "native/" + std::to_string(event.instance.value()) + "/" + std::to_string(event.epoch) + "/log";
-    const auto title = QString::fromUtf8("Native · 实例 #%1 / 代 %2").arg(event.instance.value()).arg(event.epoch);
+    const auto title = eve::desktopText("output.nativeInstanceEpoch").arg(event.instance.value()).arg(event.epoch);
     row.entry = {sequence, ContextIdentity{event.instance, event.epoch}, channel, title.toStdString(),
                  event.record.text, static_cast<OutputLevel>(std::max(severity, 0))};
     self->admit(std::move(row));

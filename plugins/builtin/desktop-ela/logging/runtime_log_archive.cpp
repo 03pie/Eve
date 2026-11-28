@@ -2,6 +2,7 @@
  * @brief 每次宿主启动独占一个运行目录。只写已发布值，分页读取完整 JSON Lines。
  */
 #include "runtime_log_archive_p.hpp"
+#include "desktop_text.hpp"
 #include "output_record_p.hpp"
 #include "runtime_log_retention_p.hpp"
 #include <QCoreApplication>
@@ -208,7 +209,7 @@ void visitDisk(const QDir& run, quint64 before, QString& warning, Visitor visit,
                 break;
             }
             if (firstBlock && !block.endsWith('\n')) {
-                warning = QString::fromUtf8("日志末行不完整，已保留可读记录。");
+                warning = eve::desktopText("logs.theLastLogLineIsIncompleteReadable");
                 skipFragment = true;
             }
             firstBlock = false;
@@ -222,7 +223,7 @@ void visitDisk(const QDir& run, quint64 before, QString& warning, Visitor visit,
                 if (length && !skipFragment) {
                     const auto record = decode(block.mid(previous + 1, length));
                     if (!record)
-                        warning = QString::fromUtf8("日志中有无法读取的记录。");
+                        warning = eve::desktopText("logs.someLogRecordsCouldNotBeRead");
                     else if ((!before || record->eventId < before) && !visit(*record))
                         return;
                 }
@@ -233,7 +234,7 @@ void visitDisk(const QDir& run, quint64 before, QString& warning, Visitor visit,
             if (suffix.size() > maxLine) {
                 suffix.clear();
                 skipFragment = true;
-                warning = QString::fromUtf8("日志行过长。");
+                warning = eve::desktopText("logs.aLogLineExceedsTheLengthLimit");
             }
             end = start;
         }
@@ -310,17 +311,17 @@ LogRun describeRun(const QFileInfo& folder, const QString& id, const QJsonObject
     result.version = metadata.value("version").toString();
     result.startedUtcMs = started.isValid() ? started.toMSecsSinceEpoch() : 0;
     result.label = started.isValid() ? started.toLocalTime().toString("yyyy-MM-dd HH:mm:ss")
-                                     : QString::fromUtf8("开始时间未知");
+                                     : eve::desktopText("logs.startTimeUnknown");
     result.label += " · " + result.version;
     if (ended.isValid()) {
         result.endedUtcMs = ended.toMSecsSinceEpoch();
         result.state = LogRunState::Ended;
-        result.label += QString::fromUtf8(" · 正常结束");
+        result.label += eve::desktopText("logs.ended");
     } else if (activeLockOwner(folder, started, metadata)) {
         result.state = LogRunState::Active;
-        result.label += QString::fromUtf8(" · 正在运行");
+        result.label += eve::desktopText("logs.running");
     } else {
-        result.label += QString::fromUtf8(" · 结束未确认");
+        result.label += eve::desktopText("logs.endUnconfirmed");
     }
     return result;
 }
@@ -367,7 +368,7 @@ QString scanSavedDescending(const QString& workspace, const QString& run, quint6
 {
     const auto root = savedLogDirectory(workspace, run);
     if (root.isEmpty())
-        return QString::fromUtf8("该运行的归档不可用。");
+        return eve::desktopText("logs.theArchiveForThisRunIsUnavailable");
     QString warning;
     visitDisk(QDir(QDir(root).filePath(run)), beforeExclusive, warning, visitor);
     return warning;
@@ -658,7 +659,7 @@ struct RuntimeLogArchive::Impl {
                 continue;
             }
             std::unique_lock<std::mutex> guard(mutex);
-            state.problem = QString::fromUtf8("日志归档写入受阻，正在等待恢复。");
+            state.problem = eve::desktopText("logs.writingToTheLogArchiveIsBlocked");
             if (stopping) {
                 abandon(batch);
                 break;
@@ -678,7 +679,7 @@ struct RuntimeLogArchive::Impl {
                 applyRetention();
             } else {
                 std::lock_guard<std::mutex> guard(mutex);
-                state.problem = QString::fromUtf8("日志终态写入失败。");
+                state.problem = eve::desktopText("logs.couldNotWriteTheFinalLogStatus");
             }
         }
     }
@@ -687,7 +688,7 @@ struct RuntimeLogArchive::Impl {
                const std::atomic_bool* stop = nullptr) const
     {
         if (!validRun(requested)) {
-            warning = QString::fromUtf8("运行标识无效。");
+            warning = eve::desktopText("logs.invalidRunID");
             return;
         }
         if (requested == id) {
@@ -706,7 +707,7 @@ struct RuntimeLogArchive::Impl {
         const auto directory = directoryFor(requested);
         const auto folder = directory.isEmpty() ? QFileInfo{} : runDirectory(QDir(directory), requested);
         if (folder.filePath().isEmpty()) {
-            warning = QString::fromUtf8("该运行的归档不可用。");
+            warning = eve::desktopText("logs.theArchiveForThisRunIsUnavailable");
             return;
         }
         visitDisk(QDir(folder.absoluteFilePath()), before, warning, visitor, stop);
@@ -726,11 +727,12 @@ RuntimeLogArchive::RuntimeLogArchive(const QString& workspace, const QString& ve
         if (!data.isEmpty()) {
             d.selectDirectory(fallbackLogsPath(workspace, data));
             if (d.openDirectory())
-                d.fallbackNotice = QString::fromUtf8("工作区日志目录不可写，已改存到 ") + d.root.absolutePath();
+                d.fallbackNotice = eve::desktopText("logs.theWorkspaceLogFolderIsNotWritable")
+                    .arg(d.root.absolutePath());
         }
         if (!d.lock) {
             d.selectDirectory(primary);
-            d.state.problem = QString::fromUtf8("日志目录不可写，正在等待恢复。");
+            d.state.problem = eve::desktopText("logs.theLogFolderIsNotWritableWaiting");
         }
     }
     d.readRoots = savedLogRoots(workspace);
@@ -751,7 +753,7 @@ QString RuntimeLogArchive::error() const
     if (state.discarded || state.unconfirmed) {
         if (!message.isEmpty())
             message += " ";
-        message += QString::fromUtf8("已丢弃 %1 条，另有 %2 条未确认写入。").arg(state.discarded).arg(state.unconfirmed);
+        message += eve::desktopText("logs.recordsWereDiscardedAndWritesAreUnconfirmed").arg(state.discarded).arg(state.unconfirmed);
     }
     return message;
 }
@@ -876,7 +878,7 @@ Result<std::uint64_t> RuntimeLogArchive::writePlatform(std::string text, OutputL
         sequence = ++d.lastSequence;
     }
     entry.value().sequence = sequence;
-    LogRecord row{std::move(entry).value(), QStringLiteral("platform"), QString::fromUtf8("平台"),
+    LogRecord row{std::move(entry).value(), QStringLiteral("platform"), QStringLiteral("Platform"),
                   QDateTime::currentMSecsSinceEpoch()};
     row.operation = diagnostic.operation;
     row.diagnosticCode = QString::fromStdString(diagnostic.code);
@@ -956,10 +958,10 @@ LogSourceResult RuntimeLogArchive::sourceCatalog(const QString& run) const
     }
     const auto directory = d.directoryFor(run);
     if (directory.isEmpty())
-        return {{}, QString::fromUtf8("该运行的归档不可用。")};
+        return {{}, eve::desktopText("logs.theArchiveForThisRunIsUnavailable")};
     const QDir folder(QDir(directory).filePath(run));
     if (!folder.exists())
-        return {{}, QString::fromUtf8("该运行的归档不可用。")};
+        return {{}, eve::desktopText("logs.theArchiveForThisRunIsUnavailable")};
     QFile meta(folder.filePath("run.json"));
     const bool complete = meta.open(QIODevice::ReadOnly) && meta.size() <= 8192 &&
                           QJsonDocument::fromJson(meta.readAll()).object().contains("ended");

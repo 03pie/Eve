@@ -2,12 +2,13 @@
  * @brief 宿主固定标签页复用 Ela 外观与主题，阻止拖出为未托管窗口。
  */
 #pragma once
+#include "theme_palette_p.hpp"
 #include <ElaTabWidget.h>
 #include <ElaTheme.h>
-#include <QTabBar>
 #include <QMouseEvent>
 #include <QPalette>
-#include "theme_palette_p.hpp"
+#include <QTabBar>
+#include <algorithm>
 namespace eve::ui::detail {
 /** @brief 固定诊断标签归宿主窗口所有，禁止 Ela 默认的拖出独立窗口行为。 */
 class FixedDiagnosticsTabs final : public ElaTabWidget {
@@ -20,6 +21,7 @@ public:
         setTabSize(QSize(84, 34));
         tabBar()->setFixedHeight(34);
         tabBar()->setExpanding(false);
+        tabBar()->setElideMode(Qt::ElideRight);
         setIsTabTransparent(true);
         setStyleSheet("QTabWidget::pane{border:0;background:transparent;}");
         applyTheme(eTheme->getThemeMode());
@@ -28,7 +30,31 @@ public:
         tabBar()->setAcceptDrops(false);
         tabBar()->installEventFilter(this);
     }
+
+    int addTab(QWidget* page, const QString& caption)
+    {
+        fitCaption(caption);
+        return ElaTabWidget::addTab(page, caption);
+    }
+
+    void setTabText(int index, const QString& caption)
+    {
+        fitCaption(caption);
+        ElaTabWidget::setTabText(index, caption);
+    }
+
 private:
+    void fitCaption(const QString& caption)
+    {
+        auto size = getTabSize();
+        // Ela's label inset and the stylesheet's horizontal padding both need room.
+        const int width = std::min(160, tabBar()->fontMetrics().horizontalAdvance(caption) + 36);
+        if (width > size.width()) {
+            size.setWidth(width);
+            setTabSize(size);
+        }
+    }
+
     /** @brief Qt 标签容器的调色板同步 Ela 主题，避免透明编辑器叠在原生白底上。 */
     void applyTheme(ElaThemeType::ThemeMode mode)
     {

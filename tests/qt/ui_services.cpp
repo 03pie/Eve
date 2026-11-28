@@ -410,7 +410,7 @@ void interaction()
     std::optional<CommandHandle> handle;
     std::optional<CommandHandle> emptyError;
     auto runtime = scene.kernel.registerPlugin("interaction", [&](Context ctx) {
-        handle = scene.commands->add(ctx, {"run", "执行", [&] { ++entered; return completedTask(); }, [&] { return entered == 0; }}).value();
+        handle = scene.commands->add(ctx, {"interaction-test-run", "执行", [&] { ++entered; return completedTask(); }, [&] { return entered == 0; }}).value();
         emptyError = scene.commands->add(ctx, {"empty-error", "空错误", [] {
             return failedTask(makeError(ErrorCode::CallbackFailed, ""));
         }, {}}).value();
@@ -421,7 +421,7 @@ void interaction()
     for (auto window : QApplication::topLevelWidgets()) if (auto found = window->findChild<QListView*>("EveCommandList")) list = found;
     CHECK(list);
     auto filter = list->parentWidget()->findChild<QLineEdit*>("EveCommandFilter");
-    CHECK(filter); filter->setText("run");
+    CHECK(filter); filter->setText("interaction-test-run");
     CHECK(list->model()->rowCount() == 1);
     list->setCurrentIndex(list->model()->index(0, 0));
     QTest::keyClick(list, Qt::Key_Return);

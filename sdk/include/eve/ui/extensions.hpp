@@ -11,7 +11,7 @@
 #include <vector>
 
 namespace eve::ui {
-enum class ExtensionKind { Business, Desktop };
+enum class ExtensionKind { Business, Desktop, Language };
 enum class ExtensionAction { Install, Uninstall, UseDesktop, Enable, AddInstance, Configure, Disable, ShowLogs, Restart };
 
 struct ExtensionItem {

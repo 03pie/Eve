@@ -1,6 +1,7 @@
 /** @file output_view.cpp
  * @brief 输出运行与来源选择、分页、增量绘制、焦点和筛选结果。
  */
+#include "desktop_text.hpp"
 #include "output_state_p.hpp"
 #include "theme_palette_p.hpp"
 #include <ElaLineEdit.h>
@@ -11,6 +12,7 @@
 #include <QClipboard>
 #include <QDesktopServices>
 #include <QDir>
+#include <QDynamicPropertyChangeEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QSaveFile>
@@ -136,8 +138,8 @@ void OutputControl::readHistory(bool older)
     const auto page = query.page(olderCursor ? *olderCursor : query.begin(run, filter, before));
     olderCursor = page.older;
     notice = !page.warning.isEmpty() ? page.warning
-             : !page.expired.empty() ? QString::fromUtf8("所选范围的一部分日志已清理。")
-             : !page.missing.empty() || page.missingIncomplete ? QString::fromUtf8("所选范围有缺失记录。")
+             : !page.expired.empty() ? eve::desktopText("output.someLogRecordsInTheSelectedRange")
+             : !page.missing.empty() || page.missingIncomplete ? eve::desktopText("output.someRecordsInTheSelectedRangeAre")
               : QString{};
     history.insert(history.begin(), page.rows.begin(), page.rows.end());
     if (older && !page.rows.empty()) {
@@ -183,12 +185,12 @@ void OutputControl::renderText(bool preserve, bool rebuild, const std::vector<Lo
         return;
     const QString warning = !notice.isEmpty() ? notice : archive ? archive->error() : QString{};
     if (feedback) {
-        const auto message = warning.isEmpty() && unread ? QString::fromUtf8("%1 条新记录").arg(unread) : warning;
+        const auto message = warning.isEmpty() && unread ? eve::desktopText("output.newRecords").arg(unread) : warning;
         feedback->setText(message);
         feedback->setToolTip(message);
         feedback->setVisible(!message.isEmpty());
     }
-    editor->setPlaceholderText(warning.isEmpty() ? QString::fromUtf8("没有匹配的记录。可更换运行或清除筛选。")
+    editor->setPlaceholderText(warning.isEmpty() ? eve::desktopText("output.noMatchingRecordsChooseAnotherRunOr")
                                                  : warning);
     if (!rebuild) {
         QStringList lines;
@@ -316,16 +318,56 @@ void rebuildFilter(const std::shared_ptr<OutputControl>& state, bool updateSourc
     state->preserveText = false;
     refreshOutput(state);
 }
+
+void selectSource(OutputControl& state, const QString& source)
+{
+    state.filter.sourceId = source;
+    state.filter.instance.reset();
+    state.filter.epoch.reset();
+    state.filter.instanceKey.clear();
+}
+
+class SavedOutputSource final : public QObject {
+public:
+    SavedOutputSource(QWidget* window, QWidget* editor, std::weak_ptr<OutputControl> state)
+        : QObject(editor), state_(std::move(state))
+    {
+        window->installEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (event->type() == QEvent::DynamicPropertyChange &&
+            static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName() == "EveOutputSource") {
+            const auto state = state_.lock();
+            const auto source = watched->property("EveOutputSource").toString();
+            if (state && state->open && source != state->filter.sourceId) {
+                auto access = state->access;
+                if (access) access([state, source] {
+                    if (!state->open) return;
+                    selectSource(*state, source);
+                    rebuildFilter(state);
+                });
+            }
+        }
+        return false;
+    }
+
+private:
+    std::weak_ptr<OutputControl> state_;
+};
+
 void syncRuns(OutputControl& state)
 {
     Choices runs;
     if (state.archive)
         for (const auto& run : state.archive->runs())
             runs.emplace_back(run.id, run.id == state.archive->currentRun()
-                                          ? QString::fromUtf8("本次运行 · ") + run.label
+                                          ? eve::desktopText("output.currentRun") + run.label
                                           : run.label);
     if (runs.empty())
-        runs.emplace_back(state.run, QString::fromUtf8("本次运行"));
+        runs.emplace_back(state.run, eve::desktopText("output.currentRun2"));
     syncCombo(state.runs, runs, state.run);
 }
 void clearFilterControls(OutputControl& state)
@@ -348,28 +390,28 @@ void returnFromOutput(OutputControl& state, bool returnToPanelPage)
 } // namespace
 void OutputControl::syncSources()
 {
-    Choices sources{{QString{}, QString::fromUtf8("全部来源")}};
+    Choices sources{{QString{}, eve::desktopText("output.allSources")}};
     const auto catalog = archive ? archive->sourceCatalog(run).sources : liveSources;
     std::map<QString, QString> owners;
     for (auto it = catalog.cbegin(); it != catalog.cend(); ++it) {
-        sources.emplace_back(it.key(), it->name);
+        sources.emplace_back(it.key(), it.key() == "platform" ? eve::desktopText("logs.platform") : it->name);
         if (!filter.sourceId.isEmpty() && it.key() != filter.sourceId)
             continue;
         for (const auto& [instance, epoch] : it->identities) {
             const auto id = QString::number(instance.value());
-            owners[id] = QString::fromUtf8("实例 #") + id;
-            owners[id + "/" + QString::number(epoch)] = QString::fromUtf8("#%1 · 代 %2").arg(id).arg(epoch);
+            owners[id] = eve::desktopText("output.instance") + id;
+            owners[id + "/" + QString::number(epoch)] = eve::desktopText("output.generation").arg(id).arg(epoch);
         }
         for (const auto& key : it->instanceKeys)
-            owners["config/" + key] = QString::fromUtf8("配置实例 ") + key;
+            owners["config/" + key] = eve::desktopText("output.configuredInstance") + key;
     }
     if (!filter.sourceId.isEmpty() && !catalog.contains(filter.sourceId))
         sources.emplace_back(filter.sourceId, filter.sourceId.section('/', 1));
     syncCombo(targets, sources, filter.sourceId);
-    Choices identities{{QString{}, QString::fromUtf8("全部实例")}};
+    Choices identities{{QString{}, eve::desktopText("output.allInstances")}};
     const auto key = instanceKey(filter);
     if (!key.isEmpty() && !owners.count(key))
-        owners[key] = filter.instanceKey.isEmpty() ? "#" + key : QString::fromUtf8("配置实例 ") + filter.instanceKey;
+        owners[key] = filter.instanceKey.isEmpty() ? "#" + key : eve::desktopText("output.configuredInstance") + filter.instanceKey;
     identities.insert(identities.end(), owners.begin(), owners.end());
     syncCombo(instances, identities, key);
 }
@@ -442,22 +484,22 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
         layout->addWidget(box, 1);
         return box;
     };
-    self->runs = combo("EveOutputRun", QString::fromUtf8("运行记录"), 210);
+    self->runs = combo("EveOutputRun", eve::desktopText("output.runs"), 210);
     editor->run = self->runs;
-    self->targets = combo("EveOutputTarget", QString::fromUtf8("输出来源"), 190);
-    self->instances = combo("EveOutputInstance", QString::fromUtf8("实例或代次"), 135);
+    self->targets = combo("EveOutputTarget", eve::desktopText("output.outputSource"), 190);
+    self->instances = combo("EveOutputInstance", eve::desktopText("output.instanceOrGeneration"), 135);
     editor->instance = self->instances;
-    self->levels = combo("EveOutputLevel", QString::fromUtf8("最低显示级别"), 108);
+    self->levels = combo("EveOutputLevel", eve::desktopText("output.minimumLogLevel"), 108);
     editor->level = self->levels;
-    self->levels->addItem(QString::fromUtf8("所有级别"));
-    self->levels->addItem(QString::fromUtf8("调试及以上"), static_cast<int>(LogSeverity::Debug));
-    self->levels->addItem(QString::fromUtf8("信息及以上"), static_cast<int>(LogSeverity::Info));
-    self->levels->addItem(QString::fromUtf8("警告及以上"), static_cast<int>(LogSeverity::Warning));
-    self->levels->addItem(QString::fromUtf8("仅错误"), static_cast<int>(LogSeverity::Error));
+    self->levels->addItem(eve::desktopText("output.allLevels"));
+    self->levels->addItem(eve::desktopText("output.debugAndAbove"), static_cast<int>(LogSeverity::Debug));
+    self->levels->addItem(eve::desktopText("output.infoAndAbove"), static_cast<int>(LogSeverity::Info));
+    self->levels->addItem(eve::desktopText("output.warningAndAbove"), static_cast<int>(LogSeverity::Warning));
+    self->levels->addItem(eve::desktopText("output.errorsOnly"), static_cast<int>(LogSeverity::Error));
     self->search = new ElaLineEdit(tools);
     editor->search = self->search;
     self->search->setObjectName("EveOutputSearch");
-    self->search->setPlaceholderText(QString::fromUtf8("筛选日志正文"));
+    self->search->setPlaceholderText(eve::desktopText("output.filterLogMessages"));
     self->search->setAccessibleName(self->search->placeholderText());
     self->search->setClearButtonEnabled(true);
     self->search->setMinimumWidth(50);
@@ -468,7 +510,7 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
     self->follow->setElaIcon(ElaIconType::ArrowDown);
     self->follow->setCheckable(true);
     self->follow->setChecked(true);
-    self->follow->setAccessibleName(QString::fromUtf8("跟随最新记录"));
+    self->follow->setAccessibleName(eve::desktopText("output.followLatestRecords"));
     self->follow->setToolTip(self->follow->accessibleName());
     layout->addWidget(self->follow);
     auto feedback = new ElaText(QString{}, 12, tools);
@@ -481,7 +523,7 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
     layout->addWidget(self->feedback);
     auto more = new ElaToolButton(tools);
     more->setObjectName("EveOutputMore");
-    more->setText(QString::fromUtf8("筛选与更多"));
+    more->setText(eve::desktopText("output.filtersAndMore"));
     more->setAccessibleName(more->text());
     more->setPopupMode(QToolButton::InstantPopup);
     layout->addWidget(more);
@@ -497,10 +539,7 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
     });
     QObject::connect(self->targets, QOverload<int>::of(&QComboBox::currentIndexChanged), tools, [weak](int) {
         if (auto s = weak.lock(); s && s->open) {
-            s->filter.sourceId = s->targets->currentData().toString();
-            s->filter.instance.reset();
-            s->filter.epoch.reset();
-            s->filter.instanceKey.clear();
+            selectSource(*s, s->targets->currentData().toString());
             s->editor->window()->setProperty("EveOutputSource", s->filter.sourceId);
             rebuildFilter(s);
         }
@@ -572,13 +611,13 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
         field->setDefaultWidget(edit);
         menu->addAction(field);
         QObject::connect(edit, &QLineEdit::textChanged, s->search, &QLineEdit::setText);
-        menu->addAction(QString::fromUtf8("清除筛选"), [s] {
+        menu->addAction(eve::desktopText("output.clearFilters"), [s] {
             clearFilterControls(*s);
             s->editor->window()->setProperty("EveOutputSource", QString{});
             rebuildFilter(s);
         });
-        menu->addAction(QString::fromUtf8("查看上次运行"), [s] { showPreviousOutput(s, s->origin.target()); });
-        auto older = menu->addAction(QString::fromUtf8("读取前一页"), [s] {
+        menu->addAction(eve::desktopText("output.viewPreviousRun"), [s] { showPreviousOutput(s, s->origin.target()); });
+        auto older = menu->addAction(eve::desktopText("output.loadPreviousPage"), [s] {
             s->readHistory(true);
             if (s->browsingOlder)
                 s->follow->setChecked(false);
@@ -587,36 +626,36 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
             s->editor->verticalScrollBar()->setValue(s->editor->verticalScrollBar()->minimum());
         });
         older->setEnabled(s->archive && (s->olderCursor || (s->live() && s->history.empty() && !s->entries.empty())));
-        auto newest = menu->addAction(QString::fromUtf8("返回最新一页"), [s] { rebuildFilter(s); });
+        auto newest = menu->addAction(eve::desktopText("output.goToLatestPage"), [s] { rebuildFilter(s); });
         newest->setEnabled(s->browsingOlder);
         menu->addSeparator();
         for(const char* id:{"EveCopyOutput","EveClearOutput"})
             if(auto action=s->editor->window()->findChild<QAction*>(id)) menu->addAction(action);
-        menu->addAction(QString::fromUtf8("复制本条"), [s] {
+        menu->addAction(eve::desktopText("output.copyRecord"), [s] {
             const auto position = s->editor->textCursor().position();
             for (const auto& row : s->visibleRecords)
                 if (position >= row.start && position <= row.end) {
-                    QApplication::clipboard()->setText(QString("[%1 / event %2] ")
+                    QApplication::clipboard()->setText(desktopText("output.event")
                                                            .arg(s->run.isEmpty() ? QStringLiteral("session") : s->run)
                                                            .arg(row.eventId) +
                                                        row.line);
                     break;
                 }
         });
-        menu->addAction(QString::fromUtf8("导出已筛选记录…"), [s] {
+        menu->addAction(eve::desktopText("output.exportFilteredRecords"), [s] {
             const QString run = s->run;
             const LogFilter filter = s->filter;
             const auto archive = s->archive;
             const auto cursor = archive ? std::optional<LogCursor>(LogQuery(*archive).begin(run, filter)) : std::nullopt;
             const auto memory = archive ? QString{} : s->text();
             const auto path =
-                QFileDialog::getSaveFileName(s->editor, QString::fromUtf8("导出已筛选记录"),
-                                             QStringLiteral("eve-output.txt"), QStringLiteral("Text (*.txt)"));
+                QFileDialog::getSaveFileName(s->editor, eve::desktopText("output.exportFilteredRecords2"),
+                                             QStringLiteral("eve-output.txt"), desktopText("output.text").arg(QStringLiteral("*.txt")));
             if (path.isEmpty() || !s->open)
                 return;
             if (archive && std::any_of(archive->readDirectories().cbegin(), archive->readDirectories().cend(),
                                        [&](const QString& root) { return exportWouldModifyArchive(path, root); })) {
-                s->notice = QString::fromUtf8("请选择归档目录之外的导出位置。");
+                s->notice = eve::desktopText("output.chooseAnExportLocationOutsideTheArchive");
                 QToolTip::showText(s->editor->mapToGlobal(QPoint(8, 4)), s->notice, s->editor);
                 return;
             }
@@ -633,14 +672,15 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
                 ok = file.commit();
             if (!ok) {
                 file.cancelWriting();
-                s->notice = QString::fromUtf8("日志导出失败：") +
+                s->notice = eve::desktopText("output.couldNotExportLogs") +
                             (exportError.isEmpty() ? file.errorString() : exportError);
             }
             QToolTip::showText(s->editor->mapToGlobal(QPoint(8, 4)),
-                               ok ? QString::fromUtf8("已导出筛选结果到 ") + path : s->notice, s->editor);
+                               ok ? eve::desktopText("output.exportedFilteredRecordsTo") + path : s->notice, s->editor);
         });
     });
     self->filter.sourceId = editor->window()->property("EveOutputSource").toString();
+    new SavedOutputSource(editor->window(), editor, weak);
     syncRuns(*self);
     self->syncSources();
     editor->fitTools();
@@ -699,14 +739,14 @@ void showOutput(const std::shared_ptr<OutputControl>& s, std::optional<std::uint
         syncRuns(*s);
         rebuildFilter(s);
         if (!instance.valid() && !configurationPath.isEmpty() && !target && s->notice.isEmpty() && s->text().isEmpty())
-            s->notice = QString::fromUtf8("配置实例 %1 尚无已发布的运行日志。").arg(configurationPath);
+            s->notice = eve::desktopText("output.configuredInstanceHasNoPublishedRuntimeLogs").arg(configurationPath);
         if (locating && !target) {
             if (exact && exact->status == LogLookupStatus::Expired)
-                s->notice = QString::fromUtf8("该日志事件已按保留策略清理。");
+                s->notice = eve::desktopText("output.thisEventWasRemovedByTheLog");
             else if (exact && exact->status == LogLookupStatus::Unavailable)
                 s->notice = exact->warning;
             else
-                s->notice = QString::fromUtf8("当前记录中找不到该日志事件。");
+                s->notice = eve::desktopText("output.thisLogEventCouldNotBeFound");
         }
         if (target) {
             if (!inMemory && s->archive) {
@@ -788,7 +828,7 @@ void showPreviousOutput(const std::shared_ptr<OutputControl>& s, QWidget* origin
                 return;
             }
     showOutput(s, {}, {}, origin);
-    QToolTip::showText(s->editor->mapToGlobal(QPoint(8, 4)), QString::fromUtf8("尚无可查看的上次运行。"), s->editor);
+    QToolTip::showText(s->editor->mapToGlobal(QPoint(8, 4)), eve::desktopText("output.noPreviousRunIsAvailable"), s->editor);
 }
 void openOutputDirectory(const std::shared_ptr<OutputControl>& s)
 {
@@ -796,7 +836,7 @@ void openOutputDirectory(const std::shared_ptr<OutputControl>& s)
         return;
     if (!s->archive || !QDesktopServices::openUrl(QUrl::fromLocalFile(s->archive->directory())))
         QToolTip::showText(s->editor->window()->mapToGlobal(QPoint(30, 50)),
-                           QString::fromUtf8("当前宿主没有可打开的日志目录。"), s->editor->window());
+                           eve::desktopText("output.thisHostHasNoLogDirectoryTo"), s->editor->window());
 }
 void clearOutput(const std::shared_ptr<OutputControl>& s)
 {

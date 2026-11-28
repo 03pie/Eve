@@ -2,6 +2,7 @@
  * @brief 按已接受事件的快照上界查询归档，复用读写两端的事件解码器。
  */
 #include "runtime_log_query_p.hpp"
+#include "desktop_text.hpp"
 #include "runtime_log_retention_p.hpp"
 #include <QDateTime>
 #include <QDir>
@@ -66,7 +67,7 @@ QString formatLogText(const LogRecord& row)
     return QString("[%1] %2 [%3] %4%5  %6")
         .arg(entry.sequence)
         .arg(QDateTime::fromMSecsSinceEpoch(row.utcMs).toString("HH:mm:ss.zzz"), QString::fromLatin1(level),
-             row.sourceName,
+             row.sourceId == "platform" ? eve::desktopText("logs.platform") : row.sourceName,
              entry.owner ? QString(" #%1/%2").arg(entry.owner->instance.value()).arg(entry.owner->epoch) : QString{},
              QString::fromStdString(entry.text));
 }
@@ -263,9 +264,9 @@ bool LogQuery::exportText(const LogCursor& cursor, QIODevice& output, QString& e
         if (!batch.warning.isEmpty())
             error = batch.warning;
         else if (!batch.expired.empty())
-            error = QString::fromUtf8("所选范围有已清理的日志。");
+            error = eve::desktopText("logs.theSelectedRangeIncludesExpiredLogRecords");
         else if (!batch.missing.empty() || batch.missingIncomplete)
-            error = QString::fromUtf8("所选范围有缺失记录。");
+            error = eve::desktopText("logs.theSelectedRangeIncludesMissingLogRecords");
         return batch;
     };
     // Record cursor boundaries, then stream in forward acceptance order using the same snapshot.

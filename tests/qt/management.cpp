@@ -97,7 +97,7 @@ void pending()
     CHECK(data.instances[0].dependencies[0].error->code == ErrorCode::DependencyMissing && data.instances[0].canStop && !data.instances[0].canRetry);
     auto table = scene.widget<QTableView>("EveInstanceTable");
     auto details = scene.widget<QPlainTextEdit>("EveManagementDetails");
-    CHECK(table && table->model()->rowCount() == 1 && table->model()->index(0, 2).data().toString() == QString::fromUtf8("等待依赖"));
+    CHECK(table && table->model()->rowCount() == 1 && table->model()->index(0, 2).data().toString() == QString::fromUtf8("Waiting for dependencies"));
     CHECK(details && details->toPlainText().contains("missing.store/v1 @1") && details->toPlainText().contains("write"));
     auto provider = scene.kernel->registerPlugin("store", [](Context ctx) { ctx.provide({"missing.store"}, std::make_shared<int>(1)).value(); return completedTask(); }, {},
         {ServiceOutput::of<int>({"missing.store"}, true, {2, {"write"}})}).value();
@@ -182,7 +182,7 @@ void stop()
     CHECK(data.instances.size() == 2 && data.instances[0].instance.instance == survivor.snapshot().value().instance &&
           data.operations[0].cleanup->quiescent && !scene.management->stop(id).hasValue());
     CHECK(data.instances[1].instance.instance == id && data.instances[1].canLoad);
-    CHECK(scene.widget<QPlainTextEdit>("EveManagementOperations")->toPlainText().contains(QString::fromUtf8("实例=%1").arg(id.value())));
+    CHECK(scene.widget<QPlainTextEdit>("EveManagementOperations")->toPlainText().contains(QString::fromUtf8("Instance=%1").arg(id.value())));
     CHECK(scene.widget<QTableView>("EveInstanceTable")->currentIndex().row() >= 0);
     auto stopButton = scene.widget<QPushButton>("EveManagementStop"); CHECK(!stopButton->isEnabled());
     QTest::mouseClick(stopButton, Qt::LeftButton); wait(completedTask(), scene.scheduler);

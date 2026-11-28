@@ -1,6 +1,7 @@
 /** @file configuration.cpp
  * @brief Ela 配置编辑、差异、期望启停及保存页面；所有运行操作通过宿主会话。
  */
+#include "desktop_text.hpp"
 #include "appearance_p.hpp"
 #include "status_p.hpp"
 #include "theme_palette_p.hpp"
@@ -55,20 +56,20 @@ QString describe(const ErrorInfo& error, unsigned depth = 0)
 QString runtimeState(const RunningEntry& entry)
 {
     if (entry.waitingForParent)
-        return QString::fromUtf8("等待父项");
+        return eve::desktopText("configuration.waitingForParent");
     switch (entry.state) {
     case InstanceState::Pending:
-        return QString::fromUtf8("等待依赖");
+        return eve::desktopText("configuration.waitingForDependencies");
     case InstanceState::Loading:
-        return QString::fromUtf8("启动中");
+        return eve::desktopText("configuration.starting");
     case InstanceState::Active:
-        return QString::fromUtf8("运行中");
+        return eve::desktopText("configuration.running");
     case InstanceState::Unloading:
-        return QString::fromUtf8("清理中");
+        return eve::desktopText("configuration.cleaningUp");
     case InstanceState::Failed:
-        return QString::fromUtf8("失败");
+        return eve::desktopText("configuration.failed");
     case InstanceState::Disposed:
-        return QString::fromUtf8("已停止");
+        return eve::desktopText("configuration.stopped");
     }
     return {};
 }
@@ -77,17 +78,17 @@ QString changeName(ChangeKind kind)
 {
     switch (kind) {
     case ChangeKind::NoOp:
-        return QString::fromUtf8("不变");
+        return eve::desktopText("configuration.unchanged");
     case ChangeKind::Add:
-        return QString::fromUtf8("新增");
+        return eve::desktopText("configuration.add");
     case ChangeKind::Remove:
-        return QString::fromUtf8("移除");
+        return eve::desktopText("configuration.remove");
     case ChangeKind::Disable:
-        return QString::fromUtf8("停用");
+        return eve::desktopText("configuration.disable");
     case ChangeKind::Restart:
-        return QString::fromUtf8("重启");
+        return eve::desktopText("configuration.restart");
     case ChangeKind::Recreate:
-        return QString::fromUtf8("重建");
+        return eve::desktopText("configuration.recreate");
     }
     return {};
 }
@@ -103,15 +104,15 @@ public:
         auto layout = new QVBoxLayout(this);
         layout->setContentsMargins(24, 20, 24, 16);
         layout->setSpacing(8);
-        auto title = new ElaText(QString::fromUtf8("配置管理"), 24, this);
+        auto title = new ElaText(eve::desktopText("configuration.configuration"), 24, this);
         title->setIsBold(true);
         layout->addWidget(title);
-        auto help = new ElaText(QString::fromUtf8("编辑配置 → 检查差异 → 应用到工作台 → 保存到磁盘"), this);
+        auto help = new ElaText(eve::desktopText("configuration.editReviewChangesApplySaveToDisk"), this);
         help->setWordWrap(true);
         help->setTextPixelSize(13);
         help->setTextFormat(Qt::PlainText);
         help->setToolTip(
-            QString::fromUtf8("保存会规范化 YAML，不保留注释；退出会刷新已应用的修改，未应用编辑不会写盘。"));
+            eve::desktopText("configuration.savingNormalizesYAMLAndRemovesCommentsClosing"));
         detail::secondaryText(help);
         layout->addWidget(help);
         summary_ = new ElaText(this);
@@ -134,25 +135,25 @@ public:
         layout->addLayout(states);
         auto buttons = new ElaFlowLayout(0, 8, 4);
         buttons->setIsAnimation(false);
-        preview_ = new detail::ActionButton(QString::fromUtf8("检查差异"), this);
+        preview_ = new detail::ActionButton(eve::desktopText("configuration.reviewChanges"), this);
         preview_->setObjectName("EveConfigPreview");
-        apply_ = new detail::ActionButton(QString::fromUtf8("应用"), this);
+        apply_ = new detail::ActionButton(eve::desktopText("configuration.apply"), this);
         apply_->setObjectName("EveConfigApply");
         detail::primaryButton(apply_);
-        apply_->setToolTip(QString::fromUtf8("将已检查的配置应用到工作台；保存到磁盘需另行操作。"));
-        save_ = new detail::ActionButton(QString::fromUtf8("保存"), this);
+        apply_->setToolTip(eve::desktopText("configuration.applyTheReviewedConfigurationToTheWorkbench"));
+        save_ = new detail::ActionButton(eve::desktopText("configuration.save"), this);
         save_->setObjectName("EveConfigSave");
-        reset_ = new detail::ActionButton(QString::fromUtf8("还原编辑"), this);
+        reset_ = new detail::ActionButton(eve::desktopText("configuration.discardEdits"), this);
         reset_->setObjectName("EveConfigReset");
-        reset_->setToolTip(QString::fromUtf8("使用已应用目标替换编辑区，放弃尚未应用的编辑。"));
-        rebase_ = new detail::ActionButton(QString::fromUtf8("采用冲突基线"), this);
+        reset_->setToolTip(eve::desktopText("configuration.restoreTheAppliedConfigurationAndDiscardUnapplied"));
+        rebase_ = new detail::ActionButton(eve::desktopText("configuration.useDiskBaseline"), this);
         rebase_->setObjectName("EveConfigRebase");
-        rebase_->setToolTip(QString::fromUtf8("保留当前目标，只采用下方展示的磁盘版本为新基线；之后仍需点击保存。"));
+        rebase_->setToolTip(eve::desktopText("configuration.keepTheCurrentTargetAndUseThe"));
         for (auto button : {preview_, apply_, save_}) {
             button->setMinimumHeight(32);
             buttons->addWidget(button);
         }
-        viewLog_ = new detail::ActionButton(QStringLiteral("查看相关日志"), this);
+        viewLog_ = new detail::ActionButton(eve::desktopText("configuration.viewRelatedLogs"), this);
         viewLog_->setObjectName("EveConfigOpenLog");
         viewLog_->hide();
         buttons->addWidget(viewLog_);
@@ -175,9 +176,9 @@ public:
         diskStatus_->setWordWrap(true);
         diskStatus_->setObjectName("EveConfigDiskStatus");
         detail::secondaryText(diskStatus_);
-        diskLoad_ = new detail::ActionButton(QString::fromUtf8("载入磁盘版本"), diskRow_);
+        diskLoad_ = new detail::ActionButton(eve::desktopText("configuration.loadDiskVersion"), diskRow_);
         diskLoad_->setObjectName("EveConfigDiskLoad");
-        diskLoad_->setToolTip(QString::fromUtf8("将通知中的磁盘原文载入编辑区；不会自动应用或改变保存基线。"));
+        diskLoad_->setToolTip(eve::desktopText("configuration.loadTheDiskCopyIntoTheEditor"));
         diskLayout->addWidget(diskStatus_, 1);
         diskLayout->addWidget(diskLoad_);
         diskRow_->setVisible(static_cast<bool>(watcher));
@@ -190,7 +191,7 @@ public:
                 auto disk = source->snapshot();
                 if (!disk.hasValue() || !disk.value().external ||
                     disk.value().changeSequence != displayedDiskSequence_ || disk.value().closing) {
-                    message_ = QString::fromUtf8("磁盘通知已变化，请重新查看。");
+                    message_ = eve::desktopText("configuration.theDiskChangeNotificationHasBeenUpdated");
                     return;
                 }
                 auto acknowledged = source->acknowledge(displayedDiskSequence_);
@@ -200,15 +201,15 @@ public:
                 }
                 editor_->setPlainText(QString::fromStdString(disk.value().external->text));
                 draft_.reset();
-                message_ = QString::fromUtf8("磁盘原文已载入编辑区；尚未预览或应用，保存基线未改变。");
+                message_ = eve::desktopText("configuration.theDiskCopyIsNowInThe");
             });
         });
         region_ = new ElaComboBox(this);
         region_->setProperty("ElaTranslucentFill", true);
         region_->setObjectName("EveConfigRegion");
-        region_->setAccessibleName(QStringLiteral("配置区域"));
+        region_->setAccessibleName(eve::desktopText("configuration.configurationArea"));
         region_->addItems(
-            {QStringLiteral("配置源文件"), QStringLiteral("期望与运行状态"), QStringLiteral("差异与执行结果")});
+            {eve::desktopText("configuration.configurationSource"), eve::desktopText("configuration.desiredAndRuntimeState"), eve::desktopText("configuration.changesAndResults")});
         layout->addWidget(region_);
         auto split = new QSplitter(Qt::Horizontal, this);
         split->setObjectName("EveConfigSplitter");
@@ -229,7 +230,7 @@ public:
         auto sourceLayout = new QVBoxLayout(source);
         sourceLayout->setContentsMargins(0, 0, 0, 0);
         sourceLayout->setSpacing(8);
-        auto sourceTitle = new ElaText(QString::fromUtf8("配置源文件"), 14, source);
+        auto sourceTitle = new ElaText(eve::desktopText("configuration.configurationSource"), 14, source);
         sourceTitle->setIsBold(true);
         sourceLayout->addWidget(sourceTitle);
         filePath_ = new ElaText(source);
@@ -254,18 +255,18 @@ public:
         auto sideLayout = new QVBoxLayout(side);
         sideLayout->setContentsMargins(0, 0, 0, 0);
         sideLayout->setSpacing(8);
-        auto runningTitle = new ElaText(QString::fromUtf8("期望与运行状态"), 14, side);
+        auto runningTitle = new ElaText(eve::desktopText("configuration.desiredAndRuntimeState"), 14, side);
         runningTitle->setIsBold(true);
         sideLayout->addWidget(runningTitle);
-        auto runningHelp = new ElaText(QString::fromUtf8("应用后显示条目；选择条目可调整启用状态。"), 12, side);
+        auto runningHelp = new ElaText(eve::desktopText("configuration.entriesAppearAfterYouApplyTheConfiguration"), 12, side);
         detail::secondaryText(runningHelp);
         sideLayout->addWidget(runningHelp);
         table_ = new ElaTableView(side);
         table_->setObjectName("EveConfigEntries");
         detail::bindWorkbenchContentPalette(table_);
         model_ = new QStandardItemModel(table_);
-        model_->setHorizontalHeaderLabels({QString::fromUtf8("条目"), QString::fromUtf8("期望"),
-                                           QString::fromUtf8("运行"), QString::fromUtf8("实例")});
+        model_->setHorizontalHeaderLabels({eve::desktopText("configuration.entry"), eve::desktopText("configuration.desired"),
+                                           eve::desktopText("configuration.runtime"), eve::desktopText("configuration.instance")});
         table_->setModel(model_);
         table_->setSelectionBehavior(QAbstractItemView::SelectRows);
         table_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -283,7 +284,7 @@ public:
         table_->horizontalHeader()->setStretchLastSection(true);
         sideLayout->addWidget(table_, 1);
         auto selected = new QHBoxLayout;
-        selected_ = new ElaText(QString::fromUtf8("选择条目调整本地启用状态"), side);
+        selected_ = new ElaText(eve::desktopText("configuration.selectAnEntryToChangeItsLocal"), side);
         selected_->setWordWrap(true);
         selected_->setTextPixelSize(14);
         selected_->setTextFormat(Qt::PlainText);
@@ -294,7 +295,7 @@ public:
         sideLayout->addLayout(selected);
         split->setStretchFactor(0, 2);
         split->setStretchFactor(1, 3);
-        auto resultTitle = new ElaText(QString::fromUtf8("差异与执行结果"), 14, this);
+        auto resultTitle = new ElaText(eve::desktopText("configuration.changesAndResults"), 14, this);
         resultTitle_ = resultTitle;
         resultTitle->setIsBold(true);
         layout->addWidget(resultTitle);
@@ -304,7 +305,7 @@ public:
         details_->setFont(textFont);
         details_->setReadOnly(true);
         details_->setPlaceholderText(
-            QString::fromUtf8("检查差异后在此查看变更；应用、保存及磁盘冲突的结果也会显示在这里。"));
+            eve::desktopText("configuration.reviewedChangesApplicationResultsSavesAndDisk"));
         details_->setMinimumHeight(90);
         layout->addWidget(details_, 1);
         QObject::connect(region_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
@@ -329,18 +330,18 @@ public:
                 auto result = session.preview(text.toUtf8().toStdString());
                 if (editor_->toPlainText() != text) {
                     draft_.reset();
-                    message_ = QString::fromUtf8("编辑内容在检查期间发生变化，请重新检查差异。");
+                    message_ = eve::desktopText("configuration.theEditorChangedDuringReviewReviewThe");
                     return;
                 }
                 if (!result.hasValue()) {
                     draft_.reset();
                     message_ = describe(result.error());
-                    record(QStringLiteral("检查配置失败"), displayedRevision_, "CONFIG_PREVIEW_FAILED", &result.error());
+                    record(eve::desktopText("configuration.configurationReviewFailed"), displayedRevision_, "CONFIG_PREVIEW_FAILED", &result.error());
                     return;
                 }
                 draft_.emplace(std::move(result).value());
-                record(QStringLiteral("已检查配置"), displayedRevision_, "CONFIG_PREVIEW_OK");
-                message_ = QString::fromUtf8("检查通过；可审阅下方差异后应用。无配置变化时，应用仍可重试失败项。");
+                record(eve::desktopText("configuration.configurationReviewed"), displayedRevision_, "CONFIG_PREVIEW_OK");
+                message_ = eve::desktopText("configuration.reviewTheChangesBelowBeforeApplyingApply");
             });
         });
         QObject::connect(apply_, &QPushButton::clicked, this, [this] {
@@ -352,15 +353,15 @@ public:
                 auto result = session.apply(draft);
                 if (!result.hasValue()) {
                     message_ = describe(result.error());
-                    record(QStringLiteral("应用配置失败"), displayedRevision_, "CONFIG_APPLY_FAILED", &result.error());
+                    record(eve::desktopText("configuration.couldNotApplyConfiguration"), displayedRevision_, "CONFIG_APPLY_FAILED", &result.error());
                     return;
                 }
                 editorRevision_ = result.value().revision;
-                record(QStringLiteral("已应用配置目标"), editorRevision_, "CONFIG_APPLY_ACCEPTED");
+                record(eve::desktopText("configuration.configurationTargetApplied"), editorRevision_, "CONFIG_APPLY_ACCEPTED");
                 matches_ = editor_->toPlainText() == text;
                 draft_.reset();
-                message_ = matches_ ? QString::fromUtf8("目标已接受；运行结果和保存状态分别显示。")
-                                    : QString::fromUtf8("目标已接受；期间新增的编辑已保留，尚未应用。");
+                message_ = matches_ ? eve::desktopText("configuration.targetAcceptedCheckTheRuntimeAndDisk")
+                                    : eve::desktopText("configuration.targetAcceptedNewerEditsAreStillIn");
             });
         });
         QObject::connect(save_, &QPushButton::clicked, this, [this] {
@@ -373,7 +374,7 @@ public:
                     return;
                 }
                 saving_ = PendingSave{result.value(), revision};
-                message_ = QString::fromUtf8("保存已排队。");
+                message_ = eve::desktopText("configuration.saveQueued");
             });
         });
         QObject::connect(reset_, &QPushButton::clicked, this,
@@ -385,11 +386,11 @@ public:
                 const auto* error = result.hasValue() ? nullptr : &result.error();
                 const auto operation = recoveryOperation(revision, error);
                 recovery_ = SaveRecovery{revision, operation};
-                record(result.hasValue() ? QStringLiteral("已采用磁盘冲突基线") : QStringLiteral("采用冲突基线失败"),
+                record(result.hasValue() ? eve::desktopText("configuration.diskBaselineAccepted") : eve::desktopText("configuration.couldNotAcceptTheDiskBaseline"),
                        revision, result.hasValue() ? "CONFIG_REBASE_ACCEPTED" : "CONFIG_REBASE_FAILED",
                        error, operation);
                 message_ =
-                    result.hasValue() ? QString::fromUtf8("基线已更新；当前目标尚未保存。") : describe(result.error());
+                    result.hasValue() ? eve::desktopText("configuration.theBaselineIsUpToDateSave") : describe(result.error());
             });
         });
         QObject::connect(
@@ -413,7 +414,7 @@ public:
                     togglePending_ = false;
                     action([&](ConfigurationSession& session) {
                         if (!matches_ || editorRevision_ != revision) {
-                            message_ = QString::fromUtf8("编辑内容或目标已改变，请先应用或使用已应用目标。");
+                            message_ = eve::desktopText("configuration.theEditorOrTargetChangedApplyThe");
                             return;
                         }
                         const auto text = editor_->toPlainText();
@@ -424,10 +425,10 @@ public:
                         }
                         if (editor_->toPlainText() == text) {
                             useDesired(session);
-                            message_ = QString::fromUtf8("启停目标已更新，尚未保存。");
+                            message_ = eve::desktopText("configuration.theDesiredEnabledStateChangedSaveTo");
                         } else {
                             matches_ = false;
-                            message_ = QString::fromUtf8("启停目标已更新；期间新增的编辑已保留，尚未应用。");
+                            message_ = eve::desktopText("configuration.theDesiredEnabledStateChangedNewerEdits");
                         }
                     });
                 },
@@ -498,9 +499,9 @@ private:
     {
         if (!publish_)
             return;
-        auto text = summary + QStringLiteral(" · 修订 %1").arg(revision);
+        auto text = summary + eve::desktopText("configuration.revision").arg(revision);
         if (error) {
-            text += QStringLiteral(" · 错误码 %1").arg(static_cast<int>(error->code));
+            text += eve::desktopText("configuration.errorCode").arg(static_cast<int>(error->code));
             if (!operation && error->operation.valid())
                 operation = error->operation;
         }
@@ -540,7 +541,7 @@ private:
         case SaveOutcome::Failed:
             break;
         }
-        record(succeeded ? QStringLiteral("配置已保存") : QStringLiteral("保存配置失败"), revision, code, error,
+        record(succeeded ? eve::desktopText("configuration.configurationSaved") : eve::desktopText("configuration.couldNotSaveConfiguration"), revision, code, error,
                operation, succeeded ? OutputLevel::Info : OutputLevel::Error);
     }
     /** @brief 模型信号或 EnabledChange 重入关闭时不销毁当前页面栈。 */
@@ -572,7 +573,7 @@ private:
         try {
             auto session = session_.lock();
             if (!session) {
-                message_ = QString::fromUtf8("配置会话已释放。");
+                message_ = eve::desktopText("configuration.theConfigurationSessionHasClosed");
                 refresh();
                 return;
             }
@@ -580,7 +581,7 @@ private:
         } catch (const std::exception& error) {
             message_ = QString::fromUtf8(error.what());
         } catch (...) {
-            message_ = QString::fromUtf8("配置操作异常。");
+            message_ = eve::desktopText("configuration.theConfigurationOperationFailedUnexpectedly");
         }
         refresh();
     }
@@ -614,8 +615,8 @@ private:
                 button->setEnabled(false);
             enabled_->setEnabled(false);
             editor_->setReadOnly(true);
-            summary_->setText(QString::fromUtf8("运行：会话不可用"));
-            saveStatus_->setText(QString::fromUtf8("磁盘：无法保存"));
+            summary_->setText(eve::desktopText("configuration.runtimeSessionUnavailable"));
+            saveStatus_->setText(eve::desktopText("configuration.diskSaveUnavailable"));
             return;
         }
         auto result = session->snapshot();
@@ -632,58 +633,58 @@ private:
                 const bool written = saved->hasValue() && (saved->value().outcome == SaveOutcome::Written ||
                                                            saved->value().outcome == SaveOutcome::Unchanged);
                 const auto error = saved->hasValue() ? saved->value().error : std::optional<ErrorInfo>(saved->error());
-                message_ = written ? QString::fromUtf8("已保存修订 %1。").arg(saved->value().revision)
+                message_ = written ? eve::desktopText("configuration.savedRevision").arg(saved->value().revision)
                            : state.store.external
-                               ? QStringLiteral("磁盘文件已被外部修改。请审阅下方磁盘原文，采用冲突基线后再保存。")
+                               ? eve::desktopText("configuration.theFileChangedOnDiskReviewThe")
                            : saved->hasValue() && saved->value().error ? describe(*saved->value().error)
-                           : saved->hasValue()                         ? QString::fromUtf8("保存未完成。")
+                           : saved->hasValue()                         ? eve::desktopText("configuration.theSaveDidNotFinish")
                                                                        : describe(saved->error());
                 const auto revision = saved->hasValue() ? saved->value().revision : saving_->requestedRevision;
                 saving_.reset();
                 recordSave(revision, saved->hasValue() ? saved->value().outcome : SaveOutcome::Failed,
                            error ? &*error : nullptr);
             }
-        editStatus_->setText(matches_ && state.coordinator.desired ? QString::fromUtf8("编辑：已应用")
+        editStatus_->setText(matches_ && state.coordinator.desired ? eve::desktopText("configuration.editorApplied")
                              : draft_ && draft_->baseRevision() == displayedRevision_
-                                 ? QString::fromUtf8("编辑：差异已检查")
-                                 : QString::fromUtf8("编辑：尚未应用"));
-        auto runtime = QString::fromUtf8("执行中");
+                                 ? eve::desktopText("configuration.editorChangesReviewed")
+                                 : eve::desktopText("configuration.editorNotApplied"));
+        auto runtime = eve::desktopText("configuration.inProgress");
         if (!state.coordinator.desired)
-            runtime = QString::fromUtf8("尚未应用");
+            runtime = eve::desktopText("configuration.notApplied");
         else if (state.coordinator.runningError)
-            runtime = QString::fromUtf8("状态不可用");
+            runtime = eve::desktopText("configuration.stateUnavailable");
         else if (state.latestPlan && state.latestPlan->revision == displayedRevision_) {
             switch (state.latestPlan->outcome) {
             case PlanOutcome::Applied:
-                runtime = QString::fromUtf8("已应用");
+                runtime = eve::desktopText("configuration.applied");
                 break;
             case PlanOutcome::Pending:
-                runtime = QString::fromUtf8("等待依赖/父项");
+                runtime = eve::desktopText("configuration.waitingForDependenciesOrParent");
                 break;
             case PlanOutcome::Failed:
-                runtime = QString::fromUtf8("执行失败");
+                runtime = eve::desktopText("configuration.executionFailed");
                 break;
             case PlanOutcome::Superseded:
-                runtime = QString::fromUtf8("已替换");
+                runtime = eve::desktopText("configuration.superseded");
                 break;
             case PlanOutcome::Cancelled:
-                runtime = QString::fromUtf8("已取消");
+                runtime = eve::desktopText("configuration.canceled");
                 break;
             }
         }
-        summary_->setText(QString::fromUtf8("运行：%1 · R%2").arg(runtime).arg(displayedRevision_));
-        auto persisted = state.store.external    ? QString::fromUtf8("保存冲突")
-                         : state.store.writing   ? QString::fromUtf8("保存中")
-                         : state.store.lastError ? QString::fromUtf8("保存失败")
-                         : state.store.dirty     ? QString::fromUtf8("未保存")
+        summary_->setText(eve::desktopText("configuration.runtimeR").arg(runtime).arg(displayedRevision_));
+        auto persisted = state.store.external    ? eve::desktopText("configuration.saveConflict")
+                         : state.store.writing   ? eve::desktopText("configuration.saving")
+                         : state.store.lastError ? eve::desktopText("configuration.saveFailed")
+                         : state.store.dirty     ? eve::desktopText("configuration.unsaved")
                          : state.store.persistedRevision
-                             ? QString::fromUtf8("已保存 R%1").arg(*state.store.persistedRevision)
-                             : QString::fromUtf8("尚未保存");
-        saveStatus_->setText(QString::fromUtf8("磁盘：%1").arg(persisted));
+                             ? eve::desktopText("configuration.savedR").arg(*state.store.persistedRevision)
+                             : eve::desktopText("configuration.notYetSaved");
+        saveStatus_->setText(eve::desktopText("configuration.disk").arg(persisted));
         saveStatus_->setToolTip(
             state.store.external
-                ? QString::fromUtf8("审阅磁盘原文后可采用冲突基线，再显式保存；当前目标和编辑仍被保留。")
-                : QString::fromUtf8("保存仅写入已接受的配置目标；尚未应用的编辑不会写盘。"));
+                ? eve::desktopText("configuration.reviewTheDiskCopyUseItAs")
+                : eve::desktopText("configuration.saveWritesTheAcceptedTargetToDisk"));
         const auto file = state.store.baseline ? QString::fromStdString(state.store.baseline->version.path) : QString{};
         filePath_->setText(filePath_->fontMetrics().elidedText(file, Qt::ElideMiddle, filePath_->width()));
         filePath_->setToolTip(file);
@@ -705,10 +706,10 @@ private:
                 for (const auto& entry : desired->source().structure().entries()) {
                     auto actual = running.find(entry.first);
                     QStringList columns{QString::fromStdString(entry.first),
-                                        entry.second.disabled            ? QString::fromUtf8("停用")
-                                        : entry.second.effectiveDisabled ? QString::fromUtf8("父项停用")
-                                                                         : QString::fromUtf8("启用"),
-                                        actual == running.end() ? QString::fromUtf8("未运行")
+                                        entry.second.disabled            ? eve::desktopText("configuration.disable")
+                                        : entry.second.effectiveDisabled ? eve::desktopText("configuration.parentDisabled")
+                                                                         : eve::desktopText("configuration.enable"),
+                                        actual == running.end() ? eve::desktopText("configuration.stopped")
                                                                 : runtimeState(actual->second),
                                         actual == running.end() || !actual->second.instance.valid()
                                             ? QString("—")
@@ -741,25 +742,25 @@ private:
                                    : std::map<std::string, EntryValue>::const_iterator{};
         const bool selected = desired && entry != desired->source().structure().entries().end();
         selected_->setText(selected ? QString::fromStdString(path_) +
-                                          (matches_ ? QString{} : QString::fromUtf8(" · 请先应用或使用已应用目标"))
-                                    : QString::fromUtf8("选择条目调整本地启用状态"));
+                                          (matches_ ? QString{} : eve::desktopText("configuration.applyEditsOrRestoreTheAppliedConfiguration"))
+                                    : eve::desktopText("configuration.selectAnEntryToChangeItsLocal"));
         {
             QSignalBlocker blocker(enabled_);
             enabled_->setIsToggled(selected && !entry->second.disabled);
         }
         QString detail = message_;
         if (draft_) {
-            detail += QString::fromUtf8("\n候选基于修订 %1（目标差异）\n").arg(draft_->baseRevision());
+            detail += eve::desktopText("configuration.candidateBasedOnRevisionTargetChanges").arg(draft_->baseRevision());
             for (const auto& row : draft_->changes().entries)
                 detail += QString::fromStdString(row.path) + " : " + changeName(row.kind) + "\n";
         }
         if (state.latestPlan) {
-            detail += QString::fromUtf8("\n最近执行：修订 %1 · %2\n")
+            detail += eve::desktopText("configuration.lastExecutionRevision")
                           .arg(state.latestPlan->revision)
-                          .arg(state.latestPlan->outcome == PlanOutcome::Applied   ? QString::fromUtf8("已应用")
-                               : state.latestPlan->outcome == PlanOutcome::Pending ? QString::fromUtf8("等待依赖/父项")
-                               : state.latestPlan->outcome == PlanOutcome::Failed  ? QString::fromUtf8("失败")
-                                                                                   : QString::fromUtf8("已替代或取消"));
+                          .arg(state.latestPlan->outcome == PlanOutcome::Applied   ? eve::desktopText("configuration.applied")
+                               : state.latestPlan->outcome == PlanOutcome::Pending ? eve::desktopText("configuration.waitingForDependenciesOrParent")
+                               : state.latestPlan->outcome == PlanOutcome::Failed  ? eve::desktopText("configuration.failed")
+                                                                                   : eve::desktopText("configuration.supersededOrCanceled"));
             for (const auto& error : state.latestPlan->errors)
                 detail += describe(error) + "\n";
         }
@@ -773,7 +774,7 @@ private:
                 detail += "\n" + error;
         }
         if (state.store.external)
-            detail += QString::fromUtf8("\n磁盘冲突原文（保留当前目标，不自动采用）：\n") +
+            detail += eve::desktopText("configuration.conflictingDiskCopyReviewBeforeAccepting") +
                       QString::fromStdString(state.store.external->text);
         diskLoad_->setEnabled(false);
         if (auto source = watcher_.lock()) {
@@ -783,14 +784,14 @@ private:
             else {
                 displayedDiskSequence_ = disk.value().changeSequence;
                 auto text = disk.value().closed || disk.value().closing
-                                ? QString::fromUtf8("文件监听已关闭。")
-                                : QString::fromUtf8("监听磁盘变化；不会自动覆盖编辑或应用目标。");
+                                ? eve::desktopText("configuration.fileMonitoringIsOff")
+                                : eve::desktopText("configuration.fileMonitoringIsOnReviewDiskChanges");
                 if (disk.value().external) {
                     const auto& external = *disk.value().external;
-                    text = external.version.exists ? QString::fromUtf8("检测到磁盘修改，可显式载入编辑区。")
-                                                   : QString::fromUtf8("磁盘文件已删除；载入会清空编辑区。");
+                    text = external.version.exists ? eve::desktopText("configuration.theFileChangedOnDiskYouCan")
+                                                   : eve::desktopText("configuration.theFileWasDeletedLoadingTheDisk");
                     detail +=
-                        QString::fromUtf8("\n监听到的磁盘原文（尚未采用）：\n") + QString::fromStdString(external.text);
+                        eve::desktopText("configuration.detectedDiskCopyPendingReview") + QString::fromStdString(external.text);
                     diskLoad_->setEnabled(!state.closing && !disk.value().closing && !disk.value().closed &&
                                           !disk.value().deliveryBlocked);
                 }
@@ -799,9 +800,9 @@ private:
                 diskStatus_->setText(text);
             }
         } else
-            diskStatus_->setText(QString::fromUtf8("文件监听不可用。"));
+            diskStatus_->setText(eve::desktopText("configuration.fileMonitoringIsUnavailable"));
         if (detail.isEmpty())
-            detail = QString::fromUtf8("先检查配置差异，再应用到工作台；运行结果和磁盘保存分别反馈。");
+            detail = eve::desktopText("configuration.reviewChangesBeforeApplyingThemTheRuntime");
         if (details_->toPlainText() != detail)
             details_->setPlainText(detail);
         auto current = session->snapshot();
@@ -814,12 +815,12 @@ private:
         reset_->setEnabled(open && desired);
         rebase_->setEnabled(open && state.store.external && !state.store.writing && !state.store.queuedWrites);
         enabled_->setEnabled(open && selected && matches_ && !togglePending_);
-        enabled_->setAccessibleName(QString::fromUtf8("启用所选配置条目"));
-        enabled_->setToolTip(!selected   ? QString::fromUtf8("请选择一个配置条目。")
-                             : !matches_ ? QString::fromUtf8("请先应用编辑，或还原到已应用目标，再调整启用状态。")
+        enabled_->setAccessibleName(eve::desktopText("configuration.enableTheSelectedConfigurationEntry"));
+        enabled_->setToolTip(!selected   ? eve::desktopText("configuration.selectAConfigurationEntry")
+                             : !matches_ ? eve::desktopText("configuration.applyEditsOrRestoreTheAppliedConfiguration2")
                              : !open || togglePending_
-                                 ? QString::fromUtf8("当前操作在途或会话已关闭，请等待状态稳定。")
-                                 : QString::fromUtf8("修改所选条目的期望启用状态，保存需另行操作。"));
+                                 ? eve::desktopText("configuration.waitForTheCurrentOperationToFinish")
+                                 : eve::desktopText("configuration.changeTheDesiredEnabledStateOfThe"));
         diskLoad_->setEnabled(open && diskLoad_->isEnabled());
     }
     std::weak_ptr<ConfigurationSession> session_;

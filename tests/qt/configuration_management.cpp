@@ -377,7 +377,7 @@ void disabled()
     auto child = scene.toggle("r/c");
     CHECK(child->getIsToggled());
     CHECK(scene.activations == 0);
-    CHECK(scene.card("r/c")->findChild<QLabel*>("EvePluginStatus")->text() == QString::fromUtf8("父项停用"));
+    CHECK(scene.card("r/c")->findChild<QLabel*>("EvePluginStatus")->text() == QString::fromUtf8("Parent Disabled"));
     auto op = scene.shell.management()->setConfigurationEnabled("r/c", false, 1).value();
     CHECK(!scene.operation(op).error);
     CHECK(scene.activations == 0 && scene.route->snapshot().value().entries.size() == 2);
@@ -577,7 +577,7 @@ void layout()
     scene.apply();
     scene.toggle();
     until(
-        [&] { return scene.card()->findChild<QLabel*>("EvePluginStatus")->text() == QString::fromUtf8("运行中"); });
+        [&] { return scene.card()->findChild<QLabel*>("EvePluginStatus")->text() == QString::fromUtf8("Running"); });
     for (auto theme : {ElaThemeType::Light, ElaThemeType::Dark}) {
         eTheme->setThemeMode(theme);
         scene.window->resize(1200, 800);
@@ -763,7 +763,7 @@ void editInstance()
     editor->setPlainText("{\"draft\":true}");
     scene.card("sibling")->findChild<QPushButton*>("EvePluginConfigure")->click();
     CHECK(editor->toPlainText() == "{\"draft\":true}" &&
-          scene.find<QLabel>("EveManagementStatus")->text().contains(QStringLiteral("继续编辑")));
+          scene.find<QLabel>("EveManagementStatus")->text().contains(QStringLiteral("Apply the draft or reload the current configuration before switching entries.")));
     auto change = scene.route->setEnabled("sibling", false, 2).value();
     wait(change);
     scene.find<QPushButton>("EvePluginConfigurationApply")->click();
@@ -790,7 +790,7 @@ void editInstance()
     QTest::keyClick(table, Qt::Key_Down);
     CHECK(table->currentIndex().data().toString() == "r" && editor->toPlainText() == "{\"owner\":\"A\"}" &&
           apply->isEnabled());
-    CHECK(scene.find<QLabel>("EveManagementStatus")->text().contains(QStringLiteral("继续编辑")));
+    CHECK(scene.find<QLabel>("EveManagementStatus")->text().contains(QStringLiteral("Apply the draft or reload the current configuration before switching entries.")));
     reload->click();
     table->setCurrentIndex(table->model()->index(2, 0));
     CHECK(table->currentIndex().data().toString() == "sibling" && editor->toPlainText().contains("9007199254740993"));
@@ -803,7 +803,7 @@ void editInstance()
     scene.apply("formatVersion: 1\nplugins: [{id: survivor, plugin: demo}]\n");
     CHECK(editor->isReadOnly() && !apply->isEnabled() && editor->toPlainText() == "{\"owner\":\"sibling\"}");
     table->setCurrentIndex(table->model()->index(0, 0));
-    CHECK(!table->currentIndex().isValid() && reload->text().contains(QStringLiteral("放弃")));
+    CHECK(!table->currentIndex().isValid() && reload->text().contains(QStringLiteral("Discard Draft for Removed Entry")));
     reload->click();
     table->setCurrentIndex(table->model()->index(0, 0));
     CHECK(table->currentIndex().data().toString() == "survivor" && editor->toPlainText() == "{}");

@@ -2,6 +2,7 @@
  * @brief 首页卡片展示扩展与工作区实例，打开详情仍留在当前页面。
  */
 #include "appearance_p.hpp"
+#include "desktop_text.hpp"
 #include "brand_p.hpp"
 #include "home_p.hpp"
 #include <ElaFlowLayout.h>
@@ -130,14 +131,16 @@ std::vector<HomeCard> homeCards(const std::vector<HomePlugin>& instances, const 
         HomePlugin plugin{QStringLiteral("extension:") + extension.id, extension.name, extension.state};
         plugin.pluginId = extension.pluginId;
         QStringList identity;
-        if (extension.builtin) identity << QObject::tr("内置桌面");
-        else if (extension.kind == ExtensionKind::Desktop) identity << QObject::tr("桌面扩展");
+        if (extension.builtin) identity << eve::desktopText("home.builtInDesktop");
+        else if (extension.kind == ExtensionKind::Desktop) identity << eve::desktopText("home.desktopExtension");
+        else if (extension.kind == ExtensionKind::Language) identity << eve::desktopText("home.languageExtension");
         if (!extension.publisher.isEmpty()) identity << extension.publisher;
         if (!extension.version.isEmpty()) identity << extension.version;
         plugin.identity = identity.isEmpty() ? extension.id : identity.join(QStringLiteral(" · "));
         plugin.needsAttention = extension.missing || extension.pending;
         plugin.status.icon = plugin.needsAttention ? ElaIconType::TriangleExclamation :
-                             extension.current ? ElaIconType::CircleCheck : ElaIconType::PuzzlePiece;
+                             extension.current ? ElaIconType::CircleCheck :
+                             extension.kind == ExtensionKind::Language ? ElaIconType::Language : ElaIconType::PuzzlePiece;
         cards.push_back({std::move(plugin), extension.id, extension.icon, extension.builtin, false, {}, {}, extension.publisher,
                          extension.categories});
     }
@@ -187,7 +190,7 @@ QPixmap pluginIcon(const QString& id)
 HomePage::HomePage()
 {
     setObjectName("EveWelcomePage");
-    setWindowTitle(QString::fromUtf8("Eve 插件工作台"));
+    setWindowTitle(eve::desktopText("home.evePluginWorkbench"));
     setTitleVisible(false);
     setContentsMargins(16, 12, 16, 12);
     auto content = new QWidget;
@@ -217,25 +220,25 @@ HomePage::HomePage()
         summary->addWidget(text);
     }
     bannerRow_->addLayout(summary, 1);
-    add_ = new ActionButton(QString::fromUtf8("添加插件实例…"), hero);
+    add_ = new ActionButton(eve::desktopText("home.addPluginInstance"), hero);
     add_->setObjectName("EveWelcomePlugins");
     primaryButton(add_);
     bannerRow_->addWidget(add_, 0, Qt::AlignLeft | Qt::AlignVCenter);
-    install_ = new ActionButton(tr("安装扩展…"), hero);
+    install_ = new ActionButton(eve::desktopText("home.installExtension"), hero);
     install_->setObjectName("EveHomeInstallExtension");
     primaryButton(install_);
     bannerRow_->addWidget(install_, 0, Qt::AlignLeft | Qt::AlignVCenter);
     install_->hide();
     layout->addWidget(hero);
-    auto label = new ElaText(QString::fromUtf8("插件"), 20, content);
+    auto label = new ElaText(eve::desktopText("home.plugins"), 20, content);
     label->setIsBold(true);
     auto heading = new QHBoxLayout;
     heading->addWidget(label);
     heading->addStretch();
     search_ = new ElaLineEdit(content);
     search_->setObjectName("EveHomeExtensionSearch");
-    search_->setAccessibleName(tr("搜索插件"));
-    search_->setPlaceholderText(tr("按名称、发布者或标识搜索"));
+    search_->setAccessibleName(eve::desktopText("home.searchPlugins"));
+    search_->setPlaceholderText(eve::desktopText("home.searchByNamePublisherOrID"));
     search_->setMaximumWidth(420);
     search_->setClearButtonEnabled(true);
     search_->hide();
@@ -256,13 +259,13 @@ HomePage::HomePage()
     empty_->setObjectName("EveEmptyInstances");
     emptyRow_ = new QBoxLayout(QBoxLayout::LeftToRight, empty_);
     emptyRow_->setContentsMargins(0, 0, 0, 0);
-    auto emptyText = new ElaText(QString::fromUtf8("暂无插件实例。"), 14, empty_);
+    auto emptyText = new ElaText(eve::desktopText("home.noPluginInstancesYet"), 14, empty_);
     emptyText->setObjectName("EveHomeEmpty");
     secondaryText(emptyText);
     emptyRow_->addWidget(emptyText);
     emptyRow_->addStretch();
     layout->addWidget(empty_);
-    noMatches_ = new ElaText(tr("未找到匹配的插件。"), 14, content);
+    noMatches_ = new ElaText(eve::desktopText("home.noMatchingPluginsFound"), 14, content);
     noMatches_->setObjectName("EveHomeNoMatchingExtensions");
     secondaryText(noMatches_);
     noMatches_->hide();
@@ -399,7 +402,7 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
             header->addLayout(text, 1);
             body->addLayout(header);
             auto footer = new QHBoxLayout;
-            auto identity = new ElaText(QString::fromUtf8("实例 #%1").arg(plugin.id), 12, item);
+            auto identity = new ElaText(eve::desktopText("home.instance").arg(plugin.id), 12, item);
             identity->setObjectName("EvePluginIdentity");
             identity->setTextFormat(Qt::PlainText);
             secondaryText(identity);
@@ -413,8 +416,9 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
             body->addLayout(footer);
             auto tools = new QHBoxLayout;
             for (const auto& entry :
-                 {std::make_pair("EvePluginManage", "管理"), std::make_pair("EvePluginConfigure", "配置")}) {
-                auto action = new ActionButton(QString::fromUtf8(entry.second), item);
+                 {std::make_pair("EvePluginManage", eve::desktopText("home.manage")),
+                  std::make_pair("EvePluginConfigure", eve::desktopText("home.configure"))}) {
+                auto action = new ActionButton(entry.second, item);
                 action->setObjectName(QString::fromLatin1(entry.first));
                 action->setAttribute(Qt::WA_NoMousePropagation);
                 action->setMinimumHeight(30);
@@ -424,8 +428,8 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
                 action->setEnabled(!configuration || plugin.configuration);
                 if (configuration)
                     action->setToolTip(plugin.configuration
-                                           ? QString::fromUtf8("编辑此条目的配置并显式保存")
-                                           : QString::fromUtf8("此实例由宿主手动创建，未接入配置会话"));
+                                           ? eve::desktopText("home.editAndSaveTheConfigurationForThis")
+                                           : eve::desktopText("home.theHostCreatedThisInstanceOutsideThe"));
                 tools->addWidget(action);
                 connect(action, &QPushButton::clicked, this, [this, item, id = plugin.id, configuration] {
                     if (!item || !item->isEnabled() || !access_)
@@ -522,7 +526,7 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
         button->setProperty("EveConfigurationRevision", QVariant::fromValue<qulonglong>(plugin.revision));
         auto identity = item->findChild<ElaText*>("EvePluginIdentity");
         const auto identityText =
-            plugin.identity.isEmpty() ? QString::fromUtf8("实例 #%1").arg(plugin.id) : plugin.identity;
+            plugin.identity.isEmpty() ? eve::desktopText("home.instance").arg(plugin.id) : plugin.identity;
         const auto summaryIdentity = card.packageName.isEmpty() ? identityText
                                     : card.packageName + QStringLiteral(" · ") + card.instancePath;
         identity->setText(identity->fontMetrics().elidedText(summaryIdentity, Qt::ElideMiddle, 185));
@@ -532,7 +536,7 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
         if (title->text() != name)
             title->setText(name);
         title->setAccessibleName(plugin.title);
-        const auto state = plugin.busy ? QString::fromUtf8("操作中 · %1").arg(plugin.subtitle) : plugin.subtitle;
+        const auto state = plugin.busy ? eve::desktopText("home.working").arg(plugin.subtitle) : plugin.subtitle;
         if (status->text() != state)
             status->setText(state);
         status->setWordWrap(true);
@@ -548,15 +552,15 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
             const QSignalBlocker blocked(button);
             button->setIsToggled(plugin.enabled);
         }
-        const auto action = plugin.configuration ? (plugin.enabled ? QString::fromUtf8("停用配置条目")
-                                                                   : QString::fromUtf8("启用配置条目"))
-                            : plugin.canStop     ? QString::fromUtf8("停止插件")
-                            : plugin.canRetry    ? QString::fromUtf8("重试加载")
-                                                 : QString::fromUtf8("加载插件");
-        const auto hint = !power_       ? QString::fromUtf8("此入口仅展示状态；请使用所属插件的管理入口。")
-                          : plugin.busy ? QString::fromUtf8("正在处理，请稍候，不会重复提交操作。")
+        const auto action = plugin.configuration ? (plugin.enabled ? eve::desktopText("home.disableConfigurationEntry")
+                                                                   : eve::desktopText("home.enableConfigurationEntry"))
+                            : plugin.canStop     ? eve::desktopText("home.stopPlugin")
+                            : plugin.canRetry    ? eve::desktopText("home.retryLoading")
+                                                 : eve::desktopText("home.loadPlugin");
+        const auto hint = !power_       ? eve::desktopText("home.manageThisInstanceFromItsPlugin")
+                          : plugin.busy ? eve::desktopText("home.anOperationIsAlreadyInProgress")
                           : !(plugin.canStop || plugin.canLoad || plugin.canRetry)
-                              ? QString::fromUtf8("当前状态不允许修改；会话可能已关闭或资源仍在清理，请查看插件管理。")
+                              ? eve::desktopText("home.changesAreUnavailableCheckThePluginManager")
                               : action;
         button->setToolTip(hint);
         button->setAccessibleDescription(hint);
@@ -583,11 +587,11 @@ void HomePage::setPlugins(const std::vector<HomePlugin>& plugins,
         running += card.plugin.running;
         attention += card.plugin.needsAttention;
     }
-    auto summary = QString::fromUtf8("%1 个实例 · %2 个运行中").arg(plugins.size()).arg(running);
+    auto summary = eve::desktopText("home.instancesRunning").arg(plugins.size()).arg(running);
     if (showDetails_)
-        summary.prepend(QStringLiteral("%1 个扩展 · ").arg(extensions_.size()));
+        summary.prepend(eve::desktopText("home.extensions").arg(extensions_.size()));
     if (attention)
-        summary += QString::fromUtf8(" · %1 个需处理").arg(attention);
+        summary += eve::desktopText("home.needAttention").arg(attention);
     count_->setText(summary);
     if (!showDetails_ && cards.empty() && emptyRow_->indexOf(add_) < 0)
         emptyRow_->insertWidget(1, add_, 0, Qt::AlignLeft);

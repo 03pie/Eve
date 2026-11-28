@@ -8,9 +8,9 @@
 #include <functional>
 #include <vector>
 class QListView;
-class QTabWidget;
 namespace eve::ui::detail
 {
+class FixedDiagnosticsTabs;
 enum class QuickAccessMode { Pages, Commands };
 struct QuickAccessPage { QString key, title, category; };
 
@@ -23,7 +23,7 @@ void showQuickAccess(QWidget* panel, QWidget* anchor, QuickAccessMode mode);
 void dismissQuickAccess(QWidget* panel);
 void dismissCommandPanel(QWidget* list);
 /** @brief 只读问题来自当前 diagnostics，激活问题定位到原插件的管理窗口。 */
-void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService> diagnostics,
+void installProblemsPanel(FixedDiagnosticsTabs* panel, std::shared_ptr<DiagnosticsService> diagnostics,
                           std::shared_ptr<OutputControl> output, WindowAccess access,
                           std::function<Result<void>(InstanceId, const QString&)> locate);
 } // namespace eve::ui::detail

@@ -2,12 +2,14 @@
  * @brief 在独立 JSON 中保存 Ela 主题及工作台布局，失败不影响插件运行与关闭屏障。
  */
 #include "preferences_p.hpp"
+#include "desktop_text.hpp"
 #include "theme_palette_p.hpp"
 #include "workbench_dialog_p.hpp"
 #include <ElaApplication.h>
 #include <ElaDialog.h>
 #include <ElaTheme.h>
 #include <ElaWindow.h>
+#include <QDesktopServices>
 #include <QDir>
 #include <QEvent>
 #include <QFile>
@@ -16,6 +18,7 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QImageReader>
+#include <QLockFile>
 #include <QPainter>
 #include <QSettings>
 #include <QApplication>
@@ -27,6 +30,7 @@
 #include <QSaveFile>
 #include <QSplitter>
 #include <QTabWidget>
+#include <QUrl>
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -34,6 +38,87 @@
 namespace eve::ui::detail {
 namespace {
 constexpr int minimumMainPaneHeight = 240;
+constexpr int maximumSettingsBytes = 16384;
+const QStringList materialNames{"normal", "elaMica", "mica", "micaAlt", "acrylic", "dwmBlur"};
+const QStringList transitionNames{"none", "popup", "scale", "flip", "blur"};
+
+struct SettingsDocument {
+    bool exists = false;
+    QByteArray bytes;
+    QJsonObject value;
+    QString problem;
+};
+
+bool validSettings(const QJsonObject& value)
+{
+    const auto integer = [&](const char* key, int min, int max) {
+        const auto entry = value.value(QLatin1String(key));
+        if (entry.isUndefined()) return true;
+        const auto number = entry.toDouble();
+        return entry.isDouble() && std::isfinite(number) && std::floor(number) == number && number >= min && number <= max;
+    };
+    const auto choice = [&](const char* key, const QStringList& options) {
+        const auto entry = value.value(QLatin1String(key));
+        return entry.isUndefined() || options.contains(entry.toString());
+    };
+    for (const auto* key : {"workbench.showUserCard", "notifications.doNotDisturb"}) {
+        const auto entry = value.value(QLatin1String(key));
+        if (!entry.isUndefined() && !entry.isBool()) return false;
+    }
+    for (const auto* key : {"workbench.wallpaper", "output.source"}) {
+        const auto entry = value.value(QLatin1String(key));
+        if (!entry.isUndefined() && !entry.isString()) return false;
+    }
+    const auto wallpaper = value.value("workbench.wallpaper").toString();
+    return (wallpaper.isEmpty() || QDir::isAbsolutePath(wallpaper)) &&
+           choice("workbench.theme", {"light", "dark"}) && choice("workbench.navigationMode", {"compact", "expanded"}) &&
+           integer("workbench.navigationWidth", navigationWidthPixels.minimum, navigationWidthPixels.maximum) &&
+           integer("workbench.panelHeight", panelHeightPixels.minimum, panelHeightPixels.maximum) &&
+           choice("workbench.windowMaterial", materialNames) && choice("workbench.pageTransition", transitionNames);
+}
+
+SettingsDocument readSettings(const QString& path)
+{
+    SettingsDocument result;
+    QFile file(path);
+    if (path.isEmpty() || !file.exists()) return result;
+    result.exists = true;
+    if (!file.open(QIODevice::ReadOnly)) {
+        result.problem = desktopText("settings.couldNotReadTheUserSettingsFile");
+        return result;
+    }
+    result.bytes = file.read(maximumSettingsBytes + 1);
+    QJsonParseError error;
+    const auto document = QJsonDocument::fromJson(result.bytes, &error);
+    if (file.error() != QFile::NoError || result.bytes.size() > maximumSettingsBytes ||
+        error.error != QJsonParseError::NoError || !document.isObject() || !validSettings(document.object())) {
+        result.problem = desktopText("settings.invalidUserSettingsJSONOrValuesFix");
+        return result;
+    }
+    result.value = document.object();
+    return result;
+}
+
+bool writeSettings(const QString& path, const QJsonObject& value, const SettingsDocument& expected)
+{
+    const auto bytes = QJsonDocument(value).toJson(QJsonDocument::Indented);
+    if (bytes.size() > maximumSettingsBytes || !QDir().mkpath(QFileInfo(path).absolutePath())) return false;
+    QLockFile lock(path + QStringLiteral(".lock"));
+    if (!lock.tryLock(0)) return false;
+    QSaveFile file(path);
+    file.setDirectWriteFallback(false);
+    if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size()) return false;
+    const auto current = readSettings(path);
+    if (!current.problem.isEmpty() || current.exists != expected.exists || current.bytes != expected.bytes)
+        return false;
+    return file.commit();
+}
+
+QString settingsReady()
+{
+    return desktopText("settings.changesAreSavedToTheUserSettings");
+}
+
 #ifdef Q_OS_WIN
 class SystemAppearanceObserver final : public QObject, public QAbstractNativeEventFilter {
 public:
@@ -134,24 +219,63 @@ bool animationsEnabled()
 #endif
 }
 
+QImage readBackground(const QString& path)
+{
+    if (path.isEmpty()) return {};
+    QImageReader reader(path);
+    reader.setAutoTransform(true);
+    const auto format = reader.format().toLower();
+    if (format != "png" && format != "jpeg" && format != "webp") return {};
+    const auto size = reader.size();
+    if (!size.isValid()) return {};
+    if (std::max(size.width(), size.height()) > 4096)
+        reader.setScaledSize(size.scaled(4096, 4096, Qt::KeepAspectRatio));
+    return reader.read();
+}
+
 }
 WorkbenchPreferences::WorkbenchPreferences(ElaWindow* window, QTabWidget* panel, QString file)
     : QObject(window), window_(window), panel_(panel),
-      splitter_(window->findChild<QSplitter*>("ElaWorkbenchPanelSplitter")), file_(std::move(file))
+      splitter_(window->findChild<QSplitter*>("ElaWorkbenchPanelSplitter")),
+      file_(std::move(file))
 {
     timer_.setSingleShot(true);
     timer_.setInterval(250);
+    reloadTimer_.setSingleShot(true);
+    reloadTimer_.setInterval(100);
+    const auto queueReload = [this] {
+        if (!reloadTimer_.isActive()) reloadTimer_.start();
+    };
+    connect(&watcher_, &QFileSystemWatcher::fileChanged, this, queueReload);
+    connect(&watcher_, &QFileSystemWatcher::directoryChanged, this, queueReload);
+    connect(&reloadTimer_, &QTimer::timeout, this, [this] {
+        if (fileGuard_) fileGuard_([this] { load(); });
+    });
     wallpaper_ = new WallpaperLayer(window);
 #ifdef Q_OS_WIN
     new SystemAppearanceObserver(window, this, [this] { applyAppearance(); });
 #endif
-    connect(&timer_, &QTimer::timeout, this, [this] { flush(); });
+    connect(&timer_, &QTimer::timeout, this, [this] {
+        if (fileGuard_) fileGuard_([this] { flush(); });
+    });
     applyMotion();
-    load();
+    if (file_.isEmpty()) {
+        darkTheme_ = eTheme->getThemeMode() == ElaThemeType::Dark;
+        report(desktopText("settings.settingsForThisWindowAreKeptFor"));
+    } else {
+        baseline_ = snapshot();
+        load();
+    }
     panel->hide();
     panel->installEventFilter(this);
     window->installEventFilter(this);
-    connect(eTheme, &ElaTheme::themeModeChanged, this, [this] { wallpaper_->update(); changed(); });
+    connect(eTheme, &ElaTheme::themeModeChanged, this, [this](ElaThemeType::ThemeMode mode) {
+        wallpaper_->update();
+        if (file_.isEmpty()) {
+            darkTheme_ = mode == ElaThemeType::Dark;
+            notifyControls();
+        }
+    });
     connect(window, &ElaWindow::pNavigationBarWidthChanged, this, [this] { changed(); });
     connect(window, &ElaWindow::pNavigationBarDisplayModeChanged, this, [this] { changed(); });
     if (splitter_)
@@ -172,6 +296,10 @@ void WorkbenchPreferences::setReporter(std::function<void(const QString&)> repor
     reporter_ = std::move(reporter);
     report(message_);
 }
+void WorkbenchPreferences::setFileGuard(std::function<void(const std::function<void()>&)> guard)
+{
+    fileGuard_ = std::move(guard);
+}
 void WorkbenchPreferences::report(const QString& text)
 {
     message_ = text;
@@ -181,48 +309,76 @@ void WorkbenchPreferences::report(const QString& text)
 }
 void WorkbenchPreferences::load()
 {
-    if (file_.isEmpty()) {
-        report(QString::fromUtf8("当前为会话模式，界面设置在关闭后不保留。"));
+    watchFiles();
+    const auto document = readSettings(file_);
+    if (hasObservation_ && observedWithFile_ == document.exists && observed_ == document.bytes &&
+        document.problem.isEmpty()) return;
+    if (!document.problem.isEmpty()) {
+        hasObservation_ = false;
+        report(document.problem);
         return;
     }
-    report(QString::fromUtf8("外观与布局自动保存在本机；底部工作区启动时保持收起。"));
-    QFile file(file_);
-    if (!file.exists())
-        return;
-    if (!file.open(QIODevice::ReadOnly) || file.size() > 16384) {
-        report(QString::fromUtf8("无法读取界面偏好，已保留默认布局。修改设置后可重新保存。"));
+    if (dirty_) {
+        flush();
         return;
     }
-    QJsonParseError error;
-    const auto document = QJsonDocument::fromJson(file.readAll(), &error);
-    const auto value = document.object();
-    const auto integer = [&value](const char* key, int low, int high) {
-        const auto item = value.value(QString::fromLatin1(key));
-        const auto number = item.toDouble(-1);
-        return item.isDouble() && std::isfinite(number) && std::floor(number) == number && number >= low &&
-               number <= high;
-    };
-    if (error.error != QJsonParseError::NoError || !document.isObject() || !integer("version", 1, 1) ||
-        !integer("theme", 0, 1) || !integer("navigationMode", 2, 3) ||
-        !integer("navigationWidth", navigationWidthPixels.minimum, navigationWidthPixels.maximum) ||
-        !integer("panelHeight", panelHeightPixels.minimum, panelHeightPixels.maximum)) {
-        report(QString::fromUtf8("界面偏好格式或版本无效，已保留默认布局。修改设置后可重新保存。"));
-        return;
+    observed_ = document.bytes;
+    observedWithFile_ = document.exists;
+    hasObservation_ = true;
+    apply(document.value);
+}
+
+void WorkbenchPreferences::watchFiles()
+{
+    if (file_.isEmpty()) return;
+    const QFileInfo info(file_);
+    const auto file = info.isFile() ? info.absoluteFilePath() : QString{};
+    auto directory = info.absoluteDir();
+    while (!directory.exists() && !directory.isRoot())
+        directory.setPath(QDir::cleanPath(directory.absoluteFilePath(QStringLiteral(".."))));
+    const auto parent = directory.exists() ? directory.absolutePath() : QString{};
+    for (const auto& path : watcher_.files() + watcher_.directories()) {
+        if (path != file && path != parent) watcher_.removePath(path);
     }
-    eTheme->setThemeMode(value.value("theme").toInt() ? ElaThemeType::Dark : ElaThemeType::Light);
-    window_->setNavigationBarWidth(value.value("navigationWidth").toInt());
+    for (const auto& path : {file, parent}) {
+        if (path.isEmpty()) continue;
+        if (!watcher_.files().contains(path) && !watcher_.directories().contains(path)) watcher_.addPath(path);
+    }
+}
+
+void WorkbenchPreferences::apply(const QJsonObject& value)
+{
+    restoring_ = true;
+    setDarkTheme(value.value("workbench.theme").toString() == "dark");
+    window_->setNavigationBarWidth(value.value("workbench.navigationWidth").toInt(navigationWidthPixels.initial));
     window_->setNavigationBarDisplayMode(
-        static_cast<ElaNavigationType::NavigationDisplayMode>(value.value("navigationMode").toInt()));
-    panelHeight_ = value.value("panelHeight").toInt();
-    material_ = integer("material", 0, 5) ? value.value("material").toInt() : 0;
-    transition_ = integer("transition", 0, 4) ? value.value("transition").toInt() : 0;
-    setUserCardVisible(value.value("userCardVisible").toBool(true));
-    window_->setProperty("EveDoNotDisturb", value.value("doNotDisturb").toBool());
-    window_->setProperty("EveOutputSource", value.value("outputSource").toString());
-    const auto path = value.value("background").toString();
-    if (!path.isEmpty() && (!QDir::isAbsolutePath(path) || !setBackground(path)))
-        report(QString::fromUtf8("背景图片无法读取，已使用默认背景。"));
+        value.value("workbench.navigationMode").toString() == "expanded" ? ElaNavigationType::Maximal : ElaNavigationType::Compact);
+    const auto previousHeight = panelHeight_;
+    panelHeight_ = value.value("workbench.panelHeight").toInt(panelHeightPixels.initial);
+    material_ = std::max(0, materialNames.indexOf(value.value("workbench.windowMaterial").toString()));
+    transition_ = std::max(0, transitionNames.indexOf(value.value("workbench.pageTransition").toString()));
+    setUserCardVisible(value.value("workbench.showUserCard").toBool(true));
+    window_->setProperty("EveDoNotDisturb", value.value("notifications.doNotDisturb").toBool());
+    window_->setProperty("EveOutputSource", value.value("output.source").toString());
+    const auto path = value.value("workbench.wallpaper").toString();
+    if (path != backgroundPath_ || (!path.isEmpty() && background_.isNull()))
+        applyBackground(path, readBackground(path));
     applyAppearance();
+    if (panelHeight_ != previousHeight) applyHeight();
+    baseline_ = snapshot();
+    restoring_ = false;
+    notifyControls();
+    report(path.isEmpty() || !background_.isNull() ? settingsReady()
+                                                   : desktopText("settings.couldNotLoadTheBackgroundImageThe"));
+}
+void WorkbenchPreferences::setDarkTheme(bool dark)
+{
+    if (darkTheme_ != dark) {
+        darkTheme_ = dark;
+        changed();
+    }
+    eTheme->setThemeMode(dark ? ElaThemeType::Dark : ElaThemeType::Light);
+    notifyControls();
 }
 void WorkbenchPreferences::setMaterial(int mode)
 {
@@ -233,7 +389,12 @@ void WorkbenchPreferences::setMaterial(int mode)
 void WorkbenchPreferences::observeAppearance(std::function<void()> observer)
 {
     appearanceObserver_ = std::move(observer);
-    if (appearanceObserver_) appearanceObserver_();
+    notifyControls();
+}
+
+void WorkbenchPreferences::notifyControls()
+{
+    if (!restoring_ && appearanceObserver_) appearanceObserver_();
 }
 void WorkbenchPreferences::setTransition(int mode)
 {
@@ -255,22 +416,19 @@ void WorkbenchPreferences::setUserCardVisible(bool visible)
 }
 bool WorkbenchPreferences::setBackground(const QString& path)
 {
-    QImage image;
-    if (!path.isEmpty()) {
-        QImageReader reader(path);
-        reader.setAutoTransform(true);
-        const auto format = reader.format().toLower();
-        if (format != "png" && format != "jpeg" && format != "webp") return false;
-        const auto size = reader.size();
-        if (!size.isValid()) return false;
-        if (std::max(size.width(), size.height()) > 4096)
-            reader.setScaledSize(size.scaled(4096, 4096, Qt::KeepAspectRatio));
-        image = reader.read();
-        if (image.isNull()) return false;
-    }
+    const auto image = readBackground(path);
+    if (!path.isEmpty() && image.isNull()) return false;
+    applyBackground(path.isEmpty() ? QString{} : QFileInfo(path).absoluteFilePath(), image);
+    if (!restoring_) applyAppearance();
+    changed();
+    return true;
+}
+
+void WorkbenchPreferences::applyBackground(const QString& path, const QImage& image)
+{
     window_->setWindowPaintMode(ElaWindowType::Normal);
     background_ = QPixmap::fromImage(image);
-    backgroundPath_ = path.isEmpty() ? QString{} : QFileInfo(path).absoluteFilePath();
+    backgroundPath_ = path;
     for (auto theme : {ElaThemeType::Light, ElaThemeType::Dark}) {
         auto rendered = background_;
         if (!rendered.isNull()) {
@@ -281,9 +439,6 @@ bool WorkbenchPreferences::setBackground(const QString& path)
         }
         window_->setWindowPixmap(theme, rendered);
     }
-    applyAppearance();
-    changed();
-    return true;
 }
 void WorkbenchPreferences::applyAppearance()
 {
@@ -298,9 +453,9 @@ void WorkbenchPreferences::applySystemSurfaceSettings(SystemSurfaceSettings syst
     const bool supported = requested <= 1 || window_->property("ElaWindowMaterialApplied").toBool();
     window_->setProperty("EveRequestedMaterialAccepted", supported && requested == material_);
     if (!supported) eApp->setWindowDisplayMode(ElaApplicationType::Normal);
-    if (system.highContrast) appearanceHint_ = tr("Windows 已启用对比度主题，当前使用实色。");
-    else if (!system.transparencyEnabled) appearanceHint_ = tr("Windows 已关闭透明效果，当前使用实色。");
-    else if (!supported) appearanceHint_ = tr("系统未应用所选材质，当前使用标准外观。");
+    if (system.highContrast) appearanceHint_ = desktopText("settings.aWindowsContrastThemeIsActiveUsing");
+    else if (!system.transparencyEnabled) appearanceHint_ = desktopText("settings.windowsTransparencyIsOffUsingASolid");
+    else if (!supported) appearanceHint_ = desktopText("settings.windowsDidNotApplyTheSelectedMaterial");
     else appearanceHint_.clear();
     const bool image = !solid && !background_.isNull();
     const bool normal = eApp->getWindowDisplayMode() == ElaApplicationType::Normal;
@@ -313,7 +468,7 @@ void WorkbenchPreferences::applySystemSurfaceSettings(SystemSurfaceSettings syst
     for (auto tool : window_->findChildren<ElaDialog*>()) {
         if (dynamic_cast<WorkbenchDialog*>(tool)) tool->update();
     }
-    if (appearanceObserver_) appearanceObserver_();
+    notifyControls();
 }
 void WorkbenchPreferences::changed()
 {
@@ -352,49 +507,102 @@ bool WorkbenchPreferences::eventFilter(QObject* watched, QEvent* event)
         applyHeight();
     return QObject::eventFilter(watched, event);
 }
-bool WorkbenchPreferences::flush()
+QJsonObject WorkbenchPreferences::snapshot() const
+{
+    QJsonObject value;
+    if (darkTheme_) value.insert("workbench.theme", "dark");
+    if (window_->getNavigationBarDisplayMode() == ElaNavigationType::Maximal)
+        value.insert("workbench.navigationMode", "expanded");
+    const int width = std::clamp(window_->getNavigationBarWidth(), navigationWidthPixels.minimum,
+                                 navigationWidthPixels.maximum);
+    if (width != navigationWidthPixels.initial) value.insert("workbench.navigationWidth", width);
+    if (panelHeight_ != panelHeightPixels.initial) value.insert("workbench.panelHeight", panelHeight_);
+    if (material_) value.insert("workbench.windowMaterial", materialNames.at(material_));
+    if (transition_) value.insert("workbench.pageTransition", transitionNames.at(transition_));
+    if (!userCard_) value.insert("workbench.showUserCard", false);
+    if (!backgroundPath_.isEmpty()) value.insert("workbench.wallpaper", backgroundPath_);
+    if (window_->property("EveDoNotDisturb").toBool()) value.insert("notifications.doNotDisturb", true);
+    const auto source = window_->property("EveOutputSource").toString();
+    if (!source.isEmpty()) value.insert("output.source", source);
+    return value;
+}
+
+bool WorkbenchPreferences::flush(bool updateView)
 {
     timer_.stop();
-    if (!dirty_ || file_.isEmpty() || !window_)
-        return true;
-    const auto mode = window_->getNavigationBarDisplayMode() == ElaNavigationType::Maximal ? ElaNavigationType::Maximal
-                                                                                           : ElaNavigationType::Compact;
-    QJsonObject value{{"version", 1},
-                            {"theme", eTheme->getThemeMode() == ElaThemeType::Dark ? 1 : 0},
-                            {"navigationMode", static_cast<int>(mode)},
-                            {"navigationWidth", std::clamp(window_->getNavigationBarWidth(),
-                                                           navigationWidthPixels.minimum, navigationWidthPixels.maximum)},
-                            {"panelHeight", panelHeight_}};
-    if (material_) value.insert("material", material_);
-    if (transition_) value.insert("transition", transition_);
-    if (!userCard_) value.insert("userCardVisible", false);
-    if (!backgroundPath_.isEmpty()) value.insert("background", backgroundPath_);
-    if (window_->property("EveDoNotDisturb").toBool()) value.insert("doNotDisturb", true);
-    const auto source = window_->property("EveOutputSource").toString();
-    if (!source.isEmpty()) value.insert("outputSource", source);
-    QSaveFile file(file_);
-    file.setDirectWriteFallback(false);
-    const auto bytes = QJsonDocument(value).toJson(QJsonDocument::Indented);
-    if (!QDir().mkpath(QFileInfo(file_).absolutePath()) || !file.open(QIODevice::WriteOnly) ||
-        file.write(bytes) != bytes.size() || !file.commit()) {
-        report(QString::fromUtf8("界面偏好保存失败；本次设置仍然有效，下次修改时将重试。"));
+    if (!dirty_ || file_.isEmpty() || !window_) return true;
+    const auto disk = readSettings(file_);
+    if (!disk.problem.isEmpty()) {
+        hasObservation_ = false;
+        report(disk.problem);
+        return false;
+    }
+    const bool externalChange = !hasObservation_ || observedWithFile_ != disk.exists || observed_ != disk.bytes;
+    const auto current = snapshot();
+    auto keys = baseline_.keys() + current.keys();
+    keys.removeDuplicates();
+    auto combined = disk.value;
+    for (const auto& key : keys) {
+        const auto value = current.value(key);
+        if (value != baseline_.value(key)) {
+            if (value.isUndefined()) combined.remove(key);
+            else combined.insert(key, value);
+        }
+    }
+    const bool changedFile = combined != disk.value;
+    if (changedFile && !writeSettings(file_, combined, disk)) {
+        report(desktopText("settings.couldNotSaveUserSettingsTheFile"));
         return false;
     }
     dirty_ = false;
-    report(QString::fromUtf8("界面偏好已保存；底部工作区启动时保持收起。"));
+    if (updateView) {
+        hasObservation_ = true;
+        observed_ = changedFile ? QJsonDocument(combined).toJson(QJsonDocument::Indented) : disk.bytes;
+        observedWithFile_ = changedFile || disk.exists;
+        if (changedFile) watchFiles();
+        if (externalChange) {
+            apply(combined);
+        } else {
+            baseline_ = current;
+            report(settingsReady());
+        }
+    }
     return true;
+}
+
+bool WorkbenchPreferences::close()
+{
+    watcher_.blockSignals(true);
+    reloadTimer_.stop();
+    return flush(false);
+}
+
+void WorkbenchPreferences::openFile()
+{
+    if (file_.isEmpty()) return;
+    flush();
+    const auto disk = readSettings(file_);
+    if (!disk.exists && !writeSettings(file_, {}, disk)) {
+        report(desktopText("settings.couldNotCreateTheUserSettingsFile").arg(QDir::toNativeSeparators(file_)));
+        return;
+    }
+    watchFiles();
+    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(file_).absoluteFilePath()))) {
+        report(desktopText("settings.openTheUserSettingsFileInAn").arg(QDir::toNativeSeparators(file_)));
+    }
 }
 void WorkbenchPreferences::reset()
 {
     if (!window_)
         return;
-    eTheme->setThemeMode(ElaThemeType::Light);
+    setDarkTheme(false);
     material_ = transition_ = 0;
     setUserCardVisible(true);
     setBackground({});
     window_->setNavigationBarWidth(navigationWidthPixels.initial);
     window_->setNavigationBarDisplayMode(ElaNavigationType::Compact);
     setPanelHeight(panelHeightPixels.initial);
+    notifyControls();
     changed();
 }
 } // namespace eve::ui::detail

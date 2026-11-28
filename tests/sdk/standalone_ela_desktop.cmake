@@ -38,10 +38,19 @@ execute_process(COMMAND "${CMAKE_COMMAND}" --build "${scratch}/build" --target e
 set(bin "${scratch}/runtime")
 execute_process(COMMAND "${CMAKE_COMMAND}" --install "${scratch}/build" --config "${HOST_CONFIG}" --prefix "${bin}"
     COMMAND_ERROR_IS_FATAL ANY)
+set(catalog "${bin}/system/desktop/messages.en.json")
+file(READ "${catalog}" messages)
+string(JSON default_undo GET "${messages}" "ela.menu.undo")
+if(default_undo STREQUAL "")
+    message(FATAL_ERROR "The stand-alone installation is missing its default desktop messages.")
+endif()
+string(JSON messages SET "${messages}" "ela.menu.undo" "\"Undo from deployed catalog\"")
+file(WRITE "${catalog}" "${messages}\n")
 get_filename_component(exe "${DESKTOP_TEST_EXE}" NAME)
 # The Windows module loader resolves private dependencies in the application directory.
 file(COPY "${DESKTOP_TEST_EXE}" ${HOST_LIBRARIES} DESTINATION "${bin}")
-execute_process(COMMAND "${bin}/${exe}" unused "${scratch}/workspace" recovered COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND "${CMAKE_COMMAND}" -E env "EVE_TEST_EDITED_DESKTOP_CATALOG=1"
+    "${bin}/${exe}" unused "${scratch}/workspace" recovered COMMAND_ERROR_IS_FATAL ANY)
 file(REAL_PATH "${scratch}" actual_scratch)
 if(NOT actual_scratch STREQUAL scratch)
     message(FATAL_ERROR "Standalone build directory moved: ${scratch}")

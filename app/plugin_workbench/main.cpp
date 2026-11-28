@@ -3,6 +3,7 @@
  */
 #include "workbench.hpp"
 #include "desktop_selection.hpp"
+#include "desktop_text.hpp"
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
@@ -16,39 +17,37 @@
 using namespace eve;
 
 namespace {
-struct StartupDiagnostic { const char* code; const char* message; };
-
 /** @brief 用户提供的清单和业务错误可能含私有路径和内容。归档只记录固定的阶段名称和说明。 */
-StartupDiagnostic startupDiagnostic(const ErrorInfo& error)
+const char* startupDiagnostic(const ErrorInfo& error)
 {
-    static constexpr StartupDiagnostic known[] = {
-        {"QT_MANIFEST_READ_FAILED", "无法读取或完整校验模块清单。"},
-        {"QT_MODULE_INCOMPATIBLE", "模块预检发现 ABI、加载器或工具链不兼容。"},
-        {"QT_MANIFEST_INVALID", "模块清单格式或字段校验失败。"},
-        {"QT_MODULE_PREFLIGHT_FAILED", "模块产物或元数据未通过预检。"},
-        {"WORKBENCH_RESERVED_PLUGIN", "工作区配置引用了受保护的系统插件。"},
-        {"WORKBENCH_DESKTOP_MANIFEST_MISSING", "缺少官方桌面清单 system/desktop/module.json。"},
-        {"WORKBENCH_DESKTOP_LIBRARY_MISSING", "缺少官方桌面组件 eve_desktop.dll。"},
-        {"WORKBENCH_DESKTOP_IDENTITY_INVALID", "系统桌面的模块或插件标识与官方安装布局不符。"},
-        {"WORKBENCH_DESKTOP_HASH_INVALID", "系统桌面文件未通过完整性校验。"},
-        {"WORKBENCH_DESKTOP_INCOMPATIBLE", "系统桌面的映像、Qt 元数据或 SDK 契约与宿主不兼容。"},
-        {"WORKBENCH_DESKTOP_LOAD_FAILED", "系统桌面装载失败，请检查安装文件及运行库。"},
-        {"WORKBENCH_DESKTOP_ACTIVATION_FAILED", "系统桌面实例未能完成激活。"},
-        {"WORKBENCH_SELECTED_DESKTOP_FAILED", "所选桌面启动失败，将恢复内置 Ela 桌面。"},
+    static constexpr const char* known[] = {
+        "QT_MANIFEST_READ_FAILED",
+        "QT_MODULE_INCOMPATIBLE",
+        "QT_MANIFEST_INVALID",
+        "QT_MODULE_PREFLIGHT_FAILED",
+        "WORKBENCH_RESERVED_PLUGIN",
+        "WORKBENCH_DESKTOP_MANIFEST_MISSING",
+        "WORKBENCH_DESKTOP_LIBRARY_MISSING",
+        "WORKBENCH_DESKTOP_IDENTITY_INVALID",
+        "WORKBENCH_DESKTOP_HASH_INVALID",
+        "WORKBENCH_DESKTOP_INCOMPATIBLE",
+        "WORKBENCH_DESKTOP_LOAD_FAILED",
+        "WORKBENCH_DESKTOP_ACTIVATION_FAILED",
+        "WORKBENCH_SELECTED_DESKTOP_FAILED",
     };
-    for (const auto& entry : known)
-        if (error.phase == entry.code) return entry;
-    return {"WORKBENCH_STARTUP_FAILED", "工作台启动失败。请检查桌面组件、所选模块和工作区。"};
+    for (const auto* code : known)
+        if (error.phase == code) return code;
+    return "WORKBENCH_STARTUP_FAILED";
 }
 
 /** @brief 将平台错误码和可用的操作标识附到对应日志事件。 */
-void recordFailure(const workbench::Workbench& host, const ErrorInfo& error, const char* summary, const char* code)
+void recordFailure(const workbench::Workbench& host, const ErrorInfo& error, const QString& summary, const char* code)
 {
     ui::OutputDiagnostic diagnostic{{}, code};
     if (error.operation.valid())
         diagnostic.operation = error.operation;
-    (void)host.writeOutput(std::string(summary) + " · 错误码 " + std::to_string(static_cast<int>(error.code)),
-                            ui::OutputLevel::Error, std::move(diagnostic));
+    const auto text = eve::desktopText("startup.errorCode").arg(summary).arg(static_cast<int>(error.code));
+    (void)host.writeOutput(text.toStdString(), ui::OutputLevel::Error, std::move(diagnostic));
 }
 }
 
@@ -56,14 +55,15 @@ void recordFailure(const workbench::Workbench& host, const ErrorInfo& error, con
 int main(int argc, char** argv)
 {
     QApplication application(argc, argv);
+    const auto startupTranslations = eve::installDesktopDefaultTranslator();
     application.setApplicationName("EvePluginWorkbench");
     application.setQuitOnLastWindowClosed(false);
     QCommandLineParser cli;
-    cli.setApplicationDescription("Eve Qt UI plugin workbench");
+    cli.setApplicationDescription(eve::desktopText("startup.eveQtUIPluginWorkbench"));
     cli.addHelpOption();
-    cli.addOption({{"m", "module"}, "Optional trusted external Qt UI module manifest.", "module.json"});
-    cli.addOption({{"w", "workspace"}, "Writable workbench data directory.", "directory"});
-    cli.addOption({"safe-desktop", "Start with the bundled Ela desktop."});
+    cli.addOption({{"m", "module"}, eve::desktopText("startup.optionalTrustedExternalQtUIModuleManifest"), "module.json"});
+    cli.addOption({{"w", "workspace"}, eve::desktopText("startup.writableWorkbenchDataDirectory"), eve::desktopText("startup.directory")});
+    cli.addOption({"safe-desktop", eve::desktopText("startup.startWithTheBundledElaDesktop")});
     cli.process(application);
     if (!cli.positionalArguments().isEmpty()) cli.showHelp(1);
     const auto bundled = QDir(application.applicationDirPath()).filePath("plugins/current/module.json");
@@ -90,9 +90,9 @@ int main(int argc, char** argv)
                 if (status == EXIT_SUCCESS && host.canRetryClose()) {
                     stopping = false;
                     restart = Restart::None;
-                    recordFailure(host, outcome.error(), "工作区未关闭。", "WORKBENCH_CLOSE_FAILED");
+                    recordFailure(host, outcome.error(), eve::desktopText("startup.couldNotCloseTheWorkspace"), "WORKBENCH_CLOSE_FAILED");
                     (void)host.desktop()->cancelCloseRequest();
-                    QMessageBox::warning(nullptr, QString::fromUtf8("工作区未关闭"),
+                    QMessageBox::warning(nullptr, eve::desktopText("startup.workspaceCouldNotClose"),
                                          QString::fromUtf8(outcome.error().message.c_str()));
                     return;
                 }
@@ -106,7 +106,7 @@ int main(int argc, char** argv)
                     args.removeAll("--safe-desktop");
                     if (restart == Restart::Recovery) args.append("--safe-desktop");
                     if (!QProcess::startDetached(application.applicationFilePath(), args)) {
-                        std::cerr << "Could not restart Eve. Reopen it using --safe-desktop for recovery.\n";
+                        std::cerr << eve::desktopText("startup.couldNotRestartEveReopenItUsing").toStdString() << '\n';
                         status = EXIT_FAILURE;
                     }
                 }
@@ -116,9 +116,9 @@ int main(int argc, char** argv)
     };
     host.restartRequested = [&] { if (!stopping) { restart = Restart::Requested; close(); } };
     auto failed = [&](const ErrorInfo& error) {
-        const auto diagnostic = startupDiagnostic(error);
-        const auto text = std::string(diagnostic.code) + ": " + diagnostic.message;
-        recordFailure(host, error, text.c_str(), diagnostic.code);
+        const auto code = startupDiagnostic(error);
+        const auto text = QString::fromLatin1(code) + ": " + eve::desktopText(code);
+        recordFailure(host, error, text, code);
         if (error.phase == "WORKBENCH_SELECTED_DESKTOP_FAILED" && !cli.isSet("safe-desktop")) {
             const auto reset = host.selection().recover();
             if (!reset.hasValue()) std::cerr << reset.error().message << '\n';
@@ -147,7 +147,7 @@ int main(int argc, char** argv)
             if (host.selection().attemptedExternal()) {
                 if (!host.desktop() || !host.desktop()->externalLayoutVisible()) {
                     failed(workbench::selectedDesktopFailure(makeError(ErrorCode::ActivationFailed,
-                        "Selected desktop did not present a visible workbench.")));
+                        eve::desktopText("startup.selectedDesktopDidNotPresentAVisible").toStdString())));
                     return;
                 }
                 auto confirmed = host.selection().confirm();
@@ -155,10 +155,11 @@ int main(int argc, char** argv)
             }
             const auto applied = host.applyInitial();
             applied.settled.thenOn(host.scheduler, [&](const Result<loader::PlanReport>& result) {
+                const auto summary = eve::desktopText("startup.couldNotApplyTheWorkspaceTarget");
                 if (!result.hasValue())
-                    recordFailure(host, result.error(), "工作区目标启动失败。", "WORKBENCH_TARGET_FAILED");
+                    recordFailure(host, result.error(), summary, "WORKBENCH_TARGET_FAILED");
                 else for (const auto& error : result.value().errors)
-                    recordFailure(host, error, "工作区目标启动失败。", "WORKBENCH_TARGET_FAILED");
+                    recordFailure(host, error, summary, "WORKBENCH_TARGET_FAILED");
                 if (auto view = host.desktop()) (void)view->refresh();
             });
           } catch (const std::exception& error) {

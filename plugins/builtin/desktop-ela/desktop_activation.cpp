@@ -1,6 +1,7 @@
 /** @file desktop_activation.cpp
  * @brief 在应用线程创建官方桌面，本代清理排空窗口及其贡献。
  */
+#include "desktop_text.hpp"
 #include "desktop_contract.hpp"
 #include <eve/ui/ela_shell.hpp>
 #include <QWidget>
@@ -16,19 +17,11 @@ public:
     {
         ui::ExtensionItem ela;
         ela.id = desktopModuleId;
-        ela.name = QStringLiteral("Ela 桌面");
-        ela.description = QStringLiteral("Eve 内置工作台桌面");
-        ela.readme = QStringLiteral(
-            "## 工作区\n\n"
-            "首页显示当前工作区的插件实例。点击卡片可查看详情；实例开关控制该实例是否运行。\n\n"
-            "## 管理扩展\n\n"
-            "1. 按 `Ctrl+Shift+X` 回到插件区。\n"
-            "2. 选择 **安装扩展**，打开本地 `.evepkg` 文件。\n"
-            "3. 核对发布者、版本和文件摘要后确认安装。\n\n"
-            "## 切换桌面\n\n"
-            "在设置中选择已安装的桌面扩展，打开详情并设为下次启动的桌面，重启后生效。");
+        ela.name = eve::desktopText("desktop.elaDesktop");
+        ela.description = eve::desktopText("desktop.eveSBuiltInWorkbenchDesktop");
+        ela.readme = eve::desktopText("desktop.workspaceTheHomePageShowsExtensionInstances");
         ela.publisher = "Eve";
-        ela.categories = QStringList{QStringLiteral("桌面")};
+        ela.categories = QStringList{eve::desktopText("desktop.desktop")};
         ela.repository = QStringLiteral("https://github.com/03pie/Eve");
         ela.version = EVE_PRODUCT_VERSION;
         ela.pluginId = desktopId;
@@ -98,7 +91,7 @@ public:
 
     Task<void> addConfigurationPage(Context owner, ui::UiPagesService& service)
     {
-        auto page = service.add(owner, {"configuration", "工作区配置", configurationPluginId, [this] {
+        auto page = service.add(owner, {"configuration", eve::desktopText("desktop.workspaceConfiguration").toStdString(), configurationPluginId, [this] {
             auto widget = ui::createConfigurationPage(session_, initial_);
             ui::bindConfigurationFeedback(widget.get(),
                 [this](std::string message, ui::OutputLevel level, ui::OutputDiagnostic diagnostic) {

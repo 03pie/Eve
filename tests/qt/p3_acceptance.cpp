@@ -289,7 +289,7 @@ void partialFailure()
     until([&] {
         return scene.editorPage->findChild<QLabel*>("EveConfigSummary")
             ->text()
-            .contains(QString::fromUtf8("执行失败"));
+            .contains(QStringLiteral("Execution failed"));
     });
     CHECK(state.coordinator.running[0].configuration.config == "{\"title\":\"second\"}" &&
           state.coordinator.desired->source().structure().entries().at("a").config == "{\"title\":\"second\"}");
@@ -303,7 +303,7 @@ void partialFailure()
         until([&] {
             return scene.editorPage->findChild<QLabel*>("EveConfigSaveStatus")
                 ->text()
-                .contains(QString::fromUtf8("保存失败"));
+                .contains(QStringLiteral("Save failed"));
         });
         state = scene.session->snapshot().value();
         CHECK(state.store.dirty && state.store.persistedRevision == 1 && state.coordinator.desiredRevision == 2 &&
@@ -314,7 +314,7 @@ void partialFailure()
     until([&] {
         return scene.editorPage->findChild<QLabel*>("EveConfigSaveStatus")
             ->text()
-            .contains(QString::fromUtf8("已保存 R2"));
+            .contains(QStringLiteral("Saved R2"));
     });
     state = scene.session->snapshot().value();
     CHECK(state.store.persistedRevision == 2 && !state.store.dirty && state.latestPlan->outcome == PlanOutcome::Failed);

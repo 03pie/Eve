@@ -262,7 +262,7 @@ void conflict(bool speechReview = false)
     CHECK(file.readAll().toStdString() ==
           scene.session->snapshot().value().coordinator.desired->source().normalizedYaml());
     file.close();
-    until([&] { return records.back().first.find("配置已保存") != std::string::npos; });
+    until([&] { return records.back().first.find("Configuration saved") != std::string::npos; });
     scene.close();
 }
 /** @brief 编辑失效候选，外部目标变化使旧候选 CAS 失效，刷新不覆盖编辑内容。 */
@@ -316,7 +316,7 @@ void layout()
     scene.apply();
     until([&] {
         return scene.child<QTableView>("EveConfigEntries")->model()->index(0, 2).data().toString() ==
-               QString::fromUtf8("运行中");
+               QString::fromUtf8("Running");
     });
     for (auto theme : {ElaThemeType::Light, ElaThemeType::Dark}) {
         eTheme->setThemeMode(theme);
@@ -497,11 +497,11 @@ void feedback()
     auto disk = scene.child<ElaText>("EveConfigSaveStatus");
     auto editor = scene.child<QPlainTextEdit>("EveConfigEditor");
     CHECK(editor->font().family() == QApplication::font().family());
-    CHECK(runtime->text().contains(QString::fromUtf8("尚未应用")));
+    CHECK(runtime->text().contains(QString::fromUtf8("Not applied")));
     scene.apply();
-    until([&] { return runtime->text().contains(QString::fromUtf8("已应用")); });
-    CHECK(edit->text().contains(QString::fromUtf8("已应用")));
-    CHECK(disk->text().contains(QString::fromUtf8("未保存")));
+    until([&] { return runtime->text().contains(QString::fromUtf8("Applied")); });
+    CHECK(edit->text().contains(QString::fromUtf8("Applied")));
+    CHECK(disk->text().contains(QString::fromUtf8("Unsaved")));
     const auto ink = [&] {
         auto table = scene.child<QTableView>("EveConfigEntries");
         const auto icon = table->model()->index(0, 2).data(Qt::DecorationRole).value<QIcon>();
@@ -518,10 +518,10 @@ void feedback()
     eTheme->setThemeMode(ElaThemeType::Light);
     CHECK(ink().red() < 100 && scene.activations == 2);
     editor->setPlainText("UNAPPLIED_DRAFT");
-    until([&] { return edit->text().contains(QString::fromUtf8("尚未应用")); });
-    CHECK(runtime->text().contains(QString::fromUtf8("已应用")));
+    until([&] { return edit->text().contains(QString::fromUtf8("Not applied")); });
+    CHECK(runtime->text().contains(QString::fromUtf8("Applied")));
     scene.child<QPushButton>("EveConfigSave")->click();
-    until([&] { return disk->text().contains(QString::fromUtf8("已保存")); });
+    until([&] { return disk->text().contains(QString::fromUtf8("Saved")); });
     CHECK(editor->toPlainText() == "UNAPPLIED_DRAFT");
     QFile file(scene.path());
     CHECK(file.open(QIODevice::ReadOnly) && !file.readAll().contains("UNAPPLIED_DRAFT"));
@@ -530,8 +530,8 @@ void feedback()
     CHECK(file.write("external: true\n") > 0);
     file.close();
     scene.child<QPushButton>("EveConfigSave")->click();
-    until([&] { return disk->text().contains(QString::fromUtf8("冲突")); });
-    CHECK(runtime->text().contains(QString::fromUtf8("已应用")) && editor->toPlainText() == "UNAPPLIED_DRAFT");
+    until([&] { return disk->text().contains(QString::fromUtf8("conflict")); });
+    CHECK(runtime->text().contains(QString::fromUtf8("Applied")) && editor->toPlainText() == "UNAPPLIED_DRAFT");
     scene.session->rebaseExternal(1).value();
     scene.close();
 }

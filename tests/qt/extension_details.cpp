@@ -208,7 +208,7 @@ void extensionDetails()
     business.packageBytes = 3072;
     business.installedAt = QDateTime::currentDateTimeUtc();
     business.publisher = "Test publisher";
-    business.state = QStringLiteral("部分实例已启用");
+    business.state = QStringLiteral("Some instances enabled");
     business.instances = 2;
     business.actions = {ExtensionAction::Enable, ExtensionAction::Disable, ExtensionAction::ShowLogs,
                         ExtensionAction::Install, ExtensionAction::Uninstall};
@@ -236,7 +236,7 @@ void extensionDetails()
             require(selected.isEmpty() && hash.isEmpty(), "disable targets current workspace");
             ++disables;
             auto& installed = inventory.back();
-            installed.state = QStringLiteral("当前工作区已禁用");
+            installed.state = QStringLiteral("Disabled in this workspace");
             installed.actions.erase(installed.actions.begin() + 1);
             return disabled.task();
         } else {
@@ -266,7 +266,7 @@ void extensionDetails()
     require(!window->findChild<QWidget*>("EveExtensionsPage") && !visibleDetails(), "no extensions navigation node");
     const auto homeTabs = tabs->count();
     auto commands = child<QListView>(window, "EveCommandList");
-    require(!commands->model()->match(commands->model()->index(0, 0), Qt::DisplayRole, QStringLiteral("从扩展安装包安装"), 1,
+    require(!commands->model()->match(commands->model()->index(0, 0), Qt::DisplayRole, QStringLiteral("Install Extension from File"), 1,
                                      Qt::MatchContains).isEmpty(), "install action in palette");
 
     const auto available = window->screen()->availableGeometry();
@@ -312,7 +312,7 @@ void extensionDetails()
     candidate.installedAt = {};
     reviewed.resolve({candidate, path, "reviewed-hash"});
     auto primary = child<QPushButton>(dialog, "EveExtensionPrimary");
-    expect("preview ready", [&] { return primary->isVisible() && primary->text() == QStringLiteral("确认安装") && primary->isEnabled(); });
+    expect("preview ready", [&] { return primary->isVisible() && primary->text() == QStringLiteral("Confirm Installation") && primary->isEnabled(); });
     auto trust = child<QLabel>(dialog, "EveExtensionPackageReview");
     require(trust->isVisible() && trust->text().contains("reviewed-hash") && installations == 0, "digest before install");
     require(!child<QPushButton>(dialog, "EveExtensionUninstall")->isVisible() &&
@@ -377,10 +377,10 @@ void extensionDetails()
     const auto primaryBounds = boundsIn(dialog, primary);
     require(iconBounds.right() < summaryBounds.left() && summaryBounds.left() == primaryBounds.left() &&
             summaryBounds.bottom() < primaryBounds.top(), "summary and action row align to the right of the icon");
-    require(primary->isVisible() && primary->text() == QStringLiteral("启用") &&
+    require(primary->isVisible() && primary->text() == QStringLiteral("Enable") &&
             uninstall->isVisible() && workspaceOptions->isVisible() && packageOptions->isVisible() &&
             more->isVisible() && !more->accessibleName().isEmpty() &&
-            menuAction(more->menu(), QStringLiteral("复制模块标识")),
+            menuAction(more->menu(), QStringLiteral("Copy Module ID")),
             "workspace actions, uninstall, package options and gear are exposed in the header");
     const auto wideSize = dialog->size();
     auto sidebar = child<QScrollArea>(dialog, "EveExtensionInstallInfo");
@@ -394,18 +394,18 @@ void extensionDetails()
     });
     dialog->resize(wideSize - QSize(12, 8));
     const auto manualSize = dialog->size();
-    auto disable = menuAction(workspaceOptions->menu(), QStringLiteral("停用"));
+    auto disable = menuAction(workspaceOptions->menu(), QStringLiteral("Disable Workspace Instances"));
     require(disable && disable->isEnabled(), "workspace dropdown preserves the alternate action");
-    require(menuAction(packageOptions->menu(), QStringLiteral("其他版本")), "package dropdown exposes local version selection");
+    require(menuAction(packageOptions->menu(), QStringLiteral("Install Another Version")), "package dropdown exposes local version selection");
     disable->trigger();
     require(disables == 1 && !primary->isEnabled() && !uninstall->isEnabled() &&
             !workspaceOptions->isEnabled() && !packageOptions->isEnabled() && !more->isEnabled(),
             "pending action blocks other submissions");
     disabled.resolve();
     expect("workspace action refreshes the available action and state", [&] {
-        return primary->isEnabled() && !menuAction(workspaceOptions->menu(), QStringLiteral("停用")) &&
-            primary->text() == QStringLiteral("启用") &&
-            child<QLabel>(dialog, "EveExtensionState")->text() == QStringLiteral("当前工作区已禁用");
+        return primary->isEnabled() && !menuAction(workspaceOptions->menu(), QStringLiteral("Disable Workspace Instances")) &&
+            primary->text() == QStringLiteral("Enable") &&
+            child<QLabel>(dialog, "EveExtensionState")->text() == QStringLiteral("Disabled in this workspace");
     });
     auto sections = child<QTabWidget>(dialog, "EveExtensionTabs");
     require(sections->currentIndex() == 0, "introduction shown first");
@@ -415,7 +415,7 @@ void extensionDetails()
             "changelog tab renders supplied Markdown");
     int workspaceTab = -1;
     for (int i = 0; i < sections->count(); ++i)
-        if (sections->tabText(i) == QStringLiteral("工作区实例")) workspaceTab = i;
+        if (sections->tabText(i) == QStringLiteral("Workspace Instances")) workspaceTab = i;
     require(workspaceTab > 0, "workspace instance tab");
     for (const auto mode : {ElaThemeType::Dark, ElaThemeType::Light}) {
         eTheme->setThemeMode(mode);
@@ -462,7 +462,7 @@ void extensionDetails()
     window->setProperty("EveWallpaperVisible", false);
     auto logs = child<QPushButton>(dialog, "EveExtensionShowLogs");
     require(logs->isVisible() && logs->isEnabled(), "plugin log action");
-    auto menuLogs = menuAction(more->menu(), QStringLiteral("查看日志"));
+    auto menuLogs = menuAction(more->menu(), QStringLiteral("View Logs"));
     require(menuLogs && menuLogs->isEnabled(), "gear exposes the plugin log action");
     menuLogs->trigger();
     expect("log action exposes selected source", [&] {
@@ -487,9 +487,9 @@ void extensionDetails()
             return result.task();
         };
         chooseFile(path);
-        menuAction(packageOptions->menu(), QStringLiteral("其他版本"))->trigger();
-        const auto caption = version == "1.9.0" ? QStringLiteral("确认安装旧版") :
-                             version == business.version ? QStringLiteral("确认重装") : QStringLiteral("确认更新");
+        menuAction(packageOptions->menu(), QStringLiteral("Install Another Version"))->trigger();
+        const auto caption = version == "1.9.0" ? QStringLiteral("Confirm Downgrade") :
+                             version == business.version ? QStringLiteral("Confirm Reinstall") : QStringLiteral("Confirm Update");
         expect("version change reviewed before mutation", [&] {
             return primary->text() == caption && trust->text().contains(business.version) && trust->text().contains(version);
         });
@@ -499,7 +499,7 @@ void extensionDetails()
             primary->click();
             auto retry = child<QPushButton>(dialog, "EveExtensionRetry");
             expect("invalidated review only permits re-preview", [&] {
-                return retry->isVisible() && retry->text() == QStringLiteral("重新预览") && !primary->isEnabled();
+                return retry->isVisible() && retry->text() == QStringLiteral("Preview Again") && !primary->isEnabled();
             });
             retry->click();
             expect("re-preview restores a fresh confirmation", [&] {
@@ -521,7 +521,7 @@ void extensionDetails()
     expect("return from category filter to the package", [] { return visibleDetails() != nullptr; });
     askToUninstall(dialog);
     primary = child<QPushButton>(dialog, "EveExtensionPrimary");
-    require(primary->text() == QStringLiteral("确认卸载") && removals == 0, "uninstall requires confirmation");
+    require(primary->text() == QStringLiteral("Confirm Uninstall") && removals == 0, "uninstall requires confirmation");
     child<QPushButton>(dialog, "EveExtensionCancel")->click();
     require(removals == 0 && card(home, business.id), "cancel keeps installed card");
     askToUninstall(dialog);
@@ -557,6 +557,74 @@ void extensionDetails()
     expect("desktop picked from native menu", [&] { return picked && visibleDetails(); });
     require(child<QLabel>(visibleDetails(), "EveExtensionTitle")->text() == desktop.name && choose->isVisible(),
             "settings opens selected desktop in place");
+    visibleDetails()->close();
+    child<QAction>(window, "EveOpenExtensions")->trigger();
+    expect("language extensions are managed on Home", [&] { return home->isVisible(); });
+
+    ExtensionItem language;
+    language.id = "language/fr";
+    language.name = "French";
+    language.kind = ExtensionKind::Language;
+    language.packageHash = "language-hash";
+    language.actions = {ExtensionAction::Enable, ExtensionAction::Install, ExtensionAction::Uninstall};
+    const auto languagePath = temporary.filePath("fr.evelang");
+    QFile languageFile(languagePath);
+    require(languageFile.open(QFile::WriteOnly), "language test file");
+    languageFile.close();
+    controls->preview = [&](QString selected) {
+        require(selected == languagePath, "file chooser accepts language packages");
+        Promise<ExtensionPreview> ready;
+        ready.resolve({language, selected, language.packageHash});
+        return ready.task();
+    };
+    controls->installReviewed = [&](const ExtensionPreview& selected) {
+        require(selected.item.id == language.id && selected.sha256 == language.packageHash, "language installation uses package review");
+        inventory.push_back(language);
+        return completedTask();
+    };
+    controls->apply = [&](ExtensionAction action, QString id, QString, QString hash) {
+        require(id == language.id && hash == language.packageHash, "language changes check the installed digest");
+        if (action == ExtensionAction::Enable)
+            inventory.back().actions.front() = ExtensionAction::Disable;
+        else if (action == ExtensionAction::Disable) {
+            inventory.back().actions.front() = ExtensionAction::Enable;
+            inventory.back().current = true;
+        } else {
+            require(action == ExtensionAction::Uninstall, "language extension can be uninstalled");
+            inventory.pop_back();
+        }
+        return completedTask();
+    };
+
+    chooseFile(languagePath);
+    child<QAction>(window, "EveInstallExtension")->trigger();
+    expect("review language extension", [&] {
+        const auto detail = visibleDetails();
+        return detail && child<QLabel>(detail, "EveExtensionMetadata")->text().contains("Language Extension") &&
+            child<QLabel>(detail, "EveExtensionPackageReview")->text().contains("workbench translation data");
+    });
+    dialog = visibleDetails();
+    primary = child<QPushButton>(dialog, "EveExtensionPrimary");
+    require(primary->text() == QStringLiteral("Confirm Installation"), "language uses the regular install confirmation");
+    require(child<QLabel>(dialog, "EveExtensionLanguageInfo")->text().contains("Restart the workbench"),
+            "features explain when translations become active");
+    primary->click();
+    expect("show installed language action", [&] {
+        return card(home, language.id) && primary->text() == QStringLiteral("Use Display Language");
+    });
+    primary->click();
+    expect("allow switch back to English", [&] { return primary->text() == QStringLiteral("Switch to English"); });
+    primary->click();
+    expect("language can be selected again", [&] { return primary->text() == QStringLiteral("Use Display Language"); });
+    askToUninstall(dialog);
+    require(child<QLabel>(dialog, "EveExtensionStatus")->text() == QStringLiteral("Uninstall French?"),
+            "language uninstall does not refer to workspace instances");
+    primary->click();
+    expect("language row removed with restart notice", [&] {
+        return inventory.size() == 1 && !card(home, language.id) &&
+            child<QLabel>(dialog, "EveExtensionStatus")->text().contains("Restart Eve");
+    });
+
     auto closed = shell.close();
     expect("shell closes its details", [&] { return closed.isReady() && !visibleDetails(); });
     closed.tryResult()->value();

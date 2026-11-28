@@ -1,3 +1,4 @@
+#include "desktop_text.hpp"
 #include "extension_features_p.hpp"
 #include "appearance_p.hpp"
 #include "theme_palette_p.hpp"
@@ -41,7 +42,7 @@ QString contributionText(const std::vector<ExtensionContribution>& entries)
     QStringList lines;
     for (const auto& entry : entries) {
         QStringList info;
-        if (entry.window) info << QObject::tr("窗口");
+        if (entry.window) info << eve::desktopText("extensions.window");
         info << entry.id << entry.instance;
         lines << entry.title + QLatin1Char('\n') + info.join(QStringLiteral(" · "));
     }
@@ -58,7 +59,7 @@ void setList(QWidget* section, ElaText* label, const std::vector<ExtensionContri
 ExtensionFeaturesView::ExtensionFeaturesView(QWidget* parent) : ElaScrollArea(parent)
 {
     setObjectName("EveExtensionFeatures");
-    setAccessibleName(tr("扩展功能"));
+    setAccessibleName(eve::desktopText("extensions.extensionFeatures"));
     setWidgetResizable(true);
     setFrameShape(QFrame::NoFrame);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -67,30 +68,35 @@ ExtensionFeaturesView::ExtensionFeaturesView(QWidget* parent) : ElaScrollArea(pa
     body->setContentsMargins(10, 14, 18, 10);
     body->setSpacing(18);
 
-    auto desktop = group(body, tr("桌面接口"));
+    auto desktop = group(body, eve::desktopText("extensions.desktopInterface"));
     desktop_ = desktop->parentWidget();
     desktopText_ = contributionList(desktop, "EveExtensionDesktopInterface");
 
-    auto config = group(body, tr("默认实例配置"));
+    auto language = group(body, eve::desktopText("extensions.displayLanguage"));
+    language_ = language->parentWidget();
+    contributionList(language, "EveExtensionLanguageInfo")->setText(
+        eve::desktopText("extensions.providesWorkbenchTranslationsRestartTheWorkbenchTo"));
+
+    auto config = group(body, eve::desktopText("extensions.defaultInstanceConfiguration"));
     configuration_ = config->parentWidget();
     defaults_ = new ElaPlainTextEdit(configuration_);
     defaults_->setObjectName("EveExtensionDefaultConfig");
-    defaults_->setAccessibleName(tr("默认实例配置"));
+    defaults_->setAccessibleName(eve::desktopText("extensions.defaultInstanceConfiguration"));
     defaults_->setReadOnly(true);
     defaults_->setLineWrapMode(QPlainTextEdit::WidgetWidth);
     defaults_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     config->addWidget(defaults_);
 
-    runtimeVersion_ = new ElaText(tr("以下贡献来自当前运行版本。已安装的版本将在重启后生效。"), 14, content);
+    runtimeVersion_ = new ElaText(eve::desktopText("extensions.theseContributionsComeFromTheRunningVersion"), 14, content);
     runtimeVersion_->setObjectName("EveExtensionContributionVersion");
     runtimeVersion_->setWordWrap(true);
     secondaryText(runtimeVersion_);
     body->addWidget(runtimeVersion_);
 
-    auto pages = group(body, tr("当前工作区的页面与窗口"));
+    auto pages = group(body, eve::desktopText("extensions.workspacePagesAndWindows"));
     pages_ = pages->parentWidget();
     pageList_ = contributionList(pages, "EveExtensionFeaturePages");
-    auto commands = group(body, tr("当前工作区的命令"));
+    auto commands = group(body, eve::desktopText("extensions.workspaceCommands"));
     commands_ = commands->parentWidget();
     commandList_ = contributionList(commands, "EveExtensionFeatureCommands");
     body->addStretch();
@@ -106,11 +112,13 @@ bool ExtensionFeaturesView::setContent(const ExtensionItem* item, const Extensio
     desktop_->setVisible(desktop);
     if (desktop) {
         const auto text = item->builtin
-            ? tr("托管 Eve 工作区并向平台和业务插件提供服务。\n\n%1").arg(item->desktopServices.join(QLatin1Char('\n')))
-            : tr("通过 LayoutServiceV1（%1）提供顶层窗口和工作区容器，并接入 Eve 平台操作。")
+            ? eve::desktopText("extensions.hostsTheEveWorkspaceAndProvidesServices").arg(item->desktopServices.join(QLatin1Char('\n')))
+            : eve::desktopText("extensions.usesLayoutServiceV1ToProvideATopLevel")
                 .arg(QString::fromLatin1(eve::desktop::layoutService));
         if (text != desktopText_->text()) desktopText_->setText(text);
     }
+    const bool language = item && item->kind == ExtensionKind::Language && !item->missing;
+    language_->setVisible(language);
 
     const auto config = item && item->kind == ExtensionKind::Business ? item->defaultConfig : QString{};
     if (config != configSource_) {
@@ -127,6 +135,6 @@ bool ExtensionFeaturesView::setContent(const ExtensionItem* item, const Extensio
     setList(commands_, commandList_, workspace.commands);
     const bool contributions = !workspace.pages.empty() || !workspace.commands.empty();
     runtimeVersion_->setVisible(item && item->pending && contributions);
-    return desktop || hasDefaults_ || contributions;
+    return desktop || language || hasDefaults_ || contributions;
 }
 }

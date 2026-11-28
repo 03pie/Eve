@@ -1,6 +1,7 @@
 /** @file configuration_management.cpp
  * @brief 可选配置适配器；普通 UI 不包含 Loader，所有动作经过 Session 的 CAS。
  */
+#include "desktop_text.hpp"
 #include <algorithm>
 #include "management_p.hpp"
 #include <eve/ui/configuration.hpp>
@@ -185,7 +186,7 @@ private:
         if (path.empty() && !snapshot.value().coordinator.desired && snapshot.value().store.baseline &&
             snapshot.value().store.baseline->version.exists)
             return fail(makeError(ErrorCode::ConfigConflict,
-                                  "磁盘中已有配置尚未应用，请先通过“配置文件”窗口检查并应用现有目标，再添加实例。"));
+                                  eve::desktopText("configuration.aConfigurationAlreadyExistsOnDiskReview").toStdString()));
         if (json.size() > 1024 * 1024)
             return fail(makeError(ErrorCode::InvalidArgument, "configuration JSON exceeds input budget"));
         if (path.empty())

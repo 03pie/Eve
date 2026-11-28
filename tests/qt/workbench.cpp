@@ -349,12 +349,12 @@ void menus()
     scene.action("EveOpenSettings");
     QTest::mouseClick(navigationButton, Qt::LeftButton);
     CHECK(scene.window->getNavigationBarDisplayMode() == ElaNavigationType::Maximal);
-    CHECK(navigationAction->isChecked() && navigationButton->accessibleName().contains(QStringLiteral("收起")));
+    CHECK(navigationAction->isChecked() && navigationButton->accessibleName().contains(QStringLiteral("Collapse")));
     scene.window->activateWindow();
     until([&] { return scene.window->isActiveWindow(); });
     QTest::keyClick(scene.window->windowHandle(), Qt::Key_B, Qt::ControlModifier);
     CHECK(scene.window->getNavigationBarDisplayMode() == ElaNavigationType::Compact);
-    CHECK(!navigationAction->isChecked() && navigationButton->accessibleName().contains(QStringLiteral("展开")));
+    CHECK(!navigationAction->isChecked() && navigationButton->accessibleName().contains(QStringLiteral("Expand")));
     auto theme = scene.find<QComboBox>("EveSettingsTheme");
     theme->setCurrentIndex(1);
     CHECK(eTheme->getThemeMode() == ElaThemeType::Dark);
@@ -363,13 +363,19 @@ void menus()
     auto panel = scene.find<QTabWidget>("EveWorkbenchPanel");
     CHECK(panel->isHidden() && !panelAction->isChecked());
     QTest::keyClick(scene.window->windowHandle(), Qt::Key_J, Qt::ControlModifier);
-    CHECK(!panel->isHidden() && panelAction->isChecked() && panelButton->accessibleName().contains(QStringLiteral("隐藏")));
+    CHECK(!panel->isHidden() && panelAction->isChecked() && panelButton->accessibleName().contains(QStringLiteral("Hide")));
     scene.action("EveViewPanel");
-    CHECK(panel->isHidden() && !panelAction->isChecked() && panelButton->accessibleName().contains(QStringLiteral("显示")));
+    CHECK(panel->isHidden() && !panelAction->isChecked() && panelButton->accessibleName().contains(QStringLiteral("Show")));
     scene.action("EveOpenCommands");
     CHECK(panel->isHidden() && scene.find<QWidget>("EveCommandPanel")->isVisible());
-    CHECK(panel->count()==2 && panel->tabText(0)==QString::fromUtf8("输出"));
-    QTest::keyClick(scene.find<QLineEdit>("EveCommandFilter"),Qt::Key_Escape);
+    CHECK(panel->count()==2 && panel->tabText(0)==QStringLiteral("Output"));
+    const auto settingsJson = scene.find<QAction>("EveOpenUserSettingsJson");
+    CHECK(settingsJson->text() == QStringLiteral("Open User Settings (JSON)"));
+    auto commandFilter = scene.find<QLineEdit>("EveCommandFilter");
+    commandFilter->setText(settingsJson->text());
+    auto commands = scene.find<QListView>("EveCommandList")->model();
+    CHECK(commands->rowCount() == 1 && commands->index(0, 0).data().toString().startsWith(settingsJson->text()));
+    QTest::keyClick(commandFilter, Qt::Key_Escape);
     scene.action("EveOpenOutput");
     CHECK(!panel->isHidden() && panelAction->isChecked() && panel->currentIndex()==0);
     auto output = scene.find<QPlainTextEdit>("EveWorkbenchOutput");
@@ -608,7 +614,7 @@ void homePower()
     until([&] { return button && button->isEnabled() && !button->getIsToggled(); });
     CHECK(scene.shell.diagnostics()->snapshot().value().operations.size() == 1);
     CHECK(scene.instance->snapshot().value().state == InstanceState::Disposed &&
-          button->accessibleName() == QString::fromUtf8("加载插件"));
+          button->accessibleName() == QStringLiteral("Load Plugin"));
     click(button);
     until([&] {
         const auto data = scene.shell.diagnostics()->snapshot().value();
@@ -643,7 +649,7 @@ void homePower()
                 retry = card->findChild<ElaToggleSwitch*>("EvePluginPower");
         return retry && retry->isEnabled();
     });
-    CHECK(retry->accessibleName() == QString::fromUtf8("重试加载"));
+    CHECK(retry->accessibleName() == QStringLiteral("Retry Loading"));
     click(retry);
     until([&] { return failed.snapshot().value().state == InstanceState::Active; });
     CHECK(calls == 2 && home->isVisible());
@@ -731,7 +737,7 @@ void tabFallback()
     auto stopping = scene.instance->stop();
     scene.action("EveCloseView");
     auto tabs = scene.find<QTabBar>("EvePageTabs");
-    CHECK(tabs->count() == 0 || tabs->tabText(tabs->currentIndex()) != QString::fromUtf8("概览"));
+    CHECK(tabs->count() == 0 || tabs->tabText(tabs->currentIndex()) != QStringLiteral("Overview"));
     CHECK(scene.find<QWidget>("ElaEmptyWorkbench")->isVisible());
     wait(stopping);
     scene.close();

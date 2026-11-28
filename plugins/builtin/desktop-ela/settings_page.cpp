@@ -1,4 +1,5 @@
 #include "appearance_p.hpp"
+#include "desktop_text.hpp"
 #include "settings_page_p.hpp"
 #include "theme_palette_p.hpp"
 #include <ElaLineEdit.h>
@@ -48,19 +49,19 @@ class SettingsRow final : public ElaScrollPageArea
 
 SettingsPage::SettingsPage(QWidget *parent, Guard guard) : QWidget(parent), guard_(std::move(guard))
 {
-    setWindowTitle(tr("设置"));
+    setWindowTitle(eve::desktopText("settings.title"));
     setObjectName("EveSettingsPage");
     bindWorkbenchContentPalette(this);
     auto outer = new QVBoxLayout(this);
     outer->setContentsMargins(16, 12, 16, 12);
-    auto title = new ElaText(tr("设置"), 24, this);
+    auto title = new ElaText(eve::desktopText("settings.title"), 24, this);
     title->setIsBold(true);
     outer->addWidget(title);
     auto header = new QHBoxLayout;
     search_ = new ElaLineEdit(this);
     search_->setObjectName("EveSettingsSearch");
-    search_->setAccessibleName(tr("搜索工作台设置"));
-    search_->setPlaceholderText(tr("查找设置　Ctrl+F"));
+    search_->setAccessibleName(eve::desktopText("settings.searchWorkbenchSettings"));
+    search_->setPlaceholderText(eve::desktopText("settings.searchSettingsCtrlF"));
     search_->setClearButtonEnabled(true);
     header->addWidget(search_, 1);
     status_ = new ElaText(this);
@@ -73,7 +74,7 @@ SettingsPage::SettingsPage(QWidget *parent, Guard guard) : QWidget(parent), guar
     body_ = new QBoxLayout(QBoxLayout::LeftToRight);
     nav_ = new ElaListView(this);
     nav_->setObjectName("EveSettingsNavigation");
-    nav_->setAccessibleName(tr("设置导航"));
+    nav_->setAccessibleName(eve::desktopText("settings.settingsNavigation"));
     nav_->setIsTransparent(true);
     nav_->setFrameShape(QFrame::NoFrame);
     nav_->setItemHeight(36);
@@ -85,7 +86,7 @@ SettingsPage::SettingsPage(QWidget *parent, Guard guard) : QWidget(parent), guar
     nav_->installEventFilter(this);
     body_->addWidget(nav_);
     scroll_ = new ElaScrollArea(this);
-    scroll_->setAccessibleName(tr("设置内容"));
+    scroll_->setAccessibleName(eve::desktopText("settings.settingsContents"));
     scroll_->setWidgetResizable(true);
     scroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     document_ = new QWidget;
@@ -99,7 +100,7 @@ SettingsPage::SettingsPage(QWidget *parent, Guard guard) : QWidget(parent), guar
     scroll_->viewport()->installEventFilter(this);
     body_->addWidget(scroll_, 1);
     outer->addLayout(body_, 1);
-    empty_ = new ElaText(tr("没有匹配的设置。清空搜索可显示全部设置。"), 14, document_);
+    empty_ = new ElaText(eve::desktopText("settings.noSettingsMatchYourSearchClearThe"), 14, document_);
     empty_->setObjectName("EveSettingsSearchEmpty");
     empty_->hide();
     sections_->addWidget(empty_);
@@ -112,7 +113,8 @@ SettingsPage::SettingsPage(QWidget *parent, Guard guard) : QWidget(parent), guar
                 if (!row.card->isHidden()) {
                     auto target = row.target;
                     if (row.card->findChild<QWidget *>("EveBackgroundPicker") &&
-                        (search_->text().contains(tr("背景")) || search_->text().contains(tr("壁纸"))))
+                        (search_->text().contains(eve::desktopText("settings.background"), Qt::CaseInsensitive) ||
+                         search_->text().contains(eve::desktopText("settings.wallpaper"), Qt::CaseInsensitive)))
                         target = row.card->findChild<QWidget *>("EveBackgroundPicker");
                     scroll_->ensureWidgetVisible(target);
                     target->setFocus(Qt::ShortcutFocusReason);

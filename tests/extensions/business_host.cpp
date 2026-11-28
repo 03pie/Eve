@@ -203,7 +203,7 @@ void checkInstanceCards(Scene& scene)
     auto instances = dialog->findChild<QComboBox*>("EveExtensionInstance");
     CHECK(tabs && instances);
     for (int i = 0; i < tabs->count(); ++i)
-        if (tabs->tabText(i) == QStringLiteral("工作区实例")) tabs->setCurrentIndex(i);
+        if (tabs->tabText(i) == QStringLiteral("Workspace Instances")) tabs->setCurrentIndex(i);
     CHECK(instances->isVisible() && instances->count() == 2 && instances->currentText() == "second-logger");
     dialog->close();
 }

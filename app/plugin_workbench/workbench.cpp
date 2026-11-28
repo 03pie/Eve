@@ -6,6 +6,7 @@
 #include "startup_result.hpp"
 #include "qt_artifact_load_p.hpp"
 #include "desktop_logs.hpp"
+#include "desktop_text.hpp"
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
@@ -112,8 +113,8 @@ Workbench::Workbench(bool safeDesktop)
       bootstrap_(std::make_shared<DesktopBootstrap>()), selection_(extensions::Catalog::defaultRoot()),
       safeDesktop_(safeDesktop)
 {
-    bootstrap_->preferencesFile = workbenchDataFile(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation),
-        QStringLiteral("preferences/workbench.json")).toUtf8().toStdString();
+    const QDir userData(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation));
+    bootstrap_->preferencesFile = userData.filePath(QStringLiteral("preferences/settings.json")).toUtf8().toStdString();
 }
 
 std::shared_ptr<ui::ExtensionControls> Workbench::extensionControls() const
@@ -204,9 +205,9 @@ void Workbench::openDesktop(const std::optional<QString>& manifestPath, const QS
                 return;
             }
             try {
-                checked(writeOutput(std::string(desktopId) + " · 模块 " + desktopModuleId
-                    + " · 加载代 " + std::to_string(generation.value()), ui::OutputLevel::Info,
-                    {{}, "WORKBENCH_DESKTOP_ACTIVE"}));
+                const auto message = eve::desktopText("startup.moduleGeneration")
+                    .arg(QString::fromLatin1(desktopId), QString::fromLatin1(desktopModuleId)).arg(generation.value());
+                checked(writeOutput(message.toStdString(), ui::OutputLevel::Info, {{}, "WORKBENCH_DESKTOP_ACTIVE"}));
                 mountSelectedDesktop().thenOn(scheduler, [this, ready, manifestPath, workspaceDir](const Result<void>& mounted) {
                     if (!mounted.hasValue()) { ready.reject(mounted.error()); return; }
                     try {
@@ -361,7 +362,8 @@ void Workbench::failCleanup(ErrorInfo error, const char* phase)
     if (runLog_) {
         ui::OutputDiagnostic diagnostic{{}, phase};
         if (error.operation.valid()) diagnostic.operation = error.operation;
-        (void)writeOutput(std::string(phase) + " · 清理未完成", ui::OutputLevel::Error, std::move(diagnostic));
+        const auto message = eve::desktopText("startup.incompleteCleanup").arg(QString::fromLatin1(phase));
+        (void)writeOutput(message.toStdString(), ui::OutputLevel::Error, std::move(diagnostic));
         runLog_->finish(false);
     }
     closed_.reject(std::move(error));
@@ -444,8 +446,9 @@ void Workbench::closeKernel()
         session.reset();
         kernel.reset();
         if (runLog_) {
-            auto marker = writeOutput("WORKBENCH_CLEANUP_COMPLETE: 插件与内核资源已清理。", ui::OutputLevel::Info,
-                {{}, "WORKBENCH_CLEANUP_COMPLETE"});
+            const auto message = QStringLiteral("WORKBENCH_CLEANUP_COMPLETE: ") +
+                eve::desktopText("startup.pluginAndKernelResourcesReleased");
+            auto marker = writeOutput(message.toStdString(), ui::OutputLevel::Info, {{}, "WORKBENCH_CLEANUP_COMPLETE"});
             runLog_->finish(marker.hasValue());
             if (!marker.hasValue()) { closed_.reject(marker.error()); return; }
         }

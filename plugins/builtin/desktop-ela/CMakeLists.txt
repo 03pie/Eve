@@ -43,15 +43,25 @@ else()
 endif()
 target_sources(${desktop_target} PRIVATE
     pages.cpp services.cpp notifications.cpp management.cpp workbench.cpp workbench_titlebar.cpp
-    home.cpp preferences.cpp brand.cpp output.cpp panel.cpp settings_page.cpp settings_controls.cpp
+    home.cpp preferences.cpp desktop_language.cpp brand.cpp output.cpp panel.cpp settings_page.cpp settings_controls.cpp
     extension_dialog.cpp extension_readme.cpp extension_features.cpp extension_facts.cpp
     accessible_toggle.cpp output_view.cpp "${desktop_brand}")
 set_target_properties(${desktop_target} PROPERTIES AUTORCC ON)
-target_include_directories(${desktop_target} PRIVATE "${desktop_backends}")
+target_include_directories(${desktop_target} PRIVATE "${desktop_contracts}" "${desktop_backends}")
 target_link_libraries(${desktop_target} PRIVATE eve_desktop_logging Ela::WidgetTools)
+
+set(desktop_directory "${CMAKE_BINARY_DIR}/bin/system/desktop")
+set(desktop_messages "${CMAKE_CURRENT_SOURCE_DIR}/i18n/messages.en.json")
+add_custom_command(OUTPUT "${desktop_directory}/messages.en.json"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${desktop_directory}"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${desktop_messages}" "${desktop_directory}/messages.en.json"
+    DEPENDS "${desktop_messages}" VERBATIM)
+add_custom_target(eve_desktop_messages DEPENDS "${desktop_directory}/messages.en.json")
+add_dependencies(eve_desktop_logging eve_desktop_messages)
 
 add_library(eve_config_ui STATIC configuration.cpp configuration_management.cpp)
 add_library(Eve::ConfigUi ALIAS eve_config_ui)
+target_include_directories(eve_config_ui PRIVATE "${desktop_contracts}")
 target_link_libraries(eve_config_ui PUBLIC eve_desktop_impl ${desktop_config_session} PRIVATE ${desktop_config_io} Ela::WidgetTools)
 eve_target_defaults(eve_config_ui)
 
@@ -61,7 +71,6 @@ endif()
 include("${desktop_cmake}/QtPluginContract.cmake")
 eve_qt_toolchain_json(desktop_toolchain)
 set(desktop_metadata "${CMAKE_CURRENT_BINARY_DIR}/metadata/$<CONFIG>")
-set(desktop_directory "${CMAKE_BINARY_DIR}/bin/system/desktop")
 set(desktop_id "eve.desktop")
 set(desktop_module "org.eve.desktop")
 file(GENERATE OUTPUT "${desktop_metadata}/desktop_metadata.json"
@@ -97,5 +106,5 @@ add_custom_command(TARGET eve_desktop POST_BUILD BYPRODUCTS "${desktop_directory
         -P "${desktop_manifest_writer}" VERBATIM)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     install(TARGETS eve_desktop LIBRARY DESTINATION system/desktop RUNTIME DESTINATION system/desktop)
-    install(FILES "${desktop_directory}/module.json" DESTINATION system/desktop)
+    install(FILES "${desktop_directory}/module.json" "${desktop_directory}/messages.en.json" DESTINATION system/desktop)
 endif()

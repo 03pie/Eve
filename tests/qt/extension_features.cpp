@@ -94,7 +94,7 @@ void extensionFeatures()
     auto plugin = item("org.test.features", "test.features");
     plugin.defaultConfig = R"({"mode":"safe","retries":2})";
     plugin.pending = true;
-    plugin.state = QStringLiteral("当前工作区已启用");
+    plugin.state = QStringLiteral("Enabled in this workspace");
     plugin.actions = {ExtensionAction::Disable};
     auto missing = item("org.test.missing", "test.missing");
     missing.missing = true;
@@ -173,11 +173,11 @@ void extensionFeatures()
     require(widget<QLabel>(dialog, "EveExtensionContributionVersion")->isVisible(),
             "pending version explains the origin of runtime contributions");
     wait(running.stop());
-    plugin.state = QStringLiteral("当前工作区已禁用");
+    plugin.state = QStringLiteral("Disabled in this workspace");
     plugin.actions = {ExtensionAction::Enable};
     widget<QAction>(home->window(), "EveRefreshPlugins")->trigger();
     require(widget<QLabel>(dialog, "EveExtensionState")->text() == plugin.state &&
-            widget<QPushButton>(dialog, "EveExtensionPrimary")->text() == QStringLiteral("启用") &&
+            widget<QPushButton>(dialog, "EveExtensionPrimary")->text() == QStringLiteral("Enable") &&
             featureTabs(dialog)->currentIndex() == featureTab(dialog),
             "catalog refresh updates an open detail without changing tabs");
     expect("stopped generation removed from visible features", [&] {

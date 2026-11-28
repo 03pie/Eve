@@ -131,6 +131,8 @@ void verify(const QFileInfo& executable)
     files::write(manifest, QJsonDocument(modified).toJson());
     exercise(program, runtime.filePath("wrong-desktop-version"), "WORKBENCH_DESKTOP_INCOMPATIBLE");
     files::write(manifest, original);
+    const auto messages = system + "messages.en.json";
+    CHECK(QFile::copy(source.filePath(messages), runtime.filePath(messages)));
     exercise(program, runtime.filePath("healthy"), {});
     QFile damaged(image);
     CHECK(damaged.open(QIODevice::Append) && damaged.write("corrupt") == 7);

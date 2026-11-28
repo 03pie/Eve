@@ -67,6 +67,10 @@ void exercise(const QString& package, const QString& workspace, const QString& m
             require(*opened);
             auto view = host.desktop();
             check(view && view->hasExternalLayout() != bundled, "Wrong desktop layout mounted.");
+            if (qEnvironmentVariableIsSet("EVE_TEST_EDITED_DESKTOP_CATALOG")) {
+                check(QCoreApplication::translate("ElaLineEdit", "撤销") == QStringLiteral("Undo from deployed catalog"),
+                      "The installed desktop must load edited English messages without recompiling.");
+            }
             bool closeRequested = false;
             require(view->onCloseRequested([&] { closeRequested = true; }));
             require(view->show());

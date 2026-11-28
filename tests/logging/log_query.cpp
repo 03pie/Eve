@@ -311,6 +311,8 @@ void truncatedAndGapped(const QString& workspace, const QString& executable)
     const auto cursor = query.begin(run);
     const auto page = query.page(cursor);
     CHECK((ids(page.rows) == std::vector<quint64>{1, 3, 4}) && !page.warning.isEmpty() && page.expired.empty());
+    CHECK(page.rows.front().sourceName.isEmpty());
+    CHECK(formatLogText(page.rows.front()).contains(QStringLiteral("[INFO] Platform")));
     const auto replay = query.replay({run, 1}, {}, 1);
     CHECK(replay.more && replay.resume.through == 3 && ids(replay.rows) == std::vector<quint64>{3});
     CHECK(replay.missing.size() == 1 && replay.missing[0].first == 2 && replay.missing[0].last == 2);

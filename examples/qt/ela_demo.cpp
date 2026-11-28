@@ -205,12 +205,14 @@ struct Application : std::enable_shared_from_this<Application> {
         if (!data.hasValue() || data.value().instances.size() != 4 || waiting->snapshot().value().state != InstanceState::Pending || failed->snapshot().value().state != InstanceState::Failed) {
             fail("management diagnostics missing pending/failed examples"); return;
         }
-        for (auto window : QApplication::topLevelWidgets()) if (window->windowTitle() == QString::fromUtf8("Eve 插件平台")) {
+        for (auto window : QApplication::topLevelWidgets()) {
+            // The Go popup also owns EveOpenHome. Only the workbench has the diagnostics panel.
+            if (!window->findChild<QWidget*>("EveWorkbenchPanel")) continue;
+            auto home = window->findChild<QAction*>("EveOpenHome");
+            if (!home) { fail("home action missing"); return; }
             if (!window->grab().save(QCoreApplication::applicationDirPath() + (eTheme->getThemeMode() == ElaThemeType::Dark ? "/ela-smoke-dark.png" : "/ela-smoke.png"))) { fail("preview capture failed"); return; }
             QPointer<QWidget> guarded(window);
             auto self = shared_from_this();
-            auto home = window->findChild<QAction*>("EveOpenHome");
-            if (!home) { fail("home action missing"); return; }
             home->trigger();
             QTimer::singleShot(100, QCoreApplication::instance(), [self, guarded] {
                 if (!guarded || guarded->findChildren<QWidget*>("EvePluginCard").size() != 4) {

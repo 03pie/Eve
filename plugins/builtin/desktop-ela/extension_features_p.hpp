@@ -25,7 +25,7 @@ public:
     bool setContent(const ExtensionItem* item, const ExtensionWorkspace& workspace);
 
 private:
-    QWidget *desktop_, *configuration_, *pages_, *commands_;
+    QWidget *desktop_, *language_, *configuration_, *pages_, *commands_;
     QPlainTextEdit* defaults_;
     ElaText *desktopText_, *runtimeVersion_, *pageList_, *commandList_;
     QString configSource_;

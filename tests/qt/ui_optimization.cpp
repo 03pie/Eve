@@ -20,6 +20,8 @@
 #include <QCryptographicHash>
 #include <QEventLoop>
 #include <QFile>
+#include <QSaveFile>
+#include "desktop_language_p.hpp"
 #include <QFontDatabase>
 #include <QIcon>
 #include <QFileDialog>
@@ -95,6 +97,12 @@ void write(const QString& path, const QByteArray& bytes)
     CHECK(file.open(QIODevice::WriteOnly));
     CHECK(file.write(bytes) == bytes.size());
 }
+
+void replaceSettings(const QString& path, const QByteArray& bytes)
+{
+    QSaveFile file(path);
+    CHECK(file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size() && file.commit());
+}
 /** @brief 获取实际 JSON，不把文件存在当作偏好内容正确。 */
 QJsonObject read(const QString& path)
 {
@@ -116,8 +124,12 @@ struct Scene {
         if (attach)
             shell.management()->attach(kernel).value();
         for (auto widget : QApplication::topLevelWidgets())
-            if (auto root = qobject_cast<ElaWindow*>(widget))
+            if (auto root = qobject_cast<ElaWindow*>(widget);
+                root && !root->property("EveOptimizationTestClaimed").toBool()) {
                 window = root;
+                window->setProperty("EveOptimizationTestClaimed", true);
+                break;
+            }
         CHECK(window && kernel->snapshot().value().instances.empty());
         if (background)
             window->setAttribute(Qt::WA_ShowWithoutActivating);
@@ -146,6 +158,160 @@ struct Scene {
     }
 };
 
+void userSettingsFile()
+{
+    QTemporaryDir directory;
+    CHECK(directory.isValid());
+    const auto path = directory.filePath("settings.json");
+    write(path, R"({"workbench.navigationWidth":250,"vendor.option":true})");
+    Scene scene(path);
+    CHECK(scene.window->windowTitle() == "Eve Plugin Platform");
+    scene.settings();
+    CHECK(scene.window->findChild<QWidget*>("EveSettingsOpenJson"));
+    const auto width = scene.find<ElaSpinBox>("EveSettingsNavigationWidth");
+    CHECK(width->value() == 250);
+    replaceSettings(path, R"({"workbench.navigationWidth":315,"workbench.theme":"dark","output.source":"configured/test-source","vendor.option":true})");
+    until([&] { return width->value() == 315 && eTheme->getThemeMode() == ElaThemeType::Dark; });
+    CHECK(scene.find<QComboBox>("EveOutputTarget")->currentData().toString() == "configured/test-source");
+
+    auto configured = read(path);
+    configured.insert("workbench.wallpaper", directory.filePath("missing.png"));
+    auto clearWallpaper = scene.find<QPushButton>("EveResetBackground");
+    for (auto reset : {clearWallpaper, scene.find<QPushButton>("EveSettingsReset")}) {
+        replaceSettings(path, QJsonDocument(configured).toJson());
+        until([&] { return !clearWallpaper->isHidden(); });
+        CHECK(!scene.window->property("EveWallpaperVisible").toBool());
+        reset->click();
+        until([&] { return !read(path).contains("workbench.wallpaper"); });
+        CHECK(clearWallpaper->isHidden() && read(path).value("vendor.option").toBool());
+    }
+
+    const QByteArray invalidJson("{");
+    replaceSettings(path, invalidJson);
+    width->setValue(300);
+    until([&] {
+        return scene.find<ElaText>("EvePreferencesStatus")->text().contains("invalid", Qt::CaseInsensitive);
+    });
+    {
+        QFile disk(path);
+        CHECK(disk.open(QIODevice::ReadOnly) && disk.readAll() == invalidJson);
+    }
+    replaceSettings(path, R"({"workbench.navigationWidth":275,"vendor.option":true})");
+    until([&] {
+        return eTheme->getThemeMode() == ElaThemeType::Light &&
+               scene.find<QComboBox>("EveOutputTarget")->currentData().toString().isEmpty();
+    });
+    width->setValue(320);
+    scene.close();
+    CHECK(read(path).value("vendor.option").toBool());
+    CHECK(read(path).value("workbench.navigationWidth").toInt() == 320);
+}
+
+void desktopLanguagePack()
+{
+    QTemporaryDir directory;
+    CHECK(directory.isValid());
+    const auto settings = directory.filePath("settings.json");
+    const auto selection = directory.filePath("locale.json");
+    const auto languagePack = directory.filePath("test.evelang");
+    write(selection, R"({"locale":"fr"})");
+    {
+        Scene scene(settings);
+        CHECK(scene.window->windowTitle() == "Eve Plugin Platform");
+        scene.close();
+    }
+    CHECK(QFile::remove(selection));
+    const QByteArray v1 = R"({
+        "formatVersion":1, "locale":"fr", "name":"Français",
+        "translations":{"workbench.title":"Plateforme Eve","settings.title":"Paramètres"}
+    })";
+    write(languagePack, v1);
+    auto host = std::make_shared<ExtensionControls>();
+    host->list = [] { return Result<std::vector<ExtensionItem>>::success({}); };
+    auto extensions = eve::ui::detail::withLanguageExtensions(host, settings, {}, [] { return true; });
+    const auto reviewed = extensions->preview(languagePack).tryResult();
+    CHECK(reviewed && reviewed->hasValue() && reviewed->value().item.kind == ExtensionKind::Language);
+    CHECK(extensions->installReviewed(reviewed->value()).tryResult()->hasValue());
+    CHECK(QFile::exists(directory.filePath("language-packs/locale-fr.evelang")));
+    const auto installed = extensions->list().value();
+    CHECK(installed.size() == 1 && installed.front().id == "language/fr");
+    const auto& language = installed.front();
+    CHECK(extensions->apply(ExtensionAction::Enable, language.id, {}, language.packageHash).tryResult()->hasValue());
+    CHECK(extensions->list().value().front().pending && !QFile::exists(settings));
+
+    const auto otherPath = directory.filePath("other.evelang");
+    write(otherPath, R"json({"formatVersion":1,"locale":"de","translations":{"settings.title":"Einstellungen (100%)"}})json");
+    const auto other = extensions->preview(otherPath).tryResult()->value();
+    CHECK(extensions->installReviewed(other).tryResult()->hasValue());
+    CHECK(extensions->apply(ExtensionAction::Enable, other.item.id, {}, other.sha256).tryResult()->hasValue());
+    const auto stale = extensions->apply(ExtensionAction::Disable, language.id, {}, language.packageHash).tryResult();
+    CHECK(stale && !stale->hasValue() && stale->error().code == ErrorCode::ConfigConflict);
+    CHECK(read(selection).value("locale").toString() == "de");
+    CHECK(extensions->apply(ExtensionAction::Disable, other.item.id, {}, other.sha256).tryResult()->hasValue());
+    CHECK(extensions->apply(ExtensionAction::Disable, language.id, {}, language.packageHash).tryResult()->hasValue());
+    CHECK(read(selection).value("locale").toString() == "en");
+    CHECK(extensions->apply(ExtensionAction::Uninstall, other.item.id, {}, other.sha256).tryResult()->hasValue());
+    CHECK(extensions->apply(ExtensionAction::Enable, language.id, {}, language.packageHash).tryResult()->hasValue());
+
+#ifdef Q_OS_WIN
+    const auto holdSelection = CreateFileW(reinterpret_cast<LPCWSTR>(selection.utf16()), GENERIC_READ, FILE_SHARE_READ,
+                                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    CHECK(holdSelection != INVALID_HANDLE_VALUE);
+    const auto blockedRemoval = extensions->apply(ExtensionAction::Uninstall, language.id, {}, language.packageHash).tryResult();
+    CloseHandle(holdSelection);
+    CHECK(blockedRemoval && !blockedRemoval->hasValue() && blockedRemoval->error().code == ErrorCode::ConfigIo);
+    const auto restored = extensions->list().value();
+    CHECK(restored.size() == 1 && restored.front().packageHash == language.packageHash &&
+          read(selection).value("locale").toString() == "fr");
+#endif
+
+    write(otherPath, R"({"formatVersion":1,"locale":"de","translations":{"language.translationArgumentsDiffer":"Fehler"}})");
+    CHECK(!extensions->preview(otherPath).tryResult()->hasValue());
+
+    QString installedHash;
+    {
+        Scene scene(settings);
+        CHECK(scene.window->windowTitle() == "Plateforme Eve");
+        scene.settings();
+        CHECK(scene.find<QWidget>("EveSettingsPage")->windowTitle() == QString::fromUtf8("Paramètres"));
+        CHECK(scene.find<QWidget>("EveAboutPage")->windowTitle() == "About Eve");
+        const auto active = eve::ui::detail::withLanguageExtensions(host, settings, {"fr", language.packageHash},
+                                                                      [] { return true; });
+        auto v2 = v1;
+        v2.replace("Plateforme Eve", "Eve en français");
+        write(languagePack, v2);
+        const auto replacement = active->preview(languagePack).tryResult();
+        CHECK(replacement && replacement->hasValue() && replacement->value().installedHash == language.packageHash);
+        write(languagePack, v1);
+        CHECK(!active->installReviewed(replacement->value()).tryResult()->hasValue());
+        write(languagePack, v2);
+        CHECK(active->installReviewed(replacement->value()).tryResult()->hasValue());
+        const auto pending = active->list().value().front();
+        CHECK(pending.current && pending.pending && scene.window->windowTitle() == "Plateforme Eve");
+        installedHash = pending.packageHash;
+        // The second window asks for English but shares the first window's loaded French messages.
+        Scene second(directory.filePath("secondary/settings.json"));
+        CHECK(second.window->windowTitle() == "Plateforme Eve");
+        scene.close();
+        CHECK(QCoreApplication::translate("EveDesktop", "settings.title") == QString::fromUtf8("Paramètres"));
+        second.close();
+    }
+    {
+        Scene second(directory.filePath("secondary/settings.json"));
+        CHECK(second.window->windowTitle() == "Eve Plugin Platform");
+        second.close();
+    }
+    CHECK(extensions->apply(ExtensionAction::Uninstall, language.id, {}, installedHash).tryResult()->hasValue());
+    CHECK(extensions->list().value().empty() && read(selection).value("locale").toString() == "en");
+    {
+        Scene scene(settings);
+        CHECK(scene.window->windowTitle() == "Eve Plugin Platform");
+        scene.close();
+    }
+    write(languagePack, R"({"formatVersion":1,"locale":"../fr","translations":{"settings.title":"Réglages"}})");
+    CHECK(!extensions->preview(languagePack).tryResult()->hasValue());
+}
+
 /** @brief 多次打开/关闭真实窗口，偏好恢复不自动打开底部或创建插件。 */
 void roundtrip()
 {
@@ -165,9 +331,9 @@ void roundtrip()
         scene.close(); // debounce 尚未完成也必须落盘。
     }
     auto saved = read(path);
-    CHECK(saved.value("version").toInt() == 1 && saved.value("theme").toInt() == 1);
-    CHECK(saved.value("navigationWidth").toInt() == 310 && saved.value("panelHeight").toInt() == 230);
-    CHECK(saved.size() == 5); // 只保存界面值，不保存实例或页签。
+    CHECK(saved.value("workbench.theme").toString() == "dark");
+    CHECK(saved.value("workbench.navigationWidth").toInt() == 310 && saved.value("workbench.panelHeight").toInt() == 230);
+    CHECK(saved.size() == 4); // 只保存界面值，不保存实例或页签。
     eTheme->setThemeMode(ElaThemeType::Light);
     {
         Scene scene(path);
@@ -182,7 +348,7 @@ void roundtrip()
         CHECK(eTheme->getThemeMode() == ElaThemeType::Light);
         scene.close();
     }
-    CHECK(read(path).value("navigationWidth").toInt() == 240);
+    CHECK(!read(path).contains("workbench.navigationWidth"));
 
     // 用原有 v1 文件验证两个端点，再通过控件尝试越界写入。
     struct DimensionCase {
@@ -191,8 +357,8 @@ void roundtrip()
     const DimensionCase cases[] = {{{180, 480}, {361, 119}, {360, 120}},
                                    {{360, 120}, {179, 481}, {180, 480}}};
     for (const auto& dimensions : cases) {
-        saved["navigationWidth"] = dimensions.loaded.width();
-        saved["panelHeight"] = dimensions.loaded.height();
+        saved["workbench.navigationWidth"] = dimensions.loaded.width();
+        saved["workbench.panelHeight"] = dimensions.loaded.height();
         write(path, QJsonDocument(saved).toJson());
         Scene scene(path);
         scene.settings();
@@ -205,8 +371,8 @@ void roundtrip()
         heightControl->setValue(dimensions.requested.height());
         scene.close();
         const auto clamped = read(path);
-        CHECK(clamped.value("navigationWidth").toInt() == dimensions.persisted.width());
-        CHECK(clamped.value("panelHeight").toInt() == dimensions.persisted.height());
+        CHECK(clamped.value("workbench.navigationWidth").toInt() == dimensions.persisted.width());
+        CHECK(clamped.value("workbench.panelHeight").toInt() == dimensions.persisted.height());
     }
 }
 
@@ -216,18 +382,18 @@ void invalid()
     QTemporaryDir dir;
     const auto path = dir.filePath("ui.json");
     for (const auto& bytes :
-         {QByteArray("invalid"), QByteArray("{\"version\":2}"),
-          QByteArray("{\"version\":1,\"theme\":0,\"navigationMode\":2,\"navigationWidth\":9999,\"panelHeight\":160}"),
-          QByteArray("{\"version\":1,\"theme\":0,\"navigationMode\":2,\"navigationWidth\":179,\"panelHeight\":480}"),
-          QByteArray("{\"version\":1,\"theme\":0,\"navigationMode\":2,\"navigationWidth\":361,\"panelHeight\":120}"),
-          QByteArray("{\"version\":1,\"theme\":0,\"navigationMode\":2,\"navigationWidth\":180,\"panelHeight\":481}"),
-          QByteArray("{\"version\":1,\"theme\":0,\"navigationMode\":2,\"navigationWidth\":360,\"panelHeight\":119}"),
+         {QByteArray("invalid"), QByteArray("{\"workbench.theme\":\"unknown\"}"),
+          QByteArray("{\"workbench.navigationWidth\":9999,\"workbench.panelHeight\":160}"),
+          QByteArray("{\"workbench.navigationWidth\":179,\"workbench.panelHeight\":480}"),
+          QByteArray("{\"workbench.navigationWidth\":361,\"workbench.panelHeight\":120}"),
+          QByteArray("{\"workbench.navigationWidth\":180,\"workbench.panelHeight\":481}"),
+          QByteArray("{\"workbench.navigationWidth\":360,\"workbench.panelHeight\":119}"),
           QByteArray(
-              "{\"version\":1,\"theme\":true,\"navigationMode\":2,\"navigationWidth\":240,\"panelHeight\":160}")}) {
+              "{\"workbench.theme\":true,\"workbench.navigationWidth\":240,\"workbench.panelHeight\":160}")}) {
         write(path, bytes);
         Scene scene(path);
         scene.settings();
-        CHECK(scene.find<ElaText>("EvePreferencesStatus")->text().contains(QString::fromUtf8("无效")));
+        CHECK(scene.find<ElaText>("EvePreferencesStatus")->text().contains(QString::fromUtf8("Invalid")));
         CHECK(scene.window->getNavigationBarWidth() == 240);
         CHECK(scene.find<ElaSpinBox>("EveSettingsPanelHeight")->value() == 160);
         scene.close();
@@ -247,11 +413,11 @@ void failure()
     scene.settings();
     scene.find<ElaSpinBox>("EveSettingsNavigationWidth")->setValue(280);
     until(
-        [&] { return scene.find<ElaText>("EvePreferencesStatus")->text().contains(QString::fromUtf8("保存失败")); });
+        [&] { return scene.find<ElaText>("EvePreferencesStatus")->text().contains(QString::fromUtf8("save")); });
     CHECK(scene.window->getNavigationBarWidth() == 280 && !QFile::exists(path));
     CHECK(QFile::remove(parent));
     scene.find<ElaSpinBox>("EveSettingsNavigationWidth")->setValue(290);
-    until([&] { return read(path).value("navigationWidth").toInt() == 290; });
+    until([&] { return read(path).value("workbench.navigationWidth").toInt() == 290; });
     CHECK(scene.kernel->snapshot().value().instances.empty());
     scene.close();
 }
@@ -263,7 +429,7 @@ void locked()
     QTemporaryDir dir;
     const auto path = dir.filePath("ui.json");
     const QByteArray original(
-        "{\"version\":1,\"theme\":0,\"navigationMode\":2,\"navigationWidth\":240,\"panelHeight\":160}");
+        "{\"workbench.navigationWidth\":240,\"workbench.panelHeight\":160}");
     write(path, original);
     const auto handle = CreateFileW(reinterpret_cast<LPCWSTR>(path.utf16()), GENERIC_READ, FILE_SHARE_READ, nullptr,
                                     OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -272,11 +438,11 @@ void locked()
     scene.settings();
     scene.find<ElaSpinBox>("EveSettingsNavigationWidth")->setValue(300);
     until(
-        [&] { return scene.find<ElaText>("EvePreferencesStatus")->text().contains(QString::fromUtf8("保存失败")); });
-    CHECK(read(path).value("navigationWidth").toInt() == 240);
+        [&] { return scene.find<ElaText>("EvePreferencesStatus")->text().contains(QString::fromUtf8("save")); });
+    CHECK(read(path).value("workbench.navigationWidth").toInt() == 240);
     CHECK(CloseHandle(handle));
     scene.find<ElaSpinBox>("EveSettingsNavigationWidth")->setValue(320);
-    until([&] { return read(path).value("navigationWidth").toInt() == 320; });
+    until([&] { return read(path).value("workbench.navigationWidth").toInt() == 320; });
     scene.close();
 }
 #endif
@@ -297,12 +463,35 @@ void isolation()
         scene.window->setNavigationBarWidth(320);
         scene.close();
     }
-    CHECK(read(a).value("navigationWidth").toInt() == 280 && read(b).value("navigationWidth").toInt() == 320);
+    CHECK(read(a).value("workbench.navigationWidth").toInt() == 280 && read(b).value("workbench.navigationWidth").toInt() == 320);
     {
         Scene scene({});
         scene.window->setNavigationBarWidth(300);
         scene.close();
     }
+
+    write(a, R"({"workbench.theme":"dark"})");
+    write(b, "{}");
+    Scene scene(a);
+    scene.settings();
+    const auto theme = scene.find<ElaComboBox>("EveSettingsTheme");
+    CHECK(theme->currentIndex() == 1 && eTheme->getThemeMode() == ElaThemeType::Dark);
+    auto otherScheduler = std::make_shared<qt::QtScheduler>();
+    ElaShell other(otherScheduler, b.toUtf8().toStdString());
+    other.show().value();
+    CHECK(eTheme->getThemeMode() == ElaThemeType::Light && theme->currentIndex() == 1);
+    scene.find<ElaSpinBox>("EveSettingsNavigationWidth")->setValue(280);
+    until([&] { return read(a).value("workbench.navigationWidth").toInt() == 280; });
+    CHECK(read(a).value("workbench.theme").toString() == "dark" && !read(b).contains("workbench.theme"));
+
+    scene.find<QAction>("EveToggleTheme")->trigger();
+    until([&] { return !read(a).contains("workbench.theme"); });
+    CHECK(theme->currentIndex() == 0 && !read(b).contains("workbench.theme"));
+    const auto closed = other.close();
+    until([&] { return closed.isReady(); });
+    CHECK(closed.tryResult()->hasValue());
+    otherScheduler->close().value();
+    scene.close();
 }
 
 /** @brief Space/Enter 直接驱动 Ela 开关；禁用与自动重复不能产生额外操作。 */
@@ -331,7 +520,7 @@ void keyboard()
     CHECK(follow && follow->state().checkable && follow->state().checked == followButton->isChecked());
     CHECK(!follow->text(QAccessible::Name).isEmpty());
     auto bell = QAccessible::queryAccessibleInterface(scene.find<QToolButton>("EveShowNotifications"));
-    CHECK(bell && bell->role() == QAccessible::Button && bell->text(QAccessible::Name).contains(QStringLiteral("通知")));
+    CHECK(bell && bell->role() == QAccessible::Button && bell->text(QAccessible::Name).contains(QStringLiteral("Notification Center")));
     QTest::keyClick(toggle, Qt::Key_Return);
     until([&] { return panel->isHidden(); });
     CHECK(!accessible->state().checked);
@@ -596,7 +785,7 @@ void tabSnapshot()
     auto menu = tabMenu(scene, 1);
     scene.find<QAction>("EveOpenAbout")->trigger();
     tabAction(menu, "EveTabCloseAll");
-    CHECK(tabs->count() == 1 && tabs->tabText(0) == QString::fromUtf8("关于 Eve"));
+    CHECK(tabs->count() == 1 && tabs->tabText(0) == QString::fromUtf8("About Eve"));
     scene.settings();
     menu = tabMenu(scene, 1);
     scene.find<QAction>("EveCloseView")->trigger();
@@ -613,7 +802,7 @@ void tabSnapshot()
     scene.find<QAction>("EveCloseView")->trigger();
     scene.settings();
     tabAction(menu, "EveTabCloseAll");
-    CHECK(tabs->count() == 1 && tabs->tabText(0) == QString::fromUtf8("设置"));
+    CHECK(tabs->count() == 1 && tabs->tabText(0) == QString::fromUtf8("Settings"));
     menu = tabMenu(scene, 0);
     scene.find<QAction>("EveCloseView")->trigger();
     scene.settings();
@@ -696,7 +885,7 @@ void settingsSearch()
     const auto width = scene.find<ElaSpinBox>("EveSettingsNavigationWidth")->value();
     search->setText("theme");
     CHECK(!appearance->isHidden() && layout->isHidden() && shortcuts->isHidden());
-    search->setText(QString::fromUtf8("宽度"));
+    search->setText(QString::fromUtf8("width"));
     CHECK(appearance->isHidden() && !layout->isHidden());
     search->setText("no-such-setting");
     CHECK(scene.find<ElaText>("EveSettingsSearchEmpty")->isVisible());
@@ -751,7 +940,7 @@ void settingsNavigation()
     QTest::keyClick(scene.window, Qt::Key_Comma, Qt::ControlModifier);
     until([&] { return page->isVisible(); });
     captureSettingWindow(scene.window, "navigation-wide.png");
-    CHECK(nav->accessibleName() == QString::fromUtf8("设置导航"));
+    CHECK(nav->accessibleName() == QString::fromUtf8("Settings Navigation"));
     nav->setFocus(Qt::TabFocusReason);
     QTest::keyClick(nav, Qt::Key_Down);
     CHECK(nav->currentIndex().row() == 1);
@@ -762,7 +951,7 @@ void settingsNavigation()
     until([&]{ return content->verticalScrollBar()->value() > 0 && nav->currentIndex() == last; });
     content->verticalScrollBar()->setValue(0);
     CHECK(nav->currentIndex().row() == 0);
-    search->setText(QString::fromUtf8("面板高度"));
+    search->setText(QString::fromUtf8("panel height"));
     CHECK(!nav->isRowHidden(1) && nav->isRowHidden(0) && nav->isRowHidden(4));
     search->setFocus();
     until([&] { return QApplication::focusWidget()==search; });
@@ -811,7 +1000,7 @@ void settingsDirectAcrylic()
         verifyAcrylicSurface(*scene.window);
         scene.close();
     }
-    CHECK(read(path).value("material").toInt() == ElaApplicationType::Acrylic);
+    CHECK(read(path).value("workbench.windowMaterial").toString() == "acrylic");
     eApp->setWindowDisplayMode(ElaApplicationType::Normal);
     Scene restored(path);
     restored.settings();
@@ -841,7 +1030,7 @@ void outputSourceSpeech()
     scene.shell.writeOutput("native accessibility source", OutputLevel::Info).value();
     scene.find<QAction>("EveOpenOutput")->trigger();
     const auto combo = scene.find<QComboBox>("EveOutputTarget");
-    const int platform = combo->findText(QStringLiteral("平台"));
+    const int platform = combo->findText(QStringLiteral("Platform"));
     CHECK(platform >= 0);
     scene.window->raise();
     scene.window->activateWindow();
@@ -958,8 +1147,8 @@ void settingsAppearance()
         scene.close();
     }
     const auto saved = read(file);
-    CHECK(saved.value("background").toString() == picture && saved.value("material").toInt()==2);
-    CHECK(saved.value("transition").toInt()==1 && saved.value("userCardVisible").toBool(true)==false);
+    CHECK(saved.value("workbench.wallpaper").toString() == picture && saved.value("workbench.windowMaterial").toString() == "mica");
+    CHECK(saved.value("workbench.pageTransition").toString() == "popup" && saved.value("workbench.showUserCard").toBool(true)==false);
     {
         Scene scene(file);
         scene.settings();
@@ -976,7 +1165,7 @@ void settingsAppearance()
         CHECK(!scene.find<QTabWidget>("EveWorkbenchPanel")->isHidden());
         scene.close();
     }
-    CHECK(!read(file).contains("background") && read(file).value("doNotDisturb").toBool());
+    CHECK(!read(file).contains("workbench.wallpaper") && read(file).value("notifications.doNotDisturb").toBool());
 }
 /** @brief 检索的可见性回调修改输入后收敛；重入关闭等待当前卡片遍历结束。 */
 void settingsReentry()
@@ -1040,7 +1229,7 @@ void notifications()
     CHECK(!center->isVisible());
     scene.settings();
     auto search = scene.find<QLineEdit>("EveSettingsSearch");
-    search->setText(QStringLiteral("主题"));
+    search->setText(QStringLiteral("theme"));
     search->setFocus();
     search->selectAll();
     const int pageCount = scene.find<QTabBar>("EvePageTabs")->count();
@@ -1063,7 +1252,7 @@ void notifications()
     until([&] { return instance.ready().isReady(); });
     CHECK(scene.find<QTabWidget>("EveWorkbenchPanel")->isHidden());
     CHECK(scene.find<QTabBar>("EvePageTabs")->count() == pageCount);
-    CHECK(search->hasFocus() && search->selectedText() == QStringLiteral("主题"));
+    CHECK(search->hasFocus() && search->selectedText() == QStringLiteral("theme"));
     scene.find<QToolButton>("EveShowNotifications")->click();
     CHECK(center->isVisible() && !center->isWindow() && list->isVisible() && !empty->isVisible() &&
           list->model()->rowCount() == 2);
@@ -1077,15 +1266,15 @@ void notifications()
     }
     const auto warning = list->model()->index(1, 0).data().toString();
     CHECK(warning.contains("literal <b>warning</b>") && warning.contains(QStringLiteral("×10")));
-    CHECK(list->model()->index(0, 0).data().toString().contains(QStringLiteral("错误")));
+    CHECK(list->model()->index(0, 0).data().toString().contains(QStringLiteral("Error")));
     CHECK(scene.window->grab().save(QCoreApplication::applicationDirPath() + "/ui-special-notification-center.png"));
     CHECK(scene.find<QTabWidget>("EveWorkbenchPanel")->isHidden());
     auto markRead = center->findChild<QPushButton*>("EveNotificationMarkRead");
     CHECK(markRead && markRead->isEnabled());
     markRead->click();
-    CHECK(!markRead->isEnabled() && !list->model()->index(0, 0).data().toString().contains(QStringLiteral("未读")));
+    CHECK(!markRead->isEnabled() && !list->model()->index(0, 0).data().toString().contains(QStringLiteral("Unread")));
     QTest::keyClick(list, Qt::Key_Escape);
-    CHECK(!center->isVisible() && search->hasFocus() && search->selectedText() == QStringLiteral("主题"));
+    CHECK(!center->isVisible() && search->hasFocus() && search->selectedText() == QStringLiteral("theme"));
     scene.find<ElaToggleSwitch>("EveSettingsDoNotDisturb")->setIsToggled(true);
     const auto bars = scene.window->findChildren<QWidget*>("ElaMessageBar").size();
     scene.shell.notifications()->post(*activeOwner, {NotificationLevel::Warning, "muted warning", {}}).value();
@@ -1131,8 +1320,8 @@ void notificationArchiveWorker(const QString& workspace, bool seed)
     CHECK(list->model()->index(1, 0).data().toString().contains("archived-read"));
     CHECK(list->model()->index(0, 0).data().toString().contains("archived-unread"));
     if (!seed) {
-        CHECK(!list->model()->index(1, 0).data().toString().contains(QStringLiteral("未读")));
-        CHECK(list->model()->index(0, 0).data().toString().contains(QStringLiteral("未读")));
+        CHECK(!list->model()->index(1, 0).data().toString().contains(QStringLiteral("Unread")));
+        CHECK(list->model()->index(0, 0).data().toString().contains(QStringLiteral("Unread")));
         CHECK(scene.window->findChildren<QWidget*>("ElaMessageBar").isEmpty());
         CHECK(scene.shell.notifications()->snapshot().value().empty());
     }
@@ -1179,17 +1368,17 @@ void notificationArchiveFault()
     CHECK(runs.size() == 1);
     scene.shell.writeOutput("trigger archive fault", OutputLevel::Info).value();
     auto bell = scene.find<QToolButton>("EveShowNotifications");
-    until([&] { return bell->accessibleName().contains(QStringLiteral("1 条未读")); });
+    until([&] { return bell->accessibleName().contains(QStringLiteral("1 unread")); });
     auto bars = scene.window->findChildren<QWidget*>("ElaMessageBar");
     CHECK(bars.size() == (scene.window->property("EveReducedMotion").toBool() ? 0 : 1));
     bell->click();
     auto status = scene.find<QLabel>("EveNotificationArchiveStatus");
-    CHECK(status->isVisible() && status->text().contains(QStringLiteral("已改存到")));
+    CHECK(status->isVisible() && status->text().contains(QStringLiteral("Logs are stored in")));
     scene.find<QPushButton>("EveNotificationMarkRead")->click();
-    CHECK(bell->accessibleName().contains(QStringLiteral("0 条未读")));
+    CHECK(bell->accessibleName().contains(QStringLiteral("0 unread")));
     scene.shell.writeOutput("still usable", OutputLevel::Info).value();
     QTest::qWait(550);
-    CHECK(status->isVisible() && bell->accessibleName().contains(QStringLiteral("0 条未读")));
+    CHECK(status->isVisible() && bell->accessibleName().contains(QStringLiteral("0 unread")));
     CHECK(scene.window->findChildren<QWidget*>("ElaMessageBar").size() <= 1);
     scene.close();
     QDir run(logs.filePath(runs.first()));
@@ -1249,8 +1438,7 @@ void settingsSystemSurfaces(const QString& isolatedRestriction = {})
     const auto imagePath = temporary.filePath("surface-test.png");
     CHECK(pattern.save(imagePath));
     const auto path = temporary.filePath("preferences.json");
-    const QJsonObject values{{"version", 1}, {"theme", 0}, {"navigationMode", 2}, {"navigationWidth", 240},
-                             {"panelHeight", 160}, {"material", 2}, {"background", imagePath}};
+    const QJsonObject values{{"workbench.windowMaterial", "mica"}, {"workbench.wallpaper", imagePath}};
     write(path, QJsonDocument(values).toJson());
     Scene scene(path, true, true);
     scene.settings();
@@ -1273,7 +1461,7 @@ void settingsSystemAnimation()
     const auto hwnd = reinterpret_cast<HWND>(scene.window->winId());
     const auto key = scene.window->getCurrentNavigationPageKey();
     transition->setCurrentIndex(static_cast<int>(ElaWindowType::Popup));
-    until([&] { return read(file).value("transition").toInt() == ElaWindowType::Popup; });
+    until([&] { return read(file).value("workbench.pageTransition").toString() == "popup"; });
 
     std::optional<Context> owner;
     const auto definition = scene.kernel
@@ -1305,7 +1493,7 @@ void settingsSystemAnimation()
         return QJsonObject{{"systemAnimation", systemAnimation()},
                            {"effectiveTransition", static_cast<int>(scene.window->getStackSwitchMode())},
                            {"selectedTransition", transition->currentIndex()},
-                           {"savedTransition", read(file).value("transition")},
+                           {"savedTransition", read(file).value("workbench.pageTransition")},
                            {"previewEnabled", preview->isEnabled()},
                            {"previewPlaying", playing()},
                            {"settingsVisible", transition->isVisible()},
@@ -1385,6 +1573,10 @@ int main(int argc, char** argv)
             tabReentry();
         else if (name == "panel_tools")
             panelTools();
+        else if (name == "user_settings_file")
+            userSettingsFile();
+        else if (name == "desktop_language_pack")
+            desktopLanguagePack();
         else if (name == "settings_search")
             settingsSearch();
         else if (name == "settings_reentry")

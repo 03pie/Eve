@@ -32,6 +32,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTableView>
 #include <QTest>
@@ -95,9 +96,9 @@ void commands()
     filter->setText("panel.run"); CHECK(list->model()->rowCount() == 1);
     QTest::keyClick(filter, Qt::Key_Return); CHECK(calls == 0);
     until([&] { return calls == 1; });
-    CHECK(s.find<QLabel>("EveCommandResult")->text().contains(QString::fromUtf8("运行中")));
+    CHECK(s.find<QLabel>("EveCommandResult")->text().contains(QString::fromUtf8("Running:")));
     s.capture("commands");
-    gate.resolve(); until([&] { return s.find<QLabel>("EveCommandResult")->text().contains(QString::fromUtf8("执行完成")); });
+    gate.resolve(); until([&] { return s.find<QLabel>("EveCommandResult")->text().contains(QString::fromUtf8("Completed:")); });
     const auto mode = eTheme->getThemeMode();
     filter->setText("EveToggleTheme"); CHECK(list->model()->rowCount() == 1);
     s.find<QPushButton>("EveRunCommand")->click(); CHECK(eTheme->getThemeMode() != mode);
@@ -105,7 +106,7 @@ void commands()
     s.find<QPushButton>("EveRunCommand")->click(); CHECK(calls == 1);
     wait(instance.stop()); filter->setText("panel.run"); CHECK(list->model()->rowCount() == 0);
     auto history = s.shell.output()->snapshot().value();
-    CHECK(std::any_of(history.begin(), history.end(), [](const auto& entry) { return entry.text.find("panel.run") != std::string::npos || entry.text.find("执行完成") != std::string::npos; }));
+    CHECK(std::any_of(history.begin(), history.end(), [](const auto& entry) { return entry.text.find("panel.run") != std::string::npos || entry.text.find("Completed:") != std::string::npos; }));
     s.close();
 }
 void identity()
@@ -321,7 +322,7 @@ void problems()
     s.find<QTabWidget>("EveWorkbenchPanel")->setCurrentWidget(s.find<QWidget>("EveProblemsPanel")); s.capture("problems");
     auto retry = instance.retry().value(); wait(retry.target);
     until([&] { return tree->topLevelItemCount() == 0; });
-    CHECK(s.find<QLabel>("EveProblemsStatus")->text().contains(QString::fromUtf8("没有问题")));
+    CHECK(s.find<QLabel>("EveProblemsStatus")->text().contains(QString::fromUtf8("No current problems")));
     s.close();
 }
 QAction* outputMenuAction(Scene& scene,const QString& name)
@@ -384,14 +385,14 @@ void historicalFilters()
     CHECK(level->count()==5 && warningIndex>=0 && errorIndex>=0);
     search->setText("sample-row-");level->setCurrentIndex(warningIndex);
     CHECK(editor->toPlainText().count("sample-row-")==200);
-    outputMenuAction(s,QString::fromUtf8("读取前一页"))->trigger();
+    outputMenuAction(s,QString::fromUtf8("Load Previous Page"))->trigger();
     CHECK(editor->toPlainText().count("sample-row-")==400);
-    outputMenuAction(s,QString::fromUtf8("读取前一页"))->trigger();
+    outputMenuAction(s,QString::fromUtf8("Load Previous Page"))->trigger();
     CHECK(editor->toPlainText().count("sample-row-")==600);
-    for(int page=0;page<4;++page) outputMenuAction(s,QString::fromUtf8("读取前一页"))->trigger();
+    for(int page=0;page<4;++page) outputMenuAction(s,QString::fromUtf8("Load Previous Page"))->trigger();
     CHECK(editor->toPlainText().count("sample-row-")==1000);
     CHECK(editor->toPlainText().contains("sample-row-1\n") && !editor->toPlainText().contains("sample-row-1311"));
-    outputMenuAction(s,QString::fromUtf8("返回最新一页"))->trigger();
+    outputMenuAction(s,QString::fromUtf8("Go to Latest Page"))->trigger();
     CHECK(editor->toPlainText().count("sample-row-")==200 && editor->toPlainText().contains("sample-row-1311"));
     CHECK(!editor->toPlainText().contains("other-row"));
     level->setCurrentIndex(errorIndex);CHECK(editor->toPlainText().isEmpty());
@@ -403,7 +404,7 @@ void historicalFilters()
             QMetaObject::invokeMethod(dlg,"accept",Qt::QueuedConnection);return;
         }
     });
-    outputMenuAction(s,QString::fromUtf8("导出已筛选记录…"))->trigger();
+    outputMenuAction(s,QString::fromUtf8("Export Filtered Records…"))->trigger();
     QFile exported(path);CHECK(exported.open(QIODevice::ReadOnly));
     const auto bytes=exported.readAll();CHECK(!bytes.contains("fixture-only-token"));
     auto rows=bytes.split('\n');rows.removeLast();
@@ -418,7 +419,7 @@ void historicalFilters()
                 return;
             }
     });
-    outputMenuAction(s, QString::fromUtf8("导出已筛选记录…"))->trigger();
+    outputMenuAction(s, QString::fromUtf8("Export Filtered Records…"))->trigger();
     CHECK(!QFileInfo::exists(archivePath));
     s.find<QAction>("EveClearOutput")->trigger();CHECK(editor->toPlainText().isEmpty());
     s.find<QAction>("EvePreviousOutput")->trigger();CHECK(editor->toPlainText().contains("sample-row-1311"));
@@ -480,7 +481,7 @@ void responsive()
         }
       }
     }
-    outputMenuAction(s,QString::fromUtf8("复制本条"))->trigger();
+    outputMenuAction(s,QString::fromUtf8("Copy Record"))->trigger();
     CHECK(QApplication::clipboard()->text().contains("buffer prepared\n[123] continuation"));
     s.find<QAction>("EveOpenSettings")->trigger();
     auto origin=s.find<QLineEdit>("EveSettingsSearch");
@@ -491,7 +492,7 @@ void responsive()
     until([&]{return !panel->isVisible() && QApplication::focusWidget()==origin;});
     CHECK(origin->selectedText()=="elop" && origin->cursorPosition()==3);
     s.shell.showOutputEvent(seq+10000,origin).value();
-    CHECK(s.find<QLabel>("EveOutputFeedback")->text().contains(QString::fromUtf8("找不到该日志事件")));
+    CHECK(s.find<QLabel>("EveOutputFeedback")->text().contains(QString::fromUtf8("could not be found")));
     s.close();
 }
 void throughput()
@@ -640,8 +641,10 @@ void panelThemes()
     for (const int material : {0,4}) {
         const auto preferences=workspace.filePath(QString("preferences-%1.json").arg(material));
         QFile file(preferences);CHECK(file.open(QIODevice::WriteOnly));
-        file.write(QJsonDocument(QJsonObject{{"version",1},{"theme",0},{"material",material},
-                                            {"background",material ? background : QString{}}}).toJson());
+        file.write(QJsonDocument(QJsonObject{
+            {"workbench.windowMaterial", material ? "acrylic" : "normal"},
+            {"workbench.panelHeight", 280},
+            {"workbench.wallpaper", material ? background : QString{}}}).toJson());
         file.close();
         Scene scene(preferences);
         scene.window->resize(1180,760);
@@ -658,10 +661,13 @@ void panelThemes()
         auto select=scene.find<QComboBox>("EveOutputTarget");
         auto notice=scene.find<QLabel>("EveOutputFeedback");
         scene.find<QAction>("EveOpenOutput")->trigger();
-        scene.find<QSplitter>("ElaWorkbenchPanelSplitter")->setSizes({330,280});
         scene.find<QToolButton>("EveOutputFollow")->setChecked(false);
         scene.shell.writeOutput("工具区显示与主题同步").value();
         until([&]{return tree->topLevelItemCount()>0;});
+        const auto* tabs = panel->findChild<QTabBar*>();
+        const int problems = panel->indexOf(scene.find<QWidget>("EveProblemsPanel"));
+        CHECK(tabs && problems >= 0);
+        CHECK(tabs->tabRect(problems).width() >= tabs->fontMetrics().horizontalAdvance(tabs->tabText(problems)) + 20);
         for (const auto mode : {ElaThemeType::Light,ElaThemeType::Dark,ElaThemeType::Light}) {
             eTheme->setThemeMode(mode);
             const bool dark=mode==ElaThemeType::Dark;

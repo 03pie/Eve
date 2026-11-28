@@ -2,6 +2,7 @@
  * @brief Atomically publish the desired per-user extensions. Running modules are owned by their hosts.
  */
 #include "package_p.hpp"
+#include "desktop_text.hpp"
 #include <eve/module/install.hpp>
 #include <QCryptographicHash>
 #include <QDir>
@@ -92,22 +93,22 @@ Result<Package> deserialize(const QJsonObject& object, const QDir& root)
         !id.match(p.moduleId).hasMatch() || !id.match(p.pluginId).hasMatch() || p.version.size() > 64 ||
         !version.match(p.version).hasMatch() || isReservedIdentity(p.moduleId, {}) ||
         (isReservedIdentity({}, p.pluginId) && !isLegacyPluginConflict(p.pluginId)))
-        return Result<Package>::failure(indexError("Invalid extension identity in the catalog."));
+        return Result<Package>::failure(indexError(desktopText("extensions.invalidExtensionIdentityInTheCatalog")));
     const auto encoded = object.value("icon").toString().toLatin1();
     if (!encoded.isEmpty()) {
         p.icon = QByteArray::fromBase64(encoded);
         if (!detail::validIcon(p.icon) || p.icon.toBase64() != encoded)
-            return Result<Package>::failure(indexError("Invalid icon in the extension catalog."));
+            return Result<Package>::failure(indexError(desktopText("extensions.invalidIconInTheExtensionCatalog")));
     }
     if (object.contains("packageBytes")) {
         p.packageBytes = object.value("packageBytes").toInt(-1);
         if (p.packageBytes <= 0)
-            return Result<Package>::failure(indexError("Invalid archive size in the extension catalog."));
+            return Result<Package>::failure(indexError(desktopText("extensions.invalidArchiveSizeInTheExtensionCatalog")));
     }
     if (object.contains("installedAt")) {
         p.installedAt = QDateTime::fromString(object.value("installedAt").toString(), Qt::ISODateWithMs);
         if (!p.installedAt.isValid() || p.installedAt.timeSpec() != Qt::UTC)
-            return Result<Package>::failure(indexError("Invalid UTC installation time in the extension catalog."));
+            return Result<Package>::failure(indexError(desktopText("extensions.invalidUTCInstallationTimeInTheExtension")));
     }
     // Only a validated digest, never a path from mutable catalog JSON, forms the artifact location.
     p.manifestPath = root.filePath("artifacts/" + p.sha256 + "/module.json");
@@ -117,23 +118,23 @@ Result<Package> deserialize(const QJsonObject& object, const QDir& root)
 Result<Index> load(const QDir& root)
 {
     using Output = Result<Index>;
-    if (!root.isAbsolute()) return Output::failure(indexError("An absolute extension directory is required."));
+    if (!root.isAbsolute()) return Output::failure(indexError(desktopText("extensions.anAbsoluteExtensionDirectoryIsRequired")));
     QFile file(root.filePath(indexName));
     if (!file.exists()) return Output::success({});
     if (!file.open(QIODevice::ReadOnly)) return Output::failure(indexError(file.errorString(), ErrorCode::ConfigIo));
     const auto bytes = file.read(maxIndexBytes + 1);
     if (bytes.size() > maxIndexBytes || file.error() != QFileDevice::NoError)
-        return Output::failure(indexError("Could not read extension catalog within its size limit."));
+        return Output::failure(indexError(desktopText("extensions.couldNotReadExtensionCatalogWithinIts")));
     const auto json = QJsonDocument::fromJson(bytes).object();
     if (json.value("formatVersion") != QJsonValue(1) || !json.value("extensions").isArray() ||
-        !json.value("releases").isObject()) return Output::failure(indexError("Invalid extension catalog."));
+        !json.value("releases").isObject()) return Output::failure(indexError(desktopText("extensions.invalidExtensionCatalog")));
     Index index;
     index.releases = json.value("releases").toObject();
     if (json.contains("retired") && !json.value("retired").isArray())
-        return Output::failure(indexError("Invalid retired artifact list."));
+        return Output::failure(indexError(desktopText("extensions.invalidRetiredArtifactList")));
     for (const auto item : json.value("retired").toArray()) {
         const auto hash = item.toString();
-        if (!digest(hash)) return Output::failure(indexError("Invalid retired artifact digest."));
+        if (!digest(hash)) return Output::failure(indexError(desktopText("extensions.invalidRetiredArtifactDigest")));
         index.retired.insert(hash);
     }
     QSet<QString> plugins;
@@ -143,7 +144,7 @@ Result<Index> load(const QDir& root)
         auto p = std::move(parsed).value();
         if (index.current.contains(p.moduleId) || plugins.contains(p.pluginId) || index.retired.contains(p.sha256) ||
             index.releases.value(releaseKey(p)).toString() != fingerprint(p))
-            return Output::failure(indexError("Inconsistent identity or release record in the extension catalog."));
+            return Output::failure(indexError(desktopText("extensions.inconsistentIdentityOrReleaseRecordInThe")));
         plugins.insert(p.pluginId);
         index.current.insert(p.moduleId, p);
     }
@@ -167,7 +168,7 @@ Result<void> save(const QDir& root, const Index& index)
     QSaveFile output(root.filePath(indexName));
     if (bytes.size() > maxIndexBytes || !output.open(QIODevice::WriteOnly) ||
         output.write(bytes) != bytes.size() || !output.commit())
-        return Result<void>::failure(indexError("Cannot atomically publish the extension catalog.", ErrorCode::ConfigIo));
+        return Result<void>::failure(indexError(desktopText("extensions.cannotAtomicallyPublishTheExtensionCatalog"), ErrorCode::ConfigIo));
     return Result<void>::success();
 }
 
@@ -215,26 +216,26 @@ Result<Package> Catalog::install(const QString& file, const QString& expectedPac
 {
     using Output = Result<Package>;
     QTemporaryDir staging;
-    if (!staging.isValid()) return Output::failure(indexError("Cannot create staging directory.", ErrorCode::ConfigIo));
+    if (!staging.isValid()) return Output::failure(indexError(desktopText("extensions.cannotCreateStagingDirectory"), ErrorCode::ConfigIo));
     auto unpacked = detail::unpack(file, staging.path());
     if (!unpacked.hasValue()) return Output::failure(unpacked.error());
     auto p = std::move(unpacked).value();
-    if (p.packageHash != expectedPackageHash) return Output::failure(indexError("Package changed since preview."));
+    if (p.packageHash != expectedPackageHash) return Output::failure(indexError(desktopText("extensions.packageChangedSincePreview")));
     if (!expectedModuleId.isEmpty() && p.moduleId != expectedModuleId)
-        return Output::failure(indexError("The selected package has a different module ID."));
+        return Output::failure(indexError(desktopText("extensions.theSelectedPackageHasADifferentModule")));
 
     const QDir root(root_);
     if (!root.isAbsolute() || !root.mkpath("artifacts"))
-        return Output::failure(indexError("Cannot open extension storage.", ErrorCode::ConfigIo));
+        return Output::failure(indexError(desktopText("extensions.cannotOpenExtensionStorage"), ErrorCode::ConfigIo));
     QLockFile lock(root.filePath("catalog.lock"));
-    if (!lock.tryLock(writerWaitMs)) return Output::failure(indexError("Extension catalog is busy.", ErrorCode::ConfigIo));
+    if (!lock.tryLock(writerWaitMs)) return Output::failure(indexError(desktopText("extensions.extensionCatalogIsBusy"), ErrorCode::ConfigIo));
     auto loaded = load(root);
     if (!loaded.hasValue()) return Output::failure(loaded.error());
     auto index = std::move(loaded).value();
     const auto selected = index.current.constFind(p.moduleId);
     if (expectedInstalledHash && *expectedInstalledHash !=
             (selected == index.current.cend() ? QString{} : selected->packageHash))
-        return Output::failure(indexError(QStringLiteral("已安装的版本在预览后发生变化，请重新核对安装包。"), ErrorCode::ConfigConflict));
+        return Output::failure(indexError(desktopText("extensions.theInstalledVersionChangedAfterPreviewReview"), ErrorCode::ConfigConflict));
     const auto identity = fingerprint(p);
     const auto published = index.releases.value(releaseKey(p));
     if (!published.isUndefined() && published.toString() != identity) {
@@ -243,13 +244,13 @@ Result<Package> Catalog::install(const QString& file, const QString& expectedPac
         const bool sameLegacyRelease = selected != index.current.cend() && selected->version == p.version &&
             selected->packageHash == p.packageHash && published.toString() == fingerprint(p, ReleaseFields::BeforeResources);
         if (!sameLegacyRelease)
-            return Output::failure(indexError("This module version was already published with different contents."));
+            return Output::failure(indexError(desktopText("extensions.thisModuleVersionWasAlreadyPublishedWith")));
     }
     for (const auto& current : index.current) {
         if (current.moduleId == p.moduleId && (current.pluginId != p.pluginId || current.kind != p.kind))
-            return Output::failure(indexError("An update cannot change the extension's plugin ID or kind."));
+            return Output::failure(indexError(desktopText("extensions.anUpdateCannotChangeTheExtensionS")));
         if (current.pluginId == p.pluginId && current.moduleId != p.moduleId)
-            return Output::failure(indexError("The plugin ID already belongs to another installed extension."));
+            return Output::failure(indexError(desktopText("extensions.thePluginIDAlreadyBelongsToAnother")));
     }
     const auto store = root.filePath("artifacts");
     const auto install = [&] { return module::installModuleArtifact(staging.path().toStdString(), "module.json", store.toStdString()); };
@@ -284,17 +285,17 @@ Result<Package> Catalog::install(const QString& file, const QString& expectedPac
 Result<void> Catalog::remove(const QString& moduleId, const QString& expectedPackageHash)
 {
     const QDir root(root_);
-    if (!root.isAbsolute()) return Result<void>::failure(indexError("An absolute extension directory is required."));
+    if (!root.isAbsolute()) return Result<void>::failure(indexError(desktopText("extensions.anAbsoluteExtensionDirectoryIsRequired")));
     if (!root.exists()) return Result<void>::success();
     QLockFile lock(root.filePath("catalog.lock"));
-    if (!lock.tryLock(writerWaitMs)) return Result<void>::failure(indexError("Extension catalog is busy.", ErrorCode::ConfigIo));
+    if (!lock.tryLock(writerWaitMs)) return Result<void>::failure(indexError(desktopText("extensions.extensionCatalogIsBusy"), ErrorCode::ConfigIo));
     auto loaded = load(root);
     if (!loaded.hasValue()) return Result<void>::failure(loaded.error());
     auto index = std::move(loaded).value();
     auto current = index.current.find(moduleId);
     if (current == index.current.end()) return Result<void>::success();
     if (current->packageHash != expectedPackageHash)
-        return Result<void>::failure(indexError(QStringLiteral("已安装的版本发生变化，请核对当前版本后重新确认卸载。"),
+        return Result<void>::failure(indexError(desktopText("extensions.theInstalledVersionChangedReviewItBefore"),
                                                 ErrorCode::ConfigConflict));
     // Commit desired membership first. Other workspaces can keep their mapped image until exit.
     index.retired.insert(current->sha256);

@@ -1,4 +1,5 @@
 #include "runtime_log_retention_p.hpp"
+#include "desktop_text.hpp"
 
 #include <QCryptographicHash>
 #include <QFile>
@@ -316,18 +317,18 @@ LogRetentionResult pruneClosedLogRuns(const QDir& root, const LogRetentionPolicy
 {
     LogRetentionResult result;
     if (!now.isValid() || policy.maxAgeDays < 0 || policy.maxBytes < 0 || !ordinaryPath(root)) {
-        result.warning = QString::fromUtf8("日志保留策略或归档目录不可用。");
+        result.warning = eve::desktopText("logs.theLogRetentionPolicyOrArchiveFolder");
         return result;
     }
     const PinnedDirectory pinnedRoot(root.absolutePath());
     if (!pinnedRoot.valid() || !ordinaryPath(root)) {
-        result.warning = QString::fromUtf8("日志归档目录不可用。");
+        result.warning = eve::desktopText("logs.theLogArchiveFolderIsUnavailable");
         return result;
     }
     const auto coordination = root.absoluteFilePath("retention.lock");
     const QFileInfo coordinationEntry(coordination);
     if (!absent(coordinationEntry) && (!ordinaryEntry(coordinationEntry) || !coordinationEntry.isFile())) {
-        result.warning = QString::fromUtf8("日志清理锁不可用。");
+        result.warning = eve::desktopText("logs.theLogCleanupLockIsUnavailable");
         return result;
     }
     QLockFile maintenance(coordination);
@@ -337,7 +338,7 @@ LogRetentionResult pruneClosedLogRuns(const QDir& root, const LogRetentionPolicy
     result.bytesAfter = result.bytesBefore;
     if (!locked) {
         if (result.bytesAfter > policy.maxBytes)
-            result.warning = QString::fromUtf8("日志占用 %1 字节，清理锁暂不可用。").arg(result.bytesAfter);
+            result.warning = eve::desktopText("logs.logsOccupyBytesTheCleanupLockIs").arg(result.bytesAfter);
         return result;
     }
 
@@ -383,7 +384,7 @@ LogRetentionResult pruneClosedLogRuns(const QDir& root, const LogRetentionPolicy
     }
     (void)scan(root, result.bytesAfter);
     if (result.bytesAfter > policy.maxBytes)
-        result.warning = QString::fromUtf8("活动、不可用或保留的日志占用 %1 字节，超出设置容量。").arg(result.bytesAfter);
+        result.warning = eve::desktopText("logs.activeUnavailableOrRetainedLogsOccupyBytes").arg(result.bytesAfter);
     return result;
 }
 

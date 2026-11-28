@@ -280,7 +280,7 @@ struct Workbench : std::enable_shared_from_this<Workbench> {
                         const auto store = self->session->snapshot().value().store;
                         auto summary = self->configurationWidget->findChild<QLabel*>("EveConfigSaveStatus");
                         if (store.persistedRevision != 1 || store.writing || !summary ||
-                            !summary->text().contains(QString::fromUtf8("已保存")))
+                            !summary->text().contains(QStringLiteral("Saved R1")))
                             return;
                         timer->stop();
                         auto name = eTheme->getThemeMode() == ElaThemeType::Dark ? "/config-workbench-dark.png"

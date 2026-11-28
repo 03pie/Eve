@@ -2,6 +2,7 @@
  * @brief 以 Ela 原生控件实现 VS Code 分区中的命令中心、菜单、设置与有界稳定键导航。
  */
 #include "workbench_p.hpp"
+#include "desktop_text.hpp"
 #include "workbench_titlebar_p.hpp"
 #include "panel_p.hpp"
 
@@ -375,7 +376,7 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
                 ids.contains(entry.plugin) || catalogue.hidden.contains(entry.plugin))
                 continue;
             ids.insert(entry.plugin);
-            HomePlugin value{entry.plugin, entry.title, QString::fromUtf8("界面已就绪")};
+            HomePlugin value{entry.plugin, entry.title, eve::desktopText("workbench.interfaceReady")};
             value.enabled = true;
             // A contributed page alone does not provide a lifecycle snapshot.
             value.canInspect = false;
@@ -476,11 +477,11 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
                         });
                 });
         };
-        add(QString::fromUtf8("关闭页签"), "EveTabClose", {anchor}, false);
+        add(eve::desktopText("workbench.closeTab"), "EveTabClose", {anchor}, false);
         menu->addSeparator();
-        add(QString::fromUtf8("关闭其他页签"), "EveTabCloseOthers", std::move(others), true);
-        add(QString::fromUtf8("关闭右侧页签"), "EveTabCloseRight", std::move(right), false);
-        add(QString::fromUtf8("关闭全部页签"), "EveTabCloseAll", std::move(all), false);
+        add(eve::desktopText("workbench.closeOtherTabs"), "EveTabCloseOthers", std::move(others), true);
+        add(eve::desktopText("workbench.closeTabsToTheRight"), "EveTabCloseRight", std::move(right), false);
+        add(eve::desktopText("workbench.closeAllTabs"), "EveTabCloseAll", std::move(all), false);
         menu->popup(globalPosition);
     }
     /** @brief 菜单命令和快捷键使用同一个开放门禁；根窗口自动销毁 QAction。 */
@@ -510,19 +511,16 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
         settings = createSettingsPage(window, panel, preferences, [weak](const std::function<void()>& operation) {
             if (auto self = weak.lock()) self->withWindowAccess(operation);
         });
-        auto info = scrollPage(QString::fromUtf8("关于 Eve"), window);
+        auto info = scrollPage(eve::desktopText("workbench.about"), window);
         about = info;
         info->setObjectName("EveAboutPage");
         auto infoContent = new QWidget;
         auto infoLayout = new QVBoxLayout(infoContent);
         infoLayout->setSizeConstraint(QLayout::SetMinimumSize);
-        card(infoLayout, QString::fromUtf8("Eve 插件平台"),
-             QString::fromUtf8(
-                 "版本 %1\nC++17 插件工作台").arg(QString::fromStdString(std::string(buildInfo().version))));
-        card(infoLayout, QString::fromUtf8("运行环境"),
-             QString::fromUtf8(
-                 "Qt %1\nElaWidgetTools 2.0.0")
-                 .arg(QString::fromLatin1(qVersion())));
+        card(infoLayout, eve::desktopText("workbench.title"),
+             eve::desktopText("workbench.versionC17PluginWorkbench").arg(QString::fromStdString(std::string(buildInfo().version))));
+        card(infoLayout, eve::desktopText("workbench.runtimeEnvironment"),
+             eve::desktopText("workbench.runtimeVersions").arg(QString::fromLatin1(qVersion()), QStringLiteral("2.0.0")));
         infoLayout->addStretch();
         infoContent->setWindowTitle(info->windowTitle());
         info->addCentralWidget(infoContent);
@@ -549,6 +547,10 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     self->preferences = new WorkbenchPreferences(window, panel, preferencesFile);
     bindToolTipTheme(window);
     std::weak_ptr<WorkbenchControl> weak = self;
+    self->preferences->setFileGuard([weak](const std::function<void()>& operation) {
+        if (auto state = weak.lock(); state && state->open)
+            state->withWindowAccess(operation);
+    });
     if (auto splitter = window->findChild<QSplitter*>("ElaWorkbenchPanelSplitter")) {
         // Share Ela's alpha surface while retaining a distinct hover affordance.
         auto handle = splitter->handle(1);
@@ -568,22 +570,22 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     self->menuBar = bar;
     bar->setObjectName("EveMenuBar");
     bar->setFixedHeight(30);
-    auto file = bar->addMenu(QString::fromUtf8("文件(&F)"));
-    auto view = bar->addMenu(QString::fromUtf8("视图(&V)"));
-    auto go = bar->addMenu(QString::fromUtf8("转到(&G)"));
-    auto help = bar->addMenu(QString::fromUtf8("帮助(&H)"));
+    auto file = bar->addMenu(eve::desktopText("workbench.file"));
+    auto view = bar->addMenu(eve::desktopText("workbench.view"));
+    auto go = bar->addMenu(eve::desktopText("workbench.go"));
+    auto help = bar->addMenu(eve::desktopText("workbench.help"));
     self->fileMenu = file;
     self->viewMenu = view;
     auto back = new ElaToolButton(window);
     back->setObjectName("EveNavigateBack");
     back->setElaIcon(ElaIconType::ArrowLeft);
-    back->setToolTip(QString::fromUtf8("后退（Alt+←）"));
-    back->setAccessibleName(QString::fromUtf8("后退"));
+    back->setToolTip(eve::desktopText("workbench.goBackAlt"));
+    back->setAccessibleName(eve::desktopText("workbench.goBack"));
     auto forward = new ElaToolButton(window);
     forward->setObjectName("EveNavigateForward");
     forward->setElaIcon(ElaIconType::ArrowRight);
-    forward->setToolTip(QString::fromUtf8("前进（Alt+→）"));
-    forward->setAccessibleName(QString::fromUtf8("前进"));
+    forward->setToolTip(eve::desktopText("workbench.goForwardAlt"));
+    forward->setAccessibleName(eve::desktopText("workbench.goForward"));
     auto quickOpen = new ElaToolButton(window);
     self->quickOpen = quickOpen;
     quickOpen->setObjectName("EveCommandCenterButton");
@@ -591,10 +593,10 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     quickOpen->setIsTransparent(false);
     quickOpen->setProperty("ElaTranslucentFill", true);
     quickOpen->setBorderRadius(5);
-    quickOpen->setText(QObject::tr("快速打开"));
+    quickOpen->setText(eve::desktopText("workbench.quickOpen"));
     quickOpen->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    quickOpen->setAccessibleName(QObject::tr("快速打开"));
-    quickOpen->setToolTip(QObject::tr("搜索页面（Ctrl+P）\n搜索命令（Ctrl+Shift+P）"));
+    quickOpen->setAccessibleName(eve::desktopText("workbench.quickOpen"));
+    quickOpen->setToolTip(eve::desktopText("workbench.searchPagesCtrlPShowCommandsCtrl"));
     auto navigation = new ElaToolButton(window);
     navigation->setObjectName("EveTitleNavigation");
     navigation->setElaIcon(ElaIconType::Sidebar);
@@ -620,22 +622,26 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
         if (auto control = weak.lock())
             control->closeTab(index);
     });
-    self->action(file, QString::fromUtf8("关闭当前页签"), "EveCloseView", QKeySequence("Ctrl+W"),
+    self->action(file, eve::desktopText("workbench.closeCurrentTab"), "EveCloseView", QKeySequence("Ctrl+W"),
                  [](WorkbenchControl& state) {
                      if (state.tabs)
                          state.closeTab(state.tabs->currentIndex());
                  });
-    self->action(file, QString::fromUtf8("设置"), "EveOpenSettings", QKeySequence("Ctrl+,"),
+    self->action(file, eve::desktopText("settings.title"), "EveOpenSettings", QKeySequence("Ctrl+,"),
                  [](WorkbenchControl& state) {
                      if (state.settings)
                          state.navigate(state.settings->property("ElaPageKey").toString());
                  });
+    self->action(file, eve::desktopText("settings.openJson"), "EveOpenUserSettingsJson", {},
+                 [](WorkbenchControl& state) {
+                     if (state.preferences) state.preferences->openFile();
+                 });
     file->addSeparator();
-    self->action(file, QString::fromUtf8("关闭窗口"), "EveCloseWindow", {}, [](WorkbenchControl& state) {
+    self->action(file, eve::desktopText("workbench.closeWindow"), "EveCloseWindow", {}, [](WorkbenchControl& state) {
         if (state.window)
             state.window->close();
     });
-    auto toggleNavigation = self->action(view, QString::fromUtf8("展开 / 收起插件导航"), "EveViewNavigation", QKeySequence("Ctrl+B"),
+    auto toggleNavigation = self->action(view, eve::desktopText("workbench.togglePluginNavigation"), "EveViewNavigation", QKeySequence("Ctrl+B"),
                  [](WorkbenchControl& state) {
                      if (state.window)
                          state.window->setNavigationBarDisplayMode(state.window->getNavigationBarDisplayMode() ==
@@ -643,7 +649,7 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
                                                                        ? ElaNavigationType::Compact
                                                                        : ElaNavigationType::Maximal);
                  });
-    auto toggleOutput = self->action(view, QString::fromUtf8("显示 / 隐藏输出与问题"), "EveViewPanel", QKeySequence("Ctrl+J"), [](WorkbenchControl& state) {
+    auto toggleOutput = self->action(view, eve::desktopText("workbench.toggleOutputAndProblems"), "EveViewPanel", QKeySequence("Ctrl+J"), [](WorkbenchControl& state) {
         toggleOutputPanel(state.logs);
     });
     toggleOutput->setCheckable(true);
@@ -667,56 +673,56 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
         QObject::connect(action, &QAction::changed, button, update);
         update();
     };
-    bindLayoutButton(navigation, toggleNavigation, QObject::tr("展开插件导航"), QObject::tr("收起插件导航"));
-    bindLayoutButton(togglePanel, toggleOutput, QObject::tr("显示输出与问题"), QObject::tr("隐藏输出与问题"));
-    self->action(view, QString::fromUtf8("搜索命令"), "EveOpenCommands", QKeySequence("Ctrl+Shift+P"),
+    bindLayoutButton(navigation, toggleNavigation, eve::desktopText("workbench.expandPluginNavigation"), eve::desktopText("workbench.collapsePluginNavigation"));
+    bindLayoutButton(togglePanel, toggleOutput, eve::desktopText("workbench.showOutputAndProblems"), eve::desktopText("workbench.hideOutputAndProblems"));
+    self->action(view, eve::desktopText("workbench.showCommands"), "EveOpenCommands", QKeySequence("Ctrl+Shift+P"),
                  [](WorkbenchControl& state) {
                      showQuickAccess(state.quickAccess, state.quickOpen, QuickAccessMode::Commands);
                  });
-    self->action(view, QString::fromUtf8("输出"), "EveOpenOutput", {}, [](WorkbenchControl& state) {
+    self->action(view, eve::desktopText("workbench.output"), "EveOpenOutput", {}, [](WorkbenchControl& state) {
         showOutput(state.logs, {}, {}, QApplication::focusWidget());
     });
-    self->action(view, QString::fromUtf8("查看上次运行日志"), "EvePreviousOutput", {}, [](WorkbenchControl& state) {
+    self->action(view, eve::desktopText("workbench.showPreviousRunLog"), "EvePreviousOutput", {}, [](WorkbenchControl& state) {
         showPreviousOutput(state.logs, QApplication::focusWidget());
     });
-    self->action(view, QString::fromUtf8("打开日志目录"), "EveOpenLogDirectory", {}, [](WorkbenchControl& state) {
+    self->action(view, eve::desktopText("workbench.openLogFolder"), "EveOpenLogDirectory", {}, [](WorkbenchControl& state) {
         openOutputDirectory(state.logs);
     });
-    self->action(view, QString::fromUtf8("清空输出"), "EveClearOutput", {}, [](WorkbenchControl& state) {
+    self->action(view, eve::desktopText("workbench.clearOutput"), "EveClearOutput", {}, [](WorkbenchControl& state) {
         if (state.logs)
             clearOutput(state.logs);
         else if (state.output)
             state.output->clear();
     });
-    self->action(view, QString::fromUtf8("复制全部输出"), "EveCopyOutput", {}, [](WorkbenchControl& state) {
+    self->action(view, eve::desktopText("workbench.copyAllOutput"), "EveCopyOutput", {}, [](WorkbenchControl& state) {
         if (state.logs)
             QApplication::clipboard()->setText(currentOutputText(state.logs));
         else if (state.output)
             QApplication::clipboard()->setText(state.output->toPlainText());
     });
     view->addSeparator();
-    auto stayTop = self->action(view, QString::fromUtf8("窗口置顶"), "EveStayTop", {}, [](WorkbenchControl& state) {
+    auto stayTop = self->action(view, eve::desktopText("workbench.alwaysOnTop"), "EveStayTop", {}, [](WorkbenchControl& state) {
         state.window->setIsStayTop(!state.window->getIsStayTop());
     });
     stayTop->setCheckable(true);
     stayTop->setChecked(window->getIsStayTop());
     QObject::connect(window, &ElaWindow::pIsStayTopChanged, stayTop,
                      [window, stayTop] { stayTop->setChecked(window->getIsStayTop()); });
-    self->action(view, QString::fromUtf8("切换明暗主题"), "EveToggleTheme", {}, [](WorkbenchControl&) {
-        eTheme->setThemeMode(eTheme->getThemeMode() == ElaThemeType::Light ? ElaThemeType::Dark : ElaThemeType::Light);
+    self->action(view, eve::desktopText("workbench.toggleLightAndDarkTheme"), "EveToggleTheme", {}, [](WorkbenchControl& state) {
+        if (state.preferences) state.preferences->setDarkTheme(!state.preferences->darkTheme());
     });
-    self->action(view, QString::fromUtf8("刷新插件状态"), "EveRefreshPlugins", QKeySequence("F5"),
+    self->action(view, eve::desktopText("workbench.refreshPluginStatus"), "EveRefreshPlugins", QKeySequence("F5"),
                  [](WorkbenchControl& state) {
                      if (state.callbacks.refresh) {
                          auto refresh = state.callbacks.refresh;
                          refresh();
                      }
                  });
-    self->backAction = self->action(go, QString::fromUtf8("后退"), "EveMenuBack", QKeySequence("Alt+Left"),
+    self->backAction = self->action(go, eve::desktopText("workbench.goBack"), "EveMenuBack", QKeySequence("Alt+Left"),
                                     [](WorkbenchControl& state) { state.traverse(-1); });
-    self->forwardAction = self->action(go, QString::fromUtf8("前进"), "EveMenuForward", QKeySequence("Alt+Right"),
+    self->forwardAction = self->action(go, eve::desktopText("workbench.goForward"), "EveMenuForward", QKeySequence("Alt+Right"),
                                        [](WorkbenchControl& state) { state.traverse(1); });
-    auto openPages = self->action(go, QString::fromUtf8("搜索页面"), "EveQuickOpen", QKeySequence("Ctrl+P"),
+    auto openPages = self->action(go, eve::desktopText("workbench.searchPages"), "EveQuickOpen", QKeySequence("Ctrl+P"),
                  [](WorkbenchControl& state) {
                       showQuickAccess(state.quickAccess, state.quickOpen, QuickAccessMode::Pages);
                  });
@@ -730,7 +736,7 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     bindHistory(back, self->backAction);
     bindHistory(forward, self->forwardAction);
     installWorkbenchTitlebar(window, bar, back, forward, quickOpen, navigation, togglePanel);
-    self->action(go, QString::fromUtf8("插件管理"), "EveOpenPlugins", {},
+    self->action(go, eve::desktopText("workbench.managePlugins"), "EveOpenPlugins", {},
                  [](WorkbenchControl& state) {
                      if (state.callbacks.navigate)
                          state.callbacks.navigate(state.managementKey, false);
@@ -746,18 +752,18 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
                 (void)appendOutput(state.logs, {}, "platform", result.error().message, OutputLevel::Error);
         });
         action->setEnabled(false);
-        action->setToolTip(add ? QString::fromUtf8("从已注册插件添加配置实例；需要工作台绑定配置会话。")
-                               : QString::fromUtf8("打开平台配置文件窗口；此入口由宿主提供。"));
+        action->setToolTip(add ? eve::desktopText("workbench.addAnInstanceOfARegisteredPlugin")
+                               : eve::desktopText("workbench.openTheWorkspaceConfigurationEditorProvidedBy"));
         if (add)
             self->addPluginAction = action;
         else
             self->configurationFileAction = action;
     };
     file->addSeparator();
-    platformAction(QString::fromUtf8("添加插件实例…"), "EveAddPlugin", true);
-    platformAction(QString::fromUtf8("工作区配置…"), "EveConfigurationFile", false);
+    platformAction(eve::desktopText("home.addPluginInstance"), "EveAddPlugin", true);
+    platformAction(eve::desktopText("workbench.workspaceConfiguration"), "EveConfigurationFile", false);
     self->modulesAction =
-        self->action(file, QString::fromUtf8("模块管理…"), "EveOpenModules", {}, [](WorkbenchControl& state) {
+        self->action(file, eve::desktopText("workbench.manageModules"), "EveOpenModules", {}, [](WorkbenchControl& state) {
             const auto callback = state.callbacks.modules;
             if (!callback)
                 return;
@@ -766,11 +772,11 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
                 (void)appendOutput(state.logs, {}, "platform", result.error().message, OutputLevel::Error);
         });
     self->modulesAction->setEnabled(false);
-    self->modulesAction->setToolTip(QString::fromUtf8("打开宿主提供的模块管理窗口。"));
-    self->action(go, QString::fromUtf8("欢迎页"), "EveOpenHome", {},
+    self->modulesAction->setToolTip(eve::desktopText("workbench.openTheModuleManagerProvidedByThe"));
+    self->action(go, eve::desktopText("workbench.welcome"), "EveOpenHome", {},
                  [](WorkbenchControl& state) { state.navigate(state.homeKey); });
     auto notifications =
-        self->action(go, QString::fromUtf8("通知历史"), "EveOpenNotifications", {}, [](WorkbenchControl& state) {
+        self->action(go, eve::desktopText("workbench.notificationHistory"), "EveOpenNotifications", {}, [](WorkbenchControl& state) {
             if (!state.open || !state.callbacks.showNotifications)
                 return;
             const auto show = state.callbacks.showNotifications;
@@ -778,7 +784,7 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
             if (!result.hasValue() && state.open && state.logs)
                 (void)appendOutput(state.logs, {}, "platform", result.error().message, OutputLevel::Error);
         });
-    self->action(help, QString::fromUtf8("关于 Eve"), "EveOpenAbout", {}, [](WorkbenchControl& state) {
+    self->action(help, eve::desktopText("workbench.about"), "EveOpenAbout", {}, [](WorkbenchControl& state) {
         if (state.about)
             state.navigate(state.about->property("ElaPageKey").toString());
     });
@@ -808,7 +814,7 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
         button->setObjectName(QString::fromLatin1(entry.first));
         button->setElaIcon(copy ? ElaIconType::Copy : ElaIconType::TrashCan);
         button->setFixedSize(28, 28);
-        button->setAccessibleName(copy ? QString::fromUtf8("复制当前目标输出") : QString::fromUtf8("清空当前目标输出"));
+        button->setAccessibleName(copy ? eve::desktopText("workbench.copyOutputForThisTarget") : eve::desktopText("workbench.clearOutputForThisTarget"));
         button->setToolTip(button->accessibleName());
         toolsLayout->addWidget(button);
         auto action = window->findChild<QAction*>(QString::fromLatin1(entry.second));
@@ -826,8 +832,8 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     auto corner = new ElaToolButton(panelTools);
     corner->setObjectName("EveHidePanel");
     corner->setElaIcon(ElaIconType::Xmark);
-    corner->setToolTip(QString::fromUtf8("隐藏工作区（Ctrl+J）"));
-    corner->setAccessibleName(QString::fromUtf8("隐藏底部工作区"));
+    corner->setToolTip(eve::desktopText("workbench.hidePanelCtrlJ"));
+    corner->setAccessibleName(eve::desktopText("workbench.hideBottomPanel"));
     corner->setFixedSize(28, 28);
     toolsLayout->addWidget(corner);
     panelTools->setFixedSize(panelTools->sizeHint());
@@ -838,7 +844,7 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     auto contextLayout = new QHBoxLayout(contextStrip);
     contextLayout->setContentsMargins(8, 0, 0, 0);
     contextLayout->setSpacing(10);
-    auto location = new StatusBarText(QStringLiteral("工作台"), contextStrip);
+    auto location = new StatusBarText(eve::desktopText("workbench.workbench"), contextStrip);
     self->location = location;
     location->setObjectName("EveCurrentPage");
     location->setMaximumWidth(220);
@@ -849,8 +855,8 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     historyButton->setIconSize(QSize(19, 19));
     historyButton->setFont(location->font());
     historyButton->setIsTransparent(true);
-    historyButton->setAccessibleName(QString::fromUtf8("通知中心"));
-    historyButton->setToolTip(QString::fromUtf8("打开通知中心"));
+    historyButton->setAccessibleName(eve::desktopText("management.notificationCenter"));
+    historyButton->setToolTip(eve::desktopText("workbench.openNotificationCenter"));
     historyButton->setFocusPolicy(Qt::TabFocus);
     historyButton->setMinimumWidth(30);
     historyButton->setFixedHeight(24);
@@ -877,7 +883,7 @@ std::vector<QAction*> bindWorkbenchExtensions(const std::shared_ptr<WorkbenchCon
     const std::shared_ptr<ExtensionControls>& extensions, const std::function<void()>& refresh)
 {
     const QPointer<ExtensionDialog> guarded(dialog);
-    auto open = control->action(control->viewMenu, QObject::tr("首页插件卡片"), "EveOpenExtensions", QKeySequence("Ctrl+Shift+X"),
+    auto open = control->action(control->viewMenu, eve::desktopText("workbench.showExtensions"), "EveOpenExtensions", QKeySequence("Ctrl+Shift+X"),
         [refresh](WorkbenchControl& state) {
             state.navigate(state.homeKey);
             refresh();
@@ -886,7 +892,7 @@ std::vector<QAction*> bindWorkbenchExtensions(const std::shared_ptr<WorkbenchCon
                     home->focusExtensions();
             }
         });
-    auto install = control->action(control->fileMenu, QObject::tr("从扩展安装包安装…"), "EveInstallExtension", {},
+    auto install = control->action(control->fileMenu, eve::desktopText("workbench.installExtensionFromFile"), "EveInstallExtension", {},
         [guarded](WorkbenchControl& state) {
             if (state.open && guarded) guarded->choosePackage();
         });
@@ -904,10 +910,10 @@ std::vector<QAction*> bindWorkbenchExtensions(const std::shared_ptr<WorkbenchCon
     if (auto refreshAction = control->window->findChild<QAction*>("EveRefreshPlugins"))
         QObject::connect(refreshAction, &QAction::triggered, control->window, refresh);
     auto settings = static_cast<SettingsPage*>(control->settings.data());
-    settings->addGroup("EveSettingsDesktopSection", QObject::tr("桌面"), QStringLiteral("desktop shell"));
-    auto desktop = new ActionButton(QObject::tr("选择桌面…"), settings);
+    settings->addGroup("EveSettingsDesktopSection", eve::desktopText("desktop.desktop"), QStringLiteral("desktop shell"));
+    auto desktop = new ActionButton(eve::desktopText("workbench.selectDesktop"), settings);
     desktop->setObjectName("EveSettingsChooseDesktop");
-    settings->addRow(QObject::tr("启动时使用的桌面外壳"), desktop, QObject::tr("扩展 外壳 默认 切换 桌面"));
+    settings->addRow(eve::desktopText("workbench.desktopShellOnStartup"), desktop, eve::desktopText("workbench.extensionShellDefaultSwitchDesktop"));
     auto menu = new ElaMenu(desktop);
     menu->setObjectName("EveSettingsDesktopMenu");
     desktop->setMenu(menu);
@@ -1034,7 +1040,7 @@ void selectWorkbenchEmpty(const std::shared_ptr<WorkbenchControl>& control)
     if (control->quickAccess)
         refreshQuickAccessPages(control->quickAccess);
     if (control->location) {
-        control->location->setText(QString::fromUtf8("未打开页面"));
+        control->location->setText(eve::desktopText("workbench.noPageOpen"));
         if (control->location)
             control->location->setToolTip(QString());
     }
@@ -1085,8 +1091,8 @@ void closeWorkbench(const std::shared_ptr<WorkbenchControl>& control)
     ++control->tabMenuGeneration;
     if (control->tabContextMenu)
         control->tabContextMenu->close();
-    if (control->preferences && !control->preferences->flush())
-        qWarning().noquote() << QString::fromUtf8("界面偏好保存失败；插件配置保存状态不受影响。");
+    if (control->preferences && !control->preferences->close())
+        qWarning().noquote() << eve::desktopText("workbench.couldNotSaveUserSettingsWorkspaceConfiguration");
     control->callbacks = {};
     control->replay.reset();
     for (const auto& action : control->actions)

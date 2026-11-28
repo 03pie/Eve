@@ -214,13 +214,13 @@ void observeSystemSurfaces(ElaWindow& window, const QString& settingsPath, const
         };
         while (!matches() && timer.elapsed() < (automated || phase == "baseline" ? 5000 : 180000)) QTest::qWait(50);
         const bool observed = matches();
-        const auto restrictionText = kind == "contrast" ? QStringLiteral("对比度主题") : QStringLiteral("透明效果");
+        const auto restrictionText = kind == "contrast" ? QStringLiteral("contrast theme") : QStringLiteral("transparency is off");
         const auto waitForHint = [&] {
             QSize previous;
             QElapsedTimer stable;
             return QTest::qWaitFor([&] {
                 const bool correct = restricted ? hint->text().contains(restrictionText)
-                    : !hint->text().contains(QStringLiteral("当前使用实色"));
+                    : !hint->text().contains(QStringLiteral("Using a solid background"));
                 if (hint->size() != previous) {
                     previous = hint->size();
                     stable.start();
@@ -239,8 +239,8 @@ void observeSystemSurfaces(ElaWindow& window, const QString& settingsPath, const
         const auto values = QJsonDocument::fromJson(file.readAll()).object();
         const auto currentDigest = pixelsDigest(window.getWindowPixmap(ElaThemeType::Light));
         const bool choices = material->currentIndex() == ElaApplicationType::Mica &&
-                             values.value("material").toInt(-1) == ElaApplicationType::Mica &&
-                             values.value("background").toString() == imagePath && currentDigest == digest;
+                             values.value("workbench.windowMaterial").toString() == "mica" &&
+                             values.value("workbench.wallpaper").toString() == imagePath && currentDigest == digest;
         QJsonObject result{
             {"observed", observed && choices && correctHint}, {"phase", phase}, {"restriction", kind},
             {"observationMode", privateHive ? "private-app-hive-native-message" :
@@ -251,8 +251,8 @@ void observeSystemSurfaces(ElaWindow& window, const QString& settingsPath, const
             {"selectedMaterial", material->currentIndex()}, {"effectiveElaMaterial", static_cast<int>(eApp->getWindowDisplayMode())},
             {"requestedMaterialAccepted", window.property("EveRequestedMaterialAccepted").toBool()},
             {"wallpaperLayerVisible", layer->isVisible()}, {"storedWallpaperSha256", QString::fromLatin1(currentDigest)},
-            {"wallpaperPreferenceMatches", values.value("background").toString() == imagePath},
-            {"savedMaterial", values.value("material")}, {"settingsHint", hint->text()},
+            {"wallpaperPreferenceMatches", values.value("workbench.wallpaper").toString() == imagePath},
+            {"savedMaterial", values.value("workbench.windowMaterial")}, {"settingsHint", hint->text()},
             {"hintWidth", hint->width()}, {"hintHeight", hint->height()},
             {"hintHeightForWidth", hint->heightForWidth(hint->width())},
             {"screenshot", screenshot}, {"screenshotSource", "Qt window grab, DWM attribute read separately"}};

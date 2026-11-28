@@ -1,4 +1,5 @@
 #include "appearance_p.hpp"
+#include "desktop_text.hpp"
 #include <QAccessibleWidget>
 
 namespace eve::ui::detail
@@ -38,7 +39,7 @@ public:
 
     QStringList keyBindingsForAction(const QString& name) const override
     {
-        return name == toggleAction() ? QStringList{QStringLiteral("Space"), QStringLiteral("Enter")}
+        return name == toggleAction() ? QStringList{desktopText("accessibility.spaceKey"), desktopText("accessibility.enterKey")}
                                       : QAccessibleWidget::keyBindingsForAction(name);
     }
 

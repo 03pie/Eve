@@ -1,6 +1,7 @@
 /** @file package.cpp
  * @brief 离线包预检。解包只向私有目录写入模块契约明确指定的两个文件。
  */
+#include "desktop_text.hpp"
 #include "package_p.hpp"
 #include "builtin_ids.hpp"
 #include <eve/module/qt_manifest.hpp>
@@ -36,23 +37,23 @@ public:
     {
         const auto count = mz_zip_reader_get_num_files(&zip_);
         if (!open_ || count < 3 || count > 6)
-            return Result<void>::failure(packageError("Expected module files with optional icon.png, README.md and CHANGELOG.md."));
+            return Result<void>::failure(packageError(desktopText("extensions.expectedModuleFilesWithOptionalIconPng")));
         for (mz_uint i = 0; i < count; ++i) {
             mz_zip_archive_file_stat stat{};
             const auto nameSize = mz_zip_reader_get_filename(&zip_, i, nullptr, 0);
             if (!mz_zip_reader_file_stat(&zip_, i, &stat) || nameSize < 2 || nameSize > 256 ||
                 !stat.m_is_supported || stat.m_is_directory || stat.m_is_encrypted || !stat.m_uncomp_size ||
                 stat.m_uncomp_size > maxLibrary || (stat.m_external_attr & 0x410u))
-                return Result<void>::failure(packageError("Unsupported archive entry."));
+                return Result<void>::failure(packageError(desktopText("extensions.unsupportedArchiveEntry")));
             const auto type = (stat.m_external_attr >> 16) & 0170000u;
             if (type && type != 0100000u)
-                return Result<void>::failure(packageError("Archive links and devices are not accepted."));
+                return Result<void>::failure(packageError(desktopText("extensions.archiveLinksAndDevicesAreNotAccepted")));
             QByteArray name(static_cast<int>(nameSize), '\0');
             mz_zip_reader_get_filename(&zip_, i, name.data(), nameSize);
             name.chop(1);
             if (name.contains('\0') || name.contains('/') || name.contains('\\') || name.contains(':') ||
                 entries.contains(name) || !mz_zip_validate_file(&zip_, i, MZ_ZIP_FLAG_VALIDATE_HEADERS_ONLY))
-                return Result<void>::failure(packageError("Invalid or duplicate ZIP entry."));
+                return Result<void>::failure(packageError(desktopText("extensions.invalidOrDuplicateZIPEntry")));
             entries.insert(name, {i, stat.m_uncomp_size});
         }
         return Result<void>::success();
@@ -61,17 +62,17 @@ public:
     {
         auto entry = entries.constFind(name);
         if (entry == entries.cend() || entry->bytes > static_cast<mz_uint64>(limit))
-            return Result<QByteArray>::failure(packageError("Missing or oversized " + QString::fromUtf8(name)));
+            return Result<QByteArray>::failure(packageError(desktopText("extensions.missingOrOversized") + QString::fromUtf8(name)));
         QByteArray data(static_cast<int>(entry->bytes), Qt::Uninitialized);
         if (!mz_zip_reader_extract_to_mem(&zip_, entry->index, data.data(), static_cast<size_t>(data.size()), 0))
-            return Result<QByteArray>::failure(packageError("Invalid compressed entry or CRC."));
+            return Result<QByteArray>::failure(packageError(desktopText("extensions.invalidCompressedEntryOrCRC")));
         return Result<QByteArray>::success(std::move(data));
     }
     Result<void> writeLibrary(const QByteArray& name, QFile& file)
     {
         const auto entry = entries.constFind(name);
         if (entry == entries.cend() || !file.open(QIODevice::WriteOnly | QIODevice::NewOnly))
-            return Result<void>::failure(packageError("Cannot stage the declared library."));
+            return Result<void>::failure(packageError(desktopText("extensions.cannotStageTheDeclaredLibrary")));
         auto write = [](void* opaque, mz_uint64 offset, const void* bytes, size_t size) -> size_t {
             auto& stream = *static_cast<QFile*>(opaque);
             if (stream.pos() < 0 || static_cast<mz_uint64>(stream.pos()) != offset ||
@@ -81,7 +82,7 @@ public:
                 static_cast<qint64>(size) ? size : 0;
         };
         if (!mz_zip_reader_extract_to_callback(&zip_, entry->index, write, &file, 0) || !file.flush())
-            return Result<void>::failure(packageError("Cannot extract the declared library."));
+            return Result<void>::failure(packageError(desktopText("extensions.cannotExtractTheDeclaredLibrary")));
         file.close();
         return Result<void>::success();
     }
@@ -119,24 +120,24 @@ Result<void> readResources(const QJsonObject& json, Package& p)
     if (json.contains("categories")) {
         const auto categories = json.value("categories");
         if (!categories.isArray() || categories.toArray().size() > 32)
-            return Result<void>::failure(packageError("categories must be an array of at most 32 names."));
+            return Result<void>::failure(packageError(desktopText("extensions.categoriesMustBeAnArrayOfAt")));
         for (const auto& entry : categories.toArray()) {
             const auto category = entry.toString().trimmed();
             if (!validText(entry.toString(), 64))
-                return Result<void>::failure(packageError("Invalid extension category."));
+                return Result<void>::failure(packageError(desktopText("extensions.invalidExtensionCategory")));
             if (!p.categories.contains(category, Qt::CaseInsensitive)) p.categories.append(category);
         }
     }
     if (!readLink(json.value("homepage"), p.homepage, false) ||
         !readLink(json.value("repository"), p.repository, true) ||
         !readLink(json.value("bugs"), p.issues, true))
-        return Result<void>::failure(packageError("Extension resource links must be HTTP(S) URLs without credentials."));
+        return Result<void>::failure(packageError(desktopText("extensions.extensionResourceLinksMustBeHTTPS")));
     if (json.contains("license")) {
         p.license = json.value("license").toString();
         // Allow printable license identifiers and SPDX expressions, or a link to the license text.
         static const QRegularExpression expression(QStringLiteral("\\A[A-Za-z0-9(+][A-Za-z0-9 .()+-]*\\z"));
         if (!(validText(p.license, 256) && expression.match(p.license).hasMatch()) && !webLink(p.license))
-            return Result<void>::failure(packageError("license must be a license expression or an HTTP(S) URL."));
+            return Result<void>::failure(packageError(desktopText("extensions.licenseMustBeALicenseExpressionOr")));
     }
     return Result<void>::success();
 }
@@ -167,14 +168,14 @@ Result<QString> decodeMarkdown(const QByteArray& bytes, const MarkdownMember& me
         return Result<QString>::failure(packageError(name + " must contain UTF-8 text."));
     for (const auto ch : text) {
         if (ch.category() == QChar::Other_Control && ch != '\t' && ch != '\r' && ch != '\n')
-            return Result<QString>::failure(packageError("Unexpected control character in " + name));
+            return Result<QString>::failure(packageError(desktopText("extensions.unexpectedControlCharacterIn") + name));
     }
     return Result<QString>::success(text);
 }
 Result<void> readPresentation(const QJsonObject& json, Package& p)
 {
     if (json.value("formatVersion") != QJsonValue(1))
-        return Result<void>::failure(packageError("Unsupported package.json formatVersion."));
+        return Result<void>::failure(packageError(desktopText("extensions.unsupportedPackageJsonFormatVersion")));
     p.kind = json.value("kind").toString();
     p.name = json.value("name").toString();
     p.publisher = json.value("publisher").toString();
@@ -183,7 +184,7 @@ Result<void> readPresentation(const QJsonObject& json, Package& p)
         !validText(p.publisher, 128) || (json.contains("description") &&
         (!json.value("description").isString() || (!p.description.isEmpty() && !validText(p.description, 2048)))) ||
         (json.contains("defaultConfig") && !json.value("defaultConfig").isObject()))
-        return Result<void>::failure(packageError("Invalid extension type, display metadata or default configuration."));
+        return Result<void>::failure(packageError(desktopText("extensions.invalidExtensionTypeDisplayMetadataOrDefault")));
     p.defaultConfig = QString::fromUtf8(QJsonDocument(json.value("defaultConfig").toObject()).toJson(QJsonDocument::Compact));
     return readResources(json, p);
 }
@@ -194,10 +195,10 @@ Result<Package> unpack(const QString& path, const QString& destination)
     QFile file(path);
     if (!path.endsWith(".evepkg", Qt::CaseInsensitive) || !file.open(QIODevice::ReadOnly) ||
         file.size() < 1 || file.size() > maxPackage)
-        return ResultType::failure(packageError("Cannot read package or size exceeds the package limit."));
+        return ResultType::failure(packageError(desktopText("extensions.cannotReadPackageOrSizeExceedsThe")));
     const auto bytes = file.read(maxPackage + 1);
     if (bytes.size() != file.size() || bytes.size() > maxPackage || file.error() != QFileDevice::NoError)
-        return ResultType::failure(packageError("Package changed or could not be read."));
+        return ResultType::failure(packageError(desktopText("extensions.packageChangedOrCouldNotBeRead")));
     Archive archive(bytes);
     const auto indexed = archive.index();
     if (!indexed.hasValue()) return ResultType::failure(indexed.error());
@@ -213,11 +214,11 @@ Result<Package> unpack(const QString& path, const QString& destination)
     const auto& module = parsed.value();
     if (module.loader != module::ModuleLoader::QtUi || module.unloadPolicy != module::ModuleUnloadPolicy::Resident ||
         module.plugins.size() != 1)
-        return ResultType::failure(packageError("An Eve package requires one resident Qt module with one plugin."));
+        return ResultType::failure(packageError(desktopText("extensions.anEvePackageRequiresOneResidentQt")));
     p.pluginId = QString::fromStdString(module.plugins.front());
     p.moduleId = QString::fromStdString(module.moduleId);
     if (isReservedIdentity(p.moduleId, p.pluginId))
-        return ResultType::failure(packageError("This identity belongs to the platform."));
+        return ResultType::failure(packageError(desktopText("extensions.thisIdentityBelongsToThePlatform")));
     p.version = QString::fromStdString(module.moduleVersion);
     p.sha256 = QString::fromStdString(module.sha256);
     p.packageHash = QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
@@ -235,17 +236,17 @@ Result<Package> unpack(const QString& path, const QString& destination)
         p.*member.text = std::move(text).value();
     }
     if (!archive.entries.contains(library) || archive.entries.size() != expectedMembers)
-        return ResultType::failure(packageError("Package contents differ from the declared payload."));
+        return ResultType::failure(packageError(desktopText("extensions.packageContentsDifferFromTheDeclaredPayload")));
     if (hasIcon) {
         auto icon = archive.read("icon.png", maxIcon);
         if (!icon.hasValue()) return ResultType::failure(icon.error());
-        if (!validIcon(icon.value())) return ResultType::failure(packageError("Expected a PNG icon no larger than 512 x 512."));
+        if (!validIcon(icon.value())) return ResultType::failure(packageError(desktopText("extensions.expectedAPNGIconNoLargerThan")));
         p.icon = std::move(icon).value();
     }
     const QDir dir(destination);
     QFile json(dir.filePath("module.json"));
     if (!json.open(QIODevice::WriteOnly | QIODevice::NewOnly) || json.write(manifest.value()) != manifest.value().size() || !json.flush())
-        return ResultType::failure(packageError("Cannot stage module.json.", ErrorCode::ConfigIo));
+        return ResultType::failure(packageError(desktopText("extensions.cannotStageModuleJson"), ErrorCode::ConfigIo));
     json.close();
     QFile dll(dir.filePath(QString::fromUtf8(library)));
     const auto extraction = archive.writeLibrary(library, dll);
@@ -277,7 +278,7 @@ bool isReservedIdentity(const QString& moduleId, const QString& pluginId, Extens
 Result<Package> Catalog::preview(const QString& file)
 {
     QTemporaryDir dir;
-    if (!dir.isValid()) return Result<Package>::failure(detail::packageError("Cannot create a private package staging directory.", ErrorCode::ConfigIo));
+    if (!dir.isValid()) return Result<Package>::failure(detail::packageError(desktopText("extensions.cannotCreateAPrivatePackageStagingDirectory"), ErrorCode::ConfigIo));
     return detail::unpack(file, dir.path());
 }
 }

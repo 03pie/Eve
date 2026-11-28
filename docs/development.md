@@ -21,6 +21,8 @@ ctest --preset core-gcc-debug
 
 ## Windows 桌面
 
+桌面外观与显示语言的配置位置和语言扩展格式见[桌面设置和语言扩展](desktop-settings.md)。
+
 安装 Visual Studio 2022 C++ x64 工具、Windows SDK、Ninja、CMake 和 Qt 5.15.2 的 MSVC x64 kit。普通 PowerShell 可调用包装脚本，脚本在独立进程加载开发环境。将 Qt 路径改为本机安装目录。
 
 ```powershell
