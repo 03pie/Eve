@@ -260,6 +260,10 @@ if(EVE_BUILD_ELA_UI)
         set_tests_properties(ui.optimization_locked PROPERTIES LABELS "ui;ui_optimization;ela" TIMEOUT 20 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
         # Reading DWMWA_SYSTEMBACKDROP_TYPE requires Windows 11 22H2 or newer.
         if(NOT CMAKE_CROSSCOMPILING AND CMAKE_HOST_SYSTEM_VERSION VERSION_GREATER_EQUAL "10.0.22621")
+            add_test(NAME ui.optimization_settings_direct_acrylic COMMAND eve_ui_optimization_tests settings_direct_acrylic)
+            set_tests_properties(ui.optimization_settings_direct_acrylic PROPERTIES LABELS "ui;ui_optimization;ela;qwindows"
+                ENVIRONMENT "QT_QPA_PLATFORM=windows" TIMEOUT 25 RUN_SERIAL TRUE
+                SKIP_REGULAR_EXPRESSION "SKIP: desktop currently requires solid surfaces")
             foreach(policy IN ITEMS contrast transparency)
                 add_test(NAME ui.optimization_settings_policy_${policy} COMMAND eve_ui_optimization_tests settings_policy_${policy})
                 set_tests_properties(ui.optimization_settings_policy_${policy} PROPERTIES LABELS "ui;ui_optimization;ela;qwindows"
@@ -354,6 +358,11 @@ if(EVE_BUILD_ELA_UI)
         set_tests_properties(p3.panel_${case} PROPERTIES LABELS "p3;ui;ela;panel" TIMEOUT 25 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endforeach()
     set_tests_properties(p3.panel_throughput PROPERTIES TIMEOUT 120)
+    if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
+        add_test(NAME p3.panel_themes_windows COMMAND eve_panel_tests themes)
+        set_tests_properties(p3.panel_themes_windows PROPERTIES LABELS "p3;ui;ela;panel;qwindows"
+            ENVIRONMENT "QT_QPA_PLATFORM=windows" TIMEOUT 40 RUN_SERIAL TRUE)
+    endif()
     target_link_libraries(eve_workbench_tests PRIVATE eve_desktop_impl Qt5::Test Ela::WidgetTools)
     target_sources(eve_workbench_tests PRIVATE qt/extension_details.cpp qt/extension_features.cpp)
     set_target_properties(eve_workbench_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

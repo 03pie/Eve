@@ -227,7 +227,8 @@ bool ElaAppBarPrivate::_containsCursorToItem(QWidget* item)
     }
     else if (item == _maxButton)
     {
-        itemRect.adjust(0, 8, 0, 0);
+        const int resizeEdge = q->mapToGlobal(QPoint(0, 8)).y();
+        itemRect.setTop(qMax(itemRect.top(), resizeEdge));
     }
     if (itemRect.contains(QCursor::pos()))
     {

@@ -1,17 +1,26 @@
 /** @file panel_p.hpp
- * @brief 底部命令及真实问题视图，不把面板内容送入中央页面。
+ * @brief 根窗口的快速打开浮层和底部问题视图。
  */
 #pragma once
 #include "output_p.hpp"
 #include <QString>
 #include <eve/ui/management.hpp>
+#include <functional>
+#include <vector>
 class QListView;
 class QTabWidget;
 namespace eve::ui::detail
 {
-/** @brief 创建搜索、命令列表、执行按钮和结果区；后台由 services 接入。 */
+enum class QuickAccessMode { Pages, Commands };
+struct QuickAccessPage { QString key, title, category; };
+
+/** @brief 页面用稳定键导航，命令列表由现有服务与执行回执管理。 */
 QWidget* createCommandPanel(QWidget* parent, QListView*& list);
-void showCommandPanel(QWidget* window, QWidget* anchor);
+void configureQuickAccessPages(QWidget* panel, std::function<std::vector<QuickAccessPage>()> pages,
+                               std::function<void(const QString&)> activate);
+void refreshQuickAccessPages(QWidget* panel);
+void showQuickAccess(QWidget* panel, QWidget* anchor, QuickAccessMode mode);
+void dismissQuickAccess(QWidget* panel);
 void dismissCommandPanel(QWidget* list);
 /** @brief 只读问题来自当前 diagnostics，激活问题定位到原插件的管理窗口。 */
 void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService> diagnostics,

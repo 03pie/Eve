@@ -93,6 +93,7 @@ public:
                                   heading->setTextFormat(Qt::PlainText);
                                   layout->addWidget(heading);
                                   editor_ = new QPlainTextEdit(widget.get());
+                                  editor_->viewport()->setAutoFillBackground(false);
                                   editor_->setObjectName("EveNotebookEditor");
                                   editor_->setPlainText(draft_);
                                   QObject::connect(editor_.data(), &QPlainTextEdit::textChanged, widget.get(),

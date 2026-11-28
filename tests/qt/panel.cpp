@@ -39,6 +39,7 @@
 #include <QSplitter>
 #include <QTreeWidget>
 #include <QToolButton>
+#include <QToolTip>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
@@ -427,12 +428,22 @@ void historicalFilters()
 void responsive()
 {
     Scene s;auto panel=s.find<QTabWidget>("EveWorkbenchPanel");auto editor=s.find<QPlainTextEdit>("EveWorkbenchOutput");
-    s.window->resize(700,700);
-    QCoreApplication::processEvents();
-    const auto menu=s.find<QMenuBar>("EveMenuBar");
-    const auto search=s.find<QWidget>("EvePageSearch");
-    const auto endOfMenu=menu->actionGeometry(menu->actions().last()).topRight();
-    CHECK(menu->mapTo(s.window,endOfMenu).x()<search->mapTo(s.window,QPoint(0,0)).x());
+    auto menu = s.find<QMenuBar>("EveMenuBar");
+    auto overflow = s.find<QToolButton>("EveMenuOverflow");
+    auto quickOpen = s.find<QToolButton>("EveCommandCenterButton");
+    s.window->resize(560, 700);
+    until([&] { return overflow->isVisible() && !menu->isVisible(); });
+    CHECK(quickOpen->isVisible());
+    CHECK(overflow->mapTo(s.window, overflow->rect().topRight()).x() < quickOpen->mapTo(s.window, QPoint()).x());
+    CHECK(overflow->menu());
+    for (auto* header : menu->actions())
+        CHECK(overflow->menu()->actions().contains(header));
+    QTest::mouseClick(quickOpen, Qt::LeftButton);
+    auto quickPanel = s.find<QWidget>("EveCommandPanel");
+    CHECK(quickPanel->isVisible() && s.window->rect().contains(quickPanel->geometry()));
+    QTest::keyClick(s.find<QLineEdit>("EveCommandFilter"), Qt::Key_Escape);
+    s.window->resize(1200, 700);
+    until([&] { return menu->isVisible() && !overflow->isVisible(); });
     s.find<QAction>("EveOpenOutput")->trigger();
     const auto seq=s.shell.writeOutput("buffer prepared\n[123] continuation").value();
     s.shell.showOutputEvent(seq,nullptr).value();
@@ -615,6 +626,7 @@ void crossWindow()
 /** Verify the composited widget, including transparent viewports and the native popup windows. */
 void panelThemes()
 {
+    const auto applicationTipPalette = QToolTip::palette();
     QTemporaryDir workspace;
     CHECK(workspace.isValid());
     QImage pattern(120,80,QImage::Format_RGB32);
@@ -641,6 +653,8 @@ void panelThemes()
         auto output=scene.find<QPlainTextEdit>("EveWorkbenchOutput");
         auto tree=scene.find<QTreeWidget>("EveProblemsTree");
         auto detail=scene.find<QPlainTextEdit>("EveProblemDetails");
+        auto notifications=scene.find<QWidget>("EveNotificationCenter");
+        auto commands=scene.find<QWidget>("EveCommandPanel");
         auto select=scene.find<QComboBox>("EveOutputTarget");
         auto notice=scene.find<QLabel>("EveOutputFeedback");
         scene.find<QAction>("EveOpenOutput")->trigger();
@@ -658,32 +672,43 @@ void panelThemes()
                 if (!evidence.isEmpty()) CHECK(frame.save(QDir(evidence).filePath(label+"-"+name+".png")));
                 return frame;
             };
-            const auto surface=[&](const QPixmap& image,QWidget* widget,const QPoint& point,const char* name) {
+            const auto surface=[&](const QPixmap& image,QWidget* widget,const QPoint& point,const char* name,
+                                    bool showsWallpaper = false) {
                 const auto root=widget->mapTo(widget->window(),point);
                 const auto p=image.toImage().pixelColor(qRound(root.x()*image.devicePixelRatioF()),
                                                         qRound(root.y()*image.devicePixelRatioF()));
                 const auto luma=qGray(p.rgb());
-                const bool good=p.alpha()>0 && (dark ? luma<135 : luma>145);
+                // Both test wallpaper colors have more green than red, even through the Ela theme tint.
+                const bool hasWallpaper = !showsWallpaper || !scene.window->property("EveWallpaperVisible").toBool()
+                    || p.green() > p.red() + 1;
+                const bool good=p.alpha()>0 && (dark ? luma<135 : luma>145) && hasWallpaper;
                 if(!good)std::cerr<<label.toStdString()<<" "<<name<<" #"<<p.name().toStdString()
                                   <<" alpha="<<p.alpha()<<std::endl;
                 passed &= good;
             };
-            const auto readable=[&](const QPixmap& frame,QWidget* widget,QRect area,QPoint sample,const char* name,double minimum=4.5) {
+            const auto readable=[&](const QPixmap& frame,QWidget* widget,QRect area,QPoint sample,const char* name,
+                                    double minimum=4.5,QColor expectedInk={}) {
                 const auto image=frame.toImage();
                 const auto scale=frame.devicePixelRatioF();
                 const auto offset=widget->mapTo(widget->window(),QPoint{});
-                const auto luminance=[&](QPoint local){
+                const auto pixel=[&](QPoint local){
                     const auto pos=local+offset;
-                    const auto color=image.pixelColor(qRound(pos.x()*scale),qRound(pos.y()*scale));
+                    return image.pixelColor(qRound(pos.x()*scale),qRound(pos.y()*scale));
+                };
+                const auto luminance=[](QColor color){
                     const auto linear=[](qreal v){return v<=0.04045 ? v/12.92 : std::pow((v+0.055)/1.055,2.4);};
                     return 0.2126*linear(color.redF())+0.7152*linear(color.greenF())+0.0722*linear(color.blueF());
                 };
-                const auto base=luminance(sample);
+                const auto base=luminance(pixel(sample));
                 int count=0;
                 area=area.intersected(widget->rect());
                 for(int y=area.top();y<=area.bottom();++y)
                     for(int x=area.left();x<=area.right();++x){
-                        const auto glyph=luminance({x,y});
+                        const auto color=pixel({x,y});
+                        if(expectedInk.isValid() && std::max({std::abs(color.red()-expectedInk.red()),
+                            std::abs(color.green()-expectedInk.green()),std::abs(color.blue()-expectedInk.blue())})>48)
+                            continue;
+                        const auto glyph=luminance(color);
                         if((std::max(base,glyph)+0.05)/(std::min(base,glyph)+0.05)>=minimum)++count;
                     }
                 if(count<5)std::cerr<<label.toStdString()<<" "<<name<<" high-contrast glyph pixels "<<count<<std::endl;
@@ -691,10 +716,77 @@ void panelThemes()
             };
             panel->setCurrentWidget(output);
             auto frame=capture(output,"output");
-            surface(frame,output->viewport(),output->viewport()->rect().bottomRight()-QPoint(25,15),"output viewport");
+            surface(frame,output->viewport(),output->viewport()->rect().bottomRight()-QPoint(25,15),"output viewport",true);
             CHECK(notice->isVisible());
             readable(frame,notice,notice->rect(),notice->rect().topRight(), "output feedback");
             const auto textColor=eTheme->getThemeColor(mode,ElaThemeType::BasicText);
+            const auto popupColor=eTheme->getThemeColor(mode,ElaThemeType::PopupBase);
+            const auto checkPopup = [&](QWidget* popup, const QPixmap& frame) {
+                CHECK(popup->isVisible());
+                QImage shape(popup->size(), QImage::Format_ARGB32_Premultiplied);
+                shape.fill(Qt::transparent);
+                popup->render(&shape, {}, {}, QWidget::RenderFlags{});
+                CHECK(shape.pixelColor(0, 0).alpha() == 0);
+                CHECK(shape.pixelColor(shape.rect().bottomRight()).alpha() == 0);
+                const auto point = popup->mapTo(scene.window, QPoint(4, 4));
+                const auto scale = frame.devicePixelRatioF();
+                const auto color = frame.toImage().pixelColor(qRound(point.x() * scale), qRound(point.y() * scale));
+                if (color != popupColor)
+                    std::cerr << label.toStdString() << " " << popup->objectName().toStdString() << " "
+                              << color.name(QColor::HexArgb).toStdString() << " expected "
+                              << popupColor.name(QColor::HexArgb).toStdString() << '\n';
+                passed &= color == popupColor;
+            };
+            scene.find<QToolButton>("EveShowNotifications")->click();
+            until([&] { return notifications->isVisible(); });
+            checkPopup(notifications, capture(notifications, "notifications"));
+            scene.find<QPushButton>("EveNotificationClose")->click();
+            CHECK(!notifications->isVisible());
+            CHECK(QToolTip::palette() == applicationTipPalette);
+            const auto checkTipFill = [&](QWidget* tip, const QString& message, QColor expected) {
+                const auto image = tip->grab().toImage();
+                bool hasFill = false;
+                for (int y = 0; y < image.height() && !hasFill; ++y)
+                    for (int x = 0; x < image.width() && !hasFill; ++x)
+                        hasFill = image.pixelColor(x, y) == expected;
+                if (!hasFill && !image.isNull())
+                    std::cerr << label.toStdString() << " tooltip " << message.toStdString() << " fill "
+                              << image.pixelColor(image.width() - 3, image.height() / 2).name(QColor::HexArgb).toStdString()
+                              << " expected " << expected.name(QColor::HexArgb).toStdString() << '\n';
+                CHECK(hasFill);
+            };
+            const auto showTip = [&](QWidget* source, const QString& message, QColor expected) {
+                QToolTip::showText(output->mapToGlobal(QPoint(40, 40)), message, source);
+                QLabel* tip = nullptr;
+                until([&] {
+                    for (auto* top : QApplication::topLevelWidgets()) {
+                        auto* tipLabel = qobject_cast<QLabel*>(top);
+                        if (tipLabel && tipLabel->isVisible() && tipLabel->windowType() == Qt::ToolTip &&
+                            tipLabel->objectName() == QLatin1String("qtooltip_label") && tipLabel->text() == message) {
+                            tip = tipLabel;
+                            return true;
+                        }
+                    }
+                    return false;
+                });
+                checkTipFill(tip, message, expected);
+                return tip;
+            };
+            auto* hostTip = showTip(output, QStringLiteral("Eve"), popupColor);
+            CHECK(showTip(output, QStringLiteral("Updated output"), popupColor) == hostTip);
+            QWidget pluginSource(output);
+            const QColor pluginColor("#28684f");
+            pluginSource.setStyleSheet(QStringLiteral("QToolTip{background-color:#28684f;color:white;}"));
+            CHECK(showTip(&pluginSource, QStringLiteral("Plugin"), pluginColor) == hostTip);
+            CHECK(showTip(output, QStringLiteral("Output"), popupColor) == hostTip);
+            const auto otherMode = dark ? ElaThemeType::Light : ElaThemeType::Dark;
+            eTheme->setThemeMode(otherMode);
+            CHECK(QToolTip::isVisible());
+            checkTipFill(hostTip, QStringLiteral("Output"), eTheme->getThemeColor(otherMode, ElaThemeType::PopupBase));
+            eTheme->setThemeMode(mode);
+            checkTipFill(hostTip, QStringLiteral("Output"), popupColor);
+            QToolTip::hideText();
+            until([] { return !QToolTip::isVisible(); });
             if(notice->palette().color(QPalette::WindowText)!=textColor) {
                 std::cerr<<label.toStdString()<<" output feedback text "<<notice->palette().color(QPalette::WindowText).name().toStdString()<<std::endl;
                 passed=false;
@@ -714,11 +806,11 @@ void panelThemes()
             panel->setCurrentWidget(scene.find<QWidget>("EveProblemsPanel"));
             tree->setCurrentItem(tree->topLevelItem(0)->child(0));
             frame=capture(tree,"problems");
-            surface(frame,tree->viewport(),tree->viewport()->rect().bottomRight()-QPoint(12,12),"problem tree");
-            surface(frame,detail->viewport(),detail->viewport()->rect().bottomRight()-QPoint(12,12),"problem detail");
-            surface(frame,tree->header()->viewport(),QPoint(190,tree->header()->height()/2),"problem header");
+            surface(frame,tree->viewport(),tree->viewport()->rect().bottomRight()-QPoint(12,12),"problem tree",true);
+            surface(frame,detail->viewport(),detail->viewport()->rect().bottomRight()-QPoint(12,12),"problem detail",true);
+            surface(frame,tree->header()->viewport(),QPoint(190,tree->header()->height()/2),"problem header",true);
             auto header=tree->header()->viewport();
-            readable(frame,header,QRect(4,2,142,header->height()-4),QPoint(190,header->height()/2),"header labels");
+            readable(frame,header,QRect(4,2,142,header->height()-4),QPoint(190,header->height()/2),"header labels",4.5,textColor);
             readable(frame,detail->viewport(),QRect(2,2,162,23),detail->viewport()->rect().center(),"problem details text");
             auto inspectRow=[&](QTreeWidgetItem* item,const char* name){
                 auto row=tree->visualItemRect(item);
@@ -727,10 +819,6 @@ void panelThemes()
             };
             inspectRow(tree->topLevelItem(0),"unselected problem group");
             inspectRow(tree->currentItem(),"selected problem row");
-            if(tree->header()->palette().color(QPalette::ButtonText)!=textColor) {
-                std::cerr<<label.toStdString()<<" problem header text "<<tree->header()->palette().color(QPalette::ButtonText).name().toStdString()<<std::endl;
-                passed=false;
-            }
             tree->setCurrentItem(tree->topLevelItem(0));
             auto related=scene.find<QPushButton>("EveProblemLog");
             CHECK(!related->isEnabled());
@@ -751,6 +839,7 @@ void panelThemes()
             QMouseEvent focusNotification(QEvent::MouseButtonPress,QPoint(-1,-1),Qt::NoButton,Qt::NoButton,Qt::NoModifier);
             QApplication::sendEvent(scene.window,&focusNotification);
             frame=capture(list,"commands-empty");
+            checkPopup(commands, frame);
             auto commandPanel=list->parentWidget();
             auto center=list->viewport()->mapTo(scene.window,list->viewport()->rect().center());
             CHECK(commandPanel->isVisible() && commandPanel->isAncestorOf(scene.window->childAt(center)));

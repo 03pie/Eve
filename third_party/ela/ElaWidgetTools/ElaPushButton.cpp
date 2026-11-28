@@ -3,6 +3,7 @@
 #include "ElaApplication.h"
 #include <QPainter>
 #include <QPainterPath>
+#include <QVariant>
 
 #include "ElaTheme.h"
 #include "private/ElaPushButtonPrivate.h"
@@ -97,16 +98,22 @@ void ElaPushButton::paintEvent(QPaintEvent* event)
     // 背景绘制
     painter.save();
     QRect foregroundRect = rect().adjusted(1, 1, -1, -1);
-    if (d->_themeMode == ElaThemeType::Light)
+    const bool light = d->_themeMode == ElaThemeType::Light;
+    const QColor idle = light ? d->_pLightDefaultColor : d->_pDarkDefaultColor;
+    const QColor hover = light ? d->_pLightHoverColor : d->_pDarkHoverColor;
+    const QColor press = light ? d->_pLightPressColor : d->_pDarkPressColor;
+    auto disabled = ElaThemeColor(d->_themeMode, BasicDisable);
+    if (property("ElaTranslucentFill").toBool())
+        disabled.setAlpha(qMin(disabled.alpha(), idle.alpha()));
+    if (light)
     {
         painter.setPen(ElaThemeColor(ElaThemeType::Light, BasicBorder));
-        painter.setBrush(isEnabled() ? d->_isPressed ? d->_pLightPressColor : (underMouse() ? d->_pLightHoverColor : d->_pLightDefaultColor) : ElaThemeColor(d->_themeMode, BasicDisable));
     }
     else
     {
         painter.setPen(Qt::NoPen);
-        painter.setBrush(isEnabled() ? d->_isPressed ? d->_pDarkPressColor : (underMouse() ? d->_pDarkHoverColor : d->_pDarkDefaultColor) : ElaThemeColor(d->_themeMode, BasicDisable));
     }
+    painter.setBrush(isEnabled() ? (d->_isPressed ? press : underMouse() ? hover : idle) : disabled);
     painter.drawRoundedRect(foregroundRect, d->_pBorderRadius, d->_pBorderRadius);
     // 底边线绘制
     if (!d->_isPressed)

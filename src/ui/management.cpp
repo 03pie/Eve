@@ -7,6 +7,7 @@
 #include "management_p.hpp"
 #include "management_protection_p.hpp"
 #include "status_p.hpp"
+#include "theme_palette_p.hpp"
 #include "workbench_dialog_p.hpp"
 #include <ElaComboBox.h>
 #include <ElaDialog.h>
@@ -251,6 +252,7 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
         auto configTable = new ElaTableView(panel);
         configurationTable = configTable;
         configTable->setObjectName("EveManagementConfigurationTable");
+        bindWorkbenchContentPalette(configTable);
         configurationModel = new QStandardItemModel(0, 5, configTable);
         configTable->setModel(configurationModel);
         configurationModel->setHorizontalHeaderLabels({QString::fromUtf8("配置路径"), QString::fromUtf8("插件"),
@@ -288,6 +290,7 @@ struct ManagementControl : DiagnosticsEndpoint, std::enable_shared_from_this<Man
         auto editor = new ElaPlainTextEdit(panel);
         configurationEditor = editor;
         editor->setObjectName("EvePluginConfigurationEditor");
+        bindWorkbenchContentPalette(editor);
         editor->setPlaceholderText(QString::fromUtf8("当前插件的 YAML / JSON 配置；应用后仍需显式保存。"));
         editor->setMinimumHeight(120);
         editor->setLineWrapMode(QPlainTextEdit::NoWrap);
@@ -1500,6 +1503,7 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
     auto table = new ElaTableView(root);
     state->model = new QStandardItemModel(0, 5, table);
     table->setModel(state->model); table->setObjectName("EveInstanceTable");
+    bindWorkbenchContentPalette(table);
     state->model->setHorizontalHeaderLabels({QString::fromUtf8("实例"), QString::fromUtf8("插件"), QString::fromUtf8("状态"), QString::fromUtf8("配置修订"), QString::fromUtf8("代次")});
     table->setSelectionBehavior(QAbstractItemView::SelectRows); table->setSelectionMode(QAbstractItemView::SingleSelection);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -1546,6 +1550,7 @@ std::shared_ptr<ManagementControl> createManagement(QWidget* parent, std::shared
     auto details = new ElaPlainTextEdit(tabs); details->setObjectName("EveManagementDetails"); details->setReadOnly(true); tabs->addTab(details, QString::fromUtf8("实例详情")); state->details = details;
     auto services = new ElaPlainTextEdit(tabs); services->setObjectName("EveManagementServices"); services->setReadOnly(true); tabs->addTab(services, QString::fromUtf8("服务与界面")); state->services = services;
     auto operations = new ElaPlainTextEdit(tabs); operations->setObjectName("EveManagementOperations"); operations->setReadOnly(true); tabs->addTab(operations, QString::fromUtf8("操作记录")); state->operationsView = operations;
+    for (auto editor : {details, services, operations}) bindWorkbenchContentPalette(editor);
     auto status = new ElaText(root); status->setTextPixelSize(14); status->setObjectName("EveManagementStatus"); status->setTextFormat(Qt::PlainText); status->setWordWrap(true); layout->addWidget(status); state->status = status;
     auto timer = new QTimer(root); timer->setInterval(250); state->timer = timer;
     std::weak_ptr<ManagementControl> weak = state;
@@ -1735,6 +1740,7 @@ Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& contr
         layout->addWidget(hint);
         layout->addWidget(new ElaText(QString::fromUtf8("插件类型"), 14, dialog));
         control->addType = new ElaComboBox(dialog);
+        control->addType->setProperty("ElaTranslucentFill", true);
         control->addType->setObjectName("EveAddPluginType");
         control->addType->setAccessibleName(QString::fromUtf8("已注册插件类型"));
         layout->addWidget(control->addType);
@@ -1756,6 +1762,7 @@ Result<void> showAddPluginDialog(const std::shared_ptr<ManagementControl>& contr
         layout->addWidget(new ElaText(QString::fromUtf8("插件配置 · YAML / JSON"), 14, dialog));
         control->addConfiguration = new ElaPlainTextEdit(dialog);
         control->addConfiguration->setObjectName("EveAddPluginConfiguration");
+        bindWorkbenchContentPalette(control->addConfiguration);
         control->addConfiguration->setAccessibleName(QStringLiteral("插件配置 YAML 或 JSON"));
         control->addConfiguration->setPlainText("{}");
         layout->addWidget(control->addConfiguration, 1);

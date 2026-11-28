@@ -32,10 +32,11 @@ private:
     /** @brief Qt 标签容器的调色板同步 Ela 主题，避免透明编辑器叠在原生白底上。 */
     void applyTheme(ElaThemeType::ThemeMode mode)
     {
-        setPalette(workbenchPalette(palette(), mode));
+        setPalette(workbenchContentPalette(palette(), mode));
         tabBar()->setStyleSheet(QStringLiteral(
             "QTabBar::tab{background:%1;color:%2;border:0;border-bottom:2px solid transparent;"
-            "height:24px;padding:4px 10px;}QTabBar::tab:selected{background:transparent;border-bottom:2px solid %3;}")
+            "height:24px;padding:4px 10px;}QTabBar::tab:!selected{border-radius:4px;}"
+            "QTabBar::tab:selected{background:transparent;border-bottom:2px solid %3;}")
             .arg(eTheme->getThemeColor(mode, ElaThemeType::BasicSelectedAlpha).name(QColor::HexArgb),
                  eTheme->getThemeColor(mode, ElaThemeType::BasicText).name(),
                  eTheme->getThemeColor(mode, ElaThemeType::PrimaryNormal).name()));

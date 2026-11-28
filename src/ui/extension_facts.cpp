@@ -1,6 +1,7 @@
 #include "extension_facts_p.hpp"
 #include "extension_links_p.hpp"
 #include "appearance_p.hpp"
+#include "theme_palette_p.hpp"
 
 #include <eve/ui/extensions.hpp>
 #include <ElaFlowLayout.h>
@@ -148,7 +149,7 @@ ExtensionFacts::ExtensionFacts(QWidget* parent, CategorySelected categorySelecte
     setWidget(page);
     // The sidebar inherits the Ela dialog surface.
     page->setAutoFillBackground(false);
-    viewport()->setAutoFillBackground(false);
+    bindWorkbenchContentPalette(this);
 }
 
 void ExtensionFacts::setCategories(const QStringList& categories, bool navigationEnabled)

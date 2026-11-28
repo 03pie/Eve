@@ -36,6 +36,8 @@ void ElaToolButtonStyle::drawComplexControl(ComplexControl control, const QStyle
             {
                 break;
             }
+            // A bordered button can opt into theme alpha fills without losing its frame.
+            const bool alphaFill = _pIsTransparent || (widget && widget->property("ElaTranslucentFill").toBool());
             QRect toolButtonRect = bopt->rect;
             if (!_pIsTransparent)
             {
@@ -50,28 +52,28 @@ void ElaToolButtonStyle::drawComplexControl(ComplexControl control, const QStyle
             {
                 if (bopt->state.testFlag(QStyle::State_Sunken))
                 {
-                    painter->setBrush(_pIsTransparent ? ElaThemeColor(_themeMode, BasicPressAlpha) : ElaThemeColor(_themeMode, BasicPress));
+                    painter->setBrush(alphaFill ? ElaThemeColor(_themeMode, BasicPressAlpha) : ElaThemeColor(_themeMode, BasicPress));
                     painter->drawRoundedRect(toolButtonRect, _pBorderRadius, _pBorderRadius);
                 }
                 else
                 {
                     if (_pIsSelected)
                     {
-                        painter->setBrush(_pIsTransparent ? ElaThemeColor(_themeMode, BasicSelectedAlpha) : ElaThemeColor(_themeMode, BasicHover));
+                        painter->setBrush(alphaFill ? ElaThemeColor(_themeMode, BasicSelectedAlpha) : ElaThemeColor(_themeMode, BasicHover));
                         painter->drawRoundedRect(toolButtonRect, _pBorderRadius, _pBorderRadius);
                     }
                     else
                     {
                         if (bopt->state.testFlag(QStyle::State_MouseOver) || bopt->state.testFlag(QStyle::State_On))
                         {
-                            painter->setBrush(_pIsTransparent ? ElaThemeColor(_themeMode, BasicHoverAlpha) : ElaThemeColor(_themeMode, BasicHover));
+                            painter->setBrush(alphaFill ? ElaThemeColor(_themeMode, BasicHoverAlpha) : ElaThemeColor(_themeMode, BasicHover));
                             painter->drawRoundedRect(toolButtonRect, _pBorderRadius, _pBorderRadius);
                         }
                         else
                         {
                             if (!_pIsTransparent)
                             {
-                                painter->setBrush(ElaThemeColor(_themeMode, BasicBase));
+                                painter->setBrush(alphaFill ? ElaThemeColor(_themeMode, BasicBaseAlpha) : ElaThemeColor(_themeMode, BasicBase));
                                 painter->drawRoundedRect(toolButtonRect, _pBorderRadius, _pBorderRadius);
                                 // 底边线绘制
                                 painter->setPen(ElaThemeColor(_themeMode, BasicBaseLine));
@@ -85,7 +87,9 @@ void ElaToolButtonStyle::drawComplexControl(ComplexControl control, const QStyle
             {
                 if (!_pIsTransparent)
                 {
-                    painter->setBrush(ElaThemeColor(_themeMode, BasicDisable));
+                    auto disabled = ElaThemeColor(_themeMode, BasicDisable);
+                    if (alphaFill) disabled.setAlpha(ElaThemeColor(_themeMode, BasicBaseAlpha).alpha());
+                    painter->setBrush(disabled);
                     painter->drawRoundedRect(toolButtonRect, _pBorderRadius, _pBorderRadius);
                 }
             }
@@ -100,6 +104,14 @@ void ElaToolButtonStyle::drawComplexControl(ComplexControl control, const QStyle
 
             // 文字绘制
             _drawText(painter, contentRect, bopt);
+            if (bopt->state.testFlag(QStyle::State_HasFocus) && bopt->state.testFlag(QStyle::State_KeyboardFocusChange))
+            {
+                QStyleOptionFocusRect focus;
+                focus.initFrom(widget);
+                focus.rect = toolButtonRect.adjusted(3, 3, -3, -3);
+                focus.backgroundColor = ElaThemeColor(_themeMode, BasicBase);
+                QProxyStyle::drawPrimitive(QStyle::PE_FrameFocusRect, &focus, painter, widget);
+            }
             painter->restore();
         }
         return;

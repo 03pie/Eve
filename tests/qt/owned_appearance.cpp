@@ -178,7 +178,11 @@ void ownedAppearance(const QString& sourceBin)
         auto dialog = content->window();
         auto field = required<QAbstractScrollArea>(dialog, fieldName);
         PLATFORM_CHECK(dialog != window && field->isVisible());
-        cycle([&](bool dark, int mode) { evidence.record(label, dialog, field->viewport(), dark, mode); });
+        cycle([&](bool dark, int mode) {
+            const auto viewport = field->viewport();
+            PLATFORM_CHECK(!viewport->autoFillBackground() || viewport->palette().color(QPalette::Base).alpha() == 0);
+            evidence.record(label, dialog, viewport, dark, mode);
+        });
         dialog->close();
         until([&] { return !dialog->isVisible(); });
     };

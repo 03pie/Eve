@@ -105,7 +105,7 @@ void setScrollPage(QScrollArea* scroll, QWidget* page)
     scroll->setWidget(page);
     // QScrollArea::setWidget enables native background filling; keep the Ela dialog surface visible.
     page->setAutoFillBackground(false);
-    scroll->viewport()->setAutoFillBackground(false);
+    bindWorkbenchContentPalette(scroll);
 }
 QVBoxLayout* addTab(QTabWidget* tabs, const QString& title, int& index)
 {
@@ -269,6 +269,7 @@ ExtensionDialog::ExtensionDialog(std::shared_ptr<qt::QtScheduler> scheduler, std
     scope_->setIsBold(true);
     manage->addWidget(scope_);
     instance_ = new ElaComboBox(pane);
+    instance_->setProperty("ElaTranslucentFill", true);
     instance_->setObjectName("EveExtensionInstance");
     instance_->setAccessibleName(tr("工作区实例"));
     instance_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -320,12 +321,7 @@ ExtensionDialog::ExtensionDialog(std::shared_ptr<qt::QtScheduler> scheduler, std
     connect(retryButton_, &QPushButton::clicked, this, [this] { auto act = retry_; if (act) act(); });
     connect(logButton_, &QPushButton::clicked, this, [this] { presentWorkspaceAction(Action::ShowLogs, {}, {}); });
     connect(window_, &QDialog::finished, this, [this] { resetPresentation(); });
-    auto theme = [this](ElaThemeType::ThemeMode mode) {
-        window_->setPalette(workbenchPalette(window_->palette(), mode));
-        updateIcon();
-    };
-    theme(eTheme->getThemeMode());
-    connect(eTheme, &ElaTheme::themeModeChanged, this, theme);
+    connect(eTheme, &ElaTheme::themeModeChanged, this, [this] { updateIcon(); });
     window_->installEventFilter(this);
 }
 

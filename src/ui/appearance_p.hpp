@@ -10,8 +10,18 @@
 #include <QPaintEvent>
 #include <QPainter>
 #include <QString>
+#include <QVariant>
 
 namespace eve::ui::detail {
+inline void drawWorkbenchPopup(QPainter& painter, const QRectF& bounds)
+{
+    const auto mode = eTheme->getThemeMode();
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(eTheme->getThemeColor(mode, ElaThemeType::PopupBorder));
+    painter.setBrush(eTheme->getThemeColor(mode, ElaThemeType::PopupBase));
+    painter.drawRoundedRect(bounds.adjusted(.5, .5, -.5, -.5), 6, 6);
+}
+
 /** @brief 继承 Ela 的开关绘制与动画，补齐 Space/Enter 操作和可见键盘焦点。 */
 class KeyboardToggleSwitch final : public ElaToggleSwitch {
 public:
@@ -47,7 +57,16 @@ protected:
 class ActionButton final : public ElaPushButton {
 public:
     /** @brief 不改变调用方信号和按钮能力。 */
-    ActionButton(const QString& text, QWidget* parent) : ElaPushButton(text, parent) {}
+    ActionButton(const QString& text, QWidget* parent) : ElaPushButton(text, parent)
+    {
+        setProperty("ElaTranslucentFill", true);
+        setLightDefaultColor(eTheme->getThemeColor(ElaThemeType::Light, ElaThemeType::BasicBaseAlpha));
+        setLightHoverColor(eTheme->getThemeColor(ElaThemeType::Light, ElaThemeType::BasicHoverAlpha));
+        setLightPressColor(eTheme->getThemeColor(ElaThemeType::Light, ElaThemeType::BasicPressAlpha));
+        setDarkDefaultColor(eTheme->getThemeColor(ElaThemeType::Dark, ElaThemeType::BasicBaseAlpha));
+        setDarkHoverColor(eTheme->getThemeColor(ElaThemeType::Dark, ElaThemeType::BasicHoverAlpha));
+        setDarkPressColor(eTheme->getThemeColor(ElaThemeType::Dark, ElaThemeType::BasicPressAlpha));
+    }
 
 protected:
     /** @brief 键盘导航可明确辨认当前操作。 */

@@ -19,7 +19,7 @@ target_sources(eve_ui PRIVATE contributions.cpp runtime_log_archive.cpp runtime_
 target_link_libraries(eve_ui PUBLIC Eve::Qt Qt5::Widgets)
 eve_target_defaults(eve_ui)
 
-target_sources(${desktop_target} PRIVATE pages.cpp services.cpp notifications.cpp management.cpp workbench.cpp
+target_sources(${desktop_target} PRIVATE pages.cpp services.cpp notifications.cpp management.cpp workbench.cpp workbench_titlebar.cpp
     home.cpp preferences.cpp brand.cpp output.cpp panel.cpp settings_page.cpp settings_controls.cpp extension_dialog.cpp
     extension_readme.cpp extension_features.cpp extension_facts.cpp
     accessible_toggle.cpp output_view.cpp "${PROJECT_SOURCE_DIR}/app/shell/resources/eve_brand.qrc")

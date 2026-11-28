@@ -37,20 +37,24 @@ void ElaSpinBoxStyle::drawComplexControl(ComplexControl control, const QStyleOpt
         QRect spinBoxRect = sopt->rect.adjusted(1, 1, -1, -1);
         painter->setPen(ElaThemeColor(_themeMode, BasicBorder));
         bool isEnable = sopt->state.testFlag(QStyle::State_Enabled);
+        const bool alphaFill = widget && widget->property("ElaTranslucentFill").toBool();
+        const auto idle = alphaFill ? ElaThemeColor(_themeMode, BasicBaseAlpha) : ElaThemeColor(_themeMode, BasicBase);
         if (isEnable)
         {
             if (sopt->state & QStyle::State_MouseOver)
             {
-                painter->setBrush(ElaThemeColor(_themeMode, BasicHover));
+                painter->setBrush(alphaFill ? ElaThemeColor(_themeMode, BasicHoverAlpha) : ElaThemeColor(_themeMode, BasicHover));
             }
             else
             {
-                painter->setBrush(ElaThemeColor(_themeMode, BasicBase));
+                painter->setBrush(idle);
             }
         }
         else
         {
-            painter->setBrush(ElaThemeColor(_themeMode, BasicDisable));
+            auto disabled = ElaThemeColor(_themeMode, BasicDisable);
+            disabled.setAlpha(qMin(disabled.alpha(), idle.alpha()));
+            painter->setBrush(disabled);
         }
         painter->drawRoundedRect(spinBoxRect, 4, 4);
         //添加按钮

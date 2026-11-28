@@ -7,6 +7,7 @@
 #include <QAbstractItemModel>
 #include <QApplication>
 #include <QBuffer>
+#include <QColor>
 #include <QComboBox>
 #include <QDir>
 #include <QEventLoop>
@@ -17,6 +18,7 @@
 #include <QImage>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QPalette>
 #include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPointer>
@@ -28,6 +30,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
+#include <QtMath>
 #include <QWidget>
 #include <eve/loader/kernel_driver.hpp>
 #include <eve/loader/qt_store.hpp>
@@ -326,8 +329,14 @@ void layout()
             const auto pixels = scene.page->grab().toImage();
             const auto ratio = scene.page->devicePixelRatioF();
             const auto divider = scene.child<QSplitter>("EveConfigSplitter")->handle(1);
-            const auto dividerColor = pixels.pixelColor(divider->mapTo(scene.page, divider->rect().center()) * ratio);
-            CHECK(theme == ElaThemeType::Dark ? dividerColor.lightness() < 120 : dividerColor.lightness() > 160);
+            const auto center = divider->mapTo(scene.page, divider->rect().center()) * ratio;
+            CHECK(pixels.pixelColor(center) == eTheme->getThemeColor(theme, ElaThemeType::WindowBase));
+            const auto left = divider->mapTo(scene.page, QPoint(0, 0)).x();
+            const auto dividerColor = eTheme->getThemeColor(theme, ElaThemeType::BasicBorder);
+            bool hasDivider = false;
+            for (int x = qFloor(left * ratio); x < qCeil((left + divider->width()) * ratio); ++x)
+                hasDivider |= pixels.pixelColor(x, center.y()) == dividerColor;
+            CHECK(hasDivider);
             for (auto view : {editor, details}) {
                 const auto point = view->viewport()->mapTo(scene.page, QPoint(20, view->viewport()->height() - 20));
                 const auto background = pixels.pixelColor(qRound(point.x() * ratio), qRound(point.y() * ratio));
@@ -368,6 +377,19 @@ void layout()
             CHECK(scene.child<QPlainTextEdit>("EveConfigEditor")->toPlainText() == text);
         }
     }
+    QWidget owner;
+    const QColor backdrop(36, 49, 69);
+    auto palette = owner.palette();
+    palette.setColor(QPalette::Window, backdrop);
+    owner.setPalette(palette);
+    owner.setAutoFillBackground(true);
+    owner.resize(scene.page->size());
+    scene.page->setParent(&owner);
+    owner.show();
+    scene.page->show();
+    QCoreApplication::processEvents();
+    const auto surfacePoint = scene.page->mapTo(&owner, QPoint(8, 8)) * owner.devicePixelRatioF();
+    CHECK(owner.grab().toImage().pixelColor(surfacePoint) == backdrop);
     scene.close();
 }
 /** @brief 保存冲突保留窗口后，宿主能恢复关闭按钮并再次收到关闭请求。 */

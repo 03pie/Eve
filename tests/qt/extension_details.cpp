@@ -14,6 +14,7 @@
 #include <QLineEdit>
 #include <QListView>
 #include <QMenu>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
@@ -75,6 +76,13 @@ double luminance(const QColor& color)
 QRect boundsIn(QWidget* dialog, QWidget* widget)
 {
     return {widget->mapTo(dialog, QPoint{}), widget->size()};
+}
+
+QColor surfacePixel(QWidget* dialog, QWidget* field)
+{
+    const auto frame = dialog->grab();
+    const auto point = field->mapTo(dialog, QPoint(field->width() - 4, field->height() - 5));
+    return frame.toImage().pixelColor(point * frame.devicePixelRatioF());
 }
 
 void checkTabText(QWidget* dialog, QWidget* widget, QRect textArea, bool dark)
@@ -412,7 +420,38 @@ void extensionDetails()
     for (const auto mode : {ElaThemeType::Dark, ElaThemeType::Light}) {
         eTheme->setThemeMode(mode);
         auto bar = sections->tabBar();
+        window->setProperty("EveWallpaperVisible", false);
         QTest::mouseClick(bar, Qt::LeftButton, Qt::NoModifier, bar->tabRect(0).center());
+        const auto plainSurface = surfacePixel(dialog, reader->viewport());
+        sections->setCurrentWidget(changelog);
+        const auto plainChangelog = surfacePixel(dialog, changelog->viewport());
+        auto features = child<QWidget>(dialog, "EveExtensionFeatures");
+        sections->setCurrentWidget(features);
+        auto defaults = child<QPlainTextEdit>(features, "EveExtensionDefaultConfig");
+        require(defaults->isVisible() && defaults->toPlainText().contains(QStringLiteral("\"autosave\": true")),
+                "default configuration visible before changing the backdrop");
+        const auto plainDefaults = surfacePixel(dialog, defaults->viewport());
+
+        QPixmap wallpaper(24, 24);
+        wallpaper.fill(mode == ElaThemeType::Dark ? QColor("#294257") : QColor("#e5d7ec"));
+        qobject_cast<ElaWindow*>(window)->setWindowPixmap(mode, wallpaper);
+        window->setProperty("EveWallpaperVisible", true);
+        sections->setCurrentWidget(features);
+        require(surfacePixel(dialog, defaults->viewport()) != plainDefaults, "feature editor reveals the wallpaper");
+        const auto code = defaults->cursorRect(QTextCursor(defaults->document()->findBlockByNumber(1)));
+        checkTabText(dialog, defaults->viewport(), QRect(0, code.top(), defaults->viewport()->width(), code.height()),
+                     mode == ElaThemeType::Dark);
+        sections->setCurrentWidget(changelog);
+        require(surfacePixel(dialog, changelog->viewport()) != plainChangelog, "changelog reveals the wallpaper");
+        const auto changelogHeading = changelog->cursorRect(QTextCursor(changelog->document()->firstBlock()));
+        checkTabText(dialog, changelog->viewport(),
+                     QRect(0, changelogHeading.top(), changelog->viewport()->width(), changelogHeading.height()),
+                     mode == ElaThemeType::Dark);
+        QTest::mouseClick(bar, Qt::LeftButton, Qt::NoModifier, bar->tabRect(0).center());
+        const auto canvas = surfacePixel(dialog, dialog);
+        require(surfacePixel(dialog, reader->viewport()) == canvas && canvas != plainSurface,
+                "README shares the window wallpaper");
+        require(surfacePixel(dialog, sidebar->viewport()) == canvas, "installation sidebar shares the window wallpaper");
         const auto heading = reader->cursorRect(QTextCursor(reader->document()->firstBlock()));
         checkTabText(dialog, reader->viewport(), QRect(0, heading.top(), reader->viewport()->width(), heading.height()),
                      mode == ElaThemeType::Dark);
@@ -420,6 +459,7 @@ void extensionDetails()
         auto workspace = child<QLabel>(dialog, "EveExtensionWorkspace");
         checkTabText(dialog, workspace, workspace->rect(), mode == ElaThemeType::Dark);
     }
+    window->setProperty("EveWallpaperVisible", false);
     auto logs = child<QPushButton>(dialog, "EveExtensionShowLogs");
     require(logs->isVisible() && logs->isEnabled(), "plugin log action");
     auto menuLogs = menuAction(more->menu(), QStringLiteral("查看日志"));

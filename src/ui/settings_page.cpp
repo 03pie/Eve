@@ -1,5 +1,6 @@
 #include "appearance_p.hpp"
 #include "settings_page_p.hpp"
+#include "theme_palette_p.hpp"
 #include <ElaLineEdit.h>
 #include <ElaListView.h>
 #include <ElaScrollArea.h>
@@ -49,6 +50,7 @@ SettingsPage::SettingsPage(QWidget *parent, Guard guard) : QWidget(parent), guar
 {
     setWindowTitle(tr("设置"));
     setObjectName("EveSettingsPage");
+    bindWorkbenchContentPalette(this);
     auto outer = new QVBoxLayout(this);
     outer->setContentsMargins(16, 12, 16, 12);
     auto title = new ElaText(tr("设置"), 24, this);
@@ -93,6 +95,7 @@ SettingsPage::SettingsPage(QWidget *parent, Guard guard) : QWidget(parent), guar
     sections_->setAlignment(Qt::AlignTop);
     scroll_->setWidget(document_);
     document_->setAutoFillBackground(false);
+    bindWorkbenchContentPalette(scroll_);
     scroll_->viewport()->installEventFilter(this);
     body_->addWidget(scroll_, 1);
     outer->addLayout(body_, 1);

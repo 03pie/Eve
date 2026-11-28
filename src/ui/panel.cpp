@@ -2,6 +2,7 @@
  * @brief 可检索命令与当前运行问题；错误有来源、详情及稳定身份定位。
  */
 #include "panel_p.hpp"
+#include "appearance_p.hpp"
 #include "theme_palette_p.hpp"
 #include <ElaLineEdit.h>
 #include <ElaListView.h>
@@ -9,12 +10,15 @@
 #include <ElaText.h>
 #include <ElaTheme.h>
 #include <QApplication>
+#include <QAbstractListModel>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QHeaderView>
 #include <QHBoxLayout>
+#include <QPainter>
 #include <QPlainTextEdit>
 #include <QPointer>
+#include <QScopeGuard>
 #include <QSplitter>
 #include <QSignalBlocker>
 #include <QTabWidget>
@@ -24,123 +28,355 @@
 #include <set>
 #include <map>
 #include <algorithm>
+#include <utility>
 
 namespace eve::ui::detail
 {
 namespace
 {
-class CommandPalette final : public QWidget
+class QuickPageModel final : public QAbstractListModel
 {
   public:
-    explicit CommandPalette(QWidget* window) : QWidget(window)
+    using QAbstractListModel::QAbstractListModel;
+
+    int rowCount(const QModelIndex& parent = {}) const override
     {
-        hide();
-        setAutoFillBackground(true);
-        const auto theme = [this](ElaThemeType::ThemeMode mode) {
-            setPalette(workbenchPalette(palette(), mode, ElaThemeType::PopupBase));
+        return parent.isValid() ? 0 : static_cast<int>(pages_.size());
+    }
+    QVariant data(const QModelIndex& index, int role) const override
+    {
+        if (!index.isValid() || index.row() < 0 || index.row() >= rowCount()) return {};
+        const auto& page = pages_[static_cast<std::size_t>(index.row())];
+        if (role == Qt::UserRole) return page.key;
+        if (role == Qt::DisplayRole || role == Qt::AccessibleTextRole)
+            return page.category.isEmpty() ? page.title : page.title + QStringLiteral("  ·  ") + page.category;
+        return {};
+    }
+    void setPages(std::vector<QuickAccessPage> pages)
+    {
+        const auto matches = [](const auto& a, const auto& b) {
+            return a.key == b.key && a.title == b.title && a.category == b.category;
         };
-        theme(eTheme->getThemeMode());
-        connect(eTheme, &ElaTheme::themeModeChanged, this, theme);
+        if (std::equal(pages_.begin(), pages_.end(), pages.begin(), pages.end(), matches)) return;
+        QPointer<QuickPageModel> self(this);
+        beginResetModel();
+        if (!self) return;
+        pages_ = std::move(pages);
+        endResetModel();
+    }
+
+  private:
+    std::vector<QuickAccessPage> pages_;
+};
+
+class QuickAccess final : public QWidget
+{
+  public:
+    using Pages = std::function<std::vector<QuickAccessPage>()>;
+    using ActivatePage = std::function<void(const QString&)>;
+
+    QuickAccess(QWidget* host, QListView*& commandList) : QWidget(host)
+    {
+        setObjectName("EveCommandPanel");
+        hide();
+        auto layout = new QVBoxLayout(this);
+        layout->setContentsMargins(10, 6, 10, 6);
+        layout->setSpacing(4);
+        auto toolbar = new QHBoxLayout;
+        search_ = new ElaLineEdit(this);
+        search_->setObjectName("EveCommandFilter");
+        search_->setClearButtonEnabled(true);
+        toolbar->addWidget(search_, 1);
+        run_ = new ActionButton(tr("执行"), this);
+        run_->setObjectName("EveRunCommand");
+        run_->setFixedWidth(72);
+        toolbar->addWidget(run_);
+        layout->addLayout(toolbar);
+
+        auto makeList = [this, layout](const char* id) {
+            auto view = new ElaListView(this);
+            view->setObjectName(id);
+            view->setEditTriggers(QAbstractItemView::NoEditTriggers);
+            view->setItemHeight(32);
+            view->setFrameShape(QFrame::NoFrame);
+            view->setIsTransparent(true);
+            layout->addWidget(view, 1);
+            return view;
+        };
+        commands_ = makeList("EveCommandList");
+        commandList = commands_;
+        commands_->setAccessibleName(tr("命令结果"));
+        pages_ = makeList("EveQuickPageList");
+        pages_->setAccessibleName(tr("页面结果"));
+        model_ = new QuickPageModel(pages_);
+        pages_->setModel(model_);
+        commandResult_ = new ElaText(tr("选择命令后按回车执行。"), 12, this);
+        commandResult_->setObjectName("EveCommandResult");
+        pageResult_ = new ElaText(tr("没有匹配的页面。"), 12, this);
+        for (auto result : {commandResult_, pageResult_}) {
+            result->setTextFormat(Qt::PlainText);
+            result->setWordWrap(true);
+            layout->addWidget(result);
+        }
+        setFocusProxy(search_);
+        updateMode();
+
+        bindWorkbenchPalette(this, ElaThemeType::PopupBase);
+        connect(search_, &QLineEdit::textChanged, this, [this] {
+            updateMode();
+            refreshPages(false);
+        });
+        connect(search_, &QLineEdit::textEdited, this, [this](const QString& text) {
+            // Real edits can remove the command prefix. Programmatic search updates in command
+            // mode (including when the panel is hidden) continue to address the command model.
+            if (!commandEntry_ || text.startsWith(QLatin1Char('>'))) return;
+            commandEntry_ = false;
+            updateMode();
+            refreshPages(false);
+        });
+        connect(search_, &QLineEdit::returnPressed, this, [this] { activateCurrent(); });
+        connect(run_, &QPushButton::clicked, this, [this] { activateCurrent(); });
+        connect(pages_, &QListView::clicked, this, [this](const QModelIndex& index) { activatePage(index); });
+        connect(pages_, &QListView::activated, this, [this](const QModelIndex& index) { activatePage(index); });
+        connect(qApp, &QApplication::focusChanged, this, [this](QWidget*, QWidget* next) {
+            if (isVisible() && next && !owns(next)) dismiss(false);
+        });
         qApp->installEventFilter(this);
     }
-    void present(QWidget* trigger)
+    void configurePages(Pages source, ActivatePage activate)
     {
-        if (!isVisible())
-            origin_ = QApplication::focusWidget();
+        source_ = std::move(source);
+        activatePage_ = std::move(activate);
+        refreshPages();
+    }
+    void present(QWidget* trigger, QuickAccessMode mode)
+    {
+        if (!isVisible()) {
+            auto focus = QApplication::focusWidget();
+            origin_ = focus && focus->window() == parentWidget()->window() ? focus : nullptr;
+        }
+        const auto ticket = ++generation_;
         anchor_ = trigger;
+        commandEntry_ = mode == QuickAccessMode::Commands;
+        QPointer<QuickAccess> self(this);
+        search_->setText(commandEntry_ ? QStringLiteral(">") : QString{});
+        if (!self || ticket != generation_) return;
+        updateMode();
         place();
         show();
+        if (!self || ticket != generation_ || !isVisible()) return;
         raise();
-        if (auto search = findChild<QLineEdit*>("EveCommandFilter")) {
-            search->selectAll();
-            search->setFocus(Qt::ShortcutFocusReason);
-        }
+        search_->setFocus(Qt::ShortcutFocusReason);
+        if (self && ticket == generation_) refreshPages(false);
     }
-    void dismiss()
+    void dismiss(bool restoreFocus = true)
     {
-        if (!isVisible())
-            return;
+        if (!isVisible()) return;
+        const auto ticket = ++generation_;
+        QPointer<QuickAccess> self(this);
+        const auto origin = origin_;
+        origin_.clear();
         hide();
-        if (origin_ && origin_->isVisible())
-            origin_->setFocus();
+        if (self && ticket == generation_ && restoreFocus && origin && origin->isVisible() && origin->isEnabled())
+            origin->setFocus(Qt::ShortcutFocusReason);
+    }
+    void refreshPages(bool restoreSelection = true)
+    {
+        if (!isVisible() || mode_ != QuickAccessMode::Pages) return;
+        if (refreshingPages_) {
+            pageRefreshPending_ = true;
+            return;
+        }
+        const auto query = search_->text().simplified().split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        const auto selected = restoreSelection ? pages_->currentIndex().data(Qt::UserRole).toString() : QString{};
+        const auto ticket = generation_;
+        QPointer<QuickAccess> self(this);
+        refreshingPages_ = true;
+        const auto refreshed = qScopeGuard([self] {
+            if (!self) return;
+            self->refreshingPages_ = false;
+            if (std::exchange(self->pageRefreshPending_, false))
+                QTimer::singleShot(0, self.data(), [self] { if (self) self->refreshPages(); });
+        });
+        const auto source = source_;
+        auto pages = source ? source() : std::vector<QuickAccessPage>{};
+        if (!self || ticket != generation_ || !isVisible() || mode_ != QuickAccessMode::Pages) return;
+        pages.erase(std::remove_if(pages.begin(), pages.end(), [&](const auto& page) {
+            return !std::all_of(query.cbegin(), query.cend(), [&](const QString& term) {
+                return page.title.contains(term, Qt::CaseInsensitive) || page.category.contains(term, Qt::CaseInsensitive);
+            });
+        }), pages.end());
+        const auto found = std::find_if(pages.cbegin(), pages.cend(), [&](const auto& page) { return page.key == selected; });
+        const auto index = found == pages.cend() ? 0 : static_cast<int>(found - pages.cbegin());
+        model_->setPages(std::move(pages));
+        if (!self || ticket != generation_ || !isVisible() || mode_ != QuickAccessMode::Pages) return;
+        pages_->setCurrentIndex(model_->index(index, 0));
+        pageResult_->setVisible(model_->rowCount() == 0);
+        run_->setEnabled(model_->rowCount() != 0);
     }
 
   protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter painter(this);
+        drawWorkbenchPopup(painter, rect());
+    }
+
     bool eventFilter(QObject* object, QEvent* event) override
     {
         if (!isVisible())
             return false;
         auto widget = qobject_cast<QWidget*>(object);
-        if (object == parentWidget() && event->type() == QEvent::Resize)
-            place();
+        if ((object == parentWidget() || object == anchor_.data()) &&
+            (event->type() == QEvent::Resize || event->type() == QEvent::Move))
+            queuePlacement();
+        if (object == parentWidget()->window() && event->type() == QEvent::WindowDeactivate) {
+            const auto ticket = generation_;
+            QTimer::singleShot(0, this, [this, ticket] {
+                auto popup = QApplication::activePopupWidget();
+                if (ticket == generation_ && isVisible() && !parentWidget()->window()->isActiveWindow() &&
+                    (!popup || !owns(popup)))
+                    dismiss(false);
+            });
+        }
         if (event->type() == QEvent::MouseButtonPress &&
-            static_cast<QMouseEvent*>(event)->button() != Qt::NoButton && widget && widget != this && !isAncestorOf(widget))
-            hide();
-        if (event->type() == QEvent::KeyPress && widget && (widget == this || isAncestorOf(widget)) &&
-            static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
-            dismiss();
-            return true;
+            static_cast<QMouseEvent*>(event)->button() != Qt::NoButton && widget && !owns(widget)) {
+            dismiss(false);
+            return false;
+        }
+        if (widget && owns(widget) && (event->type() == QEvent::KeyPress || event->type() == QEvent::ShortcutOverride)) {
+            const auto key = static_cast<QKeyEvent*>(event)->key();
+            const bool changeSelection = widget == search_ && (key == Qt::Key_Down || key == Qt::Key_Up);
+            if (key == Qt::Key_Escape || changeSelection) {
+                event->accept();
+                if (event->type() == QEvent::KeyPress) {
+                    if (changeSelection) moveSelection(key == Qt::Key_Down ? 1 : -1);
+                    else dismiss();
+                }
+                return true;
+            }
         }
         return false;
     }
 
   private:
+    ElaLineEdit* search_;
+    QListView *commands_, *pages_;
+    QuickPageModel* model_;
+    ElaPushButton* run_;
+    ElaText *commandResult_, *pageResult_;
     QPointer<QWidget> origin_, anchor_;
+    Pages source_;
+    ActivatePage activatePage_;
+    QuickAccessMode mode_ = QuickAccessMode::Commands;
+    bool commandEntry_ = true;
+    bool placementQueued_ = false;
+    bool refreshingPages_ = false, pageRefreshPending_ = false;
+    quint64 generation_ = 0;
+
+    bool owns(const QWidget* widget) const
+    {
+        for (auto candidate = widget; candidate; candidate = candidate->parentWidget())
+            if (candidate == this) return true;
+        return false;
+    }
+    void updateMode()
+    {
+        const bool commands = commandEntry_ || search_->text().startsWith(QLatin1Char('>'));
+        mode_ = commands ? QuickAccessMode::Commands : QuickAccessMode::Pages;
+        search_->setPlaceholderText(commands ? tr("搜索平台和插件命令（名称或 ID）") : tr("搜索页面，输入 > 运行命令"));
+        search_->setAccessibleName(commands ? tr("搜索命令") : tr("搜索页面"));
+        commands_->setVisible(commands);
+        pages_->setVisible(!commands);
+        commandResult_->setVisible(commands);
+        pageResult_->setVisible(!commands && model_->rowCount() == 0);
+        run_->setText(commands ? tr("执行") : tr("打开"));
+        run_->setEnabled(commands || model_->rowCount() != 0);
+    }
+    QListView* activeList() const { return mode_ == QuickAccessMode::Commands ? commands_ : pages_; }
+    void moveSelection(int direction)
+    {
+        auto list = activeList();
+        const auto* model = list->model();
+        if (!model) return;
+        const int total = model->rowCount();
+        const int current = list->currentIndex().isValid() ? list->currentIndex().row() : direction < 0 ? 0 : -1;
+        for (int step = 1; step <= total; ++step) {
+            const auto candidate = model->index((current + step * direction + total) % total, 0);
+            if (!candidate.flags().testFlag(Qt::ItemIsEnabled)) continue;
+            list->setCurrentIndex(candidate);
+            return;
+        }
+    }
+    void activateCurrent()
+    {
+        auto list = activeList();
+        const auto ticket = generation_;
+        QPointer<QuickAccess> self(this);
+        if (!list->currentIndex().isValid()) moveSelection(1);
+        if (!self || ticket != generation_ || list != activeList()) return;
+        const auto index = list->currentIndex();
+        if (!index.isValid()) return;
+        if (mode_ == QuickAccessMode::Commands) Q_EMIT commands_->activated(index);
+        else activatePage(index);
+    }
+    void activatePage(const QModelIndex& index)
+    {
+        if (!isVisible() || mode_ != QuickAccessMode::Pages || index.model() != model_) return;
+        const auto key = index.data(Qt::UserRole).toString();
+        const auto activate = activatePage_;
+        if (key.isEmpty() || !activate) return;
+        QPointer<QuickAccess> self(this);
+        dismiss();
+        if (self) activate(key);
+    }
+    void queuePlacement()
+    {
+        if (placementQueued_) return;
+        placementQueued_ = true;
+        QTimer::singleShot(0, this, [this] {
+            placementQueued_ = false;
+            if (isVisible()) place();
+        });
+    }
     void place()
     {
         auto host = parentWidget();
-        const int width = std::min(480, host->width());
-        const auto point = anchor_ ? anchor_->mapTo(host, QPoint(anchor_->width() / 2, anchor_->height()))
-                                   : QPoint(host->width() / 2, 38);
-        setGeometry(std::clamp(point.x() - width / 2, 0, host->width() - width), point.y(), width,
-                    std::max(0, std::min(280, host->height() - point.y())));
+        const int width = std::min(520, host->width());
+        const auto contents = host->contentsRect();
+        const auto point = anchor_ && anchor_->isVisibleTo(host) && !anchor_->visibleRegion().isEmpty()
+            ? anchor_->mapTo(host, QPoint(anchor_->width() / 2, anchor_->height()))
+            : QPoint(contents.center().x(), contents.top());
+        const auto top = std::clamp(point.y(), 0, host->height());
+        setGeometry(std::clamp(point.x() - width / 2, 0, host->width() - width), top, width,
+                    std::min(280, host->height() - top));
     }
 };
 } // namespace
-void showCommandPanel(QWidget* window, QWidget* anchor)
+void configureQuickAccessPages(QWidget* panel, std::function<std::vector<QuickAccessPage>()> pages,
+                               std::function<void(const QString&)> activate)
 {
-    if (auto page = window->findChild<QWidget*>("EveCommandPanel"))
-        static_cast<CommandPalette*>(page)->present(anchor);
+    if (auto access = dynamic_cast<QuickAccess*>(panel)) access->configurePages(std::move(pages), std::move(activate));
+}
+void refreshQuickAccessPages(QWidget* panel)
+{
+    if (auto access = dynamic_cast<QuickAccess*>(panel)) access->refreshPages();
+}
+void showQuickAccess(QWidget* panel, QWidget* anchor, QuickAccessMode mode)
+{
+    if (auto access = dynamic_cast<QuickAccess*>(panel)) access->present(anchor, mode);
+}
+void dismissQuickAccess(QWidget* panel)
+{
+    if (auto access = dynamic_cast<QuickAccess*>(panel)) access->dismiss();
 }
 void dismissCommandPanel(QWidget* list)
 {
-    if (list && list->parentWidget() && list->parentWidget()->objectName() == "EveCommandPanel")
-        static_cast<CommandPalette*>(list->parentWidget())->dismiss();
+    if (list) dismissQuickAccess(list->parentWidget());
 }
 QWidget* createCommandPanel(QWidget* parent, QListView*& list)
 {
-    auto page = new CommandPalette(parent);
-    page->setObjectName("EveCommandPanel");
-    auto layout = new QVBoxLayout(page);
-    layout->setContentsMargins(10, 6, 10, 6);
-    layout->setSpacing(4);
-    auto toolbar = new QHBoxLayout;
-    auto search = new ElaLineEdit(page);
-    search->setObjectName("EveCommandFilter");
-    search->setPlaceholderText(QString::fromUtf8("搜索平台和插件命令（名称或 ID）"));
-    search->setClearButtonEnabled(true);
-    search->setAccessibleName(QString::fromUtf8("搜索命令"));
-    auto run = new ElaPushButton(QString::fromUtf8("执行"), page);
-    run->setObjectName("EveRunCommand");
-    run->setFixedWidth(72);
-    toolbar->addWidget(search, 1);
-    toolbar->addWidget(run);
-    layout->addLayout(toolbar);
-    auto view = new ElaListView(page);
-    list = view;
-    view->setObjectName("EveCommandList");
-    view->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    view->setItemHeight(32);
-    view->setFrameShape(QFrame::NoFrame);
-    view->setIsTransparent(true);
-    layout->addWidget(view, 1);
-    auto result = new ElaText(QString::fromUtf8("选择命令后按回车、双击或点击执行。"), 12, page);
-    result->setTextFormat(Qt::PlainText);
-    result->setObjectName("EveCommandResult");
-    result->setWordWrap(true);
-    layout->addWidget(result);
-    page->setFocusProxy(search);
-    return page;
+    return new QuickAccess(parent, list);
 }
 namespace
 {
@@ -176,7 +412,7 @@ void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService>
     filter->setClearButtonEnabled(true);
     auto actions = new QHBoxLayout;
     actions->addWidget(filter, 1);
-    auto related = new ElaPushButton(QString::fromUtf8("查看相关日志"), page);
+    auto related = new ActionButton(QString::fromUtf8("查看相关日志"), page);
     related->setObjectName("EveProblemLog");
     related->setEnabled(false);
     actions->addWidget(related);
@@ -196,20 +432,21 @@ void installProblemsPanel(QTabWidget* panel, std::shared_ptr<DiagnosticsService>
     // QHeaderView and Qt's Windows style have their own section and selection
     // surfaces. Paint these leaf roles from the same Ela tokens as the page.
     const auto theme = [tree, detail, split](ElaThemeType::ThemeMode mode) {
-        auto colors = workbenchPalette(tree->palette(), mode);
-        tree->setPalette(colors);
-        tree->header()->setPalette(colors);
-        detail->setPalette(colors);
-        const auto text = colors.color(QPalette::Text).name();
-        const auto selection = colors.color(QPalette::Highlight).name();
-        const auto selectedText = colors.color(QPalette::HighlightedText).name();
+        applyWorkbenchContentPalette(tree, mode);
+        applyWorkbenchContentPalette(tree->header(), mode);
+        applyWorkbenchContentPalette(detail, mode);
+        const auto text = eTheme->getThemeColor(mode, ElaThemeType::BasicText).name();
+        const auto selection = eTheme->getThemeColor(mode, ElaThemeType::PrimaryNormal).name();
+        const auto selectedText = eTheme->getThemeColor(mode, ElaThemeType::BasicTextInvert).name();
         const QString editor = QStringLiteral(
             "background:transparent;color:%1;selection-background-color:%2;selection-color:%3;border:0;")
             .arg(text, selection, selectedText);
         tree->setStyleSheet(QStringLiteral(
-            "QTreeWidget{%1}QHeaderView,QHeaderView::section{background:%2;color:%3;border:0;}"
+            "QTreeWidget{%1}QHeaderView{background:transparent;color:%3;border:0;}"
+            "QHeaderView::section{background:%2;color:%3;border:0;}"
             "QTreeWidget::item:selected{background:%4;color:%5;}")
-            .arg(editor, colors.color(QPalette::Base).name(), text, selection, selectedText));
+            .arg(editor, eTheme->getThemeColor(mode, ElaThemeType::BasicBaseAlpha).name(QColor::HexArgb),
+                 text, selection, selectedText));
         detail->setStyleSheet(QStringLiteral("QPlainTextEdit{%1}").arg(editor));
         split->setStyleSheet(QStringLiteral("QSplitter::handle{background:%1;}")
             .arg(eTheme->getThemeColor(mode, ElaThemeType::BasicBorder).name()));

@@ -2,12 +2,12 @@
  * @brief 真实 Ela 窗口验证偏好隔离/失败恢复、键盘开关和类型化状态呈现。
  */
 #include <ElaComboBox.h>
+#include <ElaAppBar.h>
 #include <ElaLineEdit.h>
 #include <ElaMenu.h>
 #include <ElaMenuBar.h>
 #include <ElaPlainTextEdit.h>
 #include <ElaSpinBox.h>
-#include <ElaSuggestBox.h>
 #include <ElaTableView.h>
 #include <ElaText.h>
 #include <ElaTheme.h>
@@ -464,17 +464,38 @@ void showcase()
                               QString::number(qRound(scene.window->devicePixelRatioF() * 100)) + ".png";
             CHECK(scene.window->grab().save(path));
         }
-        for (const auto size : {QSize(1000, 600), QSize(1880, 900)}) {
+        for (const auto size : {QSize(560, 600), QSize(1000, 600), QSize(1880, 900)}) {
             scene.window->resize(size);
             QTest::qWait(20);
             const auto contained = [&](QWidget* widget) {
                 return scene.window->rect().contains(QRect(widget->mapTo(scene.window, QPoint()), widget->size()));
             };
             auto menu = scene.find<ElaMenuBar>("EveMenuBar");
-            CHECK(contained(menu) && menu->rect().contains(menu->actionGeometry(menu->actions().back())));
-            CHECK(contained(scene.find<ElaSuggestBox>("EvePageSearch")));
-            CHECK(contained(scene.find<QWidget>("EveNavigateBack")));
-            CHECK(contained(scene.find<QWidget>("EveNavigateForward")));
+            auto overflow = scene.find<QToolButton>("EveMenuOverflow");
+            auto appBar = scene.find<ElaAppBar>("ElaAppBar");
+            const auto aligned = [appBar](QWidget* widget) {
+                return qAbs(widget->mapTo(appBar, widget->rect().center()).y() - appBar->rect().center().y()) <= 1;
+            };
+            CHECK(aligned(scene.find<QLabel>("ElaAppBarIcon")));
+            int windowButtons = 0;
+            for (const auto button : appBar->findChildren<QAbstractButton*>(QString(), Qt::FindDirectChildrenOnly)) {
+                if (!button->isVisible()) continue;
+                CHECK(aligned(button));
+                ++windowButtons;
+            }
+            CHECK(windowButtons == 3);
+            CHECK(menu->isVisible() != overflow->isVisible());
+            if (menu->isVisible())
+                CHECK(contained(menu) && aligned(menu) && menu->rect().contains(menu->actionGeometry(menu->actions().back())));
+            else
+                CHECK(contained(overflow) && aligned(overflow));
+            auto center = scene.find<QToolButton>("EveCommandCenterButton");
+            CHECK(center->isVisible() && contained(center) && aligned(center));
+            for (const auto name : {"EveNavigateBack", "EveNavigateForward", "EveTitleNavigation", "EveTogglePanel"}) {
+                auto button = scene.find<QToolButton>(name);
+                if (button->isVisible())
+                    CHECK(contained(button) && aligned(button));
+            }
         }
         const auto capture = [&](const QString& name) {
             QTest::qWait(40);
@@ -695,15 +716,24 @@ void settingsSearch()
     scene.close();
     CHECK(!QFile::exists(path));
 }
-void captureSettingWindow(ElaWindow* window, const QString& name)
+void captureSettingWindow(ElaWindow* window, const QString& name, bool includeDesktopMaterial = false)
 {
     if (!qEnvironmentVariableIsSet("EVE_SETTINGS_EVIDENCE")) return;
     const QDir evidence(qEnvironmentVariable("EVE_SETTINGS_EVIDENCE"));
     CHECK(QApplication::platformName()=="windows" && evidence.mkpath("."));
     window->raise();
+    if (includeDesktopMaterial) {
+        window->activateWindow();
+        CHECK(QTest::qWaitForWindowActive(window));
+    }
     QTest::qWait(100);
     auto screen=QGuiApplication::screenAt(window->frameGeometry().center());
-    CHECK(screen && screen->grabWindow(window->winId()).save(evidence.filePath(name)));
+    CHECK(screen);
+    const auto position = window->mapToGlobal(QPoint{}) - screen->geometry().topLeft();
+    const auto screenshot = includeDesktopMaterial
+        ? screen->grabWindow(0, position.x(), position.y(), window->width(), window->height())
+        : screen->grabWindow(window->winId());
+    CHECK(screenshot.save(evidence.filePath(name)));
 }
 void settingsNavigation()
 {
@@ -752,6 +782,45 @@ void settingsNavigation()
     scene.close();
 }
 #ifdef Q_OS_WIN
+bool acrylicAllowed(ElaWindow& window);
+void verifyAcrylicSurface(ElaWindow& window);
+void settingsDirectAcrylic()
+{
+    CHECK(QApplication::platformName() == "windows");
+    QTemporaryDir directory;
+    CHECK(directory.isValid());
+    const auto path = directory.filePath("appearance.json");
+    {
+        Scene scene(path);
+        if (!acrylicAllowed(*scene.window)) {
+            std::cout << "SKIP: desktop currently requires solid surfaces\n";
+            scene.close();
+            return;
+        }
+        scene.settings();
+        auto material = scene.find<ElaComboBox>("EveSettingsMaterial");
+        CHECK(material->currentIndex() == ElaApplicationType::Normal);
+        captureSettingWindow(scene.window, "acrylic-standard.png", true);
+        material->setCurrentIndex(ElaApplicationType::Acrylic);
+        verifyAcrylicSurface(*scene.window);
+        captureSettingWindow(scene.window, "acrylic-direct.png", true);
+        eTheme->setThemeMode(ElaThemeType::Dark);
+        verifyAcrylicSurface(*scene.window);
+        material->setCurrentIndex(ElaApplicationType::Normal);
+        material->setCurrentIndex(ElaApplicationType::Acrylic);
+        verifyAcrylicSurface(*scene.window);
+        scene.close();
+    }
+    CHECK(read(path).value("material").toInt() == ElaApplicationType::Acrylic);
+    eApp->setWindowDisplayMode(ElaApplicationType::Normal);
+    Scene restored(path);
+    restored.settings();
+    CHECK(restored.find<ElaComboBox>("EveSettingsMaterial")->currentIndex() == ElaApplicationType::Acrylic);
+    verifyAcrylicSurface(*restored.window);
+    captureSettingWindow(restored.window, "acrylic-restored.png", true);
+    restored.close();
+}
+
 void settingsNativeIme()
 {
     Scene scene({});
@@ -798,9 +867,31 @@ void settingsAppearance()
             sample.setPixelColor(x,y,QColor(35+3*x, 52+4*y, 225-2*x));
     {
         Scene scene(file);
+        auto plugin = scene.kernel->registerPlugin("appearance.fixture", [](Context) { return completedTask(); }).value();
+        auto instance = scene.kernel->mount(plugin).value();
+        until([&] { return instance.ready().isReady(); });
+        scene.shell.management()->refresh().value();
         scene.settings();
+        auto tabs = scene.find<QTabBar>("EvePageTabs");
+        auto centralPanel = tabs->parentWidget()->parentWidget();
+        QImage surface(centralPanel->size(), QImage::Format_ARGB32_Premultiplied);
+        surface.fill(Qt::transparent);
+        centralPanel->render(&surface, {}, {}, QWidget::DrawWindowBackground);
+        const int bottom = surface.height() - 2;
+        CHECK(surface.pixelColor(2, bottom).alpha() == 0);
+        CHECK(surface.pixelColor(surface.width() - 3, bottom).alpha() == 0);
+        CHECK(surface.pixelColor(surface.width() / 2, bottom).alpha() > 0);
+        QColor quickOpenFill, cardActionFill;
+        const auto buttonColor = [&](QWidget* button, const QPixmap& image) {
+            const auto point = button->mapTo(scene.window, QPoint(button->width() - 10, button->height() / 2));
+            return image.toImage().pixelColor(point * image.devicePixelRatio());
+        };
         for (const auto& path : {dir.filePath("a.png"), dir.filePath("b.jpg"), picture}) {
-            CHECK(sample.save(path));
+            const auto extension = QFileInfo(path).suffix();
+            auto background = sample;
+            if (extension == "png") background.fill(QColor(55, 78, 240));
+            if (extension == "jpg") background.fill(QColor(238, 75, 57));
+            CHECK(background.save(path));
             scene.find<QToolButton>("EveBackgroundPicker")->click();
             auto dialog = scene.window->findChild<QFileDialog*>();
             CHECK(dialog);
@@ -809,6 +900,23 @@ void settingsAppearance()
             CHECK(QMetaObject::invokeMethod(dialog, "accept"));
             until([&] { return !lifetime; });
             CHECK(!scene.window->getWindowPixmap(ElaThemeType::Light).isNull());
+            if (scene.window->property("EveWallpaperVisible").toBool() && extension != "webp") {
+                scene.find<QAction>("EveOpenHome")->trigger();
+                auto quick = scene.find<QToolButton>("EveCommandCenterButton");
+                auto manage = scene.find<QPushButton>("EvePluginManage");
+                until([&] { return quick->isVisible() && manage->isVisible(); });
+                const auto image = scene.window->grab();
+                const auto quickColor = buttonColor(quick, image);
+                const auto manageColor = buttonColor(manage, image);
+                if (extension == "png") {
+                    quickOpenFill = quickColor;
+                    cardActionFill = manageColor;
+                } else {
+                    CHECK(quickColor.red() > quickOpenFill.red() && quickColor.blue() < quickOpenFill.blue());
+                    CHECK(manageColor.red() > cardActionFill.red() && manageColor.blue() < cardActionFill.blue());
+                }
+                scene.settings();
+            }
         }
         until([&]{ return !scene.find<QPushButton>("EveResetBackground")->isHidden(); });
         auto effects = scene.find<ElaComboBox>("EveSettingsTransition");
@@ -1292,6 +1400,8 @@ int main(int argc, char** argv)
             scene.close();
         }
 #ifdef Q_OS_WIN
+        else if (name == "settings_direct_acrylic")
+            settingsDirectAcrylic();
         else if (name == "settings_native_ime")
             settingsNativeIme();
         else if (name == "output_source_speech")

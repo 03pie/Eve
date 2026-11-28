@@ -2,11 +2,12 @@
  * @brief 真实页面完整准备后等待原发布组，清理和恢复仍走原作用域。
  */
 #include "ui_publication_p.hpp"
-#include <ElaSuggestBox.h>
 #include <QAbstractItemModel>
 #include <QLineEdit>
+#include <QListView>
 #include <QTabBar>
 #include <QTest>
+#include <QToolButton>
 #include <QTreeView>
 #include <algorithm>
 #include <eve/replacement_scope.hpp>
@@ -85,16 +86,17 @@ void held()
     CHECK(wait(instance.ready(), scene.scheduler)->hasValue());
     CHECK(take(instance.snapshot()).state == InstanceState::Active);
     hidden(scene, trace);
-    auto* search = scene.find<ElaSuggestBox>("EvePageSearch");
-    auto* suggestions = search->findChild<QAbstractItemModel*>();
-    auto* edit = search->findChild<QLineEdit*>();
+    auto* launch = scene.find<QToolButton>("EveCommandCenterButton");
+    auto* results = scene.find<QListView>("EveQuickPageList");
+    auto* edit = scene.find<QLineEdit>("EveCommandFilter");
     auto* tabs = scene.find<QTabBar>("EvePageTabs");
-    CHECK(suggestions && edit);
     const auto tabsBefore = tabs->count();
-    search->setSearchText("candidate");
-    CHECK(suggestions->rowCount() == 0);
-    CHECK(QMetaObject::invokeMethod(edit, "returnPressed", Qt::DirectConnection));
+    QTest::mouseClick(launch, Qt::LeftButton);
+    QTest::keyClicks(edit, "candidate");
+    CHECK(results->isVisible() && results->model()->rowCount() == 0);
+    QTest::keyClick(edit, Qt::Key_Return);
     CHECK(tabs->count() == tabsBefore && scene.window->findChildren<QWidget*>("EvePluginCard").empty());
+    QTest::keyClick(edit, Qt::Key_Escape);
     auto normal = take(scene.kernel->mount(registered(scene, ordinary, "ordinary")));
     CHECK(wait(normal.ready(), scene.scheduler)->hasValue());
     take(ordinary.pages.front().navigate());
@@ -102,11 +104,16 @@ void held()
     take(group.commit());
     barrier(scene.scheduler);
     CHECK(trace.created == 2 && trace.destroyed == 0);
-    search->setSearchText("candidate");
-    CHECK(suggestions->rowCount() == 2);
+    QTest::mouseClick(launch, Qt::LeftButton);
+    QTest::keyClicks(edit, "candidate");
+    CHECK(results->model()->rowCount() == 2);
+    const auto initialKey = results->currentIndex().data(Qt::UserRole).toString();
+    QTest::keyClick(edit, Qt::Key_Down);
+    const auto selectedKey = results->currentIndex().data(Qt::UserRole).toString();
+    CHECK(!initialKey.isEmpty() && !selectedKey.isEmpty() && initialKey != selectedKey);
     const auto tabsBeforeSelection = tabs->count();
-    CHECK(QMetaObject::invokeMethod(edit, "returnPressed", Qt::DirectConnection));
-    CHECK(tabs->count() == tabsBeforeSelection + 1);
+    QTest::keyClick(edit, Qt::Key_Return);
+    CHECK(tabs->count() == tabsBeforeSelection + 1 && scene.window->getCurrentNavigationPageKey() == selectedKey);
     CHECK(std::any_of(trace.pages.begin(), trace.pages.end(),
                       [](const PageHandle& page) { return take(page.snapshot()).current; }));
     CHECK(trace.created == 2);

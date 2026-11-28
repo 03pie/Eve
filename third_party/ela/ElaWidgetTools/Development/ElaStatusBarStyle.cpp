@@ -29,7 +29,10 @@ void ElaStatusBarStyle::drawPrimitive(PrimitiveElement element, const QStyleOpti
         painter->setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
         painter->setPen(ElaThemeColor(_themeMode, BasicBorder));
         painter->setBrush(ElaThemeColor(_themeMode, BasicBaseAlpha));
-        painter->drawRect(statusBarRect);
+        if (widget && widget->property("ElaRoundPanelCorners").toBool())
+            painter->drawRoundedRect(QRectF(statusBarRect).adjusted(.5, .5, -.5, -.5), 6, 6);
+        else
+            painter->drawRect(statusBarRect);
         painter->restore();
         return;
     }

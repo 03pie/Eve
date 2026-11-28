@@ -49,6 +49,7 @@ SettingsPage *createSettingsPage(ElaWindow *window, QTabWidget *panel, Workbench
     auto page = new SettingsPage(window, guard);
     auto combo = [page, guard](const char *id, const QString &title, const QStringList &labels, int index, auto apply) {
         auto control = new ElaComboBox(page);
+        control->setProperty("ElaTranslucentFill", true);
         control->setObjectName(id);
         control->setAccessibleName(title);
         control->addItems(labels);
@@ -71,6 +72,7 @@ SettingsPage *createSettingsPage(ElaWindow *window, QTabWidget *panel, Workbench
     auto spin = [page, guard](const char *id, const QString &title, int low, int high, int value,
                               const QString &keywords, auto apply) {
         auto control = new ElaSpinBox(page);
+        control->setProperty("ElaTranslucentFill", true);
         control->setObjectName(id);
         control->setAccessibleName(title);
         control->setRange(low, high);

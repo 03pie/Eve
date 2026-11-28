@@ -18,6 +18,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPainter>
 #include <QPointer>
 #include <QShortcut>
 #include <QSettings>
@@ -69,12 +70,7 @@ public:
     {
         setObjectName("EveNotificationCenter");
         setAccessibleName(QStringLiteral("通知中心"));
-        setAutoFillBackground(true);
-        auto applyTheme = [this](ElaThemeType::ThemeMode mode) {
-            setPalette(workbenchPalette(palette(), mode, ElaThemeType::PopupBase));
-        };
-        applyTheme(eTheme->getThemeMode());
-        connect(eTheme, &ElaTheme::themeModeChanged, this, applyTheme);
+        bindWorkbenchPalette(this, ElaThemeType::PopupBase);
         auto layout = new QVBoxLayout(this);
         layout->setContentsMargins(12, 10, 12, 10);
         auto header = new QHBoxLayout;
@@ -124,6 +120,11 @@ public:
         const int w = std::min(420, std::max(1, window->width() - 16));
         const int h = std::min(370, std::max(1, window->height() - 86));
         setGeometry(std::max(0, window->width() - w - 8), std::max(0, window->height() - h - 34), w, h);
+    }
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter painter(this);
+        drawWorkbenchPopup(painter, rect());
     }
     bool eventFilter(QObject* watched, QEvent* e) override
     {

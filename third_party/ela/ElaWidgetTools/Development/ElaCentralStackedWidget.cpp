@@ -366,16 +366,16 @@ void ElaCentralStackedWidget::doWindowStackSwitch(ElaWindowType::StackSwitchMode
 
 void ElaCentralStackedWidget::paintEvent(QPaintEvent* event)
 {
-    QRect targetRect = this->rect();
-    targetRect.adjust(1, 1, 10, 10);
     QPainter painter(this);
     painter.save();
     painter.setRenderHints(QPainter::Antialiasing | QPainter::SmoothPixmapTransform);
     if (!_isTransparent)
     {
+        const bool roundPanelCorners = property("ElaRoundPanelCorners").toBool();
+        const QRect targetRect = rect().adjusted(1, 1, roundPanelCorners ? -1 : 10, roundPanelCorners ? -1 : 10);
         painter.setPen(QPen(ElaThemeColor(_themeMode, BasicBaseLine), 1.5));
         painter.setBrush(ElaThemeColor(_themeMode, WindowCentralStackBase));
-        if (_isHasRadius)
+        if (_isHasRadius || roundPanelCorners)
         {
             painter.drawRoundedRect(targetRect, 10, 10);
         }

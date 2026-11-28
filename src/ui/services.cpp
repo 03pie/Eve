@@ -10,8 +10,6 @@
 #include <QLineEdit>
 #include <QListView>
 #include <QPointer>
-#include <QPushButton>
-#include <QShortcut>
 #include <QSortFilterProxyModel>
 #include <QStandardItemModel>
 #include <atomic>
@@ -435,24 +433,13 @@ void configureCommandPanel(const std::shared_ptr<ServicesControl>& state, QWidge
     };
     QObject::connect(search, &QLineEdit::textChanged, page, [weak, select](const QString& text) {
         if (auto host = weak.lock(); host && host->open && host->filter) {
-            host->filter->setFilterFixedString(text.trimmed()); select();
+            auto query = text.trimmed();
+            if (query.startsWith(QLatin1Char('>'))) query.remove(0, 1);
+            host->filter->setFilterFixedString(query.trimmed());
+            select();
             host->commandStatus(host->filter->rowCount() ? QString::fromUtf8("%1 个匹配命令；按回车执行。").arg(host->filter->rowCount()) : QString::fromUtf8("没有匹配的命令。"));
         }
     });
-    const auto run = [weak, select] {
-        select(); if (auto host = weak.lock(); host && host->commands) host->activate(host->commands->currentIndex());
-    };
-    QObject::connect(search, &QLineEdit::returnPressed, page, run);
-    for (const auto key : {Qt::Key_Down, Qt::Key_Up}) {
-        auto shortcut = new QShortcut(QKeySequence(key), search); shortcut->setContext(Qt::WidgetShortcut);
-        QObject::connect(shortcut, &QShortcut::activated, page, [weak, key] {
-            if (auto host = weak.lock(); host && host->open && host->commands && host->filter) {
-                auto row = host->commands->currentIndex().row() + (key == Qt::Key_Down ? 1 : -1);
-                if (row >= 0 && row < host->filter->rowCount()) host->commands->setCurrentIndex(host->filter->index(row, 0));
-            }
-        });
-    }
-    if (auto button = page->findChild<QPushButton*>("EveRunCommand")) QObject::connect(button, &QPushButton::clicked, page, run);
     select();
 }
 /** @brief 先结算原输出，再结算通知镜像；外壳已关呈现门时不触发控件。 */

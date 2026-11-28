@@ -1,16 +1,17 @@
 /** @file modules_panel.cpp
  * @brief 同一托管模块窗口；所有更新沿 Workspace 具体视图屏障，不拥有业务能力。
  */
+#include "appearance_p.hpp"
+#include "fixed_tabs_p.hpp"
 #include "retirement_panel.hpp"
+#include "theme_palette_p.hpp"
 #include "upgrade_panel.hpp"
-#include <ElaPushButton.h>
-#include <ElaTabWidget.h>
 #include <ElaTableView.h>
 #include <ElaText.h>
 #include <QHeaderView>
 #include <QHideEvent>
 #include <QItemSelectionModel>
-#include <QMouseEvent>
+#include <QPushButton>
 #include <QScopedValueRollback>
 #include <QShowEvent>
 #include <QStandardItemModel>
@@ -23,31 +24,6 @@
 
 namespace notebook {
 namespace {
-// ElaTabBar can detach pages independently of movable; these children belong to the host Dialog.
-class ModuleTabs final : public ElaTabWidget {
-public:
-    explicit ModuleTabs(QWidget* parent) : ElaTabWidget(parent)
-    {
-        setObjectName("EveModuleTabs");
-        setMovable(false);
-        setTabsClosable(false);
-        setIsContainerAcceptDrops(false);
-        setAcceptDrops(false);
-        tabBar()->setAcceptDrops(false);
-        tabBar()->installEventFilter(this);
-        tabBar()->setExpanding(false);
-        setIsTabTransparent(true);
-    }
-
-protected:
-    bool eventFilter(QObject* watched, QEvent* event) override
-    {
-        if (watched == tabBar() && event->type() == QEvent::MouseMove &&
-            static_cast<QMouseEvent*>(event)->buttons() != Qt::NoButton)
-            return true;
-        return ElaTabWidget::eventFilter(watched, event);
-    }
-};
 class ModulesPanel final : public QWidget {
 public:
     explicit ModulesPanel(std::weak_ptr<Workspace> workspace) : workspace_(std::move(workspace))
@@ -65,6 +41,7 @@ public:
         layout->addWidget(description);
         table_ = new ElaTableView(this);
         table_->setObjectName("EveModuleTable");
+        eve::ui::detail::bindWorkbenchContentPalette(table_);
         table_->setSelectionBehavior(QAbstractItemView::SelectRows);
         table_->setSelectionMode(QAbstractItemView::SingleSelection);
         table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -88,13 +65,17 @@ public:
         status_->setTextFormat(Qt::PlainText);
         status_->setObjectName("EveModuleStatus");
         layout->addWidget(status_);
-        auto tabs = new ModuleTabs(this);
+        auto tabs = new eve::ui::detail::FixedDiagnosticsTabs(this);
+        tabs->setObjectName("EveModuleTabs");
+        const QSize tabSize(220, 35);
+        tabs->setTabSize(tabSize);
+        tabs->tabBar()->setFixedHeight(tabSize.height());
         upgrade_ = new UpgradePanel(workspace_, tabs, [this] { refreshView(); });
         tabs->addTab(upgrade_, QString::fromUtf8("升级"));
         retirement_ = new RetirementPanel(workspace_, tabs, [this] { refreshView(); });
         tabs->addTab(retirement_, QString::fromUtf8("资源与诊断"));
         layout->addWidget(tabs, 1);
-        auto refresh = new ElaPushButton(QString::fromUtf8("刷新"), this);
+        auto refresh = new eve::ui::detail::ActionButton(QString::fromUtf8("刷新"), this);
         refresh->setObjectName("EveModuleDiagnosticsRefresh");
         layout->addWidget(refresh);
         QObject::connect(refresh, &QPushButton::clicked, this, [this] { refreshView(); });

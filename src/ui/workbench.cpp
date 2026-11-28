@@ -2,6 +2,7 @@
  * @brief 以 Ela 原生控件实现 VS Code 分区中的命令中心、菜单、设置与有界稳定键导航。
  */
 #include "workbench_p.hpp"
+#include "workbench_titlebar_p.hpp"
 #include "panel_p.hpp"
 
 #include "appearance_p.hpp"
@@ -18,7 +19,6 @@
 #include <ElaScrollPage.h>
 #include <ElaScrollPageArea.h>
 #include <ElaSpinBox.h>
-#include <ElaSuggestBox.h>
 #include <ElaText.h>
 #include <ElaTheme.h>
 #include <ElaToggleSwitch.h>
@@ -31,6 +31,7 @@
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QHash>
+#include <QLabel>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QScopedValueRollback>
@@ -41,6 +42,7 @@
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTimer>
+#include <QToolTip>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <cstddef>
@@ -50,6 +52,41 @@
 
 namespace eve::ui::detail {
 namespace {
+void bindToolTipTheme(ElaWindow* window)
+{
+    const auto name = [](ElaThemeType::ThemeMode mode) {
+        return mode == ElaThemeType::Dark ? QStringLiteral("dark") : QStringLiteral("light");
+    };
+    // Qt keeps the widget passed to showText() as a logical stylesheet parent on Windows.
+    // Install both rules once so changing themes doesn't repolish the workbench's content.
+    auto style = window->styleSheet();
+    for (const auto mode : {ElaThemeType::Light, ElaThemeType::Dark}) {
+        style += QStringLiteral("[EveToolTipTheme=\"%1\"] QToolTip{background-color:%2;color:%3;"
+                                "border:1px solid %4;border-radius:4px;}")
+            .arg(name(mode), eTheme->getThemeColor(mode, ElaThemeType::PopupBase).name(),
+                 eTheme->getThemeColor(mode, ElaThemeType::BasicText).name(),
+                 eTheme->getThemeColor(mode, ElaThemeType::PopupBorder).name());
+    }
+    window->setProperty("EveToolTipTheme", name(eTheme->getThemeMode()));
+    window->setStyleSheet(style);
+    QObject::connect(eTheme, &ElaTheme::themeModeChanged, window, [window, name](ElaThemeType::ThemeMode mode) {
+        window->setProperty("EveToolTipTheme", name(mode));
+        if (!QToolTip::isVisible()) return;
+        for (auto* top : QApplication::topLevelWidgets()) {
+            if (!top->isVisible() || top->windowType() != Qt::ToolTip ||
+                top->objectName() != QLatin1String("qtooltip_label")) continue;
+            // Qt 5.15 stores the logical stylesheet parent separately for desktop-owned tips.
+            for (auto* source = top->property("_q_stylesheet_parent").value<QWidget*>();
+                 source; source = source->parentWidget()) {
+                if (source == window) {
+                    top->setStyleSheet(top->styleSheet());
+                    break;
+                }
+            }
+        }
+    });
+}
+
 // QTabWidget calculates the corner position from sizeHint(), including while
 // secondary actions are hidden. Keep its size and hit targets in agreement.
 class PanelTools final : public QWidget {
@@ -76,48 +113,25 @@ protected:
     }
 };
 
-/** @brief 窄窗口缩短搜索框，给菜单和系统窗口按钮保留空间，快捷键入口始终可用。 */
-class CommandCenter final : public QWidget {
+/** @brief 面板也可由输出、问题定位和设置打开，菜单跟随其实际状态。 */
+class PanelActionVisibility final : public QObject {
 public:
-    /** @brief 只观察宿主尺寸，过滤器随窗口内的命令中心一起释放。 */
-    explicit CommandCenter(QWidget* host) : QWidget(host) { host->installEventFilter(this); }
-    /** @brief 绑定 Ela 搜索框，不接管其建议模型和键盘交互。 */
-    void setSearch(ElaSuggestBox* search)
+    PanelActionVisibility(QWidget* panel, QAction* action) : QObject(action), action_(action)
     {
-        search_ = search;
-        updateWidth();
+        action->setChecked(!panel->isHidden());
+        panel->installEventFilter(this);
     }
 
 protected:
-    /** @brief 窗口缩放只调整几何，不改变用户输入或建议列表。 */
     bool eventFilter(QObject* watched, QEvent* event) override
     {
-        if (event->type() == QEvent::Resize)
-            updateWidth();
-        return QWidget::eventFilter(watched, event);
+        if (event->type() == QEvent::Show || event->type() == QEvent::Hide)
+            action_->setChecked(!static_cast<QWidget*>(watched)->isHidden());
+        return false;
     }
 
 private:
-    /** @brief 窄屏将有菜单入口的辅助按钮折叠，保留搜索、命令及窗口控制。 */
-    void updateWidth()
-    {
-        if (!search_)
-            return;
-        auto host = qobject_cast<ElaWindow*>(window());
-        if (!host)
-            return;
-        const int width = host->width();
-        const bool compact = width < 980;
-        for (const auto id : {"EveNavigateBack", "EveNavigateForward"})
-            if (auto button = findChild<QToolButton*>(id))
-                button->setVisible(!compact);
-        const bool showWindowTools = width >= 790;
-        for (auto flag : {ElaAppBarType::StayTopButtonHint, ElaAppBarType::ThemeChangeButtonHint})
-            if (host->getWindowButtonFlags().testFlag(flag) != showWindowTools)
-                host->setWindowButtonFlag(flag, showWindowTools);
-        search_->setFixedWidth(std::clamp(width - (compact ? 690 : 835), 72, 360));
-    }
-    QPointer<ElaSuggestBox> search_;
+    QAction* action_;
 };
 /** @brief Example 风格的带留白滚动页，避免使用固定高度挤压缩放后的内容。 */
 ElaScrollPage* scrollPage(const QString& title, QWidget* parent = nullptr)
@@ -153,9 +167,8 @@ QVBoxLayout* card(QVBoxLayout* layout, const QString& title, const QString& desc
 
 /** @brief 搜索及历史只保存宿主 key/文本，不保留插件 QWidget 或页面工厂。 */
 struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
-    /** @brief 建议键属于 ElaSuggestBox，导航键属于 ElaWindow，撤销时分别删除。 */
     struct Entry {
-        QString key, title, suggestion, plugin;
+        QString key, title, category, plugin;
         std::function<bool()> presentation;
         bool presentable() const { return !presentation || presentation(); }
     };
@@ -169,9 +182,8 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
     QPointer<QTabWidget> panel;
     QPointer<QPlainTextEdit> output;
     std::shared_ptr<OutputControl> logs;
-    QPointer<QToolButton> togglePanel;
-    QPointer<ElaSuggestBox> search;
-    QPointer<ElaToolButton> back, forward;
+    QPointer<QWidget> quickAccess;
+    QPointer<QToolButton> quickOpen;
     QPointer<QAction> backAction, forwardAction;
     QPointer<QAction> addPluginAction, configurationFileAction, modulesAction;
     QPointer<ElaMenuBar> menuBar;
@@ -212,6 +224,26 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
         return std::any_of(entries.begin(), entries.end(),
                            [&](const Entry& item) { return item.key == key && item.presentable(); });
     }
+    std::vector<QuickAccessPage> pageChoices() const
+    {
+        std::vector<QuickAccessPage> pages;
+        QSet<QString> included;
+        const auto add = [&](const Entry& page) {
+            if (!included.contains(page.key) && page.presentable()) {
+                included.insert(page.key);
+                pages.push_back({page.key, page.title, page.category});
+            }
+        };
+        const auto addKey = [&](const QString& key) {
+            const auto found = std::find_if(entries.begin(), entries.end(),
+                [&](const Entry& page) { return page.key == key; });
+            if (found != entries.end()) add(*found);
+        };
+        addKey(current);
+        for (auto recent = history.rbegin(); recent != history.rend(); ++recent) addKey(*recent);
+        for (const auto& page : entries) add(page);
+        return pages;
+    }
     /** @brief 不在回调返回后借用其闭包，允许 Shell 关闭时清空动作。 */
     void navigate(const QString& key, bool rememberPlugin = true)
     {
@@ -249,10 +281,6 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
     {
         const bool canBack = open && historyTarget(-1).has_value();
         const bool canForward = open && historyTarget(1).has_value();
-        if (back)
-            back->setEnabled(canBack);
-        if (forward)
-            forward->setEnabled(canForward);
         if (backAction)
             backAction->setEnabled(canBack);
         if (forwardAction)
@@ -289,6 +317,7 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
             cursor = history.size() - 1;
         }
         updateHistory();
+        if (quickAccess) refreshQuickAccessPages(quickAccess);
     }
     /** @brief 卡片动态合并管理快照与尚未绑定 Kernel 的贡献，每个插件实例显示一张。 */
     void refreshHome()
@@ -502,7 +531,7 @@ struct WorkbenchControl : std::enable_shared_from_this<WorkbenchControl> {
 };
 
 std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* tabs, QTabWidget* panel,
-                                                  QPlainTextEdit* output, QToolButton* togglePanel,
+                                                  QPlainTextEdit* output, QWidget* quickAccess,
                                                   const QString& homeKey, const QString& managementKey,
                                                   WorkbenchActions callbacks, const QString& preferencesFile,
                                                   std::shared_ptr<OutputControl> logs)
@@ -513,21 +542,22 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     self->panel = panel;
     self->output = output;
     self->logs = std::move(logs);
-    self->togglePanel = togglePanel;
+    self->quickAccess = quickAccess;
     self->homeKey = homeKey;
     self->managementKey = managementKey;
     self->callbacks = std::move(callbacks);
     self->preferences = new WorkbenchPreferences(window, panel, preferencesFile);
+    bindToolTipTheme(window);
     std::weak_ptr<WorkbenchControl> weak = self;
     if (auto splitter = window->findChild<QSplitter*>("ElaWorkbenchPanelSplitter")) {
-        // 原生 Windows 分隔条不随 Ela 调色板切换；显式使用当前主题背景和悬停强调色。
+        // Share Ela's alpha surface while retaining a distinct hover affordance.
         auto handle = splitter->handle(1);
         const auto update = [weak, handle](ElaThemeType::ThemeMode mode) {
             if (auto state = weak.lock(); state && state->open)
                 state->withWindowAccess([handle, mode] {
                     handle->setStyleSheet(QStringLiteral("QSplitterHandle{background:%1;}"
                                                          "QSplitterHandle:hover{background:%2;}")
-                                              .arg(eTheme->getThemeColor(mode, ElaThemeType::WindowBase).name(),
+                                              .arg(eTheme->getThemeColor(mode, ElaThemeType::BasicBaseAlpha).name(QColor::HexArgb),
                                                    eTheme->getThemeColor(mode, ElaThemeType::PrimaryNormal).name()));
                 });
         };
@@ -544,59 +574,39 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     auto help = bar->addMenu(QString::fromUtf8("帮助(&H)"));
     self->fileMenu = file;
     self->viewMenu = view;
-    bar->setFixedWidth(bar->sizeHint().width());
-    window->setCustomWidget(ElaAppBarType::LeftArea, bar);
-    auto center = new CommandCenter(window);
-    center->setObjectName("EveCommandCenter");
-    auto centerLayout = new QHBoxLayout(center);
-    centerLayout->setContentsMargins(0, 0, 0, 0);
-    centerLayout->setSpacing(4);
-    auto back = new ElaToolButton(center);
-    self->back = back;
+    auto back = new ElaToolButton(window);
     back->setObjectName("EveNavigateBack");
     back->setElaIcon(ElaIconType::ArrowLeft);
     back->setToolTip(QString::fromUtf8("后退（Alt+←）"));
     back->setAccessibleName(QString::fromUtf8("后退"));
-    back->setFixedSize(32, 30);
-    auto forward = new ElaToolButton(center);
-    self->forward = forward;
+    auto forward = new ElaToolButton(window);
     forward->setObjectName("EveNavigateForward");
     forward->setElaIcon(ElaIconType::ArrowRight);
     forward->setToolTip(QString::fromUtf8("前进（Alt+→）"));
     forward->setAccessibleName(QString::fromUtf8("前进"));
-    forward->setFixedSize(32, 30);
-    auto search = new ElaSuggestBox(center);
-    self->search = search;
-    search->setSuggestionFilter([weak](const ElaSuggestBox::SuggestData& data) {
-        auto self = weak.lock();
-        return self && self->open && self->contains(data.getSuggestData().value("EvePageKey").toString());
-    });
-    search->setObjectName("EvePageSearch");
-    search->setFixedHeight(30);
-    center->setSearch(search);
-    search->setPlaceholderText(QString::fromUtf8("搜索页面  Ctrl+P"));
-    centerLayout->addWidget(back);
-    centerLayout->addWidget(forward);
-    centerLayout->addWidget(search);
-    auto paletteButton = new ElaToolButton(center);
-    paletteButton->setObjectName("EveTitleCommands");
-    paletteButton->setElaIcon(ElaIconType::Terminal);
-    paletteButton->setAccessibleName(QString::fromUtf8("搜索命令"));
-    paletteButton->setToolTip(QString::fromUtf8("搜索命令（Ctrl+Shift+P）"));
-    paletteButton->setFixedSize(32, 30);
-    centerLayout->addWidget(paletteButton);
-    window->setCustomWidget(ElaAppBarType::MiddleArea, center);
-    QObject::connect(back, &QToolButton::clicked, window, [weak] {
+    auto quickOpen = new ElaToolButton(window);
+    self->quickOpen = quickOpen;
+    quickOpen->setObjectName("EveCommandCenterButton");
+    quickOpen->setElaIcon(ElaIconType::MagnifyingGlass);
+    quickOpen->setIsTransparent(false);
+    quickOpen->setProperty("ElaTranslucentFill", true);
+    quickOpen->setBorderRadius(5);
+    quickOpen->setText(QObject::tr("快速打开"));
+    quickOpen->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    quickOpen->setAccessibleName(QObject::tr("快速打开"));
+    quickOpen->setToolTip(QObject::tr("搜索页面（Ctrl+P）\n搜索命令（Ctrl+Shift+P）"));
+    auto navigation = new ElaToolButton(window);
+    navigation->setObjectName("EveTitleNavigation");
+    navigation->setElaIcon(ElaIconType::Sidebar);
+    auto togglePanel = new ElaToolButton(window);
+    togglePanel->setObjectName("EveTogglePanel");
+    togglePanel->setElaIcon(ElaIconType::RectangleList);
+    configureQuickAccessPages(quickAccess, [weak] {
+        auto control = weak.lock();
+        return control && control->open ? control->pageChoices() : std::vector<QuickAccessPage>{};
+    }, [weak](const QString& key) {
         if (auto control = weak.lock())
-            control->traverse(-1);
-    });
-    QObject::connect(forward, &QToolButton::clicked, window, [weak] {
-        if (auto control = weak.lock())
-            control->traverse(1);
-    });
-    QObject::connect(search, &ElaSuggestBox::suggestionClicked, window, [weak](const ElaSuggestBox::SuggestData& data) {
-        if (auto control = weak.lock())
-            control->navigate(data.getSuggestData().value("EvePageKey").toString());
+            control->withWindowAccess([control, key] { control->navigate(key); });
     });
     tabs->setTabsClosable(true);
     tabs->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -625,7 +635,7 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
         if (state.window)
             state.window->close();
     });
-    self->action(view, QString::fromUtf8("展开 / 收起插件导航"), "EveViewNavigation", QKeySequence("Ctrl+B"),
+    auto toggleNavigation = self->action(view, QString::fromUtf8("展开 / 收起插件导航"), "EveViewNavigation", QKeySequence("Ctrl+B"),
                  [](WorkbenchControl& state) {
                      if (state.window)
                          state.window->setNavigationBarDisplayMode(state.window->getNavigationBarDisplayMode() ==
@@ -633,13 +643,36 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
                                                                        ? ElaNavigationType::Compact
                                                                        : ElaNavigationType::Maximal);
                  });
-    self->action(view, QString::fromUtf8("显示 / 隐藏底部工作区"), "EveViewPanel", {}, [](WorkbenchControl& state) {
-        if (state.togglePanel)
-            state.togglePanel->click();
+    auto toggleOutput = self->action(view, QString::fromUtf8("显示 / 隐藏输出与问题"), "EveViewPanel", QKeySequence("Ctrl+J"), [](WorkbenchControl& state) {
+        toggleOutputPanel(state.logs);
     });
-    auto openCommands = self->action(view, QString::fromUtf8("搜索命令"), "EveOpenCommands", QKeySequence("Ctrl+Shift+P"),
-                 [](WorkbenchControl& state) { showCommandPanel(state.window, state.search); });
-    QObject::connect(paletteButton, &QToolButton::clicked, openCommands, &QAction::trigger);
+    toggleOutput->setCheckable(true);
+    new PanelActionVisibility(panel, toggleOutput);
+    toggleNavigation->setCheckable(true);
+    const auto syncNavigation = [window, toggleNavigation] {
+        toggleNavigation->setChecked(window->getNavigationBarDisplayMode() == ElaNavigationType::Maximal);
+    };
+    QObject::connect(window, &ElaWindow::pNavigationBarDisplayModeChanged, toggleNavigation, syncNavigation);
+    syncNavigation();
+    const auto bindLayoutButton = [](ElaToolButton* button, QAction* action,
+                                     const QString& activate, const QString& deactivate) {
+        QObject::connect(button, &QToolButton::clicked, action, &QAction::trigger);
+        const auto update = [button, action, activate, deactivate] {
+            const auto caption = action->isChecked() ? deactivate : activate;
+            button->setAccessibleName(caption);
+            button->setToolTip(QStringLiteral("%1（%2）").arg(caption, action->shortcut().toString(QKeySequence::NativeText)));
+            button->setIsSelected(action->isChecked());
+            button->setEnabled(action->isEnabled());
+        };
+        QObject::connect(action, &QAction::changed, button, update);
+        update();
+    };
+    bindLayoutButton(navigation, toggleNavigation, QObject::tr("展开插件导航"), QObject::tr("收起插件导航"));
+    bindLayoutButton(togglePanel, toggleOutput, QObject::tr("显示输出与问题"), QObject::tr("隐藏输出与问题"));
+    self->action(view, QString::fromUtf8("搜索命令"), "EveOpenCommands", QKeySequence("Ctrl+Shift+P"),
+                 [](WorkbenchControl& state) {
+                     showQuickAccess(state.quickAccess, state.quickOpen, QuickAccessMode::Commands);
+                 });
     self->action(view, QString::fromUtf8("输出"), "EveOpenOutput", {}, [](WorkbenchControl& state) {
         showOutput(state.logs, {}, {}, QApplication::focusWidget());
     });
@@ -683,11 +716,20 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
                                     [](WorkbenchControl& state) { state.traverse(-1); });
     self->forwardAction = self->action(go, QString::fromUtf8("前进"), "EveMenuForward", QKeySequence("Alt+Right"),
                                        [](WorkbenchControl& state) { state.traverse(1); });
-    self->action(go, QString::fromUtf8("搜索页面"), "EveQuickOpen", QKeySequence("Ctrl+P"),
+    auto openPages = self->action(go, QString::fromUtf8("搜索页面"), "EveQuickOpen", QKeySequence("Ctrl+P"),
                  [](WorkbenchControl& state) {
-                     if (state.search)
-                         state.search->focusSearch();
+                      showQuickAccess(state.quickAccess, state.quickOpen, QuickAccessMode::Pages);
                  });
+    QObject::connect(quickOpen, &QToolButton::clicked, openPages, &QAction::trigger);
+    const auto bindHistory = [](QToolButton* button, QAction* action) {
+        QObject::connect(button, &QToolButton::clicked, action, &QAction::trigger);
+        QObject::connect(action, &QAction::changed, button, [button, action] {
+            button->setEnabled(action->isEnabled());
+        });
+    };
+    bindHistory(back, self->backAction);
+    bindHistory(forward, self->forwardAction);
+    installWorkbenchTitlebar(window, bar, back, forward, quickOpen, navigation, togglePanel);
     self->action(go, QString::fromUtf8("插件管理"), "EveOpenPlugins", {},
                  [](WorkbenchControl& state) {
                      if (state.callbacks.navigate)
@@ -790,10 +832,7 @@ std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* ta
     toolsLayout->addWidget(corner);
     panelTools->setFixedSize(panelTools->sizeHint());
     panel->setCornerWidget(panelTools, Qt::TopRightCorner);
-    QObject::connect(corner, &QToolButton::clicked, window, [weak] {
-        if (auto control = weak.lock(); control && control->open && control->togglePanel)
-            control->togglePanel->click();
-    });
+    QObject::connect(corner, &QToolButton::clicked, toggleOutput, &QAction::trigger);
     auto status = window->statusBar();
     auto contextStrip = new QWidget(status);
     auto contextLayout = new QHBoxLayout(contextStrip);
@@ -866,7 +905,7 @@ std::vector<QAction*> bindWorkbenchExtensions(const std::shared_ptr<WorkbenchCon
         QObject::connect(refreshAction, &QAction::triggered, control->window, refresh);
     auto settings = static_cast<SettingsPage*>(control->settings.data());
     settings->addGroup("EveSettingsDesktopSection", QObject::tr("桌面"), QStringLiteral("desktop shell"));
-    auto desktop = new ElaPushButton(QObject::tr("选择桌面…"), settings);
+    auto desktop = new ActionButton(QObject::tr("选择桌面…"), settings);
     desktop->setObjectName("EveSettingsChooseDesktop");
     settings->addRow(QObject::tr("启动时使用的桌面外壳"), desktop, QObject::tr("扩展 外壳 默认 切换 桌面"));
     auto menu = new ElaMenu(desktop);
@@ -910,23 +949,15 @@ QWidget* workbenchAbout(const std::shared_ptr<WorkbenchControl>& control)
 void registerWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const QString& key, const QString& title,
                            const QString& category, const QString& plugin, std::function<bool()> presentation)
 {
-    if (!control || !control->open || key.isEmpty() || !control->search)
+    if (!control || !control->open || key.isEmpty())
         return;
     if (std::any_of(control->entries.begin(), control->entries.end(),
                     [&](const WorkbenchControl::Entry& item) { return item.key == key; }))
         return;
-    const auto label = category.isEmpty() ? title : title + QString::fromUtf8(" · ") + category;
-    // Entry 在建议登记前已带初始门禁；模型通知重入也不能看到 Held 贡献。
-    control->entries.push_back({key, title, {}, plugin, std::move(presentation)});
-    const auto suggestion = control->search->addSuggestion(label, {{"EvePageKey", key}});
-    auto entry = std::find_if(control->entries.begin(), control->entries.end(),
-                              [&](const WorkbenchControl::Entry& item) { return item.key == key; });
-    if (entry == control->entries.end())
-        return;
-    entry->suggestion = suggestion;
+    control->entries.push_back({key, title, category, plugin, std::move(presentation)});
     control->refreshHome();
-    if (control->open && control->search)
-        control->search->setSearchText(control->search->getSearchText());
+    if (control->open && control->quickAccess)
+        refreshQuickAccessPages(control->quickAccess);
 }
 
 void refreshWorkbenchPresentation(const std::shared_ptr<WorkbenchControl>& control)
@@ -936,8 +967,8 @@ void refreshWorkbenchPresentation(const std::shared_ptr<WorkbenchControl>& contr
     control->withWindowAccess([control] {
         if (!control->open)
             return;
-        if (control->search)
-            control->search->setSearchText(control->search->getSearchText());
+        if (control->quickAccess)
+            refreshQuickAccessPages(control->quickAccess);
         if (!control->open)
             return;
         control->refreshHomeWithinAccess();
@@ -1000,6 +1031,8 @@ void selectWorkbenchEmpty(const std::shared_ptr<WorkbenchControl>& control)
         return;
     control->current.clear();
     control->updateHistory();
+    if (control->quickAccess)
+        refreshQuickAccessPages(control->quickAccess);
     if (control->location) {
         control->location->setText(QString::fromUtf8("未打开页面"));
         if (control->location)
@@ -1015,7 +1048,6 @@ void removeWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const
                               [&](const WorkbenchControl::Entry& item) { return item.key == key; });
     if (entry == control->entries.end())
         return;
-    const auto suggestion = entry->suggestion;
     if (control->open && control->tabs) {
         for (int i = 0; i < control->tabs->count(); ++i)
             if (control->tabs->tabData(i).toString() == key) {
@@ -1037,10 +1069,8 @@ void removeWorkbenchPage(const std::shared_ptr<WorkbenchControl>& control, const
     control->replay.reset();
     if (!control->open)
         return;
-    if (control->search)
-        control->search->removeSuggestion(suggestion);
-    if (control->open && control->search)
-        control->search->setSearchText(control->search->getSearchText());
+    if (control->quickAccess)
+        refreshQuickAccessPages(control->quickAccess);
     if (control->current == key)
         control->navigate({});
     control->refreshHome();
@@ -1064,10 +1094,10 @@ void closeWorkbench(const std::shared_ptr<WorkbenchControl>& control)
             action->setEnabled(false);
     if (control->menuBar)
         control->menuBar->setEnabled(false);
-    if (control->search) {
-        control->search->setSearchText({});
-        control->search->setEnabled(false);
-    }
+    if (control->quickAccess)
+        dismissQuickAccess(control->quickAccess);
+    if (control->quickOpen)
+        control->quickOpen->setEnabled(false);
     if (control->homeTimer)
         control->homeTimer->stop();
     if (control->window)
@@ -1077,8 +1107,6 @@ void closeWorkbench(const std::shared_ptr<WorkbenchControl>& control)
         control->settings->setEnabled(false);
     if (control->about)
         control->about->setEnabled(false);
-    if (control->togglePanel)
-        control->togglePanel->setEnabled(false);
     control->updateHistory();
 }
 } // namespace eve::ui::detail

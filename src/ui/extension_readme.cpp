@@ -43,11 +43,7 @@ ExtensionReadmeView::ExtensionReadmeView(QWidget* parent) : QTextBrowser(parent)
     document()->setDefaultFont(typeface);
     document()->setDocumentMargin(8);
     const auto applyTheme = [this](ElaThemeType::ThemeMode mode) {
-        auto colors = workbenchPalette(palette(), mode);
-        colors.setColor(QPalette::Link, eTheme->getThemeColor(mode, ElaThemeType::PrimaryNormal));
-        setPalette(colors);
-        viewport()->setPalette(colors);
-        viewport()->setStyleSheet(QStringLiteral("background-color:%1;").arg(colors.color(QPalette::Base).name()));
+        applyWorkbenchContentPalette(this, mode);
         formatDocument();
     };
     applyTheme(eTheme->getThemeMode());

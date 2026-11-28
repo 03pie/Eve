@@ -2,6 +2,7 @@
  * @brief 在独立 JSON 中保存 Ela 主题及工作台布局，失败不影响插件运行与关闭屏障。
  */
 #include "preferences_p.hpp"
+#include "theme_palette_p.hpp"
 #include "workbench_dialog_p.hpp"
 #include <ElaApplication.h>
 #include <ElaDialog.h>
@@ -73,6 +74,7 @@ class WorkbenchDialog final : public ElaDialog {
 public:
     explicit WorkbenchDialog(QWidget* parent) : ElaDialog(parent)
     {
+        bindWorkbenchWindowPalette(this, ElaThemeType::DialogBase);
         for (auto host = parent; host && !owner_; host = host->parentWidget())
             owner_ = qobject_cast<ElaWindow*>(host);
     }
@@ -80,6 +82,12 @@ protected:
     void paintEvent(QPaintEvent* event) override
     {
         ElaDialog::paintEvent(event);
+        const auto display = eApp->getWindowDisplayMode();
+        if (display != ElaApplicationType::Normal && display != ElaApplicationType::ElaMica &&
+            !property("ElaWindowMaterialApplied").toBool()) {
+            QPainter painter(this);
+            painter.fillRect(rect(), palette().color(QPalette::Base));
+        }
         paintWallpaper(this, owner_, .75);
     }
 private:

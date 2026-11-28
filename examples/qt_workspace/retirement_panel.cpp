@@ -1,7 +1,9 @@
 /** @file retirement_panel.cpp
  * @brief 原代次目录的稳定选择及显式重试；不关闭会话、不撤销 PIN 或借用。
  */
+#include "appearance_p.hpp"
 #include "retirement_panel.hpp"
+#include "theme_palette_p.hpp"
 #include "modules_panel_p.hpp"
 #include "retirement_p.hpp"
 #include <ElaComboBox.h>
@@ -50,11 +52,12 @@ RetirementPanel::RetirementPanel(std::weak_ptr<Workspace> workspace, QWidget* pa
     layout->addWidget(hint);
     auto row = new QHBoxLayout;
     generations_ = new ElaComboBox(this);
+    generations_->setProperty("ElaTranslucentFill", true);
     generations_->setObjectName("EveRetirementGeneration");
     generations_->setAccessibleName(QString::fromUtf8("模块代次"));
     generations_->addItem(QString::fromUtf8("请选择代次"), QVariant::fromValue<qulonglong>(0));
     row->addWidget(generations_, 1);
-    retry_ = new ElaPushButton(QString::fromUtf8("尝试物理回收"), this);
+    retry_ = new eve::ui::detail::ActionButton(QString::fromUtf8("尝试物理回收"), this);
     retry_->setObjectName("EveRetirementRetry");
     retry_->setEnabled(false);
     row->addWidget(retry_);
@@ -66,6 +69,7 @@ RetirementPanel::RetirementPanel(std::weak_ptr<Workspace> workspace, QWidget* pa
     layout->addWidget(status_);
     details_ = new ElaPlainTextEdit(this);
     details_->setObjectName("EveModuleDiagnosticsText");
+    eve::ui::detail::bindWorkbenchContentPalette(details_);
     details_->setReadOnly(true);
     layout->addWidget(details_, 1);
     QObject::connect(generations_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,

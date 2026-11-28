@@ -17,7 +17,6 @@ class QAction;
 class QWidget;
 class QTabBar;
 class QTabWidget;
-class QToolButton;
 class QPlainTextEdit;
 namespace eve::ui::detail {
 struct WorkbenchControl;
@@ -68,7 +67,7 @@ struct WorkbenchActions {
 };
 /** @brief 构造宿主菜单/搜索/历史与设置页，已有页签和底部面板继续由外壳拥有。 */
 std::shared_ptr<WorkbenchControl> createWorkbench(ElaWindow* window, QTabBar* tabs, QTabWidget* panel,
-                                                  QPlainTextEdit* output, QToolButton* togglePanel,
+                                                  QPlainTextEdit* output, QWidget* quickAccess,
                                                   const QString& homeKey, const QString& managementKey,
                                                   WorkbenchActions actions, const QString& preferencesFile = {},
                                                   std::shared_ptr<OutputControl> logs = {});

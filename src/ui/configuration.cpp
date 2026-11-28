@@ -204,6 +204,7 @@ public:
             });
         });
         region_ = new ElaComboBox(this);
+        region_->setProperty("ElaTranslucentFill", true);
         region_->setObjectName("EveConfigRegion");
         region_->setAccessibleName(QStringLiteral("配置区域"));
         region_->addItems(
@@ -215,7 +216,7 @@ public:
         split->setChildrenCollapsible(false);
         split->setHandleWidth(8);
         const auto applyTheme = [this, split](ElaThemeType::ThemeMode mode) {
-            setPalette(detail::workbenchPalette(palette(), mode));
+            applySurfacePalette(mode);
             // Keep the full hit target transparent over the backdrop and draw only its dividing edge.
             split->setStyleSheet(QStringLiteral("QSplitter#EveConfigSplitter::handle:horizontal {"
                                                 "background: transparent; border-left: 1px solid %1; }")
@@ -241,6 +242,7 @@ public:
         sourceLayout->addWidget(filePath_);
         editor_ = new ElaPlainTextEdit(source);
         editor_->setObjectName("EveConfigEditor");
+        detail::bindWorkbenchContentPalette(editor_);
         auto textFont = QApplication::font();
         textFont.setPixelSize(14);
         editor_->setFont(textFont);
@@ -260,6 +262,7 @@ public:
         sideLayout->addWidget(runningHelp);
         table_ = new ElaTableView(side);
         table_->setObjectName("EveConfigEntries");
+        detail::bindWorkbenchContentPalette(table_);
         model_ = new QStandardItemModel(table_);
         model_->setHorizontalHeaderLabels({QString::fromUtf8("条目"), QString::fromUtf8("期望"),
                                            QString::fromUtf8("运行"), QString::fromUtf8("实例")});
@@ -297,6 +300,7 @@ public:
         layout->addWidget(resultTitle);
         details_ = new ElaPlainTextEdit(this);
         details_->setObjectName("EveConfigDetails");
+        detail::bindWorkbenchContentPalette(details_);
         details_->setFont(textFont);
         details_->setReadOnly(true);
         details_->setPlaceholderText(
@@ -462,10 +466,22 @@ protected:
             deferred_ = true;
             return true;
         }
+        if (event->type() == QEvent::ParentChange || event->type() == QEvent::Show)
+            applySurfacePalette(eTheme->getThemeMode());
         return QWidget::event(event);
     }
 
 private:
+    void applySurfacePalette(ElaThemeType::ThemeMode mode)
+    {
+        // A standalone page owns its surface. Embedded pages use their window's backdrop.
+        if (isWindow()) {
+            setPalette(detail::workbenchPalette(palette(), mode));
+            setAutoFillBackground(true);
+        } else {
+            detail::applyWorkbenchContentPalette(this, mode);
+        }
+    }
     void arrangeRegions()
     {
         const bool narrow = width() < 760;

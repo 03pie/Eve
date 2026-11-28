@@ -126,6 +126,22 @@ private:
 };
 } // namespace
 
+bool acrylicAllowed(ElaWindow& window)
+{
+    const auto state = nativeState(reinterpret_cast<HWND>(window.winId()));
+    return !state.highContrast && state.transparency;
+}
+
+void verifyAcrylicSurface(ElaWindow& window)
+{
+    require(eApp->getWindowDisplayMode() == ElaApplicationType::Acrylic, "Acrylic must be the effective Ela mode");
+    constexpr int acrylicBackdrop = 3; // DWMSBT_TRANSIENTWINDOW
+    require(nativeState(reinterpret_cast<HWND>(window.winId())).backdrop == acrylicBackdrop,
+            "DWM must apply desktop Acrylic");
+    require(window.palette().brush(QPalette::Window) == QBrush(Qt::transparent),
+            "Qt window background must expose desktop Acrylic");
+}
+
 void observeSystemSurfaces(ElaWindow& window, const QString& settingsPath, const QString& imagePath,
                            const QString& isolatedRestriction)
 {

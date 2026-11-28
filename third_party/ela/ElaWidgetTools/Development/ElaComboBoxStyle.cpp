@@ -147,13 +147,19 @@ void ElaComboBoxStyle::drawComplexControl(ComplexControl control, const QStyleOp
             painter->setRenderHints(QPainter::SmoothPixmapTransform | QPainter::Antialiasing | QPainter::TextAntialiasing);
             //背景绘制
             bool isEnabled = copt->state.testFlag(QStyle::State_Enabled);
+            const bool alphaFill = widget && widget->property("ElaTranslucentFill").toBool();
+            const auto idle = alphaFill ? ElaThemeColor(_themeMode, BasicBaseAlpha) : ElaThemeColor(_themeMode, BasicBase);
+            const auto hover = alphaFill ? ElaThemeColor(_themeMode, BasicHoverAlpha) : ElaThemeColor(_themeMode, BasicHover);
+            const auto focus = alphaFill ? idle : ElaThemeColor(_themeMode, DialogBase);
+            auto disabled = ElaThemeColor(_themeMode, BasicDisable);
+            disabled.setAlpha(qMin(disabled.alpha(), idle.alpha()));
             painter->setPen(ElaThemeColor(_themeMode, BasicBorder));
             painter->setBrush(isEnabled ? (copt->state.testFlag(QStyle::State_HasFocus) && copt->editable)
-                                      ? ElaThemeColor(_themeMode, DialogBase)
+                                      ? focus
                                       : copt->state.testFlag(QStyle::State_MouseOver)
-                                      ? ElaThemeColor(_themeMode, BasicHover)
-                                      : ElaThemeColor(_themeMode, BasicBase)
-                                        : ElaThemeColor(_themeMode, BasicDisable));
+                                      ? hover
+                                      : idle
+                                        : disabled);
             QRect comboBoxRect = copt->rect;
             comboBoxRect.adjust(1, 1, -1, -1);
             painter->drawRoundedRect(comboBoxRect, 3, 3);

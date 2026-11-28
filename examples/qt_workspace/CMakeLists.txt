@@ -53,7 +53,7 @@ add_library(eve_notebook_host STATIC workspace.cpp bootstrap.cpp close.cpp modul
 target_link_libraries(eve_notebook_host PUBLIC Eve::ModuleQt Eve::ModuleQtPreflight Eve::ModuleInstall
     Eve::ConfigUi Eve::ConfigKernel Eve::ConfigStoreQt Eve::Replacement eve_native_service_modules)
 target_link_libraries(eve_notebook_host PRIVATE Ela::WidgetTools)
-target_include_directories(eve_notebook_host PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(eve_notebook_host PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
 target_compile_definitions(eve_notebook_host PRIVATE EVE_PRODUCT_VERSION="${PROJECT_VERSION}")
 eve_target_defaults(eve_notebook_host)
 add_dependencies(eve_notebook_host eve_example_notebook)

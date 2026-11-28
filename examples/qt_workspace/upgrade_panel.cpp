@@ -1,7 +1,9 @@
 /** @file upgrade_panel.cpp
  * @brief 候选输入与原任务值呈现；所有操作经具体 Workspace 视图屏障和原宿主入口。
  */
+#include "appearance_p.hpp"
 #include "upgrade_panel.hpp"
+#include "theme_palette_p.hpp"
 #include "modules_panel_p.hpp"
 #include <ElaLineEdit.h>
 #include <ElaPlainTextEdit.h>
@@ -46,13 +48,13 @@ UpgradePanel::UpgradePanel(std::weak_ptr<Workspace> workspace, QWidget* parent, 
     source_->setAccessibleName(QString::fromUtf8("候选模块声明绝对路径"));
     source_->setPlaceholderText(QString::fromUtf8("候选 module.json 的绝对路径"));
     row->addWidget(source_, 1);
-    browse_ = new ElaPushButton(QString::fromUtf8("选择文件…"), this);
+    browse_ = new eve::ui::detail::ActionButton(QString::fromUtf8("选择文件…"), this);
     browse_->setObjectName("EveUpgradeBrowse");
     row->addWidget(browse_);
     layout->addLayout(row);
     auto actions = new QHBoxLayout;
     const auto button = [&](const char* name, const char* title) {
-        auto value = new ElaPushButton(QString::fromUtf8(title), this);
+        auto value = new eve::ui::detail::ActionButton(QString::fromUtf8(title), this);
         value->setObjectName(QString::fromLatin1(name));
         value->setEnabled(false);
         actions->addWidget(value);
@@ -71,10 +73,12 @@ UpgradePanel::UpgradePanel(std::weak_ptr<Workspace> workspace, QWidget* parent, 
     layout->addWidget(status_);
     previewText_ = new ElaPlainTextEdit(this);
     previewText_->setObjectName("EveUpgradePreviewText");
+    eve::ui::detail::bindWorkbenchContentPalette(previewText_);
     previewText_->setReadOnly(true);
     layout->addWidget(previewText_, 1);
     reportText_ = new ElaPlainTextEdit(this);
     reportText_->setObjectName("EveUpgradeReportText");
+    eve::ui::detail::bindWorkbenchContentPalette(reportText_);
     reportText_->setReadOnly(true);
     layout->addWidget(reportText_, 1);
     saveStatus_ = new ElaText(this);

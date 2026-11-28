@@ -37,6 +37,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QTreeView>
+#include <QVBoxLayout>
 #include <algorithm>
 #include <cstdlib>
 #include <functional>
@@ -203,35 +204,61 @@ void tabs()
     scene.close();
 }
 
-/** @brief 键盘选择建议后进入中央页面，撤销时清理已经显示的结果及历史。 */
+/** @brief 同一快速打开浮层接受鼠标及键盘，撤页后立即失效，取消时恢复原焦点。 */
 void search()
 {
     Scene scene;
-    auto search = scene.find<ElaSuggestBox>("EvePageSearch");
-    auto edit = search->findChild<QLineEdit*>();
-    CHECK(edit);
-    scene.action("EveQuickOpen");
+    auto button = scene.find<QToolButton>("EveCommandCenterButton");
+    auto overlay = scene.find<QWidget>("EveCommandPanel");
+    auto edit = scene.find<QLineEdit>("EveCommandFilter");
+    auto pages = scene.find<QListView>("EveQuickPageList");
+    auto commands = scene.find<QListView>("EveCommandList");
+    auto editor = scene.find<QLineEdit>("WorkbenchPluginEditor");
+    CHECK(QTest::qWaitForWindowExposed(scene.window));
+    scene.window->activateWindow();
+    CHECK(QTest::qWaitForWindowActive(scene.window));
+    auto window = scene.window->windowHandle();
+
+    QTest::mouseClick(button, Qt::LeftButton);
+    CHECK(overlay->parentWidget() == scene.window && overlay->isVisible());
+    CHECK(edit->hasFocus() && pages->isVisible() && !commands->isVisible());
     QTest::keyClicks(edit, "Alpha");
-    // 建议弹层应归整窗拥有，否则会被标题栏命令中心的 30 像素高度裁剪。
-    bool ownsPopup = false;
-    for (auto child : scene.window->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
-        if (QString::fromLatin1(child->metaObject()->className()) == "ElaSuggestBoxSearchViewContainer")
-            ownsPopup = true;
-    CHECK(ownsPopup);
-    QTest::keyClick(edit, Qt::Key_Down);
+    CHECK(pages->model()->rowCount() == 1);
+    CHECK(pages->model()->index(0, 0).data(Qt::UserRole).toString() == editor->property("ElaPageKey").toString());
     QTest::keyClick(edit, Qt::Key_Return);
-    CHECK(scene.first->snapshot().value().current);
-    search->setSearchText("Beta");
-    QTest::qWait(350);
+    CHECK(scene.first->snapshot().value().current && !overlay->isVisible());
+
+    until([&] { return editor->isVisible(); });
+    editor->setFocus();
+    until([&] { return QGuiApplication::focusWindow() == window && editor->hasFocus(); });
+    QTest::keyClick(window, Qt::Key_P, Qt::ControlModifier | Qt::ShiftModifier);
+    until([&] { return overlay->isVisible() && commands->isVisible() && edit->hasFocus(); });
+    CHECK(!pages->isVisible() && edit->text() == ">");
+    QTest::keyClick(edit, Qt::Key_Backspace);
+    CHECK(pages->isVisible() && !commands->isVisible());
+    QTest::keyClicks(edit, ">EveOpenOutput");
+    CHECK(commands->isVisible() && commands->model()->rowCount() == 1);
+    QTest::keyClick(edit, Qt::Key_Escape);
+    until([&] { return !overlay->isVisible() && editor->hasFocus(); });
+
+    QTest::keyClick(window, Qt::Key_P, Qt::ControlModifier);
+    until([&] { return pages->isVisible() && edit->hasFocus(); });
+    CHECK(edit->text().isEmpty());
+    QTest::keyClicks(edit, "Beta");
+    CHECK(pages->model()->rowCount() == 1);
     QTest::keyClick(edit, Qt::Key_Return);
-    CHECK(scene.second->snapshot().value().current);
-    search->setSearchText("Alpha");
+    CHECK(scene.second->snapshot().value().current && !overlay->isVisible());
+
+    QTest::mouseClick(button, Qt::LeftButton);
+    QTest::keyClicks(edit, "Alpha");
+    CHECK(pages->model()->rowCount() == 1);
     wait(scene.first->close());
+    until([&] { return pages->model()->rowCount() == 0; });
     CHECK(!scene.first->navigate().hasValue());
     QTest::keyClick(edit, Qt::Key_Return);
-    CHECK(!scene.first->snapshot().value().current);
+    CHECK(scene.second->snapshot().value().current);
     QTest::keyClick(edit, Qt::Key_Escape);
-    CHECK(search->getSearchText().isEmpty());
+    CHECK(!overlay->isVisible());
     scene.find<QToolButton>("EveNavigateBack")->click();
     CHECK(!scene.first->snapshot().value().current);
     scene.close();
@@ -294,6 +321,17 @@ void menus()
     CHECK(!scene.window->findChild<QWidget*>("EveResourceExplorer"));
     CHECK(!scene.window->findChild<QWidget*>("EveWorkbenchSidebar"));
     auto menuBar = scene.find<ElaMenuBar>("EveMenuBar");
+    scene.window->resize(1200, 800);
+    CHECK(QTest::qWaitForWindowExposed(scene.window));
+    until([&] {
+        return menuBar->isVisible() && menuBar->rect().contains(menuBar->actionGeometry(menuBar->actions().last()));
+    });
+    auto navigationButton = scene.find<QToolButton>("EveTitleNavigation");
+    auto panelButton = scene.find<QToolButton>("EveTogglePanel");
+    auto navigationAction = scene.find<QAction>("EveViewNavigation");
+    auto panelAction = scene.find<QAction>("EveViewPanel");
+    auto layoutControls = scene.find<QWidget>("EveTitleLayoutControls");
+    CHECK(layoutControls->isAncestorOf(navigationButton) && layoutControls->isAncestorOf(panelButton));
     const auto initialPage = scene.window->getCurrentNavigationPageKey();
     const auto headers = menuBar->actions();
     CHECK(headers.size() == 4);
@@ -309,27 +347,31 @@ void menus()
         CHECK(scene.window->getCurrentNavigationPageKey() == initialPage);
     }
     scene.action("EveOpenSettings");
-    scene.action("EveViewNavigation");
+    QTest::mouseClick(navigationButton, Qt::LeftButton);
     CHECK(scene.window->getNavigationBarDisplayMode() == ElaNavigationType::Maximal);
-    scene.action("EveViewNavigation");
+    CHECK(navigationAction->isChecked() && navigationButton->accessibleName().contains(QStringLiteral("收起")));
+    scene.window->activateWindow();
+    until([&] { return scene.window->isActiveWindow(); });
+    QTest::keyClick(scene.window->windowHandle(), Qt::Key_B, Qt::ControlModifier);
     CHECK(scene.window->getNavigationBarDisplayMode() == ElaNavigationType::Compact);
+    CHECK(!navigationAction->isChecked() && navigationButton->accessibleName().contains(QStringLiteral("展开")));
     auto theme = scene.find<QComboBox>("EveSettingsTheme");
     theme->setCurrentIndex(1);
     CHECK(eTheme->getThemeMode() == ElaThemeType::Dark);
     scene.action("EveToggleTheme");
     CHECK(theme->currentIndex() == 0);
     auto panel = scene.find<QTabWidget>("EveWorkbenchPanel");
-    CHECK(panel->isHidden());
+    CHECK(panel->isHidden() && !panelAction->isChecked());
+    QTest::keyClick(scene.window->windowHandle(), Qt::Key_J, Qt::ControlModifier);
+    CHECK(!panel->isHidden() && panelAction->isChecked() && panelButton->accessibleName().contains(QStringLiteral("隐藏")));
     scene.action("EveViewPanel");
-    CHECK(!panel->isHidden());
-    scene.action("EveViewPanel");
-    CHECK(panel->isHidden());
+    CHECK(panel->isHidden() && !panelAction->isChecked() && panelButton->accessibleName().contains(QStringLiteral("显示")));
     scene.action("EveOpenCommands");
     CHECK(panel->isHidden() && scene.find<QWidget>("EveCommandPanel")->isVisible());
     CHECK(panel->count()==2 && panel->tabText(0)==QString::fromUtf8("输出"));
     QTest::keyClick(scene.find<QLineEdit>("EveCommandFilter"),Qt::Key_Escape);
     scene.action("EveOpenOutput");
-    CHECK(!panel->isHidden() && panel->currentIndex()==0);
+    CHECK(!panel->isHidden() && panelAction->isChecked() && panel->currentIndex()==0);
     auto output = scene.find<QPlainTextEdit>("EveWorkbenchOutput");
     scene.shell.writeOutput("<literal output>").value();
     scene.action("EveCopyOutput");
@@ -746,6 +788,44 @@ void checkCardLayout(QLayout* layout, QWidget* card)
     }
 }
 
+/** @brief 嵌入其他桌面时隐藏原顶栏，命令浮层从工作区顶部展开，卸载后恢复顶栏。 */
+void embeddedTitlebar(Scene& scene)
+{
+    auto quickOpen = scene.find<QToolButton>("EveCommandCenterButton");
+    auto overlay = scene.find<QWidget>("EveCommandPanel");
+    auto search = scene.find<QLineEdit>("EveCommandFilter");
+    const int originalHeight = scene.window->getAppBarHeight();
+    CHECK(originalHeight > 0 && quickOpen->isVisible());
+
+    auto runtime = scene.kernel->registerPlugin("workbench.embedded", [&scene](Context owner) {
+        auto root = std::make_unique<QWidget>();
+        root->resize(900, 700);
+        auto layout = new QVBoxLayout(root.get());
+        auto workspace = new QWidget(root.get());
+        layout->addWidget(workspace);
+        new QVBoxLayout(workspace);
+        scene.shell.attachLayout(owner, {std::move(root), workspace}).value();
+        return completedTask();
+    }).value();
+    auto instance = scene.kernel->mount(runtime).value();
+    wait(instance.ready());
+    scene.shell.show().value();
+    CHECK(scene.shell.externalLayoutVisible() && scene.window->getAppBarHeight() == 0);
+    for (auto id : {"EveTitleMenuControls", "EveCommandCenter", "EveTitleLayoutControls"})
+        CHECK(!scene.find<QWidget>(id)->isVisibleTo(scene.window));
+
+    scene.shell.invokeLayoutAction(eve::desktop::Action::Commands).value();
+    CHECK(overlay->isVisible() && search->text() == QStringLiteral(">"));
+    CHECK(overlay->y() == scene.window->contentsRect().top());
+    QTest::keyClick(search, Qt::Key_Escape);
+    CHECK(!overlay->isVisible());
+
+    wait(instance.stop());
+    CHECK(!scene.shell.hasExternalLayout() && scene.window->getAppBarHeight() == originalHeight);
+    scene.shell.show().value();
+    CHECK(quickOpen->isVisible());
+}
+
 /** @brief 覆盖欢迎/设置/关于页的明暗主题、宽窄窗口和滚动溢出，输出可复核截图。 */
 void pageLayout()
 {
@@ -782,6 +862,7 @@ void pageLayout()
         }
     }
     CHECK(scrolled);
+    embeddedTitlebar(scene);
     scene.close();
 }
 

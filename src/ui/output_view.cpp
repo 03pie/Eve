@@ -2,6 +2,7 @@
  * @brief 输出运行与来源选择、分页、增量绘制、焦点和筛选结果。
  */
 #include "output_state_p.hpp"
+#include "theme_palette_p.hpp"
 #include <ElaLineEdit.h>
 #include <ElaMenu.h>
 #include <ElaText.h>
@@ -43,7 +44,11 @@ constexpr int maxVisibleOutputBlocks = 5000;
 class OutputEditor final : public ElaPlainTextEdit
 {
   public:
-    explicit OutputEditor(QWidget* parent) : ElaPlainTextEdit(parent) { setMaximumBlockCount(maxVisibleOutputBlocks); }
+    explicit OutputEditor(QWidget* parent) : ElaPlainTextEdit(parent)
+    {
+        setMaximumBlockCount(maxVisibleOutputBlocks);
+        bindWorkbenchContentPalette(this);
+    }
     QWidget* toolbar = nullptr;
     QWidget* run = nullptr;
     QWidget* search = nullptr;
@@ -426,6 +431,7 @@ void installOutputTools(const std::shared_ptr<OutputControl>& self, QTabWidget* 
     layout->setSpacing(4);
     const auto combo = [&](const char* id, const QString& name, int maximum) {
         auto box = new ElaComboBox(tools);
+        box->setProperty("ElaTranslucentFill", true);
         box->setObjectName(id);
         box->setAccessibleName(name);
         box->setToolTip(name);

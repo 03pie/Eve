@@ -27,7 +27,6 @@
 #include <ElaTabBar.h>
 #include <ElaText.h>
 #include <ElaTheme.h>
-#include <ElaToolButton.h>
 #include <ElaWindow.h>
 #include <QAction>
 #include <QApplication>
@@ -84,8 +83,7 @@ private:
     void applyTheme(ElaThemeType::ThemeMode mode)
     {
         setStyleSheet(QStringLiteral(
-            "QTabBar::tab{background:%1;color:%2;border:0;"
-            "border-top-left-radius:7px;border-top-right-radius:7px;"
+            "QTabBar::tab{background:%1;color:%2;border:0;border-radius:6px;"
             "padding-left:13px;padding-right:8px;}"
             "QTabBar::tab:!selected:hover{background:%3;}"
             "QTabBar::tab:selected{background:transparent;}")
@@ -844,6 +842,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     control_->window = window.get();
     window->setWindowTitle(QString::fromUtf8("Eve 插件平台"));
     window->setWindowIcon(QApplication::windowIcon());
+    detail::bindWorkbenchWindowPalette(window.get());
     window->resize(1200, 800);
     window->setStackSwitchMode(ElaWindowType::None);
     window->setNavigationBarDisplayMode(ElaNavigationType::Compact);
@@ -871,6 +870,7 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     control_->safeKey = safe->property("ElaPageKey").toString();
     control_->stack = qobject_cast<QStackedWidget*>(safe->parentWidget());
     if (!control_->stack) throw std::runtime_error("pinned Ela page stack unavailable");
+    control_->stack->parentWidget()->setProperty("ElaRoundPanelCorners", true);
     auto panel = new detail::FixedDiagnosticsTabs(nullptr);
     panel->setObjectName("EveWorkbenchPanel"); panel->setMinimumHeight(110);
     QListView* commandList = nullptr;
@@ -886,20 +886,12 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     control_->tabs = new detail::HostPageTabs(header); control_->tabs->setObjectName("EvePageTabs");
     headerLayout->setSpacing(8);
     headerLayout->addWidget(control_->tabs, 1);
-    auto togglePanel = new ElaToolButton(header);
-    togglePanel->setObjectName("EveTogglePanel"); togglePanel->setText(QString::fromUtf8("面板"));
-    togglePanel->setElaIcon(ElaIconType::Terminal);
-    togglePanel->setToolButtonStyle(Qt::ToolButtonIconOnly);
-    togglePanel->setShortcut(QKeySequence("Ctrl+J"));
-    togglePanel->setFixedSize(32, 30);
-    togglePanel->setAccessibleName(QString::fromUtf8("切换底部工作区"));
-    togglePanel->setToolTip(QString::fromUtf8("切换输出与问题面板（Ctrl+J）"));
-    headerLayout->addWidget(togglePanel);
     window->setCentralCustomWidget(header);
     window->setWorkbenchWidgets(nullptr, panel);
     panel->hide();
     auto statusBar = new ElaStatusBar(window.get());
     statusBar->setObjectName("EveStatusBar");
+    statusBar->setProperty("ElaRoundPanelCorners", true);
     statusBar->setStyleSheet(QStringLiteral("#EveStatusBar{background:transparent;}"));
     statusBar->setSizeGripEnabled(false);
     statusBar->setContentsMargins(10, 0, 8, 0);
@@ -943,13 +935,13 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
     });
     control_->managementPage = detail::managementWidget(control_->management);
     control_->managementKey = "eve:management";
-    window->addFooterNode(QString::fromUtf8("输出与问题"), control_->commandsKey, 0, ElaIconType::Terminal);
+    window->addFooterNode(QString::fromUtf8("输出与问题"), control_->commandsKey, 0, ElaIconType::RectangleList);
     management_ = std::shared_ptr<ManagementController>(new ManagementController(control_->management));
     diagnostics_ = std::shared_ptr<DiagnosticsService>(new DiagnosticsService(detail::diagnosticsEndpoint(control_->management)));
     ElaActionCommander::getInstance()->setIsMessageDisplayEnable(false);
     std::weak_ptr<detail::ShellControl> weak = control_;
     control_->workbench = detail::createWorkbench(
-        window.get(), control_->tabs, panel, output, togglePanel, control_->safeKey, control_->managementKey,
+        window.get(), control_->tabs, panel, output, commandPanel, control_->safeKey, control_->managementKey,
         {[weak](const QString& key, bool remember) {
              auto state = weak.lock();
              return state ? state->selectKey(key, remember)
@@ -1231,9 +1223,6 @@ ElaShell::ElaShell(std::shared_ptr<qt::QtScheduler> scheduler, std::string prefe
         return detail::showManagementDialog(state->management, QString::number(id.value()));
     });
     (void)detail::appendOutput(control_->output, {}, "platform", "工作台已初始化。");
-    QObject::connect(togglePanel, &ElaToolButton::clicked, window.get(), [weak] {
-        if(const auto state=weak.lock()) detail::toggleOutputPanel(state->output);
-    });
     // ElaWindow 转发信号发生在堆栈切换之前；直接监听其后注册的原生信号，记录实际已切换页面。
     QObject::connect(control_->navigation.data(), &ElaNavigationBar::navigationNodeClicked, window.get(), [weak, panel](ElaNavigationType::NavigationNodeType, const QString& key, bool) {
         if (auto state = weak.lock()) {

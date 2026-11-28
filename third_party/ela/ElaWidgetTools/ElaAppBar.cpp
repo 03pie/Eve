@@ -98,6 +98,7 @@ ElaAppBar::ElaAppBar(QWidget* parent)
 
     //图标
     d->_iconLabel = new QLabel(this);
+    d->_iconLabel->setObjectName("ElaAppBarIcon");
     d->_iconLabelLayout = d->_createVLayout(d->_iconLabel);
     if (parent->windowIcon().isNull())
     {
@@ -116,6 +117,7 @@ ElaAppBar::ElaAppBar(QWidget* parent)
 
     //标题
     d->_titleLabel = new ElaText(this);
+    d->_titleLabel->setObjectName("ElaAppBarTitle");
     d->_titleLabel->setIsWrapAnywhere(false);
     d->_titleLabel->setTextPixelSize(13);
     d->_titleLabelLayout = d->_createVLayout(d->_titleLabel);

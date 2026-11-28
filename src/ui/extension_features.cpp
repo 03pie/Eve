@@ -96,12 +96,8 @@ ExtensionFeaturesView::ExtensionFeaturesView(QWidget* parent) : ElaScrollArea(pa
     body->addStretch();
     setWidget(content);
     content->setAutoFillBackground(false);
-    viewport()->setAutoFillBackground(false);
-    const auto theme = [this](ElaThemeType::ThemeMode mode) {
-        defaults_->setPalette(workbenchPalette(defaults_->palette(), mode));
-    };
-    theme(eTheme->getThemeMode());
-    connect(eTheme, &ElaTheme::themeModeChanged, this, theme);
+    bindWorkbenchContentPalette(this);
+    bindWorkbenchContentPalette(defaults_);
 }
 
 bool ExtensionFeaturesView::setContent(const ExtensionItem* item, const ExtensionWorkspace& workspace)
